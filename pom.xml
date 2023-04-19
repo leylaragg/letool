@@ -6,8 +6,13 @@
 
     <packaging>pom</packaging>
 
+    <modules>
+        <module>rudrmboy-demonstrate</module>
+        <module>rudrmboy-tool</module>
+    </modules>
+
     <groupId>com.github.rungo</groupId>
-    <artifactId>rudrmboy-tool</artifactId>
+    <artifactId>rudrmboy</artifactId>
     <version>1.0.0-beta.6</version>
     <name>${project.artifactId}</name>
     <description>提供丰富的Java工具方法</description>
