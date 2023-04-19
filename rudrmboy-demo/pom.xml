@@ -2,25 +2,26 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <artifactId>rudrmboy</artifactId>
+        <groupId>com.github.rungo</groupId>
+        <version>1.0.0-beta.6</version>
+    </parent>
     <modelVersion>4.0.0</modelVersion>
 
+    <artifactId>rudrmboy-demo</artifactId>
+
     <packaging>pom</packaging>
-
     <modules>
-        <module>rudrmboy-demo</module>
-        <module>rudrmboy-tool</module>
+        <module>spring-core</module>
+        <module>basic-core</module>
+        <module>logger</module>
+        <module>spring-redis</module>
     </modules>
-
-    <groupId>com.github.rungo</groupId>
-    <artifactId>rudrmboy</artifactId>
-    <version>1.0.0-beta.6</version>
-    <name>${project.artifactId}</name>
-    <description>提供丰富的Java工具方法</description>
-    <url>https://github.com/Rungo-W/rudrmboy-tools.git</url>
 
     <properties>
         <maven.compiler.source>8</maven.compiler.source>
         <maven.compiler.target>8</maven.compiler.target>
     </properties>
-    
+
 </project>
