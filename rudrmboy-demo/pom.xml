@@ -17,6 +17,7 @@
         <module>basic-core</module>
         <module>logger</module>
         <module>spring-redis</module>
+        <module>spring-mvc</module>
     </modules>
 
     <properties>
