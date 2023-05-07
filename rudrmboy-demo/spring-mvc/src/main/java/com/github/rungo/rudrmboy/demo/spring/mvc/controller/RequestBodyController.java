@@ -12,10 +12,15 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 public class RequestBodyController {
 
-    @PostMapping(path = "/requestBody", produces = "application/json;charset=UTF-8",
-            consumes = "application/x-www-form-urlencoded;charset=UTF-8")
+    @PostMapping(path = "/requestBody")
     public void handle(@RequestBody User user) {
         System.out.println(user);
+        //…………
+    }
+
+    @PostMapping(path = "/requestBody2")
+    public void handle(@RequestBody String body) {
+        System.out.println(body);
         //…………
     }
 }
