@@ -4,21 +4,24 @@
        xmlns:context="http://www.springframework.org/schema/context"
        xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd http://www.springframework.org/schema/context https://www.springframework.org/schema/context/spring-context.xsd">
 
+    <context:annotation-config/>
+
     <!-- 配置要扫描注解的包路径 -->
     <context:component-scan base-package="com.github.rungo.rudrmboy.demo.spring.mvc"/>
 
-<!--
-    &lt;!&ndash; 注册 HandlerMapping，基于SimpleUrlHandlerMapping的方式 &ndash;&gt;
-    <bean class="org.springframework.web.servlet.handler.SimpleUrlHandlerMapping">
-        <property name="mappings">
-            &lt;!&ndash;配置请求url和handler的beanName的映射关系&ndash;&gt;
-            <props>
-                <prop key="/simpleUrl1">simpleUrlController1</prop>
-                <prop key="/simpleUrl2">simpleUrlController2</prop>
-                &lt;!&ndash;通过*配置一个通用的Handler&ndash;&gt;
-                &lt;!&ndash;那么 比如/simpleUrl3  /simpleUrl4等请求都会被转发到simpleUrlController3的Handler&ndash;&gt;
-                <prop key="/simpleUrl*">simpleUrlController3</prop>
-            </props>
-        </property>
-    </bean>-->
+
+    <!--
+        &lt;!&ndash; 注册 HandlerMapping，基于SimpleUrlHandlerMapping的方式 &ndash;&gt;
+        <bean class="org.springframework.web.servlet.handler.SimpleUrlHandlerMapping">
+            <property name="mappings">
+                &lt;!&ndash;配置请求url和handler的beanName的映射关系&ndash;&gt;
+                <props>
+                    <prop key="/simpleUrl1">simpleUrlController1</prop>
+                    <prop key="/simpleUrl2">simpleUrlController2</prop>
+                    &lt;!&ndash;通过*配置一个通用的Handler&ndash;&gt;
+                    &lt;!&ndash;那么 比如/simpleUrl3  /simpleUrl4等请求都会被转发到simpleUrlController3的Handler&ndash;&gt;
+                    <prop key="/simpleUrl*">simpleUrlController3</prop>
+                </props>
+            </property>
+        </bean>-->
 </beans>

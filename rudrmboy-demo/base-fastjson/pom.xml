@@ -3,34 +3,36 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <parent>
-        <artifactId>rudrmboy</artifactId>
+        <artifactId>rudrmboy-demo</artifactId>
         <groupId>com.github.rungo</groupId>
         <version>1.0.0-beta.6</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>rudrmboy-demo</artifactId>
-
-    <packaging>pom</packaging>
-    <modules>
-        <module>spring-core</module>
-        <module>basic-core</module>
-        <module>logger</module>
-        <module>spring-redis</module>
-        <module>spring-mvc</module>
-        <module>base-fastjson</module>
-    </modules>
+    <artifactId>base-fastjson</artifactId>
 
     <properties>
         <maven.compiler.source>8</maven.compiler.source>
         <maven.compiler.target>8</maven.compiler.target>
     </properties>
 
+
     <dependencies>
         <dependency>
-            <groupId>com.github.rungo</groupId>
-            <artifactId>rudrmboy-starter-tool</artifactId>
-            <version>1.0.0-beta.6</version>
+            <groupId>com.alibaba.fastjson2</groupId>
+            <artifactId>fastjson2</artifactId>
+            <version>2.0.25</version>
+        </dependency>
+        <dependency>
+            <groupId>log4j</groupId>
+            <artifactId>log4j</artifactId>
+            <version>1.2.17</version>
+        </dependency>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.13.2</version>
+            <scope>compile</scope>
         </dependency>
     </dependencies>
 
