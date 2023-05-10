@@ -13,6 +13,8 @@
     <!-- 开启SpringMVC框架注解的支持 -->
     <mvc:annotation-driven></mvc:annotation-driven>
 
+    <import resource="spring-mvc-editor.xml"/>
+
 
 
     <!--
