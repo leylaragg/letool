@@ -2,7 +2,8 @@
 <beans xmlns="http://www.springframework.org/schema/beans"
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xmlns:context="http://www.springframework.org/schema/context"
-       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd http://www.springframework.org/schema/context https://www.springframework.org/schema/context/spring-context.xsd">
+       xmlns:mvc="http://www.springframework.org/schema/mvc"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd http://www.springframework.org/schema/context https://www.springframework.org/schema/context/spring-context.xsd http://www.springframework.org/schema/mvc https://www.springframework.org/schema/mvc/spring-mvc.xsd">
 
 
     <bean class="org.springframework.beans.factory.config.CustomEditorConfigurer">
@@ -10,6 +11,45 @@
             <map>
                 <entry key="java.util.Date" value="com.github.rungo.rudrmboy.demo.spring.mvc.config.editor.DateEditor"/>
             </map>
+        </property>
+    </bean>
+
+
+    <bean class="org.springframework.beans.factory.config.CustomEditorConfigurer">
+        <!--propertyEditorRegistrars是一个数组，可以传递多个自定义的PropertyEditorRegistrar-->
+        <property name="propertyEditorRegistrars">
+            <array>
+                <ref bean="customPropertyEditorRegistrar"/>
+            </array>
+        </property>
+    </bean>
+
+    <!--自定义的CustomPropertyEditorRegistrar-->
+    <bean id="customPropertyEditorRegistrar" class="com.github.rungo.rudrmboy.demo.spring.mvc.config.editor.registrar.CustomPropertyEditorRegistrar">
+        <property name="formatter" value="yyyy-MM-dd"/>
+    </bean>
+
+
+    <!--conversion-service属性指定在字段绑定期间用于类型转换的转换服务的bean名称。 -->
+    <!--如果不指定，则表示注册默认DefaultFormattingConversionService-->
+    <mvc:annotation-driven conversion-service="conversionService"/>
+
+    <!--配置工厂，它会默认创建DefaultFormattingConversionService，并且支持注入自定义converters和formatters-->
+    <!--如果将它命名为conversionService，那么BeanWrapper和DataBinder 都共用此conversionService-->
+    <bean id="conversionService" class="org.springframework.format.support.FormattingConversionServiceFactoryBean">
+        <!--注入自定义formatters，支持Formatter 和 AnnotationFormatterFactory的实例-->
+        <property name="formatters">
+            <set/>
+        </property>
+        <!--注入自定义converters，支持Converter、ConverterFactory、GenericConverter的实例-->
+        <property name="converters">
+            <set/>
+        </property>
+        <!--注入自定义的formatterRegistrars-->
+        <property name="formatterRegistrars">
+            <set>
+                <ref bean="customFormatterRegistrar"/>
+            </set>
         </property>
     </bean>
 
