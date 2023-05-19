@@ -11,10 +11,20 @@
     <context:component-scan base-package="com.github.rungo.rudrmboy.demo.spring.mvc"/>
 
     <!-- 开启SpringMVC框架注解的支持 -->
-    <mvc:annotation-driven></mvc:annotation-driven>
+    <mvc:annotation-driven validator="validator"></mvc:annotation-driven>
 
     <import resource="spring-mvc-editor.xml"/>
 
+    <bean id="validator" class="org.springframework.validation.beanvalidation.LocalValidatorFactoryBean">
+        <property name="providerClass" value="org.hibernate.validator.HibernateValidator"/>
+    </bean>
+
+    <!--
+            validator属性用于指定Validator bean，该属性不是必须的，除非想要自定义validator
+
+          如果未指定，那么自动查找类路径中的JSR-303 provider实现来配置一个类型为
+              org.springframework.validation.beanvalidation.OptionalValidatorFactoryBean的Validator
+    -->
 
 
     <!--

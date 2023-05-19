@@ -12,7 +12,7 @@ import java.util.Date;
  * @Author Rungo
  * @Version 1.0
  **/
-public final class CustomPropertyEditorRegistrar implements PropertyEditorRegistrar {
+public final class CustomPropertyEditorRegistrar /*implements PropertyEditorRegistrar*/ {
 
     private String formatter;
 
@@ -25,7 +25,7 @@ public final class CustomPropertyEditorRegistrar implements PropertyEditorRegist
      *
      * @param registry 将要注册自定义PropertyEditor的PropertyEditorRegistry
      */
-    @Override
+    //@Override
     public void registerCustomEditors(PropertyEditorRegistry registry) {
 
         // 预期将创建新的属性编辑器实例，可以自己控制创建流程

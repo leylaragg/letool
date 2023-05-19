@@ -6,23 +6,23 @@
        xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd http://www.springframework.org/schema/context https://www.springframework.org/schema/context/spring-context.xsd http://www.springframework.org/schema/mvc https://www.springframework.org/schema/mvc/spring-mvc.xsd">
 
 
-    <bean class="org.springframework.beans.factory.config.CustomEditorConfigurer">
+    <!--<bean class="org.springframework.beans.factory.config.CustomEditorConfigurer">
         <property name="customEditors">
             <map>
                 <entry key="java.util.Date" value="com.github.rungo.rudrmboy.demo.spring.mvc.config.editor.DateEditor"/>
             </map>
         </property>
-    </bean>
+    </bean>-->
 
 
-    <bean class="org.springframework.beans.factory.config.CustomEditorConfigurer">
-        <!--propertyEditorRegistrars是一个数组，可以传递多个自定义的PropertyEditorRegistrar-->
+    <!--<bean class="org.springframework.beans.factory.config.CustomEditorConfigurer">
+        &lt;!&ndash;propertyEditorRegistrars是一个数组，可以传递多个自定义的PropertyEditorRegistrar&ndash;&gt;
         <property name="propertyEditorRegistrars">
             <array>
                 <ref bean="customPropertyEditorRegistrar"/>
             </array>
         </property>
-    </bean>
+    </bean>-->
 
     <!--自定义的CustomPropertyEditorRegistrar-->
     <bean id="customPropertyEditorRegistrar" class="com.github.rungo.rudrmboy.demo.spring.mvc.config.editor.registrar.CustomPropertyEditorRegistrar">

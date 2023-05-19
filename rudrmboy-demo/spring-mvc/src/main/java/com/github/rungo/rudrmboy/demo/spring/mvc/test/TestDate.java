@@ -14,11 +14,11 @@ import java.util.Date;
  **/
 @Component
 public class TestDate {
-    @Value("2020-12-12")
+   /* @Value("2020-12-12")
     private Date date;
 
     @PostConstruct
     public void test() {
         System.out.println(date);
-    }
+    }*/
 }
