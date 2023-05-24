@@ -41,4 +41,26 @@
                 </props>
             </property>
         </bean>-->
+
+
+    <!--配置拦截器-->
+    <mvc:interceptors>
+        <!--配置拦截器 默认拦截所有-->
+        <bean class="org.springframework.web.servlet.i18n.LocaleChangeInterceptor"/>
+        <!--配置拦截器 -->
+        <mvc:interceptor>
+            <!--拦截-->
+            <mvc:mapping path="/**"/>
+            <!--不拦截-->
+            <mvc:exclude-mapping path="/admin/**"/>
+            <bean class="org.springframework.web.servlet.theme.ThemeChangeInterceptor"/>
+        </mvc:interceptor>
+        <!--配置自定义拦截器-->
+        <mvc:interceptor>
+            <!--拦截-->
+            <mvc:mapping path="/a/**"/>
+            <bean class="com.github.rungo.rudrmboy.demo.spring.mvc.config.handler.MyInterceptor1"/>
+        </mvc:interceptor>
+    </mvc:interceptors>
+
 </beans>
