@@ -2,6 +2,7 @@ package com.github.rungo;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.rungo.rudrmboy.demo.spring.mvc.convert.MyModel;
+import org.testng.annotations.Test;
 
 import java.io.IOException;
 
@@ -28,4 +29,23 @@ public class Main {
             System.out.println("转换异常！");
         }
     }
+
+    @Test
+    public void test1(){
+
+    }
+
+    public class MyClassLoader extends ClassLoader {
+
+        @Override
+        public synchronized Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+            // 判断需要特殊处理的类名
+            if (name.startsWith("com.example.foo") || name.startsWith("com.example.bar")) {
+                // 不加载指定类，直接返回空，即控制该类不被加载
+                return null;
+            }
+            return super.loadClass(name, resolve);
+        }
+    }
+
 }
