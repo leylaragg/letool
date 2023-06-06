@@ -13,6 +13,7 @@
         <module>rudrmboy-starter-swagger</module>
         <module>rudrmboy-starter-security-jwt</module>
         <module>rudrmboy-starter-cache</module>
+        <module>rudrmboy-starter-file</module>
     </modules>
 
     <groupId>com.github.rungo</groupId>
