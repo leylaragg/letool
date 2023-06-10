@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration>
+    <properties>
+        <property name="logDir">D://test//rudrmboy//spring-core//</property>
+    </properties>
+
+    <!-- 配置appender -->
+    <Appenders>
+        <!-- 配置控制台输出 -->
+        <Console name="consoleAppender" target="SYSTEM_OUT"></Console>
+
+        <!-- 配置文件输出-->
+        <File name="fileAppender" fileName="${logDir}//log4j2.log">
+            <!-- 配置文件日志内容输出格式 -->
+            <PatternLayout pattern="[%-5level] %d{yyyy-MM-dd HH:mm:ss.SSS} %m%n"/>
+        </File>
+    </Appenders>
+
+    <!-- 配置logger -->
+    <Loggers>
+        <!-- 配置rootlogger -->
+        <Root level="info">
+            <!-- 引用Appender -->
+            <AppenderRef ref="fileAppender"/>
+            <AppenderRef ref="consoleAppender"/>
+        </Root>
+
+    </Loggers>
+
+</Configuration>

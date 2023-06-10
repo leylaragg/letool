@@ -33,6 +33,12 @@
             <artifactId>aspectjweaver</artifactId>
             <version>${aspectjweaver}</version>
         </dependency>
+        <dependency>
+            <groupId>org.testng</groupId>
+            <artifactId>testng</artifactId>
+            <version>7.5</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
 </project>

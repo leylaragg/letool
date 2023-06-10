@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+       http://www.springframework.org/schema/beans/spring-beans.xsd">
+    <!--定义bean-->
+    <bean class="com.github.rungo.rudrmboy.demo.spring.source.FirstSpringSource" name="firstSpringSource">
+        <property name="str" value="不设置profile"/>
+    </bean>
+
+    <!--实现了DisposableBean接口,依赖destroy2-->
+    <bean class="com.github.rungo.rudrmboy.demo.spring.context.support.Destroy.Destroy1" name="destroy1" depends-on="destroy2"/>
+    <!--配置了destroy属性-->
+    <bean class="com.github.rungo.rudrmboy.demo.spring.context.support.Destroy.Destroy2" name="destroy2" destroy-method="destroy"/>
+    <!--没有配置回调函数-->
+    <bean class="com.github.rungo.rudrmboy.demo.spring.context.support.Destroy.Destroy3" name="destroy3"/>
+
+</beans>
