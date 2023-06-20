@@ -1,0 +1,4 @@
+#key为需要手动添加的bean组件类的全路径名，value为includeFilters中的一个TypeFilter过滤条件，比如Component的TypeFilter的全路径类名
+com.github.rungo.rudrmboy.demo.spring.components.index.IndexClass=org.springframework.stereotype.Component
+com.github.rungo.rudrmboy.demo.spring.components.index.IndexClass2=org.springframework.stereotype.Component
+com.github.rungo.rudrmboy.demo.spring.components.index.IndexClass3=javax.inject.Named,org.springframework.stereotype.Component

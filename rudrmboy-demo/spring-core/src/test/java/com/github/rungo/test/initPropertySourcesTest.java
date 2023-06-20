@@ -37,4 +37,21 @@ public class initPropertySourcesTest {
         ac.refresh();
 
     }
+
+
+    @Test
+    public void ph() {
+        ClassPathXmlApplicationContext ac = new ClassPathXmlApplicationContext("spring-config-ph.xml");
+        System.out.println(ac.getBean("PHTest"));
+    }
+
+
+    @Test
+    public void componentsIndex() {
+        ClassPathXmlApplicationContext ac = new ClassPathXmlApplicationContext("spring-config-index.xml");
+        System.out.println(ac.getBean("indexClass"));
+        System.out.println(ac.getBean("indexClass2"));
+        System.out.println(ac.getBean("indexClass3"));
+        System.out.println(ac.getBean("indexClass4"));
+    }
 }
