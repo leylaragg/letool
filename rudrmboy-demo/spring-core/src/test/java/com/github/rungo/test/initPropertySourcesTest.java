@@ -2,10 +2,16 @@ package com.github.rungo.test;
 
 import com.github.rungo.rudrmboy.demo.spring.context.support.RequiredPropertieClassPathXmlApplicationContext;
 import com.github.rungo.rudrmboy.demo.spring.source.BeanPostProcessorTest;
+import com.github.rungo.rudrmboy.demo.spring.source.ingoreInterface.Ignore;
 import com.github.rungo.rudrmboy.demo.spring.source.ingoreInterface.IgnoreOther;
+import org.junit.After;
+import org.junit.Test;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
-import org.testng.annotations.Ignore;
-import org.testng.annotations.Test;
+
+import java.util.Map;
+//import org.testng.annotations.Test;
 
 /**
  * @ClassName <h2>initPropertySources</h2>
@@ -101,5 +107,48 @@ public class initPropertySourcesTest {
         System.out.println(ac.getBean("rd"));
         System.out.println(ac.getBean("rdImplA"));
         System.out.println(ac.getBean("rdImplB"));
+    }
+
+
+    @Test
+    public void smart() {
+        ClassPathXmlApplicationContext ac = new ClassPathXmlApplicationContext("spring-config-smart.xml");
+        /*ConfigurableListableBeanFactory factory = ac.getBeanFactory();
+        if (factory instanceof DefaultListableBeanFactory) {
+            Map<String, Object> beans = ((DefaultListableBeanFactory)factory).getBeansOfType(Object.class);
+            for (String name : beans.keySet()) {
+                System.out.println(name);
+            }
+        }*/
+    }
+
+
+
+
+    @Test
+    public void factoryBean() {
+        ClassPathXmlApplicationContext ac = new ClassPathXmlApplicationContext("spring-config-smart.xml");
+
+        //不带&前缀，返回的实际上是getObject的返回值
+        System.out.println(ac.getBean("myFactoryBean"));
+        System.out.println(ac.getBean("myFactoryBean"));
+        System.out.println(ac.getBean("myFactoryBean"));
+        System.out.println(ac.getBean("myFactoryBean"));
+
+        //带有&前缀，返回的是自定义的FactoryBean对象本身
+        System.out.println(ac.getBean("&myFactoryBean"));
+        System.out.println(ac.getBean("&myFactoryBean"));
+        System.out.println(ac.getBean("&myFactoryBean"));
+        System.out.println(ac.getBean("&myFactoryBean"));
+
+        System.out.println(ac.getBean("mySmartBean.MySmartBeanA"));
+
+        ConfigurableListableBeanFactory factory = ac.getBeanFactory();
+        if (factory instanceof DefaultListableBeanFactory) {
+            Map<String, Object> beans = ((DefaultListableBeanFactory)factory).getBeansOfType(Object.class);
+            for (String name : beans.keySet()) {
+                System.out.println(name);
+            }
+        }
     }
 }

@@ -25,6 +25,6 @@ public class MyRDBeanFactoryPostProcessor implements BeanFactoryPostProcessor {
     public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) throws BeansException {
         RDImpl.RDImplA rdImplA = new RDImpl.RDImplA();
         System.out.println(rdImplA);
-        //beanFactory.registerResolvableDependency(ResolvableDependency.class, rdImplA);
+        beanFactory.registerResolvableDependency(ResolvableDependency.class, rdImplA);
     }
 }

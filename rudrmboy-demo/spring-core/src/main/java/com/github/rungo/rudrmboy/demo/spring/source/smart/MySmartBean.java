@@ -11,6 +11,7 @@ import javax.annotation.PostConstruct;
  * @Author Rungo
  * @Version 1.0
  **/
+@Component
 public class MySmartBean {
 
     @Component
@@ -54,6 +55,7 @@ public class MySmartBean {
     @Component
     public static class MySmartBeanC  {
 
+        //依赖注入完成后，在执行 init-method 方法之前被调用
         @PostConstruct
         public void init() {
             System.out.println("MySmartBeanC initMethod ");
