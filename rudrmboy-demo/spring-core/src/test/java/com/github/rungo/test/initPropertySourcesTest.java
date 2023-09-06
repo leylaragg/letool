@@ -151,4 +151,11 @@ public class initPropertySourcesTest {
             }
         }
     }
+
+
+
+    @Test
+    public void dependTest(){
+        ClassPathXmlApplicationContext ca = new ClassPathXmlApplicationContext("spring-config-depend.xml");
+    }
 }
