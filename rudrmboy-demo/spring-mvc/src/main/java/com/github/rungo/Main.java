@@ -7,6 +7,7 @@ import com.github.rungo.rudrmboy.demo.spring.mvc.pojo.Child;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.testng.annotations.Test;
 
+import javax.validation.Validation;
 import java.io.IOException;
 
 import java.util.Arrays;
@@ -33,6 +34,10 @@ public class Main {
             e.printStackTrace();
             System.out.println("转换异常！");
         }
+
+
+        ClassPathXmlApplicationContext application = new ClassPathXmlApplicationContext("spring-config.xml");
+
     }
 
     @Test
