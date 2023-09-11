@@ -61,6 +61,11 @@
             <mvc:mapping path="/a/**"/>
             <bean class="com.github.rungo.rudrmboy.demo.spring.mvc.config.handler.MyInterceptor1"/>
         </mvc:interceptor>
+        <mvc:interceptor>
+            <!--拦截-->
+            <mvc:mapping path="/a/**"/>
+            <bean class="com.github.rungo.rudrmboy.demo.spring.mvc.config.handler.MyInterceptor2"/>
+        </mvc:interceptor>
     </mvc:interceptors>
 
 </beans>
