@@ -14,31 +14,11 @@
     <properties>
         <maven.compiler.source>8</maven.compiler.source>
         <maven.compiler.target>8</maven.compiler.target>
-        <spring-framework.version>5.2.8.RELEASE</spring-framework.version>
-        <aspectjweaver>1.9.6</aspectjweaver>
     </properties>
 
     <dependencies>
-        <!--spring 核心组件所需依赖-->
-        <dependency>
-            <groupId>org.springframework</groupId>
-            <artifactId>spring-context</artifactId>
-            <version>${spring-framework.version}</version>
-            <scope>compile</scope>
-        </dependency>
 
-        <!--用于解析AspectJ的切入点表达式语法-->
-        <dependency>
-            <groupId>org.aspectj</groupId>
-            <artifactId>aspectjweaver</artifactId>
-            <version>${aspectjweaver}</version>
-        </dependency>
-        <!--<dependency>
-            <groupId>org.testng</groupId>
-            <artifactId>testng</artifactId>
-            <version>7.5</version>
-            <scope>test</scope>
-        </dependency>-->
+
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>

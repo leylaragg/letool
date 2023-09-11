@@ -24,6 +24,10 @@
     <properties>
         <maven.compiler.source>8</maven.compiler.source>
         <maven.compiler.target>8</maven.compiler.target>
+        <spring-framework.version>5.2.8.RELEASE</spring-framework.version>
+        <aspectjweaver>1.9.6</aspectjweaver>
+        <mysql-connector-java>8.0.16</mysql-connector-java>
+        <druid>1.2.3</druid>
     </properties>
 
     <dependencies>
@@ -32,6 +36,44 @@
             <artifactId>rudrmboy-starter-tool</artifactId>
             <version>1.0.0-beta.6</version>
         </dependency>
+
+
+        <!--spring 核心组件所需依赖-->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+            <version>${spring-framework.version}</version>
+            <scope>compile</scope>
+        </dependency>
+
+        <!--用于解析AspectJ的切入点表达式语法-->
+        <dependency>
+            <groupId>org.aspectj</groupId>
+            <artifactId>aspectjweaver</artifactId>
+            <version>${aspectjweaver}</version>
+        </dependency>
+
+        <!--spring-jdbc  内部包括了spring-tx的依赖-->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-jdbc</artifactId>
+            <version>${spring-framework.version}</version>
+        </dependency>
+        <!-- https://mvnrepository.com/artifact/mysql/mysql-connector-java -->
+        <!--mysql数据库驱动-->
+        <dependency>
+            <groupId>mysql</groupId>
+            <artifactId>mysql-connector-java</artifactId>
+            <version>${mysql-connector-java}</version>
+        </dependency>
+        <!-- https://mvnrepository.com/artifact/com.alibaba/druid -->
+        <!--druid数据源-->
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>druid</artifactId>
+            <version>${druid}</version>
+        </dependency>
+
 
         <!-- slf4j日志门面 -->
         <dependency>
