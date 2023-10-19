@@ -4,17 +4,17 @@
 
 <web-app>
     <display-name>Archetype Created Web Application</display-name>
-<!--
-    &lt;!&ndash;配置contextConfigLocation初始化参数，指定父容器Root WebApplicationContext的配置文件 &ndash;&gt;
+
+    <!--配置contextConfigLocation初始化参数，指定父容器Root WebApplicationContext的配置文件 -->
     <context-param>
         <param-name>contextConfigLocation</param-name>
         <param-value>classpath:spring-config.xml</param-value>
     </context-param>
 
-    &lt;!&ndash;监听contextConfigLocation参数并初始化父容器&ndash;&gt;
+    <!--监听contextConfigLocation参数并初始化父容器-->
     <listener>
         <listener-class>org.springframework.web.context.ContextLoaderListener</listener-class>
-    </listener>-->
+    </listener>
 
 
     <!-- 配置spring mvc的前端核心控制器 -->
