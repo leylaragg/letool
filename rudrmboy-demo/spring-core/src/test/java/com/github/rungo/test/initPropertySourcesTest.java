@@ -157,5 +157,63 @@ public class initPropertySourcesTest {
     @Test
     public void dependTest(){
         ClassPathXmlApplicationContext ca = new ClassPathXmlApplicationContext("spring-config-depend.xml");
+        System.out.println(ca.getBean("indexClass"));
+    }
+
+
+    @Test
+    public void exTest1(){
+        try {
+            extest11();
+        } catch (Exception e){
+            System.out.println(e.getMessage());
+            e.printStackTrace();
+            System.out.println(e);
+        }
+        System.out.println("继续执行");
+        System.out.println("111111111");
+        extest11();
+    }
+
+    private void extest11(){
+        throw new RuntimeException("异常");
+    }
+
+
+    @Test
+    public void ThreadTest1(){
+        Ticket ticket = new Ticket();
+        ticket.run();
+    }
+
+    public class Ticket implements Runnable{
+        private int ticket = 100;
+
+        Object lock = new Object();
+        /*
+         * 执行卖票操作
+         */
+        @Override
+        public void run() {
+            //每个窗口卖票的操作
+            //窗口 永远开启
+            while(true){
+                synchronized (lock) {
+                    if(ticket > 0){//有票 可以卖
+                        //出票操作
+                        //使用sleep模拟一下出票时间
+                        try {
+                            Thread.sleep(50);
+                        } catch (InterruptedException e) {
+                            // TODO Auto‐generated catch block
+                            e.printStackTrace();
+                        }
+                        //获取当前线程对象的名字
+                        String name = Thread.currentThread().getName();
+                        System.out.println(name+"正在卖:" + --ticket);
+                    }
+                }
+            }
+        }
     }
 }
