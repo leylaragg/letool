@@ -19,6 +19,7 @@
         <module>spring-redis</module>
         <module>spring-mvc</module>
         <module>base-fastjson</module>
+        <module>basic-web</module>
     </modules>
 
     <properties>

@@ -26,4 +26,17 @@ public class RequestBodyController {
         System.out.println(body);
         //…………
     }
+
+    @PostMapping(path = "/requestBody3")
+    public void handle2(@RequestBody String body) {
+        System.out.println(body);
+        //…………
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        long startTime = System.currentTimeMillis();
+        Thread.sleep(2000);
+        long time = System.currentTimeMillis() - startTime;
+        System.out.println(time);
+    }
 }
