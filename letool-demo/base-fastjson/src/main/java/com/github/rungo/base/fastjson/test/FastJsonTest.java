@@ -1,7 +1,6 @@
 package com.github.rungo.base.fastjson.test;
 
 import com.alibaba.fastjson2.*;
-import com.github.rungo.rudrmboy.tool.util.ByteUtils;
 import org.apache.log4j.Logger;
 import org.junit.Test;
 

@@ -1,4 +1,4 @@
-package com.github.rungo.rudrmboy.tool.util;
+package com.github.leyland.letool.tool.util;
 
 import java.math.BigInteger;
 
@@ -12,10 +12,10 @@ import java.math.BigInteger;
 public class ByteUtils {
 
     /**
-     * ÕûÐÎ×ª»»³ÉÍøÂç´«ÊäµÄ×Ö½ÚÁ÷£¨×Ö½ÚÊý×é£©ÐÍÊý¾Ý
+     * ï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ç´«ï¿½ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½ï¿½é£©ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
      *
-     * @param num Ò»¸öÕûÐÍÊý¾Ý
-     * @return 4¸ö×Ö½ÚµÄ×Ô¼ºÊý×é
+     * @param num Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+     * @return 4ï¿½ï¿½ï¿½Ö½Úµï¿½ï¿½Ô¼ï¿½ï¿½ï¿½ï¿½ï¿½
      */
     public static byte[] intToBytes(int num) {
         byte[] bytes = new byte[4];
@@ -27,10 +27,10 @@ public class ByteUtils {
     }
 
     /**
-     * ËÄ¸ö×Ö½ÚµÄ×Ö½ÚÊý¾Ý×ª»»³ÉÒ»¸öÕûÐÎÊý¾Ý
+     * ï¿½Ä¸ï¿½ï¿½Ö½Úµï¿½ï¿½Ö½ï¿½ï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
      *
-     * @param bytes 4¸ö×Ö½ÚµÄ×Ö½ÚÊý×é
-     * @return Ò»¸öÕûÐÍÊý¾Ý
+     * @param bytes 4ï¿½ï¿½ï¿½Ö½Úµï¿½ï¿½Ö½ï¿½ï¿½ï¿½ï¿½ï¿½
+     * @return Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
      */
     public static int byteToInt(byte[] bytes) {
         int num = 0;
@@ -47,10 +47,10 @@ public class ByteUtils {
     }
 
     /**
-     * ³¤ÕûÐÎ×ª»»³ÉÍøÂç´«ÊäµÄ×Ö½ÚÁ÷£¨×Ö½ÚÊý×é£©ÐÍÊý¾Ý
+     * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ç´«ï¿½ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½ï¿½é£©ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
      *
-     * @param num Ò»¸ö³¤ÕûÐÍÊý¾Ý
-     * @return 4¸ö×Ö½ÚµÄ×Ô¼ºÊý×é
+     * @param num Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+     * @return 4ï¿½ï¿½ï¿½Ö½Úµï¿½ï¿½Ô¼ï¿½ï¿½ï¿½ï¿½ï¿½
      */
     public static byte[] longToBytes(long num) {
         byte[] bytes = new byte[8];
@@ -62,7 +62,7 @@ public class ByteUtils {
     }
 
     /**
-     * ´óÊý×Ö×ª»»×Ö½ÚÁ÷£¨×Ö½ÚÊý×é£©ÐÍÊý¾Ý
+     * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½ï¿½é£©ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
      *
      * @param n
      * @return
@@ -89,7 +89,7 @@ public class ByteUtils {
     }
 
     /**
-     * »»×Ö½ÚÁ÷£¨×Ö½ÚÊý×é£©ÐÍÊý¾Ý×ª´óÊý×Ö
+     * ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½ï¿½é£©ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
      *
      * @param b
      * @return
@@ -105,7 +105,7 @@ public class ByteUtils {
     }
 
     /**
-     * ¸ù¾Ý×Ö½ÚÊý×é»ñµÃÖµ(Ê®Áù½øÖÆÊý×Ö)
+     * ï¿½ï¿½ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Öµ(Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½)
      *
      * @param bytes
      * @return
@@ -115,7 +115,7 @@ public class ByteUtils {
     }
 
     /**
-     * ¸ù¾Ý×Ö½ÚÊý×é»ñµÃÖµ(Ê®Áù½øÖÆÊý×Ö)
+     * ï¿½ï¿½ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Öµ(Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½)
      *
      * @param bytes
      * @param upperCase
@@ -130,7 +130,7 @@ public class ByteUtils {
     }
 
     /**
-     * ´òÓ¡Ê®Áù½øÖÆ×Ö·û´®
+     * ï¿½ï¿½Ó¡Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½
      *
      * @param bytes
      */
@@ -178,44 +178,44 @@ public class ByteUtils {
     }
 
     /**
-     * ÓÃÓÚ½¨Á¢Ê®Áù½øÖÆ×Ö·ûµÄÊä³öµÄÐ¡Ð´×Ö·ûÊý×é
+     * ï¿½ï¿½ï¿½Ú½ï¿½ï¿½ï¿½Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð¡Ð´ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½
      */
     private static final char[] DIGITS_LOWER = {'0', '1', '2', '3', '4', '5',
             '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
 
     /**
-     * ÓÃÓÚ½¨Á¢Ê®Áù½øÖÆ×Ö·ûµÄÊä³öµÄ´óÐ´×Ö·ûÊý×é
+     * ï¿½ï¿½ï¿½Ú½ï¿½ï¿½ï¿½Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä´ï¿½Ð´ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½
      */
     private static final char[] DIGITS_UPPER = {'0', '1', '2', '3', '4', '5',
             '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
 
     /**
-     * ½«×Ö½ÚÊý×é×ª»»ÎªÊ®Áù½øÖÆ×Ö·ûÊý×é
+     * ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½ÎªÊ®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½
      *
      * @param data byte[]
-     * @return Ê®Áù½øÖÆchar[]
+     * @return Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½char[]
      */
     public static char[] encodeHex(byte[] data) {
         return encodeHex(data, true);
     }
 
     /**
-     * ½«×Ö½ÚÊý×é×ª»»ÎªÊ®Áù½øÖÆ×Ö·ûÊý×é
+     * ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½ÎªÊ®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½
      *
      * @param data        byte[]
-     * @param toLowerCase <code>true</code> ´«»»³ÉÐ¡Ð´¸ñÊ½ £¬ <code>false</code> ´«»»³É´óÐ´¸ñÊ½
-     * @return Ê®Áù½øÖÆchar[]
+     * @param toLowerCase <code>true</code> ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð¡Ð´ï¿½ï¿½Ê½ ï¿½ï¿½ <code>false</code> ï¿½ï¿½ï¿½ï¿½ï¿½É´ï¿½Ð´ï¿½ï¿½Ê½
+     * @return Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½char[]
      */
     public static char[] encodeHex(byte[] data, boolean toLowerCase) {
         return encodeHex(data, toLowerCase ? DIGITS_LOWER : DIGITS_UPPER);
     }
 
     /**
-     * ½«×Ö½ÚÊý×é×ª»»ÎªÊ®Áù½øÖÆ×Ö·ûÊý×é
+     * ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½ÎªÊ®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½
      *
      * @param data     byte[]
-     * @param toDigits ÓÃÓÚ¿ØÖÆÊä³öµÄchar[]
-     * @return Ê®Áù½øÖÆchar[]
+     * @param toDigits ï¿½ï¿½ï¿½Ú¿ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½char[]
+     * @return Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½char[]
      */
     protected static char[] encodeHex(byte[] data, char[] toDigits) {
         int l = data.length;
@@ -229,43 +229,43 @@ public class ByteUtils {
     }
 
     /**
-     * ½«×Ö½ÚÊý×é×ª»»ÎªÊ®Áù½øÖÆ×Ö·û´®
+     * ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½ÎªÊ®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½
      *
      * @param data byte[]
-     * @return Ê®Áù½øÖÆString
+     * @return Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½String
      */
     public static String encodeHexString(byte[] data) {
         return encodeHexString(data, true);
     }
 
     /**
-     * ½«×Ö½ÚÊý×é×ª»»ÎªÊ®Áù½øÖÆ×Ö·û´®
+     * ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½ÎªÊ®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½
      *
      * @param data        byte[]
-     * @param toLowerCase <code>true</code> ´«»»³ÉÐ¡Ð´¸ñÊ½ £¬ <code>false</code> ´«»»³É´óÐ´¸ñÊ½
-     * @return Ê®Áù½øÖÆString
+     * @param toLowerCase <code>true</code> ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð¡Ð´ï¿½ï¿½Ê½ ï¿½ï¿½ <code>false</code> ï¿½ï¿½ï¿½ï¿½ï¿½É´ï¿½Ð´ï¿½ï¿½Ê½
+     * @return Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½String
      */
     public static String encodeHexString(byte[] data, boolean toLowerCase) {
         return encodeHexString(data, toLowerCase ? DIGITS_LOWER : DIGITS_UPPER);
     }
 
     /**
-     * ½«×Ö½ÚÊý×é×ª»»ÎªÊ®Áù½øÖÆ×Ö·û´®
+     * ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½ÎªÊ®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½
      *
      * @param data     byte[]
-     * @param toDigits ÓÃÓÚ¿ØÖÆÊä³öµÄchar[]
-     * @return Ê®Áù½øÖÆString
+     * @param toDigits ï¿½ï¿½ï¿½Ú¿ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½char[]
+     * @return Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½String
      */
     protected static String encodeHexString(byte[] data, char[] toDigits) {
         return new String(encodeHex(data, toDigits));
     }
 
     /**
-     * ½«Ê®Áù½øÖÆ×Ö·ûÊý×é×ª»»Îª×Ö½ÚÊý×é
+     * ï¿½ï¿½Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½Îªï¿½Ö½ï¿½ï¿½ï¿½ï¿½ï¿½
      *
-     * @param data Ê®Áù½øÖÆchar[]
+     * @param data Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½char[]
      * @return byte[]
-     * @throws RuntimeException Èç¹ûÔ´Ê®Áù½øÖÆ×Ö·ûÊý×éÊÇÒ»¸öÆæ¹ÖµÄ³¤¶È£¬½«Å×³öÔËÐÐÊ±Òì³£
+     * @throws RuntimeException ï¿½ï¿½ï¿½Ô´Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ÖµÄ³ï¿½ï¿½È£ï¿½ï¿½ï¿½ï¿½×³ï¿½ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ì³£
      */
     public static byte[] decodeHex(char[] data) {
         int len = data.length;
@@ -289,12 +289,12 @@ public class ByteUtils {
     }
 
     /**
-     * ½«Ê®Áù½øÖÆ×Ö·û×ª»»³ÉÒ»¸öÕûÊý
+     * ï¿½ï¿½Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½×ªï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
      *
-     * @param ch    Ê®Áù½øÖÆchar
-     * @param index Ê®Áù½øÖÆ×Ö·ûÔÚ×Ö·ûÊý×éÖÐµÄÎ»ÖÃ
-     * @return Ò»¸öÕûÊý
-     * @throws RuntimeException µ±ch²»ÊÇÒ»¸öºÏ·¨µÄÊ®Áù½øÖÆ×Ö·ûÊ±£¬Å×³öÔËÐÐÊ±Òì³£
+     * @param ch    Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½char
+     * @param index Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ðµï¿½Î»ï¿½ï¿½
+     * @return Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+     * @throws RuntimeException ï¿½ï¿½chï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½Ï·ï¿½ï¿½ï¿½Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½Ê±ï¿½ï¿½ï¿½×³ï¿½ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ì³£
      */
     protected static int toDigit(char ch, int index) {
         int digit = Character.digit(ch, 16);
@@ -306,10 +306,10 @@ public class ByteUtils {
     }
 
     /**
-     * Êý×Ö×Ö·û´®×ªASCIIÂë×Ö·û´®
+     * ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½×ªASCIIï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½
      *
-     * @param String ×Ö·û´®
-     * @return ASCII×Ö·û´®
+     * @param String ï¿½Ö·ï¿½ï¿½ï¿½
+     * @return ASCIIï¿½Ö·ï¿½ï¿½ï¿½
      */
     public static String StringToAsciiString(String content) {
         String result = "";
@@ -323,11 +323,11 @@ public class ByteUtils {
     }
 
     /**
-     * Ê®Áù½øÖÆ×ª×Ö·û´®
+     * Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×ªï¿½Ö·ï¿½ï¿½ï¿½
      *
-     * @param hexString  Ê®Áù½øÖÆ×Ö·û´®
-     * @param encodeType ±àÂëÀàÐÍ4£ºUnicode£¬2£ºÆÕÍ¨±àÂë
-     * @return ×Ö·û´®
+     * @param hexString  Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½
+     * @param encodeType ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½4ï¿½ï¿½Unicodeï¿½ï¿½2ï¿½ï¿½ï¿½ï¿½Í¨ï¿½ï¿½ï¿½ï¿½
+     * @return ï¿½Ö·ï¿½ï¿½ï¿½
      */
     public static String hexStringToString(String hexString, int encodeType) {
         String result = "";
@@ -341,10 +341,10 @@ public class ByteUtils {
     }
 
     /**
-     * Ê®Áù½øÖÆ×Ö·û´®×°Ê®½øÖÆ
+     * Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½×°Ê®ï¿½ï¿½ï¿½ï¿½
      *
-     * @param hex Ê®Áù½øÖÆ×Ö·û´®
-     * @return Ê®½øÖÆÊýÖµ
+     * @param hex Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½
+     * @return Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Öµ
      */
     public static int hexStringToAlgorism(String hex) {
         hex = hex.toUpperCase();
@@ -364,10 +364,10 @@ public class ByteUtils {
     }
 
     /**
-     * Ê®Áù×ª¶þ½øÖÆ
+     * Ê®ï¿½ï¿½×ªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
      *
-     * @param hex Ê®Áù½øÖÆ×Ö·û´®
-     * @return ¶þ½øÖÆ×Ö·û´®
+     * @param hex Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½
+     * @return ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½
      */
     public static String hexStringToBinary(String hex) {
         hex = hex.toUpperCase();
@@ -430,10 +430,10 @@ public class ByteUtils {
     }
 
     /**
-     * ASCIIÂë×Ö·û´®×ªÊý×Ö×Ö·û´®
+     * ASCIIï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½×ªï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½
      *
-     * @param String ASCII×Ö·û´®
-     * @return ×Ö·û´®
+     * @param String ASCIIï¿½Ö·ï¿½ï¿½ï¿½
+     * @return ï¿½Ö·ï¿½ï¿½ï¿½
      */
     public static String AsciiStringToString(String content) {
         String result = "";
@@ -449,11 +449,11 @@ public class ByteUtils {
     }
 
     /**
-     * ½«Ê®½øÖÆ×ª»»ÎªÖ¸¶¨³¤¶ÈµÄÊ®Áù½øÖÆ×Ö·û´®
+     * ï¿½ï¿½Ê®ï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½ÎªÖ¸ï¿½ï¿½ï¿½ï¿½ï¿½Èµï¿½Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½
      *
-     * @param algorism  int Ê®½øÖÆÊý×Ö
-     * @param maxLength int ×ª»»ºóµÄÊ®Áù½øÖÆ×Ö·û´®³¤¶È
-     * @return String ×ª»»ºóµÄÊ®Áù½øÖÆ×Ö·û´®
+     * @param algorism  int Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+     * @param maxLength int ×ªï¿½ï¿½ï¿½ï¿½ï¿½Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+     * @return String ×ªï¿½ï¿½ï¿½ï¿½ï¿½Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½
      */
     public static String algorismToHexString(int algorism, int maxLength) {
         String result = "";
@@ -466,7 +466,7 @@ public class ByteUtils {
     }
 
     /**
-     * ×Ö½ÚÊý×é×ªÎªÆÕÍ¨×Ö·û´®£¨ASCII¶ÔÓ¦µÄ×Ö·û£©
+     * ï¿½Ö½ï¿½ï¿½ï¿½ï¿½ï¿½×ªÎªï¿½ï¿½Í¨ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ASCIIï¿½ï¿½Ó¦ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½
      *
      * @param bytearray byte[]
      * @return String
@@ -484,10 +484,10 @@ public class ByteUtils {
     }
 
     /**
-     * ¶þ½øÖÆ×Ö·û´®×ªÊ®½øÖÆ
+     * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½×ªÊ®ï¿½ï¿½ï¿½ï¿½
      *
-     * @param binary ¶þ½øÖÆ×Ö·û´®
-     * @return Ê®½øÖÆÊýÖµ
+     * @param binary ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½
+     * @return Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Öµ
      */
     public static int binaryToAlgorism(String binary) {
         int max = binary.length();
@@ -501,10 +501,10 @@ public class ByteUtils {
     }
 
     /**
-     * Ê®½øÖÆ×ª»»ÎªÊ®Áù½øÖÆ×Ö·û´®
+     * Ê®ï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½ÎªÊ®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½
      *
-     * @param algorism int Ê®½øÖÆµÄÊý×Ö
-     * @return String ¶ÔÓ¦µÄÊ®Áù½øÖÆ×Ö·û´®
+     * @param algorism int Ê®ï¿½ï¿½ï¿½Æµï¿½ï¿½ï¿½ï¿½ï¿½
+     * @return String ï¿½ï¿½Ó¦ï¿½ï¿½Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½
      */
     public static String algorismToHEXString(int algorism) {
         String result = "";
@@ -520,11 +520,11 @@ public class ByteUtils {
     }
 
     /**
-     * HEX×Ö·û´®Ç°²¹0£¬Ö÷ÒªÓÃÓÚ³¤¶ÈÎ»Êý²»×ã¡£
+     * HEXï¿½Ö·ï¿½ï¿½ï¿½Ç°ï¿½ï¿½0ï¿½ï¿½ï¿½ï¿½Òªï¿½ï¿½ï¿½Ú³ï¿½ï¿½ï¿½Î»ï¿½ï¿½ï¿½ï¿½ï¿½ã¡£
      *
-     * @param str       String ÐèÒª²¹³ä³¤¶ÈµÄÊ®Áù½øÖÆ×Ö·û´®
-     * @param maxLength int ²¹³äºóÊ®Áù½øÖÆ×Ö·û´®µÄ³¤¶È
-     * @return ²¹³ä½á¹û
+     * @param str       String ï¿½ï¿½Òªï¿½ï¿½ï¿½ä³¤ï¿½Èµï¿½Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½
+     * @param maxLength int ï¿½ï¿½ï¿½ï¿½ï¿½Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½Ä³ï¿½ï¿½ï¿½
+     * @return ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
      */
     static public String patchHexString(String str, int maxLength) {
         String temp = "";
@@ -536,12 +536,12 @@ public class ByteUtils {
     }
 
     /**
-     * ½«Ò»¸ö×Ö·û´®×ª»»Îªint
+     * ï¿½ï¿½Ò»ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½×ªï¿½ï¿½Îªint
      *
-     * @param s          String Òª×ª»»µÄ×Ö·û´®
-     * @param defaultInt int Èç¹û³öÏÖÒì³£,Ä¬ÈÏ·µ»ØµÄÊý×Ö
-     * @param radix      int Òª×ª»»µÄ×Ö·û´®ÊÇÊ²Ã´½øÖÆµÄ,Èç16 8 10.
-     * @return int ×ª»»ºóµÄÊý×Ö
+     * @param s          String Òª×ªï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½
+     * @param defaultInt int ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ì³£,Ä¬ï¿½Ï·ï¿½ï¿½Øµï¿½ï¿½ï¿½ï¿½ï¿½
+     * @param radix      int Òª×ªï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½Ê²Ã´ï¿½ï¿½ï¿½Æµï¿½,ï¿½ï¿½16 8 10.
+     * @return int ×ªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
      */
     public static int parseToInt(String s, int defaultInt, int radix) {
         int i = 0;
@@ -554,11 +554,11 @@ public class ByteUtils {
     }
 
     /**
-     * ½«Ò»¸öÊ®½øÖÆÐÎÊ½µÄÊý×Ö×Ö·û´®×ª»»Îªint
+     * ï¿½ï¿½Ò»ï¿½ï¿½Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½×ªï¿½ï¿½Îªint
      *
-     * @param s          String Òª×ª»»µÄ×Ö·û´®
-     * @param defaultInt int Èç¹û³öÏÖÒì³£,Ä¬ÈÏ·µ»ØµÄÊý×Ö
-     * @return int ×ª»»ºóµÄÊý×Ö
+     * @param s          String Òª×ªï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½
+     * @param defaultInt int ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ì³£,Ä¬ï¿½Ï·ï¿½ï¿½Øµï¿½ï¿½ï¿½ï¿½ï¿½
+     * @return int ×ªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
      */
     public static int parseToInt(String s, int defaultInt) {
         int i = 0;
@@ -571,7 +571,7 @@ public class ByteUtils {
     }
 
     /**
-     * Ê®Áù½øÖÆ´®×ª»¯ÎªbyteÊý×é
+     * Ê®ï¿½ï¿½ï¿½ï¿½ï¿½Æ´ï¿½×ªï¿½ï¿½Îªbyteï¿½ï¿½ï¿½ï¿½
      *
      * @return the array of byte
      */
@@ -591,10 +591,10 @@ public class ByteUtils {
     }
 
     /**
-     * ×Ö½ÚÊý×é×ª»»ÎªÊ®Áù½øÖÆ×Ö·û´®
+     * ï¿½Ö½ï¿½ï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½ÎªÊ®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½
      *
-     * @param b byte[] ÐèÒª×ª»»µÄ×Ö½ÚÊý×é
-     * @return String Ê®Áù½øÖÆ×Ö·û´®
+     * @param b byte[] ï¿½ï¿½Òª×ªï¿½ï¿½ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½ï¿½ï¿½
+     * @return String Ê®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½
      */
     public static String byteToHex(byte b[]) {
         if (b == null) {
