@@ -6,16 +6,16 @@
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
-        <module name="rudrmboy-starter-security-jwt" />
-        <module name="rudrmboy-starter-logger" />
         <module name="basic-web" />
         <module name="spring-mvc" />
         <module name="spring-core" />
-        <module name="rudrmboy-starter-cache" />
+        <module name="letool-starter-logger" />
+        <module name="letool-starter-cache" />
+        <module name="letool-starter-swagger" />
         <module name="basic-core" />
         <module name="logger" />
-        <module name="rudrmboy-starter-file" />
-        <module name="rudrmboy-starter-swagger" />
+        <module name="letool-starter-security-jwt" />
+        <module name="letool-starter-file" />
         <module name="base-fastjson" />
         <module name="spring-redis" />
       </profile>
