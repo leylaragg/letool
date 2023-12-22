@@ -3,6 +3,10 @@ package com.github.rungo;
 import com.github.rungo.rudrmboy.demo.basic.core.variate.DataClass;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
+import java.util.HashMap;
+import java.util.Map;
+
 public class Main {
     public static void main(String[] args) {
         System.out.println("Hello world!");
@@ -92,6 +96,155 @@ public class Main {
 
         long sum = a + b + c + d;
         System.out.println("20 + 10 + 30 + 40 = " + sum);
+    }
+
+
+    public class User {
+        public String name;
+        public int age;
+
+        public User() {
+        }
+
+        public User(String name, int age) {
+            this.name = name;
+            this.age = age;
+        }
+
+        @Override
+        public String toString() {
+            return "User{" +
+                    "name='" + name + '\'' +
+                    ", age=" + age +
+                    '}';
+        }
+    }
+
+    @Test
+    public void Test6() {
+
+        String[] urls = { "https://www.yuque.com/", "https://github.com/", "https://spring.io/" };
+        // 使用foreach循环来遍历数组元素，其中 book 将会自动迭代每个数组元素
+        for (String url : urls) {
+            url = "https://www.yuque.com/leyland.wang/";
+            System.out.println(url);
+        }
+        System.out.println(urls[0]);
+
+    }
+
+    @Test
+    public void Test7() {
+        User [] users = new User[]{
+                new User("Rungo", 18),
+                new User("Leya", 19),
+                new User("Leyland", 20)
+        };
+        for (User user : users) {
+            user = new User("Tom", 21);
+            System.out.println(user);
+        }
+        System.out.println(users[0]);
+    }
+
+    @Test
+    public void Test8() {
+        label1: for (int x = 0; x < 5; x++) {
+            for (int y = 5; y > 0; y--) {
+                if (y == x) {
+                    break label1;
+                }
+                System.out.println(x + "," + y); //当 y == x 执行continue的时候，会直接跳到外层循环进行下一次执行。
+            }
+        }
+        System.out.println("Game Over!");
+    }
+
+    @Test
+    public void Test9() {
+        int[] number = {1, 2, 3, 5, 8};
+        System.out.println("获取第一个元素：" + number[0]);
+        System.out.println("获取最后一个元素：" + number[number.length-1]);
+        System.out.println("获取第6个元素：" + number[5]);
+    }
+
+
+
+    @Test
+    public void Test10() {
+        Thread thread = new Thread();
+        System.out.println("Current Thread: " + thread.getName());
+    }
+
+
+    @Test
+    public void Test11() {
+        System.out.println(new BigDecimal(1000000).compareTo(new BigDecimal(1000000)));
+        System.out.println(new BigDecimal(1000000).compareTo(new BigDecimal(2000000)));
+        System.out.println(new BigDecimal(1000000).compareTo(new BigDecimal(100000)));
+        System.out.println(new BigDecimal(1000000).compareTo(new BigDecimal(-1)));
+        
+    }
+
+    @Test
+    public void Test12() {
+        String str = "abc";
+        StringTes stringTes = new StringTes();
+        stringTes.name = "999";
+        //testString(str, stringTes);
+        testString(stringTes.name, stringTes);
+        System.out.println(str);
+        System.out.println(stringTes.name);
+    }
+
+    public String testString(String str, StringTes stringTes){
+        str += str;
+        stringTes.name = "666";
+        return str;
+    }
+
+    public class StringTes{
+        public String name;
+    }
+
+    @Test
+    public void Test13() {
+
+    }
+
+    @Test
+    public void Test14() {
+
+    }
+
+    @Test
+    public void Test15() {
+
+    }
+
+    @Test
+    public void Test16() {
+
+    }
+
+    @Test
+    public void Test17() {
+
+    }
+
+    @Test
+    public void Test18() {
+
+    }
+
+    @Test
+    public void Test19() {
+
+    }
+
+    @Test
+    public void Test20() {
+
     }
 
 }
