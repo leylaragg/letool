@@ -3,13 +3,13 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <parent>
-        <artifactId>rudrmboy</artifactId>
-        <groupId>com.github.rungo</groupId>
+        <artifactId>letool</artifactId>
+        <groupId>com.github.leyland</groupId>
         <version>1.0.0-beta.6</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>rudrmboy-demo</artifactId>
+    <artifactId>letool-demo</artifactId>
 
     <packaging>pom</packaging>
     <modules>
@@ -33,8 +33,8 @@
 
     <dependencies>
         <dependency>
-            <groupId>com.github.rungo</groupId>
-            <artifactId>rudrmboy-starter-tool</artifactId>
+            <groupId>com.github.leyland</groupId>
+            <artifactId>letool-starter-tool</artifactId>
             <version>1.0.0-beta.6</version>
         </dependency>
 

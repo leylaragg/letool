@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Configuration>
     <properties>
-        <property name="logDir">D://test//rudrmboy//spring-core//</property>
+        <property name="logDir">D://test//hetool//spring-core//</property>
     </properties>
 
     <!-- 配置appender -->

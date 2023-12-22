@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CompilerConfiguration">
+    <annotationProcessing>
+      <profile name="Maven default annotation processors profile" enabled="true">
+        <sourceOutputDir name="target/generated-sources/annotations" />
+        <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
+        <outputRelativeToContentRoot value="true" />
+        <module name="rudrmboy-starter-security-jwt" />
+        <module name="rudrmboy-starter-logger" />
+        <module name="basic-web" />
+        <module name="spring-mvc" />
+        <module name="spring-core" />
+        <module name="rudrmboy-starter-cache" />
+        <module name="basic-core" />
+        <module name="logger" />
+        <module name="rudrmboy-starter-file" />
+        <module name="rudrmboy-starter-swagger" />
+        <module name="base-fastjson" />
+        <module name="spring-redis" />
+      </profile>
+    </annotationProcessing>
+  </component>
+</project>

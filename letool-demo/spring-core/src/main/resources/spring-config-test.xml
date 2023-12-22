@@ -6,42 +6,42 @@
        http://www.springframework.org/schema/beans/spring-beans.xsd ">
 
     <!--注册自定义的后置处理器-->
-<!--    <bean class="com.github.rungo.rudrmboy.demo.spring.source.MyBeanPostProcessor.MyBeanPostProcessor1" id="myBeanPostProcessor1"/>
-    <bean class="com.github.rungo.rudrmboy.demo.spring.source.MyBeanPostProcessor.MyBeanPostProcessor2" id="myBeanPostProcessor2"/>-->
+<!--    <bean class="MyBeanPostProcessor.MyBeanPostProcessor1" id="myBeanPostProcessor1"/>
+    <bean class="MyBeanPostProcessor.MyBeanPostProcessor2" id="myBeanPostProcessor2"/>-->
 
     <!--注册bean-->
-<!--    <bean class="com.github.rungo.rudrmboy.demo.spring.source.BeanPostProcessorTest" id="beanPostProcessorTest" init-method="init">
+<!--    <bean class="BeanPostProcessorTest" id="beanPostProcessorTest" init-method="init">
         <property name="string" value="str1"/>
     </bean>-->
 
 
     <!--注册自定义beanFactory后置处理器-->
-    <bean class="com.github.rungo.rudrmboy.demo.spring.source.MyBeanFactoryPostProcessor" id="beanFactoryPostProcessor"/>
+    <bean class="com.github.leyland.letool.demo.spring.source.MyBeanFactoryPostProcessor" id="beanFactoryPostProcessor"/>
 
     <!--注册bean-->
-    <bean class="com.github.rungo.rudrmboy.demo.spring.source.ingoreInterface.IgnoreImpl.PoJoA" id="poJoA"/>
-    <bean class="com.github.rungo.rudrmboy.demo.spring.source.ingoreInterface.IgnoreImpl.PoJoB" id="poJoB"/>
+    <bean class="com.github.leyland.letool.demo.spring.source.ingoreInterface.IgnoreImpl.PoJoA" id="poJoA"/>
+    <bean class="com.github.leyland.letool.demo.spring.source.ingoreInterface.IgnoreImpl.PoJoB" id="poJoB"/>
     <!--设置自动注入-->
-    <bean class="com.github.rungo.rudrmboy.demo.spring.source.ingoreInterface.IgnoreImpl" id="ignoreByType" autowire="byType"/>
-    <bean class="com.github.rungo.rudrmboy.demo.spring.source.ingoreInterface.IgnoreImpl" id="ignoreByName" autowire="byName"/>
-    <bean class="com.github.rungo.rudrmboy.demo.spring.source.ingoreInterface.IgnoreImpl" id="ignoreByConstructor" autowire="constructor"/>
+    <bean class="com.github.leyland.letool.demo.spring.source.ingoreInterface.IgnoreImpl" id="ignoreByType" autowire="byType"/>
+    <bean class="com.github.leyland.letool.demo.spring.source.ingoreInterface.IgnoreImpl" id="ignoreByName" autowire="byName"/>
+    <bean class="com.github.leyland.letool.demo.spring.source.ingoreInterface.IgnoreImpl" id="ignoreByConstructor" autowire="constructor"/>
 
 
 
-    <bean class="com.github.rungo.rudrmboy.demo.spring.source.ingoreInterface.IgnoreOther" id="IgnoreOtherByType" autowire="byType"/>
-    <bean class="com.github.rungo.rudrmboy.demo.spring.source.ingoreInterface.IgnoreOther" id="IgnoreOtherByName" autowire="byName"/>
-    <bean class="com.github.rungo.rudrmboy.demo.spring.source.ingoreInterface.IgnoreOther" id="IgnoreOtherByConstructor" autowire="constructor"/>
+    <bean class="com.github.leyland.letool.demo.spring.source.ingoreInterface.IgnoreOther" id="IgnoreOtherByType" autowire="byType"/>
+    <bean class="com.github.leyland.letool.demo.spring.source.ingoreInterface.IgnoreOther" id="IgnoreOtherByName" autowire="byName"/>
+    <bean class="com.github.leyland.letool.demo.spring.source.ingoreInterface.IgnoreOther" id="IgnoreOtherByConstructor" autowire="constructor"/>
 
     <!--预定义的自动注入指定实例-->
-    <bean class="com.github.rungo.rudrmboy.demo.spring.source.registerResolvable.AutoRegister" id="autoRegister" autowire="byType"/>
+    <bean class="com.github.leyland.letool.demo.spring.source.registerResolvable.AutoRegister" id="autoRegister" autowire="byType"/>
 
 
     <!--自定义自动注入指定实例-->
-    <bean class="com.github.rungo.rudrmboy.demo.spring.source.MyRDBeanFactoryPostProcessor" id="myRDBeanFactoryPostProcessor"/>
+    <bean class="com.github.leyland.letool.demo.spring.source.MyRDBeanFactoryPostProcessor" id="myRDBeanFactoryPostProcessor"/>
 
-    <bean class="com.github.rungo.rudrmboy.demo.spring.source.registerResolvable.RDImpl.RDImplA" id="rdImplA"/>
-    <bean class="com.github.rungo.rudrmboy.demo.spring.source.registerResolvable.RDImpl.RDImplB" id="rdImplB"/>
-    <bean class="com.github.rungo.rudrmboy.demo.spring.source.registerResolvable.RDImpl" id="rd" autowire="byType"/>
+    <bean class="com.github.leyland.letool.demo.spring.source.registerResolvable.RDImpl.RDImplA" id="rdImplA"/>
+    <bean class="com.github.leyland.letool.demo.spring.source.registerResolvable.RDImpl.RDImplB" id="rdImplB"/>
+    <bean class="com.github.leyland.letool.demo.spring.source.registerResolvable.RDImpl" id="rd" autowire="byType"/>
 
 
 </beans>

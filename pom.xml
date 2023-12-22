@@ -7,21 +7,21 @@
     <packaging>pom</packaging>
 
     <modules>
-        <module>rudrmboy-demo</module>
-        <module>rudrmboy-starter-tool</module>
-        <module>rudrmboy-starter-logger</module>
-        <module>rudrmboy-starter-swagger</module>
-        <module>rudrmboy-starter-security-jwt</module>
-        <module>rudrmboy-starter-cache</module>
-        <module>rudrmboy-starter-file</module>
+        <module>letool-demo</module>
+        <module>letool-starter-tool</module>
+        <module>letool-starter-logger</module>
+        <module>letool-starter-swagger</module>
+        <module>letool-starter-security-jwt</module>
+        <module>letool-starter-cache</module>
+        <module>letool-starter-file</module>
     </modules>
 
-    <groupId>com.github.rungo</groupId>
-    <artifactId>rudrmboy</artifactId>
+    <groupId>com.github.leyland</groupId>
+    <artifactId>letool</artifactId>
     <version>1.0.0-beta.6</version>
     <name>${project.artifactId}</name>
     <description>提供丰富的Java工具方法</description>
-    <url>https://github.com/Rungo-W/rudrmboy-tools.git</url>
+    <url>https://github.com/leyland-wang/letool.git</url>
 
     <properties>
         <maven.compiler.source>8</maven.compiler.source>

@@ -5,7 +5,7 @@
        xsi:schemaLocation="http://www.springframework.org/schema/beans
        http://www.springframework.org/schema/beans/spring-beans.xsd http://www.springframework.org/schema/context https://www.springframework.org/schema/context/spring-context.xsd">
     <!--定义bean-->
-    <bean class="com.github.rungo.rudrmboy.demo.spring.source.FirstSpringSource" name="firstSpringSource">
+    <bean class="com.github.leyland.letool.demo.spring.source.FirstSpringSource" name="firstSpringSource">
         <property name="str" value="不设置profile"/>
     </bean>
 
@@ -13,10 +13,10 @@
     <context:property-placeholder location="classpath:spring-config-dev.xml"/>
 
     <!--实现了DisposableBean接口,依赖destroy2-->
-    <bean class="com.github.rungo.rudrmboy.demo.spring.context.support.Destroy.Destroy1" name="destroy1" depends-on="destroy2"/>
+    <bean class="com.github.leyland.letool.demo.spring.context.support.Destroy.Destroy1" name="destroy1" depends-on="destroy2"/>
     <!--配置了destroy属性-->
-    <bean class="com.github.rungo.rudrmboy.demo.spring.context.support.Destroy.Destroy2" name="destroy2" destroy-method="destroy"/>
+    <bean class="com.github.leyland.letool.demo.spring.context.support.Destroy.Destroy2" name="destroy2" destroy-method="destroy"/>
     <!--没有配置回调函数-->
-    <bean class="com.github.rungo.rudrmboy.demo.spring.context.support.Destroy.Destroy3" name="destroy3"/>
+    <bean class="com.github.leyland.letool.demo.spring.context.support.Destroy.Destroy3" name="destroy3"/>
 
 </beans>

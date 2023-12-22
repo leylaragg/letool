@@ -5,5 +5,5 @@
        xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd http://www.springframework.org/schema/context https://www.springframework.org/schema/context/spring-context.xsd">
 
     <!-- 配置要扫描注解的包路径 -->
-<!--    <context:component-scan base-package="com.github.rungo.rudrmboy.demo.spring.mvc"/>-->
+<!--    <context:component-scan base-package="com.github.leyland.letool.demo.spring.mvc"/>-->
 </beans>

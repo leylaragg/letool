@@ -9,7 +9,7 @@
     <!--<bean class="org.springframework.beans.factory.config.CustomEditorConfigurer">
         <property name="customEditors">
             <map>
-                <entry key="java.util.Date" value="com.github.rungo.rudrmboy.demo.spring.mvc.config.editor.DateEditor"/>
+                <entry key="java.util.Date" value="DateEditor"/>
             </map>
         </property>
     </bean>-->
@@ -25,7 +25,7 @@
     </bean>-->
 
     <!--自定义的CustomPropertyEditorRegistrar-->
-    <bean id="customPropertyEditorRegistrar" class="com.github.rungo.rudrmboy.demo.spring.mvc.config.editor.registrar.CustomPropertyEditorRegistrar">
+    <bean id="customPropertyEditorRegistrar" class="com.github.leyland.letool.demo.spring.mvc.config.editor.registrar.CustomPropertyEditorRegistrar">
         <property name="formatter" value="yyyy-MM-dd"/>
     </bean>
 

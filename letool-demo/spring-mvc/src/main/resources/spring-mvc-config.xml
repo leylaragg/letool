@@ -8,7 +8,7 @@
     <context:annotation-config/>
 
     <!-- 配置要扫描注解的包路径 -->
-    <context:component-scan base-package="com.github.rungo.rudrmboy.demo.spring.mvc"/>
+    <context:component-scan base-package="com.github.leyland.letool.demo.spring.mvc"/>
 
     <!-- 开启SpringMVC框架注解的支持 -->
     <mvc:annotation-driven validator="validator"></mvc:annotation-driven>
@@ -59,12 +59,12 @@
         <mvc:interceptor>
             <!--拦截-->
             <mvc:mapping path="/a/**"/>
-            <bean class="com.github.rungo.rudrmboy.demo.spring.mvc.config.handler.MyInterceptor1"/>
+            <bean class="com.github.leyland.letool.demo.spring.mvc.config.handler.MyInterceptor1"/>
         </mvc:interceptor>
         <mvc:interceptor>
             <!--拦截-->
             <mvc:mapping path="/a/**"/>
-            <bean class="com.github.rungo.rudrmboy.demo.spring.mvc.config.handler.MyInterceptor2"/>
+            <bean class="com.github.leyland.letool.demo.spring.mvc.config.handler.MyInterceptor2"/>
         </mvc:interceptor>
     </mvc:interceptors>
 

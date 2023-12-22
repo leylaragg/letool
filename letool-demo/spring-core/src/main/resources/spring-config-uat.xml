@@ -6,7 +6,7 @@
 
     <!--uat环境-->
     <!--定义bean-->
-    <bean class="com.github.rungo.rudrmboy.demo.spring.source.FirstSpringSource" name="firstSpringSource">
+    <bean class="com.github.leyland.letool.demo.spring.source.FirstSpringSource" name="firstSpringSource">
         <property name="str" value="uat"/>
     </bean>
 </beans>
