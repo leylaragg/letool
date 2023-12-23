@@ -9,11 +9,12 @@
     <modules>
         <module>letool-demo</module>
         <module>letool-starter-tool</module>
-        <module>letool-starter-logger</module>
+        <module>letool-starter-log</module>
         <module>letool-starter-swagger</module>
         <module>letool-starter-security-jwt</module>
         <module>letool-starter-cache</module>
         <module>letool-starter-file</module>
+        <module>letool-starter-socket</module>
     </modules>
 
     <groupId>com.github.leyland</groupId>
