@@ -6,14 +6,14 @@
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
+        <module name="basic-web" />
         <module name="spring-mvc" />
+        <module name="spring-core" />
         <module name="letool-starter-cache" />
+        <module name="letool-starter-swagger" />
         <module name="basic-core" />
         <module name="logger" />
         <module name="letool-starter-security-jwt" />
-        <module name="basic-web" />
-        <module name="spring-core" />
-        <module name="letool-starter-swagger" />
         <module name="letool-starter-file" />
         <module name="base-fastjson" />
         <module name="letool-starter-log" />
