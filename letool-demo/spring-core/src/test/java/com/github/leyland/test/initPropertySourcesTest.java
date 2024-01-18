@@ -6,6 +6,7 @@ import com.github.leyland.letool.demo.spring.source.ingoreInterface.Ignore;
 import org.junit.Test;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 
 import java.util.Map;
@@ -214,4 +215,40 @@ public class initPropertySourcesTest {
             }
         }
     }
+
+
+    @Test
+    public void testStatic1(){
+        ApplicationContext ac = new ClassPathXmlApplicationContext("spring-config-util.xml");
+        System.out.println(ac.getBean("applicationContextUtil"));
+    }
+
+
+    @Test
+    public void testStatic2() {
+
+        test11();
+    }
+
+    void test11(){
+        try {
+            test22();
+            test33();
+        } catch (Exception e) {
+            //如果多个方法进行try catch，就不确定到底是哪一个抛出去的。方法调用栈信息只会截止到 catch 这里，不会找到 test22(); 或者 test33(); 中。
+            throw new RuntimeException("test11 捕获异常" + e);
+        }
+
+        /*test22();*/
+    }
+
+
+    void test22() /*throws Exception*/{
+        throw new RuntimeException("错误22");
+    }
+
+    void test33() /*throws Exception*/{
+        throw new RuntimeException("错误33");
+    }
+
 }

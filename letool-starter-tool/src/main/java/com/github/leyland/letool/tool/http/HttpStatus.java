@@ -1,5 +1,7 @@
 package com.github.leyland.letool.tool.http;
 
+import com.github.leyland.letool.tool.util.JsonUtil;
+
 /**
  * HTTP状态码
  *
@@ -10,6 +12,11 @@ package com.github.leyland.letool.tool.http;
 public class HttpStatus {
 
     /* 2XX: generally "OK" */
+
+    public static JsonUtil TESTJsonUtil;
+
+    public static int TESTINT;
+
 
     /**
      * HTTP Status-Code 200: OK.
