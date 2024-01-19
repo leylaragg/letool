@@ -14,7 +14,7 @@
         <module>letool-starter-security-jwt</module>
         <module>letool-starter-cache</module>
         <module>letool-starter-file</module>
-        <module>letool-starter-socket</module>
+        <module>letool-starter-mail</module>
     </modules>
 
     <groupId>com.github.leyland</groupId>
