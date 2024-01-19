@@ -1,4 +1,4 @@
-package com.github.leyland.letool.tool.http;
+package com.github.leyland.letool.tool.http.util;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
