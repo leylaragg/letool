@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+       http://www.springframework.org/schema/beans/spring-beans.xsd http://www.springframework.org/schema/context https://www.springframework.org/schema/context/spring-context.xsd">
+
+    <!--需要被注入的bean-->
+    <bean id="lookupMethodInB" class="com.github.leyland.letool.demo.spring.lookup.LookupMethodIn.LookupMethodInB"  scope="prototype"/>
+    <bean id="lookupMethodInC" class="com.github.leyland.letool.demo.spring.lookup.LookupMethodIn.LookupMethodInC"  scope="prototype"/>
+
+    <bean class="com.github.leyland.letool.demo.spring.lookup.LookupMethodIn.LookupMethodInA" id="lookupMethodInA">
+        <!--普通setter注入-->
+        <property name="lookupMethodInB" ref="lookupMethodInB"/>
+        <!--查找方法注入 name表示要被动态替换的方法名，bean表示容器中的一个bean的名字-->
+        <lookup-method name="createLookupMethodInC" bean="lookupMethodInC"/>
+    </bean>
+
+
+</beans>

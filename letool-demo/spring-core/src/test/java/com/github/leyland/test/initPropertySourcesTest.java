@@ -1,6 +1,7 @@
 package com.github.leyland.test;
 
 import com.github.leyland.letool.demo.spring.context.support.RequiredPropertieClassPathXmlApplicationContext;
+import com.github.leyland.letool.demo.spring.lookup.LookupMethodIn;
 import com.github.leyland.letool.demo.spring.source.BeanPostProcessorTest;
 import com.github.leyland.letool.demo.spring.source.ingoreInterface.Ignore;
 import org.junit.Test;
@@ -9,6 +10,7 @@ import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 
+import java.util.Arrays;
 import java.util.Map;
 //import org.testng.annotations.Test;
 
@@ -249,6 +251,26 @@ public class initPropertySourcesTest {
 
     void test33() /*throws Exception*/{
         throw new RuntimeException("错误33");
+    }
+
+
+    @Test
+    public void lookupmethodNi() {
+        ClassPathXmlApplicationContext ac = new ClassPathXmlApplicationContext("spring-config-lookup.xml");
+        System.out.println(Arrays.toString(ac.getBeanDefinitionNames()));
+        LookupMethodIn.LookupMethodInA lookupMethodInA = ac.getBean("lookupMethodInA", LookupMethodIn.LookupMethodInA.class);
+        System.out.println("获取lookupMethodInB，同一个对象");
+        System.out.println("lookupMethodInB：" + lookupMethodInA.getLookupMethodInB());
+        System.out.println("lookupMethodInB：" + lookupMethodInA.getLookupMethodInB());
+        System.out.println("lookupMethodInB：" + lookupMethodInA.getLookupMethodInB());
+        System.out.println("获取lookupMethodInC，不同的对象");
+        System.out.println("lookupMethodInC：" + lookupMethodInA.getLookupMethodInC());
+        System.out.println("lookupMethodInC：" + lookupMethodInA.getLookupMethodInC());
+        System.out.println("lookupMethodInC：" + lookupMethodInA.getLookupMethodInC());
+
+        //实际上lookupMethodInA的lookupMethodInC属性根本没有被注入过，每一次的getLookupMethodInC都是直接找容器要对象
+        //而由于lookupMethodInC被设置为prototype，因此每一次都会获取新的对象
+        System.out.println("lookupMethodInA：" + lookupMethodInA);
     }
 
 }
