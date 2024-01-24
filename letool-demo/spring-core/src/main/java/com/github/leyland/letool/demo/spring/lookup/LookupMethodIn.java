@@ -1,15 +1,24 @@
 package com.github.leyland.letool.demo.spring.lookup;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Lookup;
+import org.springframework.beans.factory.config.ConfigurableBeanFactory;
+import org.springframework.context.annotation.Scope;
+import org.springframework.stereotype.Component;
+
 /**
  * @ClassName <h2>LookupMethodIn</h2>
  * @Description TODO
  * @Author Rungo
  * @Version 1.0
  **/
+@Component
 public class LookupMethodIn {
 
+    @Component("lookupMethodInA")
     public static class LookupMethodInA {
 
+        @Autowired
         private LookupMethodInB lookupMethodInB;
         /**
          * 实际上lookupMethodInC属性根本你没有注入过
@@ -35,9 +44,10 @@ public class LookupMethodIn {
         /**
          * 将会被动态代理替换的方法，找容器要对象
          */
+        @Lookup("lookupMethodInC")
         public LookupMethodInC createLookupMethodInC() {
             //注意：这里不需要 new LookupMethodInC(). Spring会通过 <lookup-method/> 标签代理该方法，返回一个Spring bean="lookupMethodInC" 的对象。
-            return lookupMethodInC;
+            return lookupMethodInC; //return null
         }
 
         public void setLookupMethodInC(LookupMethodInC lookupMethodInC) {
@@ -53,9 +63,13 @@ public class LookupMethodIn {
         }
     }
 
+    @Component("lookupMethodInB")
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
     public static class LookupMethodInB {
     }
 
+    @Component("lookupMethodInC")
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
     public static class LookupMethodInC {
     }
 }
