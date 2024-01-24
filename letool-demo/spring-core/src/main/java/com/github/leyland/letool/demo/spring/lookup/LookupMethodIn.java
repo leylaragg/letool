@@ -47,7 +47,7 @@ public class LookupMethodIn {
         @Lookup("lookupMethodInC")
         public LookupMethodInC createLookupMethodInC() {
             //注意：这里不需要 new LookupMethodInC(). Spring会通过 <lookup-method/> 标签代理该方法，返回一个Spring bean="lookupMethodInC" 的对象。
-            return lookupMethodInC; //return null
+            return null; //return lookupMethodInC
         }
 
         public void setLookupMethodInC(LookupMethodInC lookupMethodInC) {
