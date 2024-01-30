@@ -45,6 +45,10 @@ public class LetoolSecurityException extends RuntimeException {
         this.enableCustomStackTrace = enableCustomStackTrace;
     }
 
+    public IResultCode getResultCode() {
+        return resultCode;
+    }
+
     @Override
     public Throwable fillInStackTrace() {
         if (enableCustomStackTrace) {

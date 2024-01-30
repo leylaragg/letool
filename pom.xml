@@ -27,6 +27,22 @@
     <properties>
         <maven.compiler.source>8</maven.compiler.source>
         <maven.compiler.target>8</maven.compiler.target>
+        <spring.boot.version>2.4.1</spring.boot.version>
+        <hutool.version>5.8.18</hutool.version>
     </properties>
+
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- 引入 Spring Boot BOM，简化依赖版本管理 -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring.boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
     
 </project>
