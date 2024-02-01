@@ -102,7 +102,7 @@ public enum SystemResultCode implements IResultCode {
      */
     @Override
     public String getMessage() {
-        return null;
+        return this.message;
     }
 
     /**
@@ -112,6 +112,6 @@ public enum SystemResultCode implements IResultCode {
      */
     @Override
     public int getCode() {
-        return 0;
+        return this.code;
     }
 }

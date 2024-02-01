@@ -2,6 +2,8 @@ package com.github.leyland.letool.tool.configuration;
 
 import cn.hutool.core.lang.TypeReference;
 import cn.hutool.core.util.ArrayUtil;
+import com.github.leyland.letool.tool.api.SystemCode;
+import com.github.leyland.letool.tool.exception.SystemException;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanInitializationException;
 import org.springframework.beans.factory.InitializingBean;
@@ -53,6 +55,9 @@ public class SpringUtil implements ApplicationContextAware {
     }
 
     public static ApplicationContext getApplicationContext() {
+        if (applicationContext == null) {
+            throw new SystemException(SystemCode.INJECT_ERROR);
+        }
         return applicationContext;
     }
 
