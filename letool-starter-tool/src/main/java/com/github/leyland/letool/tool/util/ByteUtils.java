@@ -12,10 +12,10 @@ import java.math.BigInteger;
 public class ByteUtils {
 
     /**
-     * ����ת�������紫����ֽ������ֽ����飩������
+     * 整形转换成网络传输的字节流（字节数组）型数据
      *
-     * @param num һ����������
-     * @return 4���ֽڵ��Լ�����
+     * @param num 一个整型数据
+     * @return 4个字节的自己数组
      */
     public static byte[] intToBytes(int num) {
         byte[] bytes = new byte[4];
@@ -27,10 +27,10 @@ public class ByteUtils {
     }
 
     /**
-     * �ĸ��ֽڵ��ֽ�����ת����һ����������
+     * 四个字节的字节数据转换成一个整形数据
      *
-     * @param bytes 4���ֽڵ��ֽ�����
-     * @return һ����������
+     * @param bytes 4个字节的字节数组
+     * @return 一个整型数据
      */
     public static int byteToInt(byte[] bytes) {
         int num = 0;
@@ -47,10 +47,10 @@ public class ByteUtils {
     }
 
     /**
-     * ������ת�������紫����ֽ������ֽ����飩������
+     * 长整形转换成网络传输的字节流（字节数组）型数据
      *
-     * @param num һ������������
-     * @return 4���ֽڵ��Լ�����
+     * @param num 一个长整型数据
+     * @return 4个字节的自己数组
      */
     public static byte[] longToBytes(long num) {
         byte[] bytes = new byte[8];
@@ -62,7 +62,7 @@ public class ByteUtils {
     }
 
     /**
-     * ������ת���ֽ������ֽ����飩������
+     * 大数字转换字节流（字节数组）型数据
      *
      * @param n
      * @return
@@ -89,7 +89,7 @@ public class ByteUtils {
     }
 
     /**
-     * ���ֽ������ֽ����飩������ת������
+     * 换字节流（字节数组）型数据转大数字
      *
      * @param b
      * @return
@@ -105,7 +105,7 @@ public class ByteUtils {
     }
 
     /**
-     * �����ֽ�������ֵ(ʮ����������)
+     * 根据字节数组获得值(十六进制数字)
      *
      * @param bytes
      * @return
@@ -115,7 +115,7 @@ public class ByteUtils {
     }
 
     /**
-     * �����ֽ�������ֵ(ʮ����������)
+     * 根据字节数组获得值(十六进制数字)
      *
      * @param bytes
      * @param upperCase
@@ -130,7 +130,7 @@ public class ByteUtils {
     }
 
     /**
-     * ��ӡʮ�������ַ���
+     * 打印十六进制字符串
      *
      * @param bytes
      */
@@ -178,22 +178,22 @@ public class ByteUtils {
     }
 
     /**
-     * ���ڽ���ʮ�������ַ��������Сд�ַ�����
+     * 用于建立十六进制字符的输出的小写字符数组
      */
     private static final char[] DIGITS_LOWER = {'0', '1', '2', '3', '4', '5',
             '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
 
     /**
-     * ���ڽ���ʮ�������ַ�������Ĵ�д�ַ�����
+     * 用于建立十六进制字符的输出的大写字符数组
      */
     private static final char[] DIGITS_UPPER = {'0', '1', '2', '3', '4', '5',
             '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
 
     /**
-     * ���ֽ�����ת��Ϊʮ�������ַ�����
+     * 将字节数组转换为十六进制字符数组
      *
      * @param data byte[]
-     * @return ʮ������char[]
+     * @return 十六进制char[]
      */
     public static char[] encodeHex(byte[] data) {
         return encodeHex(data, true);
