@@ -14,7 +14,7 @@ public class BusinessException extends RuntimeException {
     private static final long serialVersionUID = 2359767895161832954L;
     private final IResultCode resultCode;
 
-    private boolean enableCustomStackTrace = true;
+    private boolean enableCustomStackTrace = false;
 
     public BusinessException(String message) {
         super(message);

@@ -15,7 +15,7 @@ public class LetoolSecurityException extends RuntimeException {
 
     private final IResultCode resultCode;
 
-    private boolean enableCustomStackTrace = true;
+    private boolean enableCustomStackTrace = false;
 
     public LetoolSecurityException(String message) {
         super(message);
