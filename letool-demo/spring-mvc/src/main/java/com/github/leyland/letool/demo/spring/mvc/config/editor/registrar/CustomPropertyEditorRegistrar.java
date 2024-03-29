@@ -1,6 +1,7 @@
 package com.github.leyland.letool.demo.spring.mvc.config.editor.registrar;
 
 import com.github.leyland.letool.demo.spring.mvc.config.editor.DateEditor;
+import org.springframework.beans.PropertyEditorRegistrar;
 import org.springframework.beans.PropertyEditorRegistry;
 
 import java.util.Date;
@@ -11,7 +12,7 @@ import java.util.Date;
  * @Author Rungo
  * @Version 1.0
  **/
-public final class CustomPropertyEditorRegistrar /*implements PropertyEditorRegistrar*/ {
+public final class CustomPropertyEditorRegistrar implements PropertyEditorRegistrar {
 
     private String formatter;
 
