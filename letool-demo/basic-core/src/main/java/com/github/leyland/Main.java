@@ -1,9 +1,13 @@
 package com.github.leyland;
 
+import com.github.leyland.letool.demo.basic.core.proxy.DateProxy;
+import com.github.leyland.letool.demo.basic.core.proxy.handle.DateProxyHandler;
 import com.github.leyland.letool.demo.basic.core.variate.DataClass;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
+import java.util.Date;
 
 public class Main {
     public static void main(String[] args) {
@@ -208,10 +212,18 @@ public class Main {
     @Test
     public void Test13() {
 
+        DateProxy original = new DateProxy();
+        original.setApplicantIDEndDate(new Date());
+        DateProxy proxy = DateProxyHandler.createProxy(original);
+
+        //代理不会改变返回值，没什么卵用
+        System.out.println(proxy.getApplicantIDEndDate());
     }
 
     @Test
     public void Test14() {
+
+        System.out.println("leyland".toString());
 
     }
 

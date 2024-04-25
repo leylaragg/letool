@@ -6,7 +6,10 @@ import java.lang.reflect.Field;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.math.BigDecimal;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
 /**
@@ -25,7 +28,7 @@ public class TestDate {
         System.out.println(date);
     }*/
 
-    public static void main(String[] args) throws NoSuchFieldException, IllegalAccessException, InstantiationException {
+    public static void main(String[] args) throws NoSuchFieldException, IllegalAccessException, InstantiationException, ParseException {
         Object o = new String("123");
         System.out.println(o.getClass());
 
@@ -101,6 +104,13 @@ public class TestDate {
         String str = "asjdkhaj";
         stringMethod(str);
         System.out.println(str);
+
+        System.out.println((new SimpleDateFormat("yyyy-MM-dd").parse("2024-04-23")).toString());
+
+        System.out.println((new SimpleDateFormat("yyyy-MM-dd").parse("2024-04-23")).toString());
+
+
+
 
     }
 
