@@ -20,6 +20,7 @@
         <module>spring-mvc</module>
         <module>base-fastjson</module>
         <module>basic-web</module>
+        <module>test-mvc</module>
     </modules>
 
     <properties>
@@ -39,12 +40,10 @@
         </dependency>
 
 
-        <!--spring 核心组件所需依赖-->
         <dependency>
-            <groupId>org.springframework</groupId>
-            <artifactId>spring-context</artifactId>
-            <version>${spring-framework.version}</version>
-            <scope>compile</scope>
+            <groupId>com.github.leyland</groupId>
+            <artifactId>letool-starter-tool</artifactId>
+            <version>1.0.0-beta.6</version>
         </dependency>
 
         <!--用于解析AspectJ的切入点表达式语法-->

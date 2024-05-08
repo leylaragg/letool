@@ -11,9 +11,9 @@ import org.springframework.web.servlet.config.annotation.EnableWebMvc;
  * @Date 2023/4/19
  * @Version 1.0
  **/
-@ComponentScan("com.github.leyland.letool.demo.spring.mvc")
+/*@ComponentScan("com.github.leyland.letool.demo.spring.mvc")
 @Configuration
-@EnableWebMvc
+@EnableWebMvc*/
 public class WebConfig {
 
 }

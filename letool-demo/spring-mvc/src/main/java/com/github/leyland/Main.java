@@ -99,4 +99,31 @@ public class Main {
         ClassPathXmlApplicationContext ac = new ClassPathXmlApplicationContext("spring-${config}.xml");
     }
 
+
+    @Test
+    public void ExceTest(){
+
+
+        try {
+            try {
+                try {
+                    System.out.println("这个产生的异常");
+                    throw new RuntimeException("3异常");
+                } catch (Exception e) {
+                    //这里会输出《"3异常"》的方法调用栈
+                    e.printStackTrace();
+                    throw new RuntimeException("2异常");
+                }
+            } catch (Exception e) {
+                //异常被重新定义了
+                throw new RuntimeException("1异常");
+            }
+        } catch (Exception e) {
+            //只会输出最后定义异常的方法调用栈信息，即定位到《"1异常"》这个代码处
+            e.printStackTrace();
+        } finally {
+
+        }
+    }
+
 }

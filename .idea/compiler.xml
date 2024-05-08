@@ -13,6 +13,7 @@
         <module name="basic-core" />
         <module name="logger" />
         <module name="letool-starter-security-jwt" />
+        <module name="test-mvc" />
         <module name="basic-web" />
         <module name="spring-core" />
         <module name="letool-starter-swagger" />

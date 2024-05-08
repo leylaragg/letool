@@ -225,6 +225,14 @@ public class Main {
 
         System.out.println("leyland".toString());
 
+        BigDecimal bigDecimal = new BigDecimal(1);
+
+        int i = bigDecimal.compareTo(BigDecimal.ZERO);
+
+        System.out.println(i);
+
+        System.out.println(bigDecimal.toString());
+
     }
 
     @Test

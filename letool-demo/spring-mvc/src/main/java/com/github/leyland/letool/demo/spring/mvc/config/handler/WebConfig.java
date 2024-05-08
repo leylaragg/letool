@@ -15,8 +15,8 @@ import org.springframework.web.servlet.theme.ThemeChangeInterceptor;
  * @Author Rungo
  * @Version 1.0
  **/
-@Configuration
-@EnableWebMvc  //支持MVC配置
+/*@Configuration
+@EnableWebMvc */ //支持MVC配置
 public class WebConfig implements WebMvcConfigurer {
 
     /**

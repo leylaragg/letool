@@ -47,7 +47,7 @@ public class MyInterceptor2 implements HandlerInterceptor {
      */
     @Override
     public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler, ModelAndView modelAndView) throws Exception {
-        System.out.println("MyInterceptor1 postHandle invoke");
+        System.out.println("MyInterceptor2 postHandle invoke");
     }
 
     /**
@@ -55,6 +55,6 @@ public class MyInterceptor2 implements HandlerInterceptor {
      */
     @Override
     public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) throws Exception {
-        System.out.println("MyInterceptor1 afterCompletion invoke");
+        System.out.println("MyInterceptor2 afterCompletion invoke");
     }
 }
