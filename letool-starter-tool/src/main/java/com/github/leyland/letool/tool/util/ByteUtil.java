@@ -1,15 +1,16 @@
 package com.github.leyland.letool.tool.util;
 
+
 import java.math.BigInteger;
 
 /**
- * @ClassName ByteUtils
- * @Description TODO
- * @Author Rungo
- * @Date 2023/4/19
- * @Version 1.0
+ * &#064;ClassName RuByteUtil
+ * &#064;Description  TODO
+ * &#064;Author  Rungo
+ * &#064;Date 2023/4/6
+ * &#064;Version 1.0
  **/
-public class ByteUtils {
+public class ByteUtil {
 
     /**
      * 整形转换成网络传输的字节流（字节数组）型数据
@@ -25,6 +26,7 @@ public class ByteUtils {
         bytes[3] = (byte) (0xff & (num >> 24));
         return bytes;
     }
+
 
     /**
      * 四个字节的字节数据转换成一个整形数据
@@ -200,22 +202,22 @@ public class ByteUtils {
     }
 
     /**
-     * ���ֽ�����ת��Ϊʮ�������ַ�����
+     * 将字节数组转换为十六进制字符数组
      *
      * @param data        byte[]
-     * @param toLowerCase <code>true</code> ������Сд��ʽ �� <code>false</code> �����ɴ�д��ʽ
-     * @return ʮ������char[]
+     * @param toLowerCase <code>true</code> 传换成小写格式 ， <code>false</code> 传换成大写格式
+     * @return 十六进制char[]
      */
     public static char[] encodeHex(byte[] data, boolean toLowerCase) {
         return encodeHex(data, toLowerCase ? DIGITS_LOWER : DIGITS_UPPER);
     }
 
     /**
-     * ���ֽ�����ת��Ϊʮ�������ַ�����
+     * 将字节数组转换为十六进制字符数组
      *
      * @param data     byte[]
-     * @param toDigits ���ڿ��������char[]
-     * @return ʮ������char[]
+     * @param toDigits 用于控制输出的char[]
+     * @return 十六进制char[]
      */
     protected static char[] encodeHex(byte[] data, char[] toDigits) {
         int l = data.length;
@@ -229,43 +231,43 @@ public class ByteUtils {
     }
 
     /**
-     * ���ֽ�����ת��Ϊʮ�������ַ���
+     * 将字节数组转换为十六进制字符串
      *
      * @param data byte[]
-     * @return ʮ������String
+     * @return 十六进制String
      */
     public static String encodeHexString(byte[] data) {
         return encodeHexString(data, true);
     }
 
     /**
-     * ���ֽ�����ת��Ϊʮ�������ַ���
+     * 将字节数组转换为十六进制字符串
      *
      * @param data        byte[]
-     * @param toLowerCase <code>true</code> ������Сд��ʽ �� <code>false</code> �����ɴ�д��ʽ
-     * @return ʮ������String
+     * @param toLowerCase <code>true</code> 传换成小写格式 ， <code>false</code> 传换成大写格式
+     * @return 十六进制String
      */
     public static String encodeHexString(byte[] data, boolean toLowerCase) {
         return encodeHexString(data, toLowerCase ? DIGITS_LOWER : DIGITS_UPPER);
     }
 
     /**
-     * ���ֽ�����ת��Ϊʮ�������ַ���
+     * 将字节数组转换为十六进制字符串
      *
      * @param data     byte[]
-     * @param toDigits ���ڿ��������char[]
-     * @return ʮ������String
+     * @param toDigits 用于控制输出的char[]
+     * @return 十六进制String
      */
     protected static String encodeHexString(byte[] data, char[] toDigits) {
         return new String(encodeHex(data, toDigits));
     }
 
     /**
-     * ��ʮ�������ַ�����ת��Ϊ�ֽ�����
+     * 将十六进制字符数组转换为字节数组
      *
-     * @param data ʮ������char[]
+     * @param data 十六进制char[]
      * @return byte[]
-     * @throws RuntimeException ���Դʮ�������ַ�������һ����ֵĳ��ȣ����׳�����ʱ�쳣
+     * @throws RuntimeException 如果源十六进制字符数组是一个奇怪的长度，将抛出运行时异常
      */
     public static byte[] decodeHex(char[] data) {
         int len = data.length;
@@ -289,12 +291,12 @@ public class ByteUtils {
     }
 
     /**
-     * ��ʮ�������ַ�ת����һ������
+     * 将十六进制字符转换成一个整数
      *
-     * @param ch    ʮ������char
-     * @param index ʮ�������ַ����ַ������е�λ��
-     * @return һ������
-     * @throws RuntimeException ��ch����һ���Ϸ���ʮ�������ַ�ʱ���׳�����ʱ�쳣
+     * @param ch    十六进制char
+     * @param index 十六进制字符在字符数组中的位置
+     * @return 一个整数
+     * @throws RuntimeException 当ch不是一个合法的十六进制字符时，抛出运行时异常
      */
     protected static int toDigit(char ch, int index) {
         int digit = Character.digit(ch, 16);
@@ -306,10 +308,10 @@ public class ByteUtils {
     }
 
     /**
-     * �����ַ���תASCII���ַ���
+     * 数字字符串转ASCII码字符串
      *
-     * @param String �ַ���
-     * @return ASCII�ַ���
+     * @param  content 字符串
+     * @return ASCII字符串
      */
     public static String StringToAsciiString(String content) {
         String result = "";
@@ -323,11 +325,11 @@ public class ByteUtils {
     }
 
     /**
-     * ʮ������ת�ַ���
+     * 十六进制转字符串
      *
-     * @param hexString  ʮ�������ַ���
-     * @param encodeType ��������4��Unicode��2����ͨ����
-     * @return �ַ���
+     * @param hexString  十六进制字符串
+     * @param encodeType 编码类型4：Unicode，2：普通编码
+     * @return 字符串
      */
     public static String hexStringToString(String hexString, int encodeType) {
         String result = "";
@@ -341,10 +343,10 @@ public class ByteUtils {
     }
 
     /**
-     * ʮ�������ַ���װʮ����
+     * 十六进制字符串装十进制
      *
-     * @param hex ʮ�������ַ���
-     * @return ʮ������ֵ
+     * @param hex 十六进制字符串
+     * @return 十进制数值
      */
     public static int hexStringToAlgorism(String hex) {
         hex = hex.toUpperCase();
@@ -364,10 +366,10 @@ public class ByteUtils {
     }
 
     /**
-     * ʮ��ת������
+     * 十六转二进制
      *
-     * @param hex ʮ�������ַ���
-     * @return �������ַ���
+     * @param hex 十六进制字符串
+     * @return 二进制字符串
      */
     public static String hexStringToBinary(String hex) {
         hex = hex.toUpperCase();
@@ -430,10 +432,10 @@ public class ByteUtils {
     }
 
     /**
-     * ASCII���ַ���ת�����ַ���
+     * ASCII码字符串转数字字符串
      *
-     * @param String ASCII�ַ���
-     * @return �ַ���
+     * @param  content ASCII字符串
+     * @return 字符串
      */
     public static String AsciiStringToString(String content) {
         String result = "";
@@ -449,11 +451,11 @@ public class ByteUtils {
     }
 
     /**
-     * ��ʮ����ת��Ϊָ�����ȵ�ʮ�������ַ���
+     * 将十进制转换为指定长度的十六进制字符串
      *
-     * @param algorism  int ʮ��������
-     * @param maxLength int ת�����ʮ�������ַ�������
-     * @return String ת�����ʮ�������ַ���
+     * @param algorism  int 十进制数字
+     * @param maxLength int 转换后的十六进制字符串长度
+     * @return String 转换后的十六进制字符串
      */
     public static String algorismToHexString(int algorism, int maxLength) {
         String result = "";
@@ -466,7 +468,7 @@ public class ByteUtils {
     }
 
     /**
-     * �ֽ�����תΪ��ͨ�ַ�����ASCII��Ӧ���ַ���
+     * 字节数组转为普通字符串（ASCII对应的字符）
      *
      * @param bytearray byte[]
      * @return String
@@ -484,10 +486,10 @@ public class ByteUtils {
     }
 
     /**
-     * �������ַ���תʮ����
+     * 二进制字符串转十进制
      *
-     * @param binary �������ַ���
-     * @return ʮ������ֵ
+     * @param binary 二进制字符串
+     * @return 十进制数值
      */
     public static int binaryToAlgorism(String binary) {
         int max = binary.length();
@@ -501,10 +503,10 @@ public class ByteUtils {
     }
 
     /**
-     * ʮ����ת��Ϊʮ�������ַ���
+     * 十进制转换为十六进制字符串
      *
-     * @param algorism int ʮ���Ƶ�����
-     * @return String ��Ӧ��ʮ�������ַ���
+     * @param algorism int 十进制的数字
+     * @return String 对应的十六进制字符串
      */
     public static String algorismToHEXString(int algorism) {
         String result = "";
@@ -520,11 +522,11 @@ public class ByteUtils {
     }
 
     /**
-     * HEX�ַ���ǰ��0����Ҫ���ڳ���λ�����㡣
+     * HEX字符串前补0，主要用于长度位数不足。
      *
-     * @param str       String ��Ҫ���䳤�ȵ�ʮ�������ַ���
-     * @param maxLength int �����ʮ�������ַ����ĳ���
-     * @return ������
+     * @param str       String 需要补充长度的十六进制字符串
+     * @param maxLength int 补充后十六进制字符串的长度
+     * @return 补充结果
      */
     static public String patchHexString(String str, int maxLength) {
         String temp = "";
@@ -536,12 +538,12 @@ public class ByteUtils {
     }
 
     /**
-     * ��һ���ַ���ת��Ϊint
+     * 将一个字符串转换为int
      *
-     * @param s          String Ҫת�����ַ���
-     * @param defaultInt int ��������쳣,Ĭ�Ϸ��ص�����
-     * @param radix      int Ҫת�����ַ�����ʲô���Ƶ�,��16 8 10.
-     * @return int ת���������
+     * @param s          String 要转换的字符串
+     * @param defaultInt int 如果出现异常,默认返回的数字
+     * @param radix      int 要转换的字符串是什么进制的,如16 8 10.
+     * @return int 转换后的数字
      */
     public static int parseToInt(String s, int defaultInt, int radix) {
         int i = 0;
@@ -554,11 +556,11 @@ public class ByteUtils {
     }
 
     /**
-     * ��һ��ʮ������ʽ�������ַ���ת��Ϊint
+     * 将一个十进制形式的数字字符串转换为int
      *
-     * @param s          String Ҫת�����ַ���
-     * @param defaultInt int ��������쳣,Ĭ�Ϸ��ص�����
-     * @return int ת���������
+     * @param s          String 要转换的字符串
+     * @param defaultInt int 如果出现异常,默认返回的数字
+     * @return int 转换后的数字
      */
     public static int parseToInt(String s, int defaultInt) {
         int i = 0;
@@ -571,7 +573,7 @@ public class ByteUtils {
     }
 
     /**
-     * ʮ�����ƴ�ת��Ϊbyte����
+     * 十六进制串转化为byte数组
      *
      * @return the array of byte
      */
@@ -584,17 +586,17 @@ public class ByteUtils {
         byte[] b = new byte[hex.length() / 2];
         for (int i = 0, j = 0, l = hex.length(); i < l; i++, j++) {
             String swap = "" + arr[i++] + arr[i];
-            int byteInt = Integer.parseInt(swap, 16) & 0xFF;
-            b[j] = new Integer(byteInt).byteValue();
+            int byteint = Integer.parseInt(swap, 16) & 0xFF;
+            b[j] = new Integer(byteint).byteValue();
         }
         return b;
     }
 
     /**
-     * �ֽ�����ת��Ϊʮ�������ַ���
+     * 字节数组转换为十六进制字符串
      *
-     * @param b byte[] ��Ҫת�����ֽ�����
-     * @return String ʮ�������ַ���
+     * @param b byte[] 需要转换的字节数组
+     * @return String 十六进制字符串
      */
     public static String byteToHex(byte b[]) {
         if (b == null) {
@@ -622,4 +624,5 @@ public class ByteUtils {
         }
         return bt;
     }
+
 }
