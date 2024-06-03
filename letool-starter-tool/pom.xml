@@ -9,13 +9,12 @@
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <properties>
-        <maven.compiler.source>8</maven.compiler.source>
-        <maven.compiler.target>8</maven.compiler.target>
-        <spring.boot.version>2.4.1</spring.boot.version>
-    </properties>
 
-    <packaging>pom</packaging>
+    <artifactId>letool-starter-tool</artifactId>
+    <name>${project.artifactId}</name>
+    <version>${letool.version}</version>
+    <packaging>jar</packaging>
+
     <dependencies>
 
         <!-- 引入 Spring Boot Starter Web 依赖 -->
@@ -32,8 +31,5 @@
         </dependency>
 
     </dependencies>
-
-    <artifactId>letool-starter-tool</artifactId>
-
 
 </project>

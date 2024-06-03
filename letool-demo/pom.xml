@@ -10,8 +10,10 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>letool-demo</artifactId>
-
+    <name>${project.artifactId}</name>
+    <version>${letool.version}</version>
     <packaging>pom</packaging>
+
     <modules>
         <module>spring-core</module>
         <module>basic-core</module>

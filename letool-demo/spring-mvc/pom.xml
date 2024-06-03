@@ -10,12 +10,9 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>spring-mvc</artifactId>
-
-    <properties>
-        <maven.compiler.source>8</maven.compiler.source>
-        <maven.compiler.target>8</maven.compiler.target>
-        <spring-framework.version>5.2.8.RELEASE</spring-framework.version>
-    </properties>
+    <name>${project.artifactId}</name>
+    <version>${letool.version}</version>
+    <packaging>war</packaging>
 
 
     <dependencies>

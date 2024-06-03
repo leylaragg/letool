@@ -10,10 +10,8 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>letool-starter-security-jwt</artifactId>
-
-    <properties>
-        <maven.compiler.source>8</maven.compiler.source>
-        <maven.compiler.target>8</maven.compiler.target>
-    </properties>
+    <name>${project.artifactId}</name>
+    <version>${letool.version}</version>
+    <packaging>jar</packaging>
 
 </project>
