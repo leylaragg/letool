@@ -15,5 +15,13 @@ public class Main {
 
         // 现在你可以使用sqlTimestamp对象
         System.out.println("SQL Timestamp: " + sqlTimestamp);
+
+
+        try {
+            throw new RuntimeException("一场");
+        } catch (Exception e) {
+            System.out.println(e);
+            e.printStackTrace();
+        }
     }
 }
