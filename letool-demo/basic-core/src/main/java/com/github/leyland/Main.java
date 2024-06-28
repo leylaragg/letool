@@ -7,7 +7,11 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
+import java.util.Iterator;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class Main {
     public static void main(String[] args) {
@@ -238,15 +242,69 @@ public class Main {
     @Test
     public void Test15() {
 
+        CopyOnWriteArrayList<Integer> integers = new CopyOnWriteArrayList<Integer>(Arrays.asList(1, 2, 3));
+        //获取迭代器
+        Iterator<Integer> iterator = integers.iterator();
+        //是否存在下一个元素
+        while (iterator.hasNext()) {
+            //使用集合的方法 移除第一个元素，此时不会在next()方法中抛出异常1
+            Integer remove = integers.remove(0);
+            System.out.println("被移除的: " + remove);
+            //获取下一个元素,被移除的元素还是能获取到,正是由于Copy-On-Write技术造成的
+            Object next = iterator.next();
+            System.out.println("获取到的: " + next);
+        }
+
+        integers.forEach(System.out::println);
+
     }
 
     @Test
     public void Test16() {
 
+        ArrayList<Integer> integers = new ArrayList<Integer>(Arrays.asList(1, 2, 3));
+        //获取迭代器
+        Iterator<Integer> iterator = integers.iterator();
+        //是否存在下一个元素
+        while (iterator.hasNext()) {
+            //使用集合的方法 移除一个元素，此时会在next()方法中抛出异常
+            integers.remove(0);
+            //获取下一个元素
+            Object next = iterator.next();
+        }
+
     }
 
     @Test
     public void Test17() {
+        StringBuffer jdbcSql = new StringBuffer();
+        jdbcSql.append(" (SELECT ");
+        jdbcSql.append("  distinct  " +
+                " a.CHDRCOY  " +//公司号
+                " ,a.CHDRNUM  " +//8位的保单号
+                " from lcndta.p_chdrpf a  " +
+                " where a.validflag = '1'   " +
+                " and exists( select 1 from  lcndta.p_aglfpf b where a.agntcoy = b.agntcoy and a.agntnum = b.agntnum and b.tsalesunt = 'BK001') " +
+                " and exists (  select 1  from  lcndta.p_ptrnpf p  where  p.CHDRCOY = a.CHDRCOY and p.CHDRNUM = a.CHDRNUM AND p.validflag <> '2'  " +
+                " and p.transtime between '" + "2024-06-17 00:00:00" + "'  and '" + "2024-06-17 23:59:59" + "'" +
+                " and p.batctrcde in ('T600','T6A0','T642')   " +
+                ")" +
+                " WITH UR) "
+        );
+        jdbcSql.append(" union all ");
+        jdbcSql.append(" (SELECT ");
+        jdbcSql.append("  distinct  " +
+                "   a.CHDRCOY  " +//公司号
+                "  ,a.CHDRNUM  " +//8位的保单号
+                "  from lcndta.p_chdrpf a  " +
+                "   where a.validflag = '1'   " +
+                "  and exists(  select 1 from  lcndta.p_aglfpf b where  a.agntcoy = b.agntcoy  and a.agntnum = b.agntnum and b.tsalesunt = 'BK001'  ) " +
+                "  and exists( select 1 from  lcndta.p_pletpf p2  where  p2.effdate <> 99999999  and p2.CHDRCOY = a.CHDRCOY   and p2.CHDRNUM = a.CHDRNUM  " +
+                " and p2.batctrcde in ('T600','T6A0','T642')  " +
+                "  and  p2.transtime between '" + "2024-06-17 00:00:00" + "'  and '" + "2024-06-17 23:59:59" + "'  ) " + //--#结束时间#
+                " WITH UR) "
+        );
+        System.out.println(jdbcSql.toString());
 
     }
 
