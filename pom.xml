@@ -7,7 +7,6 @@
     <packaging>pom</packaging>
 
     <modules>
-        <module>letool-demo</module>
         <module>letool-starter-tool</module>
         <module>letool-starter-log</module>
         <module>letool-starter-swagger</module>
