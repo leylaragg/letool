@@ -1,0 +1,29 @@
+letool:
+  tool:
+    spring:
+      enabled: true
+
+spring:
+  letool:
+    http:
+      enabled: true
+
+      connect-timeout: 50000   # 连接超时时间（毫秒）
+      read-timeout: 10000     # 读取超时时间（毫秒）
+      write-timeout: 10000    # 写入超时时间（毫秒）
+      max-total-connections: 200  # 最大连接数
+      max-per-route-connections: 50 # 每个路由的最大连接数
+
+      rest-template:
+        interceptor:
+          rules:
+            - host: "localhost"
+              included-paths:
+                - "/*"
+              excluded-paths:
+                - "/api/public/*"
+
+            - host: "127.0.0.1"
+              included-paths:
+                - "/secure/*"
+

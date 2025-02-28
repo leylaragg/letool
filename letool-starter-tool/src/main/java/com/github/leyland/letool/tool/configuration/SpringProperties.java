@@ -14,7 +14,7 @@ public class SpringProperties {
     /**
      * 是否给 SpringUtil.applicationContext 注入。
      */
-    private Boolean enabled;
+    private Boolean enabled = true;
 
     public Boolean getEnabled() {
         return enabled;

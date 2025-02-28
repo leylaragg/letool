@@ -28,7 +28,7 @@ import java.util.Map;
  * @Version 1.0
  **/
 @Configuration
-@ConditionalOnProperty(value = "letool.tool.spring.enabled", havingValue = "true")  //此处未完善
+@ConditionalOnProperty(value = "letool.tool.spring.enabled", havingValue = "true")
 @EnableConfigurationProperties({SpringProperties.class})
 public class SpringUtil implements ApplicationContextAware {
 

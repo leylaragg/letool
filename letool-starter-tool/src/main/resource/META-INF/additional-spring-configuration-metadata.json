@@ -1,0 +1,8 @@
+{
+  "properties": [
+    {
+      "name": "spring.letool.http.having",
+      "type": "java.lang.String",
+      "description": "Description for spring.letool.http.having."
+  }
+] }
