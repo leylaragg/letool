@@ -7,6 +7,7 @@ import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.ClientHttpRequestFactory;
@@ -29,6 +30,7 @@ public class RestTemplateConfiguration {
     }
 
     @Bean("httpClient")
+    @ConditionalOnMissingBean(CloseableHttpClient.class)
     @ConditionalOnBean(HttpProperties.class)
     public CloseableHttpClient httpClient(@Autowired HttpProperties httpProperties) {
         // 连接池
@@ -43,6 +45,7 @@ public class RestTemplateConfiguration {
 
     @Bean("restTemplate")
     @Autowired
+    @ConditionalOnMissingBean(RestTemplate.class)
     @ConditionalOnBean({CloseableHttpClient.class, HttpProperties.class})
     public RestTemplate restTemplate(@Qualifier("httpClient") CloseableHttpClient httpClient, HttpProperties httpProperties) {
         // 配置请求工厂

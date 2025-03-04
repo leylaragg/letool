@@ -3,15 +3,21 @@ package com.github.leyland.letool.tool.Interceptor;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import org.apache.logging.log4j.core.util.IOUtils;
+import org.junit.platform.commons.util.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.client.ClientHttpRequestExecution;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.util.AntPathMatcher;
+import org.springframework.web.client.RestTemplate;
 
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -27,6 +33,7 @@ import java.util.List;
  * @Version 1.0
  **/
 @Component
+@ConditionalOnBean(RestTemplate.class)
 public class RuleBasedInterceptor implements ClientHttpRequestInterceptor {
 
     private final Logger log = LoggerFactory.getLogger(RuleBasedInterceptor.class);
@@ -34,6 +41,8 @@ public class RuleBasedInterceptor implements ClientHttpRequestInterceptor {
     private final RestTemplateInterceptorConfig config;
 
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
+
+    public final String EMAIL_TITLE = "X-Email-Title";
 
     public RuleBasedInterceptor(RestTemplateInterceptorConfig config) {
         this.config = config;
@@ -56,25 +65,57 @@ public class RuleBasedInterceptor implements ClientHttpRequestInterceptor {
                 // 如果 URI 在 includedPaths 里面，则拦截
                 if (matchesAny(path, rule.getIncludedPaths())) {
                     log.debug("Applying interceptor to: {}", uri);
+
+                    // 解析请求头中的邮件标题等信息
+                    HttpHeaders headers = request.getHeaders();
+                    List<String> strings = headers.get(EMAIL_TITLE);
+
                     // 将报文指定节点序列化
                     try (ClientHttpResponse response = execution.execute(request, body)) {
                         /*JSONObject jsonObject = JSON.parseObject(response.getBody().readAllBytes());
                         log.debug("响应报文：{} ", JSON.toJSONString(jsonObject));*/
-                        InputStream responseInSteam = response.getBody();
-                        StringBuffer stringBuffer = new StringBuffer();
-                        char[] buffer = new char[1024];
-                        InputStreamReader inputStreamReader = new InputStreamReader(responseInSteam, StandardCharsets.UTF_8);
 
-                        while (responseInSteam.available() > 0) {
-                            if (inputStreamReader.read(buffer, 0 , responseInSteam.available()) > 0) {
-                                stringBuffer.append(buffer);
+                        HttpStatus statusCode = response.getStatusCode();
+                        Boolean resStatus;
+                        String msg = "";
+
+                        StringBuilder responseBody = new StringBuilder();
+                        try (BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(response.getBody(), StandardCharsets.UTF_8))) {
+                            char[] charBuffer = new char[1024];
+                            int bytesRead;
+                            while ((bytesRead = bufferedReader.read(charBuffer)) > 0) {
+                                responseBody.append(charBuffer, 0, bytesRead);
                             }
-
                         }
-                        System.out.println("响应报文！！！" + stringBuffer);
-                        /**
-                         * if(!= 200)  预警通知
-                         */
+
+                        log.debug("响应报文{}", responseBody);
+
+
+                        try {
+                            String resBody = responseBody.toString();
+                            if (!StringUtils.isBlank(resBody)) {
+                                JSONObject jsonObject = JSON.parseObject(resBody);
+                                // 解析数据
+                                try {
+                                    resStatus = jsonObject.getBoolean("success");
+                                    if (!resStatus || jsonObject.getIntValue("code") != 200) {
+                                        msg = jsonObject.getString("msg");
+                                    }
+                                } catch (Exception e) {
+                                    log.error(e.getMessage());
+                                    msg = e.toString();
+                                }
+                            }
+                        } catch (Exception e) {
+                            log.error(e.getMessage());
+                            msg = e.toString();
+                        } finally {
+                            //发送邮件
+                            if (!StringUtils.isBlank(msg)) {
+                                //...
+                            }
+                        }
+
                         return response;
                     }
                 }

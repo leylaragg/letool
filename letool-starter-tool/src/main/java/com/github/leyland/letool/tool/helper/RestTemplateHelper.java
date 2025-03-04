@@ -8,6 +8,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.*;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
@@ -28,6 +30,8 @@ import java.util.function.Consumer;
  * @Date 2/28/2025
  * @Version 1.0
  **/
+@ConditionalOnProperty(value = "spring.letool.http.enabled", havingValue = "true")
+@ConditionalOnBean(RestTemplate.class)
 @Component
 public class RestTemplateHelper implements SmartInitializingSingleton {
 
@@ -35,7 +39,6 @@ public class RestTemplateHelper implements SmartInitializingSingleton {
 
 
     private final List<ClientHttpRequestInterceptor> interceptors = new ArrayList<>();
-
 
     private RestTemplate restTemplate;
 
@@ -50,8 +53,8 @@ public class RestTemplateHelper implements SmartInitializingSingleton {
             log.debug("Adding interceptor: {}", interceptor.getClass().getName());
             interceptors.add(interceptor);
         });
-        restTemplate = SpringUtil.getBean(RestTemplate.class);
-        restTemplate.setInterceptors(interceptors);
+        this.restTemplate = SpringUtil.getBean(RestTemplate.class);
+        this.restTemplate.setInterceptors(interceptors);
     }
 
     /*@Autowired

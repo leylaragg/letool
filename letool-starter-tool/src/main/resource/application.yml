@@ -1,10 +1,8 @@
-letool:
-  tool:
-    spring:
-      enabled: true
-
 spring:
   letool:
+    context:
+      enabled: true
+
     http:
       enabled: true
 
@@ -20,6 +18,7 @@ spring:
             - host: "localhost"
               included-paths:
                 - "/*"
+                - "/**"
               excluded-paths:
                 - "/api/public/*"
 

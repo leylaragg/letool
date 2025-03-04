@@ -4,15 +4,16 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * @ClassName <h2>HttpUtils</h2>
+ * @ClassName <h2>HttpProperties</h2>
  * @Description
  * @Author rungo
  * @Date 2/27/2025
  * @Version 1.0
  **/
-//@ConditionalOnProperty(prefix = "spring.letool.http.enabled", havingValue = "true")
 @ConfigurationProperties("spring.letool.http")
 public class HttpProperties {
+
+    private boolean enabled = false;
 
     private int connectTimeout;
 
@@ -26,6 +27,14 @@ public class HttpProperties {
 
     public int getConnectTimeout() {
         return connectTimeout;
+    }
+
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
     }
 
     public HttpProperties setConnectTimeout(int connectTimeout) {

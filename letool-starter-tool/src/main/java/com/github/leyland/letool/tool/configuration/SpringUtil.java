@@ -7,6 +7,7 @@ import com.github.leyland.letool.tool.exception.SystemException;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanInitializationException;
 import org.springframework.beans.factory.InitializingBean;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationContext;
@@ -28,7 +29,7 @@ import java.util.Map;
  * @Version 1.0
  **/
 @Configuration
-@ConditionalOnProperty(value = "letool.tool.spring.enabled", havingValue = "true")
+@ConditionalOnProperty(value = "spring.letool.context.enabled", havingValue = "true")
 @EnableConfigurationProperties({SpringProperties.class})
 public class SpringUtil implements ApplicationContextAware {
 
