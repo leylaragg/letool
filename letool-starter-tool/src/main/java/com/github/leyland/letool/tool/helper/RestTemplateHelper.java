@@ -1,5 +1,6 @@
 package com.github.leyland.letool.tool.helper;
 
+import com.github.leyland.letool.tool.Interceptor.RuleBasedInterceptor;
 import com.github.leyland.letool.tool.configuration.SpringUtil;
 import com.github.leyland.letool.tool.properties.HttpProperties;
 import org.apache.http.impl.client.CloseableHttpClient;
@@ -8,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.*;
@@ -32,6 +34,7 @@ import java.util.function.Consumer;
  **/
 @ConditionalOnProperty(value = "spring.letool.http.enabled", havingValue = "true")
 @ConditionalOnBean(RestTemplate.class)
+@AutoConfigureAfter(RuleBasedInterceptor.class)
 @Component
 public class RestTemplateHelper implements SmartInitializingSingleton {
 
@@ -84,16 +87,14 @@ public class RestTemplateHelper implements SmartInitializingSingleton {
         return restTemplate;
     }
 
-
+    //TODO：注意这里的BUG，response.getBody() 之后流已经在拦截器里关闭了，想想该怎么优化
 
     public <T> T sendRequest(HttpEntity<?> httpEntity, Class<T> responseType) {
-        httpEntity.getHeaders().setContentType(MediaType.APPLICATION_JSON);
         ResponseEntity<T> response = restTemplate.exchange((RequestEntity<?>) httpEntity, responseType);
         return response.getBody();
     }
 
     public <T> T sendRequest(HttpEntity<?> httpEntity, Class<T> responseType, HttpProperties httpProperties) {
-        httpEntity.getHeaders().setContentType(MediaType.APPLICATION_JSON);
         ResponseEntity<T> response = buildRestTemplate(httpProperties).exchange((RequestEntity<?>) httpEntity, responseType);
         return response.getBody();
     }

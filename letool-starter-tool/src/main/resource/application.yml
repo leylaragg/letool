@@ -25,4 +25,5 @@ spring:
             - host: "127.0.0.1"
               included-paths:
                 - "/secure/*"
+                - "/**"
 

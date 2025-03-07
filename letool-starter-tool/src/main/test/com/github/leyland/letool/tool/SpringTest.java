@@ -1,13 +1,19 @@
 package com.github.leyland.letool.tool;
 
+import com.github.leyland.letool.tool.Interceptor.RuleBasedInterceptor;
+import com.github.leyland.letool.tool.configuration.SpringUtil;
 import com.github.leyland.letool.tool.helper.RestTemplateHelper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.*;
+import org.springframework.web.client.RestTemplate;
 
 import java.io.*;
+import java.net.URI;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @ClassName <h2>com.github.leyland.letool.tool.SpringTest</h2>
@@ -35,9 +41,15 @@ public class SpringTest {
 
         System.out.println(jsonBody.getBytes().length);
 
-        ResponseEntity<String> exchange = restTemplateHelper.getRestTemplate().exchange("http://localhost:9080/dms4/ccb/job", HttpMethod.POST, requestEntity, String.class);
-        System.out.println(exchange.getBody());
-        System.out.println(exchange.getStatusCode());
+        // 如果上加上 @ConditionalOnBean(RestTemplate.class) 则此Bean不会创建，为什么
+        RuleBasedInterceptor bean = SpringUtil.getBean(RuleBasedInterceptor.class);
+
+//        ResponseEntity<String> exchange = restTemplateHelper.getRestTemplate().exchange("http://localhost:9080/dms4/ccb/job", HttpMethod.POST, requestEntity, String.class);
+//        System.out.println(exchange.getBody());
+//        System.out.println(exchange.getStatusCode());
+        RequestEntity<String> requestEntity1 = RequestEntity.post(URI.create("http://localhost:8080/dms4/ccb/job")).headers(headers).body(jsonBody, String.class);
+        String resBody = restTemplateHelper.sendRequest(requestEntity1, String.class);
+        System.out.println(resBody);
     }
 
     @Test
@@ -77,5 +89,14 @@ public class SpringTest {
 
         System.out.println(stringBuffer);
         System.out.println(stringBuilder);
+    }
+
+    @Test
+    public void test4() throws IOException {
+        System.out.println(Instant.now().toEpochMilli());
+
+        long epochMilli = Instant.now().toEpochMilli();
+        long newTimeStamp = epochMilli + TimeUnit.MINUTES.toMillis(20);
+        System.out.println(newTimeStamp);
     }
 }

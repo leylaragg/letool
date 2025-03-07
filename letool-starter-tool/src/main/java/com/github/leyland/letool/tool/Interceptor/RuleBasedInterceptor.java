@@ -6,7 +6,10 @@ import org.apache.logging.log4j.core.util.IOUtils;
 import org.junit.platform.commons.util.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpRequest;
 import org.springframework.http.HttpStatus;
@@ -33,7 +36,7 @@ import java.util.List;
  * @Version 1.0
  **/
 @Component
-@ConditionalOnBean(RestTemplate.class)
+@AutoConfigureAfter(RestTemplate.class)
 public class RuleBasedInterceptor implements ClientHttpRequestInterceptor {
 
     private final Logger log = LoggerFactory.getLogger(RuleBasedInterceptor.class);
@@ -135,3 +138,4 @@ public class RuleBasedInterceptor implements ClientHttpRequestInterceptor {
         return patterns.stream().anyMatch(pattern -> pathMatcher.match(pattern, requestUri));
     }
 }
+
