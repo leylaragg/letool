@@ -74,53 +74,52 @@ public class RuleBasedInterceptor implements ClientHttpRequestInterceptor {
                     List<String> strings = headers.get(EMAIL_TITLE);
 
                     // 将报文指定节点序列化
-                    try (ClientHttpResponse response = execution.execute(request, body)) {
-                        /*JSONObject jsonObject = JSON.parseObject(response.getBody().readAllBytes());
-                        log.debug("响应报文：{} ", JSON.toJSONString(jsonObject));*/
+                    ClientHttpResponse response = execution.execute(request, body);
+                    CustomClientHttpResponseWrapper bufferResponse = new CustomClientHttpResponseWrapper(response);
 
-                        HttpStatus statusCode = response.getStatusCode();
-                        Boolean resStatus;
-                        String msg = "";
+                    HttpStatus statusCode = bufferResponse.getStatusCode();
+                    Boolean resStatus;
+                    String msg = "";
 
-                        StringBuilder responseBody = new StringBuilder();
-                        try (BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(response.getBody(), StandardCharsets.UTF_8))) {
-                            char[] charBuffer = new char[1024];
-                            int bytesRead;
-                            while ((bytesRead = bufferedReader.read(charBuffer)) > 0) {
-                                responseBody.append(charBuffer, 0, bytesRead);
-                            }
+                    StringBuilder responseBody = new StringBuilder();
+                    try (BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(bufferResponse.getBody(), StandardCharsets.UTF_8))) {
+                        char[] charBuffer = new char[1024];
+                        int bytesRead;
+                        while ((bytesRead = bufferedReader.read(charBuffer)) > 0) {
+                            responseBody.append(charBuffer, 0, bytesRead);
                         }
-
-                        log.debug("响应报文{}", responseBody);
-
-
-                        try {
-                            String resBody = responseBody.toString();
-                            if (!StringUtils.isBlank(resBody)) {
-                                JSONObject jsonObject = JSON.parseObject(resBody);
-                                // 解析数据
-                                try {
-                                    resStatus = jsonObject.getBoolean("success");
-                                    if (!resStatus || jsonObject.getIntValue("code") != 200) {
-                                        msg = jsonObject.getString("msg");
-                                    }
-                                } catch (Exception e) {
-                                    log.error(e.getMessage());
-                                    msg = e.toString();
-                                }
-                            }
-                        } catch (Exception e) {
-                            log.error(e.getMessage());
-                            msg = e.toString();
-                        } finally {
-                            //发送邮件
-                            if (!StringUtils.isBlank(msg)) {
-                                //...
-                            }
-                        }
-
-                        return response;
                     }
+
+                    log.debug("响应报文{}", responseBody);
+
+
+                    try {
+                        String resBody = responseBody.toString();
+                        if (!StringUtils.isBlank(resBody)) {
+                            JSONObject jsonObject = JSON.parseObject(resBody);
+                            // 解析数据
+                            try {
+                                resStatus = jsonObject.getBoolean("success");
+                                if (!resStatus || jsonObject.getIntValue("code") != 200) {
+                                    msg = jsonObject.getString("msg");
+                                }
+                            } catch (Exception e) {
+                                log.error(e.getMessage());
+                                msg = e.toString();
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.error(e.getMessage());
+                        msg = e.toString();
+                    } finally {
+                        //发送邮件
+                        if (!StringUtils.isBlank(msg)) {
+                            //...
+                        }
+                    }
+
+                    return bufferResponse;
+
                 }
             }
         }
