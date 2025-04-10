@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.*;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.context.support.SpringBeanAutowiringSupport;
 
 import java.io.*;
 import java.net.URI;
@@ -98,5 +99,10 @@ public class SpringTest {
         long epochMilli = Instant.now().toEpochMilli();
         long newTimeStamp = epochMilli + TimeUnit.MINUTES.toMillis(20);
         System.out.println(newTimeStamp);
+    }
+
+    @Test
+    public void test5() throws IOException {
+        System.out.println(SpringBeanAutowiringSupport.class.getClassLoader());
     }
 }
