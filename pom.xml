@@ -16,6 +16,7 @@
         <module>letool-starter-mail</module>
         <module>letool-starter-cipher-suite</module>
         <module>letool-starter-thread</module>
+        <module>letool-starter-data</module>
     </modules>
 
     <groupId>com.github.leyland</groupId>
