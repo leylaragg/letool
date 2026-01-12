@@ -17,8 +17,4 @@ public interface SimpleDesensitizeHandler extends DesensitizeHandler {
      */
     String mask(String origin);
 
-    @Override
-    default boolean supports(Class<?> clazz) {
-        return true;
-    }
 }
