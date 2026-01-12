@@ -1,8 +1,7 @@
 package com.github.leyland.data.desensitize;
 
+import com.github.leyland.data.desensitize.handler.*;
 import com.github.leyland.data.desensitize.rule.*;
-import com.github.leyland.data.desensitize.handler.ChineseNameHandler;
-import com.github.leyland.data.desensitize.handler.PasswordHandler;
 
 /**
  * 脱敏工具类

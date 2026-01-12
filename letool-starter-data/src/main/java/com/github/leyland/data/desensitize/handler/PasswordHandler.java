@@ -1,7 +1,5 @@
 package com.github.leyland.data.desensitize.handler;
 
-import com.github.leyland.data.desensitize.SimpleDesensitizeHandler;
-
 /**
  * 密码脱敏处理器
  * 全部替换为 ******（6个星号）

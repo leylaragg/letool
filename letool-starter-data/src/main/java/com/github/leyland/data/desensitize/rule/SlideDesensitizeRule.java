@@ -1,4 +1,4 @@
-package com.github.leyland.data.desensitize;
+package com.github.leyland.data.desensitize.rule;
 
 /**
  * 滑块脱敏规则接口

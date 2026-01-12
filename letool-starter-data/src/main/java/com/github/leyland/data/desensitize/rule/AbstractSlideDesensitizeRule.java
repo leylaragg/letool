@@ -1,7 +1,5 @@
 package com.github.leyland.data.desensitize.rule;
 
-import com.github.leyland.data.desensitize.SlideDesensitizeRule;
-
 /**
  * 抽象滑块脱敏规则
  * 提供默认实现

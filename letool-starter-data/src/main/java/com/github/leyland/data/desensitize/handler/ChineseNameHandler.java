@@ -1,7 +1,5 @@
 package com.github.leyland.data.desensitize.handler;
 
-import com.github.leyland.data.desensitize.SimpleDesensitizeHandler;
-
 /**
  * 中文名脱敏处理器
  * 单名只显示最后一个汉字，双名显示第一个和最后一个汉字

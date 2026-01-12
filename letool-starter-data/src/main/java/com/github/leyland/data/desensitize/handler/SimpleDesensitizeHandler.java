@@ -1,4 +1,4 @@
-package com.github.leyland.data.desensitize;
+package com.github.leyland.data.desensitize.handler;
 
 /**
  * 简单脱敏处理器接口

@@ -1,4 +1,6 @@
-package com.github.leyland.data.desensitize;
+package com.github.leyland.data.desensitize.handler;
+
+import com.github.leyland.data.desensitize.rule.SlideDesensitizeRule;
 
 /**
  * 滑块脱敏处理器

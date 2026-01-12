@@ -1,4 +1,6 @@
-package com.github.leyland.data.desensitize;
+package com.github.leyland.data.desensitize.handler;
+
+import com.github.leyland.data.desensitize.rule.RegexDesensitizeRule;
 
 /**
  * 正则表达式脱敏处理器

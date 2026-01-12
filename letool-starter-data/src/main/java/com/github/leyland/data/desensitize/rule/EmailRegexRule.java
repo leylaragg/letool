@@ -1,7 +1,5 @@
 package com.github.leyland.data.desensitize.rule;
 
-import com.github.leyland.data.desensitize.RegexDesensitizeRule;
-
 /**
  * 邮箱正则脱敏规则
  * 只显示第一个字符和@之后的内容

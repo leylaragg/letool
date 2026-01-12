@@ -1,5 +1,10 @@
 package com.github.leyland.data.desensitize;
 
+import com.github.leyland.data.desensitize.handler.DesensitizeHandler;
+import com.github.leyland.data.desensitize.handler.IndexDesensitizeHandler;
+import com.github.leyland.data.desensitize.handler.RegexDesensitizeHandler;
+import com.github.leyland.data.desensitize.handler.SlideDesensitizeHandler;
+
 import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.concurrent.ConcurrentHashMap;

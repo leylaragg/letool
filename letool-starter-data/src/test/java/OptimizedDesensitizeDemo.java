@@ -1,4 +1,8 @@
 import com.github.leyland.data.desensitize.*;
+import com.github.leyland.data.desensitize.handler.DesensitizeHandler;
+import com.github.leyland.data.desensitize.handler.IndexDesensitizeHandler;
+import com.github.leyland.data.desensitize.handler.RegexDesensitizeHandler;
+import com.github.leyland.data.desensitize.handler.SlideDesensitizeHandler;
 
 /**
  * 优化后的脱敏功能演示
