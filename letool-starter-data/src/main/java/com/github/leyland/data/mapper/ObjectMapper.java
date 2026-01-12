@@ -98,7 +98,10 @@ public class ObjectMapper {
     @SafeVarargs
     public static <T> T mapToNew(Class<T> targetClass, Object... sources) {
         try {
-            T target = targetClass.getDeclaredConstructor().newInstance();
+            // 处理内部类的情况
+            java.lang.reflect.Constructor<T> constructor = targetClass.getDeclaredConstructor();
+            constructor.setAccessible(true);
+            T target = constructor.newInstance();
             return map(target, sources);
         } catch (Exception e) {
             throw new RuntimeException("Failed to create instance of " + targetClass.getName(), e);
@@ -245,6 +248,12 @@ public class ObjectMapper {
             try {
                 Object sourceValue = getFieldValue(source, fieldName);
                 if (sourceValue != null) {
+                    // 检查是否需要脱敏
+                    Sensitive sensitive = targetField.getAnnotation(Sensitive.class);
+                    if (sensitive != null && sourceValue != null && sourceValue instanceof String) {
+                        sourceValue = SensitiveUtil.desensitize((String) sourceValue, sensitive);
+                    }
+
                     setFieldValue(target, targetField, sourceValue, TypeConverter.DefaultConverter.class);
                     break; // 找到匹配后就不再查找其他源对象
                 }
