@@ -1,5 +1,8 @@
 package com.github.leyland.data.mapper;
 
+import com.github.leyland.data.desensitize.Sensitive;
+import com.github.leyland.data.desensitize.SensitiveUtil;
+
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.*;
