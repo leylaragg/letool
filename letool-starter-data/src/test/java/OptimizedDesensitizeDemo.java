@@ -1,8 +1,10 @@
-import com.github.leyland.data.desensitize.*;
-import com.github.leyland.data.desensitize.handler.DesensitizeHandler;
-import com.github.leyland.data.desensitize.handler.IndexDesensitizeHandler;
-import com.github.leyland.data.desensitize.handler.RegexDesensitizeHandler;
-import com.github.leyland.data.desensitize.handler.SlideDesensitizeHandler;
+import com.github.leyland.letool.data.desensitize.DesensitizeHandlerHolder;
+import com.github.leyland.letool.data.desensitize.DesensitizeUtil;
+import com.github.leyland.letool.data.desensitize.handler.DesensitizeHandler;
+import com.github.leyland.letool.data.desensitize.handler.IndexDesensitizeHandler;
+import com.github.leyland.letool.data.desensitize.handler.RegexDesensitizeHandler;
+import com.github.leyland.letool.data.desensitize.handler.SlideDesensitizeHandler;
+import com.github.leyland.letool.data.desensitize.rule.*;
 
 /**
  * 优化后的脱敏功能演示
@@ -76,14 +78,14 @@ public class OptimizedDesensitizeDemo {
         SlideDesensitizeHandler handler = DesensitizeHandlerHolder.getSlideHandler();
 
         // 使用预定义规则
-        System.out.println("手机号规则: " + handler.mask("13800138000", new com.github.leyland.data.desensitize.rule.PhoneNumberSlideRule()));
-        System.out.println("身份证规则: " + handler.mask("430123199001011234", new com.github.leyland.data.desensitize.rule.IdCardSlideRule()));
-        System.out.println("银行卡规则: " + handler.mask("6222021234567890123", new com.github.leyland.data.desensitize.rule.BankCardSlideRule()));
-        System.out.println("地址规则: " + handler.mask("北京市朝阳区xxx街道xxx号", new com.github.leyland.data.desensitize.rule.AddressSlideRule()));
+        System.out.println("手机号规则: " + handler.mask("13800138000", new PhoneNumberSlideRule()));
+        System.out.println("身份证规则: " + handler.mask("430123199001011234", new IdCardSlideRule()));
+        System.out.println("银行卡规则: " + handler.mask("6222021234567890123", new BankCardSlideRule()));
+        System.out.println("地址规则: " + handler.mask("北京市朝阳区xxx街道xxx号", new AddressSlideRule()));
 
         // 使用邮箱正则规则
         RegexDesensitizeHandler regexHandler = DesensitizeHandlerHolder.getRegexHandler();
-        System.out.println("邮箱正则规则: " + regexHandler.mask("zhangsan@example.com", new com.github.leyland.data.desensitize.rule.EmailRegexRule()));
+        System.out.println("邮箱正则规则: " + regexHandler.mask("zhangsan@example.com", new EmailRegexRule()));
         System.out.println();
     }
 

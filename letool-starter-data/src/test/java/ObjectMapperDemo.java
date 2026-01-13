@@ -1,10 +1,11 @@
-import com.github.leyland.data.desensitize.Sensitive;
-import com.github.leyland.data.desensitize.SensitiveType;
-import com.github.leyland.data.mapper.ObjectMapperUtil;
-import com.github.leyland.data.mapper.annotation.MapField;
-import com.github.leyland.data.mapper.context.MappingConfig;
-import com.github.leyland.data.mapper.handler.FieldMappingHandler;
-import com.github.leyland.data.mapper.holder.HandlerHolder;
+import com.github.leyland.letool.data.desensitize.Sensitive;
+import com.github.leyland.letool.data.desensitize.SensitiveType;
+import com.github.leyland.letool.data.mapper.ObjectMapperUtil;
+import com.github.leyland.letool.data.mapper.annotation.MapField;
+import com.github.leyland.letool.data.mapper.context.MappingConfig;
+import com.github.leyland.letool.data.mapper.handler.FieldMappingHandler;
+import com.github.leyland.letool.data.mapper.holder.HandlerHolder;
+import com.github.leyland.letool.data.mapper.context.MappingContext;
 
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
@@ -455,7 +456,7 @@ public class ObjectMapperDemo {
     public static class CustomFieldHandler implements FieldMappingHandler {
 
         @Override
-        public Object handle(com.github.leyland.data.mapper.context.MappingContext context, Field targetField, Object sourceValue) {
+        public Object handle(MappingContext context, Field targetField, Object sourceValue) {
             // 示例：将年龄字段加1
             if (targetField.getName().equals("age") && sourceValue instanceof Integer) {
                 return (Integer) sourceValue + 1;
@@ -464,7 +465,7 @@ public class ObjectMapperDemo {
         }
 
         @Override
-        public boolean supports(com.github.leyland.data.mapper.context.MappingContext context, Field targetField) {
+        public boolean supports(MappingContext context, Field targetField) {
             // 只处理 age 字段
             return targetField.getName().equals("age");
         }
