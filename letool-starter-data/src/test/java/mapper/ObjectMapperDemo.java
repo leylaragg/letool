@@ -1,3 +1,5 @@
+package mapper;
+
 import com.github.leyland.letool.data.desensitize.Sensitive;
 import com.github.leyland.letool.data.desensitize.SensitiveType;
 import com.github.leyland.letool.data.mapper.ObjectMapperUtil;
