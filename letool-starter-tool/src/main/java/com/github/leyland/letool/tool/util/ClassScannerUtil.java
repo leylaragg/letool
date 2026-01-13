@@ -1,7 +1,5 @@
 package com.github.leyland.letool.tool.util;
 
-import com.github.leyland.letool.tool.test.MyInterface;
-
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Modifier;
@@ -84,10 +82,10 @@ public class ClassScannerUtil {
     public static void main(String[] args) {
         try {
             // 示例：扫描 com.example 包下所有实现了 MyInterface 的可实例化类
-            List<Class<?>> implementations = findInstantiableImplementations(MyInterface.class, "com.github.leyland.letool.tool.util.test");
+            /*List<Class<?>> implementations = findInstantiableImplementations(MyInterface.class, "com.github.leyland.letool.tool.util.test");
             for (Class<?> clazz : implementations) {
                 System.out.println("Found class: " + clazz.getName());
-            }
+            }*/
         } catch (Exception e) {
             e.printStackTrace();
         }
