@@ -1,8 +1,8 @@
 package com.github.leyland.letool.letool.tool;
 
-import com.github.leyland.letool.letool.tool.Interceptor.RuleBasedInterceptor;
-import com.github.leyland.letool.letool.tool.configuration.SpringUtil;
-import com.github.leyland.letool.letool.tool.helper.RestTemplateHelper;
+import com.github.leyland.letool.tool.Interceptor.RuleBasedInterceptor;
+import com.github.leyland.letool.tool.configuration.SpringUtil;
+import com.github.leyland.letool.tool.helper.RestTemplateHelper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
