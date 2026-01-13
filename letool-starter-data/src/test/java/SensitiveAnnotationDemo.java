@@ -1,7 +1,8 @@
 
 import com.github.leyland.data.desensitize.Sensitive;
 import com.github.leyland.data.desensitize.SensitiveType;
-import com.github.leyland.data.mapper.ObjectMapper;
+import com.github.leyland.data.mapper.ObjectMapperUtil;
+import com.github.leyland.data.mapper.annotation.MapField;
 
 import java.math.BigDecimal;
 import java.util.Date;
@@ -52,7 +53,7 @@ public class SensitiveAnnotationDemo {
         user.setPassword("MyPassword123");
 
         UserVO vo = new UserVO();
-        ObjectMapper.map(vo, user);
+        ObjectMapperUtil.map(vo, user);
 
         System.out.println("原始数据:");
         System.out.println("  姓名: " + user.getName());
@@ -86,7 +87,7 @@ public class SensitiveAnnotationDemo {
         entity.setCustomField3("9876543210");
 
         CustomSlideVO vo = new CustomSlideVO();
-        ObjectMapper.map(vo, entity);
+        ObjectMapperUtil.map(vo, entity);
 
         System.out.println("原始数据:");
         System.out.println("  字段1: " + entity.getCustomField1());
@@ -112,7 +113,7 @@ public class SensitiveAnnotationDemo {
         entity.setSerial("SN1234567890XYZ");
 
         CustomRegexVO vo = new CustomRegexVO();
-        ObjectMapper.map(vo, entity);
+        ObjectMapperUtil.map(vo, entity);
 
         System.out.println("原始数据:");
         System.out.println("  手机号: " + entity.getPhone());
@@ -138,7 +139,7 @@ public class SensitiveAnnotationDemo {
         entity.setField3("9876543210");
 
         CustomIndexVO vo = new CustomIndexVO();
-        ObjectMapper.map(vo, entity);
+        ObjectMapperUtil.map(vo, entity);
 
         System.out.println("原始数据:");
         System.out.println("  字段1: " + entity.getField1());
@@ -166,7 +167,7 @@ public class SensitiveAnnotationDemo {
         entity.setTrackingNumber("SF1234567890123");
 
         MixedDesensitizeVO vo = new MixedDesensitizeVO();
-        ObjectMapper.map(vo, entity);
+        ObjectMapperUtil.map(vo, entity);
 
         System.out.println("原始数据:");
         System.out.println("  姓名: " + entity.getName());
@@ -204,7 +205,7 @@ public class SensitiveAnnotationDemo {
 
         // 批量映射（实际场景可能返回 List）
         java.util.List<UserEntity> userList = java.util.Arrays.asList(user);
-        java.util.List<UserDetailVO> voList = ObjectMapper.mapList(userList, UserDetailVO.class, orderInfo);
+        java.util.List<UserDetailVO> voList = ObjectMapperUtil.mapList(userList, UserDetailVO.class, orderInfo);
 
         System.out.println("批量映射结果:");
         for (UserDetailVO vo : voList) {
@@ -545,28 +546,28 @@ public class SensitiveAnnotationDemo {
     public static class UserDetailVO {
 
         @Sensitive(SensitiveType.CHINESE_NAME)
-        @com.github.leyland.data.mapper.MapFrom(sourceIndex = 0, value = "name")
+        @MapField(sourcePath = "name")
         private String userName;
 
         @Sensitive(SensitiveType.MOBILE_PHONE)
-        @com.github.leyland.data.mapper.MapFrom(sourceIndex = 0, value = "phone")
+        @MapField(sourcePath = "phone")
         private String userPhone;
 
         @Sensitive(SensitiveType.EMAIL)
-        @com.github.leyland.data.mapper.MapFrom(sourceIndex = 0, value = "email")
+        @MapField(sourcePath = "email")
         private String userEmail;
 
-        @com.github.leyland.data.mapper.MapFrom(sourceIndex = 0, value = "id")
+        @MapField(sourcePath = "id")
         private Long userId;
 
-        @com.github.leyland.data.mapper.MapFrom(sourceIndex = 1, value = "orderNo")
+        @MapField(sourcePath = "orderNo")
         private String orderNo;
 
         @Sensitive(SensitiveType.BANK_CARD)
-        @com.github.leyland.data.mapper.MapFrom(sourceIndex = 1, value = "paymentAccount")
+        @MapField(sourcePath = "paymentAccount")
         private String paymentAccount;
 
-        @com.github.leyland.data.mapper.MapFrom(sourceIndex = 1, value = "amount")
+        @MapField(sourcePath = "amount")
         private BigDecimal amount;
 
         // Getter and Setter

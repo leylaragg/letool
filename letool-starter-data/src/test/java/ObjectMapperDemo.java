@@ -1,7 +1,15 @@
-import com.github.leyland.data.mapper.MapFrom;
-import com.github.leyland.data.mapper.ObjectMapper;
+import com.github.leyland.data.desensitize.Sensitive;
+import com.github.leyland.data.desensitize.SensitiveType;
+import com.github.leyland.data.mapper.ObjectMapperUtil;
+import com.github.leyland.data.mapper.annotation.MapField;
+import com.github.leyland.data.mapper.context.MappingConfig;
+import com.github.leyland.data.mapper.handler.FieldMappingHandler;
+import com.github.leyland.data.mapper.holder.HandlerHolder;
 
+import java.lang.reflect.Field;
+import java.math.BigDecimal;
 import java.util.Date;
+import java.util.List;
 
 /**
  * 对象映射器演示
@@ -13,40 +21,46 @@ import java.util.Date;
 public class ObjectMapperDemo {
 
     public static void main(String[] args) {
-        // ========== 基础示例 ==========
-        basicExample();
+        // ========== 基础映射示例 ==========
+        basicMappingExample();
 
-        // ========== 多源对象示例 ==========
-        multiSourceExample();
+        // ========== 多源对象映射示例 ==========
+        multiSourceMappingExample();
 
-        // ========== 嵌套对象示例 ==========
-        nestedObjectExample();
+        // ========== 脱敏映射示例 ==========
+        sensitiveMappingExample();
 
-        // ========== 类型转换示例 ==========
-        typeConversionExample();
+        // ========== 格式化映射示例 ==========
+        formatMappingExample();
 
-        // ========== 自定义转换器示例 ==========
-        customConverterExample();
+        // ========== 自定义配置示例 ==========
+        customConfigExample();
+
+        // ========== 批量映射示例 ==========
+        batchMappingExample();
+
+        // ========== 自定义处理器示例 ==========
+        customHandlerExample();
     }
 
     /**
-     * 基础示例：单个源对象映射到VO
+     * 基础映射示例
      */
-    private static void basicExample() {
-        System.out.println("========== 基础示例 ==========");
+    private static void basicMappingExample() {
+        System.out.println("========== 基础映射示例 ==========");
 
-        // 创建源对象（实体类）
-        UserEntity userEntity = new UserEntity();
-        userEntity.setId(1L);
-        userEntity.setName("张三");
-        userEntity.setAge(25);
-        userEntity.setEmail("zhangsan@example.com");
+        // 创建源对象
+        ObjectMapperDemo.UserEntity user = new ObjectMapperDemo.UserEntity();
+        user.setId(1L);
+        user.setName("张三");
+        user.setAge(25);
+        user.setEmail("zhangsan@example.com");
 
-        // 创建目标VO对象
-        UserVO userVO = new UserVO();
+        // 创建目标VO
+        ObjectMapperDemo.UserVO userVO = new ObjectMapperDemo.UserVO();
 
         // 执行映射
-        ObjectMapper.map(userVO, userEntity);
+        ObjectMapperUtil.map(userVO, user);
 
         // 输出结果
         System.out.println("UserVO: " + userVO);
@@ -54,129 +68,180 @@ public class ObjectMapperDemo {
     }
 
     /**
-     * 多源对象示例：从多个源对象映射到一个VO
+     * 多源对象映射示例
      */
-    private static void multiSourceExample() {
-        System.out.println("========== 多源对象示例 ==========");
+    private static void multiSourceMappingExample() {
+        System.out.println("========== 多源对象映射示例 ==========");
 
-        // 第一个源对象：用户信息
-        UserEntity user = new UserEntity();
+        // 创建源对象
+        ObjectMapperDemo.UserEntity user = new ObjectMapperDemo.UserEntity();
         user.setId(1L);
         user.setName("李四");
         user.setAge(30);
 
-        // 第二个源对象：订单信息
-        OrderEntity order = new OrderEntity();
+        ObjectMapperDemo.OrderEntity order = new ObjectMapperDemo.OrderEntity();
         order.setOrderNo("ORDER-2025-001");
-        order.setTotalAmount(new java.math.BigDecimal("999.99"));
-
-        // 第三个源对象：扩展信息
-        UserExtraInfo extraInfo = new UserExtraInfo();
-        extraInfo.setPhone("13800138000");
-        extraInfo.setAddress("北京市朝阳区");
+        order.setTotalAmount(new BigDecimal("1299.99"));
+        order.setCreateTime(new Date());
 
         // 创建目标VO
-        UserDetailVO detailVO = new UserDetailVO();
+        ObjectMapperDemo.OrderDetailVO orderDetailVO = new ObjectMapperDemo.OrderDetailVO();
 
         // 执行映射
-        ObjectMapper.map(detailVO, user, order, extraInfo);
+        ObjectMapperUtil.map(orderDetailVO, user, order);
 
         // 输出结果
-        System.out.println("UserDetailVO: " + detailVO);
+        System.out.println("OrderDetailVO: " + orderDetailVO);
         System.out.println();
     }
 
     /**
-     * 嵌套对象示例：支持深层嵌套属性访问
+     * 脱敏映射示例
      */
-    private static void nestedObjectExample() {
-        System.out.println("========== 嵌套对象示例 ==========");
+    private static void sensitiveMappingExample() {
+        System.out.println("========== 脱敏映射示例 ==========");
 
-        // 创建嵌套对象结构
-        Address address = new Address();
-        address.setCity("深圳市");
-        address.setDistrict("南山区");
-        address.setStreet("科技园路");
-
-        UserProfile profile = new UserProfile();
-        profile.setAddress(address);
-        profile.setNickname("技术达人");
-
-        UserEntity user = new UserEntity();
-        user.setId(2L);
-        user.setName("王五");
-        user.setProfile(profile);
+        // 创建源对象
+        ObjectMapperDemo.UserProfileEntity profile = new ObjectMapperDemo.UserProfileEntity();
+        profile.setId(1L);
+        profile.setName("王五");
+        profile.setIdCard("430102199001011234");
+        profile.setPhone("13800138000");
+        profile.setEmail("wangwu@qq.com");
 
         // 创建目标VO
-        UserLocationVO locationVO = new UserLocationVO();
+        ObjectMapperDemo.UserProfileVO profileVO = new ObjectMapperDemo.UserProfileVO();
 
-        // 执行映射（使用嵌套路径）
-        ObjectMapper.map(locationVO, user);
+        // 执行映射（自动应用脱敏）
+        ObjectMapperUtil.map(profileVO, profile);
 
         // 输出结果
-        System.out.println("UserLocationVO: " + locationVO);
+        System.out.println("UserProfileVO: " + profileVO);
         System.out.println();
     }
 
     /**
-     * 类型转换示例：自动进行类型转换
+     * 格式化映射示例
      */
-    private static void typeConversionExample() {
-        System.out.println("========== 类型转换示例 ==========");
+    private static void formatMappingExample() {
+        System.out.println("========== 格式化映射示例 ==========");
 
-        // 源对象：数值类型
-        DataEntity dataEntity = new DataEntity();
-        dataEntity.setIntValue(123);
-        dataEntity.setDoubleValue(456.78);
-        dataEntity.setBoolValue(true);
-        dataEntity.setDateValue(new Date());
-
-        // 目标VO：字符串类型
-        DataVO dataVO = new DataVO();
-
-        // 执行映射（自动类型转换）
-        ObjectMapper.map(dataVO, dataEntity);
-
-        // 输出结果
-        System.out.println("DataVO: " + dataVO);
-        System.out.println();
-    }
-
-    /**
-     * 自定义转换器示例：使用自定义转换逻辑
-     */
-    private static void customConverterExample() {
-        System.out.println("========== 自定义转换器示例 ==========");
-
-        // 源对象
-        ProductEntity product = new ProductEntity();
+        // 创建源对象
+        ObjectMapperDemo.ProductEntity product = new ObjectMapperDemo.ProductEntity();
         product.setProductName("高性能笔记本");
-        product.setPrice(new java.math.BigDecimal("5999.00"));
-        product.setStock(100);
+        product.setPrice(new BigDecimal("5999.99"));
         product.setCreateTime(new Date());
 
-        // 目标VO
-        ProductVO productVO = new ProductVO();
+        // 创建目标VO
+        ObjectMapperDemo.ProductVO productVO = new ObjectMapperDemo.ProductVO();
 
-        // 执行映射
-        ObjectMapper.map(productVO, product);
+        // 执行映射（自动应用格式化）
+        ObjectMapperUtil.map(productVO, product);
 
         // 输出结果
         System.out.println("ProductVO: " + productVO);
         System.out.println();
     }
 
-    // ========== 测试用的实体类和VO类 ==========
+    /**
+     * 自定义配置示例
+     */
+    private static void customConfigExample() {
+        System.out.println("========== 自定义配置示例 ==========");
+
+        // 创建自定义配置
+        MappingConfig config = new MappingConfig()
+                .setDefaultDateFormat("yyyy年MM月dd日 HH:mm:ss")
+                .setIgnoreNull(true)
+                .setEnableHandlerChain(true);
+
+        // 创建源对象
+        ObjectMapperDemo.ProductEntity product = new ObjectMapperDemo.ProductEntity();
+        product.setProductName("测试商品");
+        product.setPrice(new BigDecimal("199.99"));
+        product.setCreateTime(new Date());
+
+        // 创建目标VO
+        ObjectMapperDemo.ProductVO productVO = new ObjectMapperDemo.ProductVO();
+
+        // 执行映射（使用自定义配置）
+        ObjectMapperUtil.map(productVO, config, product);
+
+        // 输出结果
+        System.out.println("ProductVO (自定义配置): " + productVO);
+        System.out.println();
+    }
 
     /**
-     * 用户实体
+     * 批量映射示例
      */
-    static class UserEntity {
+    private static void batchMappingExample() {
+        System.out.println("========== 批量映射示例 ==========");
+
+        // 创建源对象列表
+        List<ObjectMapperDemo.UserEntity> users = new java.util.ArrayList<>();
+        for (int i = 1; i <= 3; i++) {
+            ObjectMapperDemo.UserEntity user = new ObjectMapperDemo.UserEntity();
+            user.setId((long) i);
+            user.setName("用户" + i);
+            user.setAge(20 + i);
+            user.setEmail("user" + i + "@example.com");
+            users.add(user);
+        }
+
+        // 执行批量映射
+        List<ObjectMapperDemo.UserVO> userVOs = ObjectMapperUtil.mapList(users, ObjectMapperDemo.UserVO.class);
+
+        // 输出结果
+        for (ObjectMapperDemo.UserVO userVO : userVOs) {
+            System.out.println(userVO);
+        }
+        System.out.println();
+    }
+
+    /**
+     * 自定义处理器示例
+     */
+    private static void customHandlerExample() {
+        System.out.println("========== 自定义处理器示例 ==========");
+
+        try {
+            // 注册自定义处理器
+            HandlerHolder.register(new ObjectMapperDemo.CustomFieldHandler());
+
+            // 创建源对象
+            ObjectMapperDemo.UserEntity user = new ObjectMapperDemo.UserEntity();
+            user.setId(1L);
+            user.setName("张三");
+            user.setAge(25);
+            user.setEmail("zhangsan@example.com");
+
+            // 创建目标VO
+            ObjectMapperDemo.UserVO userVO = new ObjectMapperDemo.UserVO();
+
+            // 执行映射
+            ObjectMapperUtil.map(userVO, user);
+
+            // 输出结果
+            System.out.println("UserVO (自定义处理器): " + userVO);
+            System.out.println();
+        } finally {
+            // 清理
+            try {
+                HandlerHolder.unregister(ObjectMapperDemo.CustomFieldHandler.class);
+            } catch (Exception e) {
+                // 忽略清理失败
+            }
+        }
+    }
+
+    // ========== 测试用的实体类 ==========
+
+    public static class UserEntity {
         private Long id;
         private String name;
         private Integer age;
         private String email;
-        private UserProfile profile;
 
         // Getter and Setter
         public Long getId() { return id; }
@@ -187,130 +252,69 @@ public class ObjectMapperDemo {
         public void setAge(Integer age) { this.age = age; }
         public String getEmail() { return email; }
         public void setEmail(String email) { this.email = email; }
-        public UserProfile getProfile() { return profile; }
-        public void setProfile(UserProfile profile) { this.profile = profile; }
-
-        @Override
-        public String toString() {
-            return "UserEntity{id=" + id + ", name='" + name + "', age=" + age + ", email='" + email + "'}";
-        }
     }
 
-    /**
-     * 用户资料（嵌套对象）
-     */
-    static class UserProfile {
-        private String nickname;
-        private Address address;
-
-        // Getter and Setter
-        public String getNickname() { return nickname; }
-        public void setNickname(String nickname) { this.nickname = nickname; }
-        public Address getAddress() { return address; }
-        public void setAddress(Address address) { this.address = address; }
-    }
-
-    /**
-     * 地址（深层嵌套对象）
-     */
-    static class Address {
-        private String city;
-        private String district;
-        private String street;
-
-        // Getter and Setter
-        public String getCity() { return city; }
-        public void setCity(String city) { this.city = city; }
-        public String getDistrict() { return district; }
-        public void setDistrict(String district) { this.district = district; }
-        public String getStreet() { return street; }
-        public void setStreet(String street) { this.street = street; }
-    }
-
-    /**
-     * 订单实体
-     */
-    static class OrderEntity {
-        private String orderNo;
-        private java.math.BigDecimal totalAmount;
-
-        // Getter and Setter
-        public String getOrderNo() { return orderNo; }
-        public void setOrderNo(String orderNo) { this.orderNo = orderNo; }
-        public java.math.BigDecimal getTotalAmount() { return totalAmount; }
-        public void setTotalAmount(java.math.BigDecimal totalAmount) { this.totalAmount = totalAmount; }
-    }
-
-    /**
-     * 用户扩展信息
-     */
-    static class UserExtraInfo {
+    public static class UserProfileEntity {
+        private Long id;
+        private String name;
+        private String idCard;
         private String phone;
-        private String address;
+        private String email;
 
         // Getter and Setter
+        public Long getId() { return id; }
+        public void setId(Long id) { this.id = id; }
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public String getIdCard() { return idCard; }
+        public void setIdCard(String idCard) { this.idCard = idCard; }
         public String getPhone() { return phone; }
         public void setPhone(String phone) { this.phone = phone; }
-        public String getAddress() { return address; }
-        public void setAddress(String address) { this.address = address; }
+        public String getEmail() { return email; }
+        public void setEmail(String email) { this.email = email; }
     }
 
-    /**
-     * 产品实体
-     */
-    static class ProductEntity {
+    public static class ProductEntity {
         private String productName;
-        private java.math.BigDecimal price;
-        private Integer stock;
+        private BigDecimal price;
         private Date createTime;
 
         // Getter and Setter
         public String getProductName() { return productName; }
         public void setProductName(String productName) { this.productName = productName; }
-        public java.math.BigDecimal getPrice() { return price; }
-        public void setPrice(java.math.BigDecimal price) { this.price = price; }
-        public Integer getStock() { return stock; }
-        public void setStock(Integer stock) { this.stock = stock; }
+        public BigDecimal getPrice() { return price; }
+        public void setPrice(BigDecimal price) { this.price = price; }
         public Date getCreateTime() { return createTime; }
         public void setCreateTime(Date createTime) { this.createTime = createTime; }
     }
 
-    /**
-     * 数据实体
-     */
-    static class DataEntity {
-        private Integer intValue;
-        private Double doubleValue;
-        private Boolean boolValue;
-        private Date dateValue;
+    public static class OrderEntity {
+        private String orderNo;
+        private BigDecimal totalAmount;
+        private Date createTime;
 
         // Getter and Setter
-        public Integer getIntValue() { return intValue; }
-        public void setIntValue(Integer intValue) { this.intValue = intValue; }
-        public Double getDoubleValue() { return doubleValue; }
-        public void setDoubleValue(Double doubleValue) { this.doubleValue = doubleValue; }
-        public Boolean getBoolValue() { return boolValue; }
-        public void setBoolValue(Boolean boolValue) { this.boolValue = boolValue; }
-        public Date getDateValue() { return dateValue; }
-        public void setDateValue(Date dateValue) { this.dateValue = dateValue; }
+        public String getOrderNo() { return orderNo; }
+        public void setOrderNo(String orderNo) { this.orderNo = orderNo; }
+        public BigDecimal getTotalAmount() { return totalAmount; }
+        public void setTotalAmount(BigDecimal totalAmount) { this.totalAmount = totalAmount; }
+        public Date getCreateTime() { return createTime; }
+        public void setCreateTime(Date createTime) { this.createTime = createTime; }
     }
 
-    // ========== VO类 ==========
+    // ========== 测试用的VO类 ==========
 
-    /**
-     * 用户VO（基础示例）
-     */
-    static class UserVO {
-        @MapFrom
+    public static class UserVO {
+        @MapField
         private Long id;
 
-        @MapFrom
+        @MapField
         private String name;
 
-        @MapFrom
+        @MapField
         private Integer age;
 
-        @MapFrom
+        @MapField
         private String email;
 
         // Getter and Setter
@@ -329,164 +333,57 @@ public class ObjectMapperDemo {
         }
     }
 
-    /**
-     * 用户详情VO（多源对象）
-     */
-    static class UserDetailVO {
-        // 从 UserEntity 获取
-        @MapFrom(sourceIndex = 0, value = "id")
-        private Long userId;
-
-        @MapFrom(sourceIndex = 0, value = "name")
-        private String userName;
-
-        @MapFrom(sourceIndex = 0, value = "age")
-        private Integer userAge;
-
-        // 从 OrderEntity 获取
-        @MapFrom(sourceIndex = 1, value = "orderNo")
-        private String orderNumber;
-
-        @MapFrom(sourceIndex = 1, value = "totalAmount")
-        private java.math.BigDecimal amount;
-
-        // 从 UserExtraInfo 获取
-        @MapFrom(sourceIndex = 2, value = "phone")
-        private String phoneNumber;
-
-        @MapFrom(sourceIndex = 2, value = "address")
-        private String fullAddress;
-
-        // Getter and Setter
-        public Long getUserId() { return userId; }
-        public void setUserId(Long userId) { this.userId = userId; }
-        public String getUserName() { return userName; }
-        public void setUserName(String userName) { this.userName = userName; }
-        public Integer getUserAge() { return userAge; }
-        public void setUserAge(Integer userAge) { this.userAge = userAge; }
-        public String getOrderNumber() { return orderNumber; }
-        public void setOrderNumber(String orderNumber) { this.orderNumber = orderNumber; }
-        public java.math.BigDecimal getAmount() { return amount; }
-        public void setAmount(java.math.BigDecimal amount) { this.amount = amount; }
-        public String getPhoneNumber() { return phoneNumber; }
-        public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }
-        public String getFullAddress() { return fullAddress; }
-        public void setFullAddress(String fullAddress) { this.fullAddress = fullAddress; }
-
-        @Override
-        public String toString() {
-            return "UserDetailVO{" +
-                    "userId=" + userId +
-                    ", userName='" + userName + '\'' +
-                    ", userAge=" + userAge +
-                    ", orderNumber='" + orderNumber + '\'' +
-                    ", amount=" + amount +
-                    ", phoneNumber='" + phoneNumber + '\'' +
-                    ", fullAddress='" + fullAddress + '\'' +
-                    '}';
-        }
-    }
-
-    /**
-     * 用户位置VO（嵌套对象）
-     */
-    static class UserLocationVO {
-        @MapFrom(value = "id")
+    public static class UserProfileVO {
+        @MapField
         private Long id;
 
-        @MapFrom(value = "name")
-        private String userName;
+        @MapField
+        private String name;
 
-        @MapFrom(value = "profile.nickname")
-        private String nickname;
+        @MapField
+        @Sensitive(SensitiveType.ID_CARD)
+        private String idCard;
 
-        @MapFrom(value = "profile.address.city")
-        private String city;
+        @MapField
+        @Sensitive(SensitiveType.MOBILE_PHONE)
+        private String phone;
 
-        @MapFrom(value = "profile.address.district")
-        private String district;
-
-        @MapFrom(value = "profile.address.street")
-        private String street;
+        @MapField
+        @Sensitive(SensitiveType.EMAIL)
+        private String email;
 
         // Getter and Setter
         public Long getId() { return id; }
         public void setId(Long id) { this.id = id; }
-        public String getUserName() { return userName; }
-        public void setUserName(String userName) { this.userName = userName; }
-        public String getNickname() { return nickname; }
-        public void setNickname(String nickname) { this.nickname = nickname; }
-        public String getCity() { return city; }
-        public void setCity(String city) { this.city = city; }
-        public String getDistrict() { return district; }
-        public void setDistrict(String district) { this.district = district; }
-        public String getStreet() { return street; }
-        public void setStreet(String street) { this.street = street; }
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public String getIdCard() { return idCard; }
+        public void setIdCard(String idCard) { this.idCard = idCard; }
+        public String getPhone() { return phone; }
+        public void setPhone(String phone) { this.phone = phone; }
+        public String getEmail() { return email; }
+        public void setEmail(String email) { this.email = email; }
 
         @Override
         public String toString() {
-            return "UserLocationVO{" +
+            return "UserProfileVO{" +
                     "id=" + id +
-                    ", userName='" + userName + '\'' +
-                    ", nickname='" + nickname + '\'' +
-                    ", city='" + city + '\'' +
-                    ", district='" + district + '\'' +
-                    ", street='" + street + '\'' +
+                    ", name='" + name + '\'' +
+                    ", idCard='" + idCard + '\'' +
+                    ", phone='" + phone + '\'' +
+                    ", email='" + email + '\'' +
                     '}';
         }
     }
 
-    /**
-     * 数据VO（类型转换）
-     */
-    static class DataVO {
-        @MapFrom(value = "intValue")
-        private String intStr;
-
-        @MapFrom(value = "doubleValue")
-        private String doubleStr;
-
-        @MapFrom(value = "boolValue")
-        private String boolStr;
-
-        @MapFrom(value = "dateValue")
-        private String dateStr;
-
-        // Getter and Setter
-        public String getIntStr() { return intStr; }
-        public void setIntStr(String intStr) { this.intStr = intStr; }
-        public String getDoubleStr() { return doubleStr; }
-        public void setDoubleStr(String doubleStr) { this.doubleStr = doubleStr; }
-        public String getBoolStr() { return boolStr; }
-        public void setBoolStr(String boolStr) { this.boolStr = boolStr; }
-        public String getDateStr() { return dateStr; }
-        public void setDateStr(String dateStr) { this.dateStr = dateStr; }
-
-        @Override
-        public String toString() {
-            return "DataVO{" +
-                    "intStr='" + intStr + '\'' +
-                    ", doubleStr='" + doubleStr + '\'' +
-                    ", boolStr='" + boolStr + '\'' +
-                    ", dateStr='" + dateStr + '\'' +
-                    '}';
-        }
-    }
-
-    /**
-     * 产品VO（自定义转换器）
-     */
-    static class ProductVO {
-        @MapFrom(value = "productName")
+    public static class ProductVO {
+        @MapField(sourcePath = "productName")
         private String name;
 
-        @MapFrom(value = "price")
+        @MapField(sourcePath = "price", format = "¥#,##0.00")
         private String priceDisplay;
 
-        @MapFrom(value = "stock")
-        private String stockStatus;
-
-        @MapFrom(value = "createTime")
+        @MapField(sourcePath = "createTime", format = "yyyy-MM-dd HH:mm:ss")
         private String createTimeDisplay;
 
         // Getter and Setter
@@ -494,8 +391,6 @@ public class ObjectMapperDemo {
         public void setName(String name) { this.name = name; }
         public String getPriceDisplay() { return priceDisplay; }
         public void setPriceDisplay(String priceDisplay) { this.priceDisplay = priceDisplay; }
-        public String getStockStatus() { return stockStatus; }
-        public void setStockStatus(String stockStatus) { this.stockStatus = stockStatus; }
         public String getCreateTimeDisplay() { return createTimeDisplay; }
         public void setCreateTimeDisplay(String createTimeDisplay) { this.createTimeDisplay = createTimeDisplay; }
 
@@ -504,9 +399,84 @@ public class ObjectMapperDemo {
             return "ProductVO{" +
                     "name='" + name + '\'' +
                     ", priceDisplay='" + priceDisplay + '\'' +
-                    ", stockStatus='" + stockStatus + '\'' +
                     ", createTimeDisplay='" + createTimeDisplay + '\'' +
                     '}';
+        }
+    }
+
+    public static class OrderDetailVO {
+        // 从 UserEntity 获取
+        @MapField(sourceIndex = 0, sourcePath = "id")
+        private Long userId;
+
+        @MapField(sourceIndex = 0, sourcePath = "name")
+        private String userName;
+
+        // 从 OrderEntity 获取
+        @MapField(sourceIndex = 1, sourcePath = "orderNo")
+        private String orderNumber;
+
+        @MapField(sourceIndex = 1, sourcePath = "totalAmount", format = "¥#,##0.00")
+        private String amountDisplay;
+
+        @MapField(sourceIndex = 1, sourcePath = "createTime", format = "yyyy-MM-dd HH:mm:ss")
+        private String createTimeDisplay;
+
+        // Getter and Setter
+        public Long getUserId() { return userId; }
+        public void setUserId(Long userId) { this.userId = userId; }
+        public String getUserName() { return userName; }
+        public void setUserName(String userName) { this.userName = userName; }
+        public String getOrderNumber() { return orderNumber; }
+        public void setOrderNumber(String orderNumber) { this.orderNumber = orderNumber; }
+        public String getAmountDisplay() { return amountDisplay; }
+        public void setAmountDisplay(String amountDisplay) { this.amountDisplay = amountDisplay; }
+        public String getCreateTimeDisplay() { return createTimeDisplay; }
+        public void setCreateTimeDisplay(String createTimeDisplay) { this.createTimeDisplay = createTimeDisplay; }
+
+        @Override
+        public String toString() {
+            return "OrderDetailVO{" +
+                    "userId=" + userId +
+                    ", userName='" + userName + '\'' +
+                    ", orderNumber='" + orderNumber + '\'' +
+                    ", amountDisplay='" + amountDisplay + '\'' +
+                    ", createTimeDisplay='" + createTimeDisplay + '\'' +
+                    '}';
+        }
+    }
+
+    // ========== 自定义处理器 ==========
+
+    /**
+     * 自定义字段处理器
+     * 演示如何扩展处理器
+     */
+    public static class CustomFieldHandler implements FieldMappingHandler {
+
+        @Override
+        public Object handle(com.github.leyland.data.mapper.context.MappingContext context, Field targetField, Object sourceValue) {
+            // 示例：将年龄字段加1
+            if (targetField.getName().equals("age") && sourceValue instanceof Integer) {
+                return (Integer) sourceValue + 1;
+            }
+            return sourceValue;
+        }
+
+        @Override
+        public boolean supports(com.github.leyland.data.mapper.context.MappingContext context, Field targetField) {
+            // 只处理 age 字段
+            return targetField.getName().equals("age");
+        }
+
+        @Override
+        public int getPriority() {
+            return 50;
+        }
+
+        @Override
+        public String getName() {
+            return "CustomFieldHandler";
         }
     }
 }
