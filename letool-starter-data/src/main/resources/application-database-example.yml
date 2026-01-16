@@ -1,0 +1,104 @@
+# Letool Database 模块配置示例
+
+letool:
+  database:
+    # 是否启用数据库模块
+    enabled: true
+
+    # 是否使用 Spring Boot 默认数据源
+    # 如果设置为 true，则优先使用 Spring Boot 配置的 spring.datasource
+    # 如果 datasource 配置中未指定数据源名称，则使用 Spring Boot 默认数据源
+    use-spring-datasource: true
+
+    # 外部数据源连接配置（如果不使用 Spring Boot 默认数据源，则需要配置）
+    datasources:
+      # 数据源名称
+      example-datasource:
+        url: jdbc:mysql://localhost:3306/example_db?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+        username: root
+        password: password
+        driver-class-name: com.mysql.cj.jdbc.Driver
+        pool-type: Druid  # 连接池类型: HikariCP, Druid
+        initial-size: 5
+        min-idle: 5
+        max-active: 20
+        max-wait: 60000
+        validation-query: SELECT 1
+
+    # 查询配置列表
+    queries:
+      # 查询配置示例 1：基础配置
+      - query-key: patient_info
+        table-name: patient_info
+        datasource: example-datasource  # 如果为空且 use-spring-datasource=true，则使用 Spring Boot 默认数据源
+        primary-key: id
+        batch-size: 1000
+        fields:
+          - id
+          - patient_id
+          - name
+          - age
+          - gender
+        where-condition: "status = 1"
+        order-by: create_time DESC
+        stream-query: false
+
+      # 查询配置示例 2：使用自定义SQL
+      - query-key: lab_result
+        table-name: lab_result
+        datasource: example-datasource
+        primary-key: id
+        batch-size: 500
+        custom-sql: |
+          SELECT lr.id, lr.patient_id, lr.test_item, lr.result_value, lr.unit, lr.test_time
+          FROM lab_result lr
+          WHERE lr.test_time >= :startTime
+          ORDER BY lr.test_time
+          LIMIT :batchSize OFFSET :offset
+        sql-params:
+          - param-name: startTime
+            param-type: DATETIME
+            value-source: DYNAMIC  # 值来源: STATIC, DYNAMIC, SYSTEM
+            required: true
+            format: yyyy-MM-dd HH:mm:ss
+          - param-name: batchSize
+            param-type: INTEGER
+            value-source: STATIC
+            default-value: 500
+          - param-name: offset
+            param-type: INTEGER
+            value-source: DYNAMIC
+
+      # 查询配置示例 3：使用系统参数
+      - query-key: daily_report
+        table-name: daily_report
+        datasource: example-datasource
+        primary-key: id
+        batch-size: 1000
+        where-condition: report_date = :reportDate
+        sql-params:
+          - param-name: reportDate
+            param-type: DATE
+            value-source: SYSTEM  # 系统参数
+            default-value: CURRENT_DATE
+
+      # 查询配置示例 4：一对多查询（需要在 DataHandler 中配置）
+      - query-key: outpat_record
+        table-name: outpat_record
+        datasource: example-datasource
+        primary-key: id
+        batch-size: 1000
+        fields:
+          - id
+          - patient_id
+          - visit_date
+          - dept_name
+          - doctor_name
+        where-condition: patient_id = :patientId
+        order-by: visit_date DESC
+        stream-query: true
+        sql-params:
+          - param-name: patientId
+            param-type: STRING
+            value-source: DYNAMIC
+            required: true

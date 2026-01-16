@@ -31,7 +31,7 @@
         <maven.compiler.target>11</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <letool.version>1.0.0-beta.6</letool.version>
-        <spring.boot.version>2.4.1</spring.boot.version>
+        <spring.boot.version>2.7.8</spring.boot.version>
         <hutool.version>5.8.25</hutool.version>
         <spring-framework.version>5.3.16</spring-framework.version>
         <javax.mail.version>1.6.2</javax.mail.version>
