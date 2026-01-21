@@ -1,0 +1,238 @@
+# Database 包测试配置
+
+server:
+  port: 8081
+
+spring:
+  application:
+    name: letool-database
+
+  # 使用 H2 内存数据库进行测试
+  datasource:
+    url: jdbc:mysql://127..0.0.1:3306/letool?useUnicode=true&characterEncoding=utf-8&autoReconnect=true&useSSL=true&zeroDateTimeBehavior=CONVERT_TO_NULL
+    username: root
+    password: root
+    type: com.alibaba.druid.pool.DruidDataSource
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    druid:
+      # 初始连接数
+      initialSize: 4
+      # 最小连接池数量
+      minIdle: 8
+      # 最大连接池数量
+      maxActive: 60
+      # 配置获取连接等待超时的时间
+      maxWait: 600000
+      # 配置连接超时时间
+      connectTimeout: 300000
+      # 配置网络超时时间
+      socketTimeout: 120000
+      # 配置间隔多久才进行一次检测，检测需要关闭的空闲连接，单位是毫秒
+      timeBetweenEvictionRunsMillis: 20000
+      # 配置一个连接在池中最小生存的时间，单位是毫秒
+      minEvictableIdleTimeMillis: 180000
+      # 配置一个连接在池中最大生存的时间，单位是毫秒
+      maxEvictableIdleTimeMillis: 900000
+      # 配置检测连接是否有效
+      validationQuery: SELECT 1 FROM DUAL
+      testWhileIdle: true
+      testOnBorrow: false
+      testOnReturn: false
+
+
+
+  letool:
+    context:
+      enabled: true
+
+
+# Letool Database 配置
+letool:
+  database:
+    # 启用 Database 模块
+    enabled: true
+
+    # 使用 Spring Boot 默认数据源
+    use-spring-datasource: true
+
+    # 查询配置列表
+    queries:
+      # 患者基本信息查询
+      - query-key: patient_info
+        table-name: patient_info
+        datasource: ""  # 使用 Spring Boot 默认数据源
+        primary-key: id
+        batch-size: 100
+        fields:
+          - id
+          - patient_id
+          - name
+          - gender
+          - age
+          - phone
+          - email
+          - address
+          - status
+          - create_time
+          - update_time
+        where-condition: "status = 1"
+        order-by: create_time DESC
+        stream-query: false
+
+      # 门诊记录查询（一对多）
+      - query-key: outpat_record
+        table-name: outpat_record
+        datasource: ""
+        primary-key: id
+        batch-size: 50
+        fields:
+          - id
+          - patient_id
+          - visit_no
+          - visit_date
+          - dept_name
+          - doctor_name
+          - diagnosis
+          - status
+          - create_time
+        where-condition: "patient_id = :patientId AND status = 1"
+        order-by: visit_date DESC
+        stream-query: true
+        sql-params:
+          - param-name: patientId
+            param-type: STRING
+            value-source: DYNAMIC
+            required: true
+
+      # 住院记录查询（一对多）
+      - query-key: inpat_record
+        table-name: inpat_record
+        datasource: ""
+        primary-key: id
+        batch-size: 50
+        fields:
+          - id
+          - patient_id
+          - admission_no
+          - admission_date
+          - discharge_date
+          - dept_name
+          - doctor_name
+          - bed_no
+          - status
+          - create_time
+        where-condition: "patient_id = :patientId AND status = 1"
+        order-by: admission_date DESC
+        stream-query: true
+        sql-params:
+          - param-name: patientId
+            param-type: STRING
+            value-source: DYNAMIC
+            required: true
+
+      # 检验报告查询（一对多）
+      - query-key: lab_report
+        table-name: lab_report
+        datasource: ""
+        primary-key: id
+        batch-size: 50
+        fields:
+          - id
+          - patient_id
+          - report_no
+          - test_item
+          - result_value
+          - unit
+          - reference_range
+          - abnormal_flag
+          - test_time
+          - report_time
+          - status
+        where-condition: "patient_id = :patientId AND status = 1"
+        order-by: test_time DESC
+        stream-query: true
+        sql-params:
+          - param-name: patientId
+            param-type: STRING
+            value-source: DYNAMIC
+            required: true
+
+      # 检查报告查询（一对多）
+      - query-key: exam_report
+        table-name: exam_report
+        datasource: ""
+        primary-key: id
+        batch-size: 50
+        fields:
+          - id
+          - patient_id
+          - report_no
+          - exam_item
+          - exam_result
+          - impression
+          - exam_time
+          - report_time
+          - status
+        where-condition: "patient_id = :patientId AND status = 1"
+        order-by: exam_time DESC
+        stream-query: true
+        sql-params:
+          - param-name: patientId
+            param-type: STRING
+            value-source: DYNAMIC
+            required: true
+
+      # 自定义 SQL 查询示例
+      - query-key: patient_summary
+        table-name: ""
+        datasource: ""
+        custom-sql: |
+          SELECT
+            p.patient_id,
+            p.name,
+            p.age,
+            p.gender,
+            COUNT(DISTINCT o.id) as visit_count,
+            COUNT(DISTINCT l.id) as lab_count,
+            COUNT(DISTINCT e.id) as exam_count
+          FROM patient_info p
+          LEFT JOIN outpat_record o ON p.patient_id = o.patient_id AND o.status = 1
+          LEFT JOIN lab_report l ON p.patient_id = l.patient_id AND l.status = 1
+          LEFT JOIN exam_report e ON p.patient_id = e.patient_id AND e.status = 1
+          WHERE p.status = 1
+          AND (:patientId IS NULL OR p.patient_id = :patientId)
+          AND (:minAge IS NULL OR p.age >= :minAge)
+          AND (:maxAge IS NULL OR p.age <= :maxAge)
+          GROUP BY p.patient_id, p.name, p.age, p.gender
+          ORDER BY p.patient_id
+          LIMIT :batchSize OFFSET :offset
+        batch-size: 100
+        sql-params:
+          - param-name: patientId
+            param-type: STRING
+            value-source: DYNAMIC
+            required: false
+          - param-name: minAge
+            param-type: INTEGER
+            value-source: DYNAMIC
+            required: false
+          - param-name: maxAge
+            param-type: INTEGER
+            value-source: DYNAMIC
+            required: false
+          - param-name: batchSize
+            param-type: INTEGER
+            value-source: STATIC
+            default-value: 100
+          - param-name: offset
+            param-type: INTEGER
+            value-source: DYNAMIC
+            required: false
+
+# 日志配置
+logging:
+  level:
+    root: INFO
+    com.github.leyland.letool.data: DEBUG
+    org.springframework.jdbc: DEBUG
+    org.hibernate.SQL: DEBUG
