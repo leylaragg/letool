@@ -1,9 +1,9 @@
-package com.github.leyland.letool.data.database;
+package com.github.leyland.letool.data.database.builder;
 
+import com.github.leyland.letool.data.database.core.DatabaseConfig;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.text.SimpleDateFormat;

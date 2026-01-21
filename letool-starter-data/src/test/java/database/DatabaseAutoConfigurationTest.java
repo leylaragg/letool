@@ -1,10 +1,10 @@
 package database;
 
 import com.github.leyland.letool.data.DatabaseApplication;
-import com.github.leyland.letool.data.database.DatabaseManager;
-import com.github.leyland.letool.data.database.DatabaseQueryExecutor;
+import com.github.leyland.letool.data.database.core.DatabaseManager;
+import com.github.leyland.letool.data.database.core.DatabaseQueryExecutor;
 import com.github.leyland.letool.data.database.DatabaseQueryService;
-import com.github.leyland.letool.data.database.DatabaseQueryBuilder;
+import com.github.leyland.letool.data.database.builder.DatabaseQueryBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

@@ -1,18 +1,14 @@
 package com.github.leyland.letool.data.database;
 
-import com.github.leyland.letool.data.database.handler.DataHandlerFactory;
-import lombok.Data;
+import com.github.leyland.letool.data.database.builder.DatabaseQueryBuilder;
+import com.github.leyland.letool.data.database.core.DatabaseConfig;
+import com.github.leyland.letool.data.database.core.DatabaseManager;
+import com.github.leyland.letool.data.database.core.DatabaseQueryExecutor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.stereotype.Component;
-
-import javax.sql.DataSource;
-import java.util.Map;
 
 /**
  * @ClassName <h2>DatabaseAutoConfiguration</h2>

@@ -1,12 +1,12 @@
 package com.github.leyland.letool.data.database;
 
+import com.github.leyland.letool.data.database.core.DatabaseConfig;
+import com.github.leyland.letool.data.database.core.DatabaseQueryExecutor;
+import com.github.leyland.letool.data.database.core.QueryContext;
 import com.github.leyland.letool.data.database.handler.DataHandler;
-import com.github.leyland.letool.data.database.handler.DataHandlerFactory;
-import com.github.leyland.letool.data.database.handler.QueryContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;

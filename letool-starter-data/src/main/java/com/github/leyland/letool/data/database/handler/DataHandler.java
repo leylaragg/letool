@@ -1,7 +1,6 @@
 package com.github.leyland.letool.data.database.handler;
 
-import java.util.List;
-import java.util.Map;
+import com.github.leyland.letool.data.database.core.QueryContext;
 
 /**
  * @ClassName <h2>DataHandler</h2>

@@ -1,10 +1,8 @@
-package com.github.leyland.letool.data.database;
+package com.github.leyland.letool.data.database.core;
 
-import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Component;
 
 import javax.sql.DataSource;
 import java.util.Map;

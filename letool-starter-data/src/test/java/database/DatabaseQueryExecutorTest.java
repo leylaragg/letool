@@ -1,7 +1,8 @@
 package database;
 
 import com.github.leyland.letool.data.DatabaseApplication;
-import com.github.leyland.letool.data.database.DatabaseQueryExecutor;
+import com.github.leyland.letool.data.database.core.DatabaseConfig;
+import com.github.leyland.letool.data.database.core.DatabaseQueryExecutor;
 import com.github.leyland.letool.data.database.handler.DataHandler;
 import com.github.leyland.letool.tool.configuration.SpringUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -62,7 +63,7 @@ public class DatabaseQueryExecutorTest {
 
 
         // 设置配置
-        com.github.leyland.letool.data.database.DatabaseConfig.QueryConfig config = 
+        DatabaseConfig.QueryConfig config =
                 createPatientInfoConfig();
 
         List<Map<String, Object>> result = queryExecutor.queryData(config.getQueryKey());
@@ -77,7 +78,7 @@ public class DatabaseQueryExecutorTest {
     public void testExecutorQueryWithParams() {
         log.info("\n--- 测试2：带参数查询 - 执行器层面 ---\n");
 
-        com.github.leyland.letool.data.database.DatabaseConfig.QueryConfig config = 
+        DatabaseConfig.QueryConfig config =
                 createPatientInfoConfig();
 
         Map<String, Object> params = new HashMap<>();
@@ -137,7 +138,7 @@ public class DatabaseQueryExecutorTest {
     public void testExecutorGetDataCount() {
         log.info("\n--- 测试5：获取数据总量 - 执行器层面 ---\n");
 
-        com.github.leyland.letool.data.database.DatabaseConfig.QueryConfig config = 
+        DatabaseConfig.QueryConfig config =
                 createPatientInfoConfig();
 
         long count = queryExecutor.getDataCount(config.getQueryKey());
@@ -147,9 +148,9 @@ public class DatabaseQueryExecutorTest {
 
     // ==================== 私有辅助方法 ====================
 
-    private com.github.leyland.letool.data.database.DatabaseConfig.QueryConfig createPatientInfoConfig() {
-        com.github.leyland.letool.data.database.DatabaseConfig.QueryConfig config = 
-                new com.github.leyland.letool.data.database.DatabaseConfig.QueryConfig();
+    private DatabaseConfig.QueryConfig createPatientInfoConfig() {
+        DatabaseConfig.QueryConfig config =
+                new DatabaseConfig.QueryConfig();
 
         config.setQueryKey("patient_info");
         config.setTableName("patient_info");

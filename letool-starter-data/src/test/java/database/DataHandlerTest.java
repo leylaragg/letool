@@ -3,7 +3,7 @@ package database;
 import com.github.leyland.letool.data.DatabaseApplication;
 import com.github.leyland.letool.data.database.handler.AbstractDataHandler;
 import com.github.leyland.letool.data.database.handler.DataHandler;
-import com.github.leyland.letool.data.database.handler.QueryContext;
+import com.github.leyland.letool.data.database.core.QueryContext;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

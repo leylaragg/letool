@@ -1,9 +1,8 @@
-package com.github.leyland.letool.data.database;
+package com.github.leyland.letool.data.database.core;
 
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-import javax.sql.DataSource;
 import java.util.List;
 import java.util.Map;
 

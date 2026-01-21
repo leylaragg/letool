@@ -1,11 +1,11 @@
-package com.github.leyland.letool.data.database;
+package com.github.leyland.letool.data.database.core;
 
+import com.github.leyland.letool.data.database.builder.DatabaseQueryBuilder;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;

@@ -1,15 +1,14 @@
-package com.github.leyland.letool.data.database.handler;
+package com.github.leyland.letool.data.database;
 
+import com.github.leyland.letool.data.database.handler.DataHandler;
+import com.github.leyland.letool.data.database.handler.DefaultDataHandler;
 import com.github.leyland.letool.tool.configuration.SpringUtil;
 //import com.github.leyland.letool.data.database.SpringUtil;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
-import javax.annotation.PostConstruct;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 

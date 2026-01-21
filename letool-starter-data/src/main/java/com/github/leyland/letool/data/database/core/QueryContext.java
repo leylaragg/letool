@@ -1,4 +1,4 @@
-package com.github.leyland.letool.data.database.handler;
+package com.github.leyland.letool.data.database.core;
 
 import lombok.Data;
 
