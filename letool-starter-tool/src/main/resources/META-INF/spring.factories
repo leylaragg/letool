@@ -1,0 +1,5 @@
+# Auto Configure
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+  com.github.leyland.letool.tool.configuration.SpringUtil,\
+  com.github.leyland.letool.tool.helper.RestTemplateHelper,\
+  com.github.leyland.letool.tool.exception.GlobalExceptionHandler
