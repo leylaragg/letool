@@ -1,11 +1,14 @@
 package com.github.leyland.letool.data.database.handler;
 
 import com.github.leyland.letool.tool.configuration.SpringUtil;
+//import com.github.leyland.letool.data.database.SpringUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import javax.annotation.PostConstruct;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -21,7 +24,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 @Component
 @ConditionalOnProperty(prefix = "letool.database", name = "enabled", havingValue = "true")
-public class DataHandlerFactory {
+public class DataHandlerFactory implements SmartInitializingSingleton {
 
     private final DefaultDataHandler defaultDataHandler;
 
@@ -29,6 +32,23 @@ public class DataHandlerFactory {
 
     public DataHandlerFactory(DefaultDataHandler defaultDataHandler) {
         this.defaultDataHandler = defaultDataHandler;
+//        // 初始化默认处理器
+//        Map<String, DataHandler> beansOfType = SpringUtil.getBeansOfType(DataHandler.class);
+//        beansOfType.forEach(this::registerHandler);
+    }
+
+    /**
+     * Invoked right at the end of the singleton pre-instantiation phase,
+     * with a guarantee that all regular singleton beans have been created
+     * already. {@link ListableBeanFactory#getBeansOfType} calls within
+     * this method won't trigger accidental side effects during bootstrap.
+     * <p><b>NOTE:</b> This callback won't be triggered for singleton beans
+     * lazily initialized on demand after {@link BeanFactory} bootstrap,
+     * and not for any other bean scope either. Carefully use it for beans
+     * with the intended bootstrap semantics only.
+     */
+    @Override
+    public void afterSingletonsInstantiated() {
         // 初始化默认处理器
         Map<String, DataHandler> beansOfType = SpringUtil.getBeansOfType(DataHandler.class);
         beansOfType.forEach(this::registerHandler);

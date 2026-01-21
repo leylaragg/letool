@@ -21,12 +21,14 @@ import java.util.function.Consumer;
  * @Version 1.0
  **/
 @Slf4j
-@Component
+//@Component
 public class DatabaseQueryExecutor {
 
     private final DatabaseManager databaseManager;
 
     private final DatabaseQueryBuilder queryBuilder;
+
+    private DatabaseConfig config;
 
     public DatabaseQueryExecutor(DatabaseManager databaseManager, DatabaseQueryBuilder queryBuilder) {
         this.databaseManager = databaseManager;
@@ -314,16 +316,20 @@ public class DatabaseQueryExecutor {
      * 获取查询配置信息
      */
     public DatabaseConfig.QueryConfig getQueryConfig(String queryKey) {
-        // 这里需要从配置中获取，暂时返回null
-        // 后续需要注入DatabaseConfig
-        return null;
+        if (config == null || config.getQueries() == null) {
+            return null;
+        }
+        return config.getQueries().stream()
+                .filter(q -> queryKey.equals(q.getQueryKey()))
+                .findFirst()
+                .orElse(null);
     }
 
     /**
      * 设置配置
      */
     public void setConfig(DatabaseConfig config) {
-        // TODO: 暂时未实现
+        this.config = config;
     }
 
     // ============ 私有工具方法 ============

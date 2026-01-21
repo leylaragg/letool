@@ -19,7 +19,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * @Version 1.0
  **/
 @Slf4j
-@Component
 @ConditionalOnProperty(prefix = "letool.database", name = "enabled", havingValue = "true")
 public class DatabaseManager {
 

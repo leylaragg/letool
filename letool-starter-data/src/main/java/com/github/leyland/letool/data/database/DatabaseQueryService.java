@@ -21,7 +21,6 @@ import java.util.function.Consumer;
  * @Version 1.0
  **/
 @Slf4j
-@Component
 @ConditionalOnProperty(prefix = "letool.database", name = "enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class DatabaseQueryService {
@@ -225,7 +224,7 @@ public class DatabaseQueryService {
      * 获取数据源名称
      */
     private String getDatasourceName(String queryKey) {
-        // TODO: 从配置中获取
-        return null;
+        DatabaseConfig.QueryConfig queryConfig = queryExecutor.getQueryConfig(queryKey);
+        return queryConfig != null ? queryConfig.getDatasource() : null;
     }
 }

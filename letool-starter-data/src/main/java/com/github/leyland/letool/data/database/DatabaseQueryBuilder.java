@@ -18,7 +18,6 @@ import java.util.*;
  * @Version 1.0
  **/
 @Slf4j
-@Component
 public class DatabaseQueryBuilder {
 
     /**
