@@ -8,7 +8,10 @@ import com.github.leyland.letool.data.mapper.handler.FieldMappingHandler;
 import com.github.leyland.letool.data.mapper.holder.HandlerHolder;
 
 import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 对象映射工具类
@@ -22,6 +25,20 @@ public final class ObjectMapperUtil {
     private static final MappingConfig DEFAULT_CONFIG = MappingConfig.defaultConfig();
 
     private ObjectMapperUtil() {
+    }
+
+    /**
+     * 转换模式枚举
+     */
+    public enum ConvertMode {
+        /**
+         * 直接映射模式（使用反射进行字段映射）
+         */
+        DIRECT,
+        /**
+         * FastJson转换模式（使用FastJson进行序列化和反序列化）
+         */
+        FASTJSON
     }
 
     /**
@@ -136,6 +153,130 @@ public final class ObjectMapperUtil {
             result.add(target);
         }
         return result;
+    }
+
+    /**
+     * 转换对象（支持多种转换模式）
+     *
+     * @param source 源对象（可以是Object、Map、JSON字符串等）
+     * @param targetClass 目标类
+     * @param mode 转换模式
+     * @param <T> 目标类型
+     * @return 转换后的对象
+     */
+    public static <T> T convert(Object source, Class<T> targetClass, ConvertMode mode) {
+        if (source == null || targetClass == null) {
+            return null;
+        }
+
+        if (mode == null) {
+            mode = ConvertMode.DIRECT;
+        }
+
+        return ConvertStrategyFactory.getStrategy(mode).convert(source, targetClass);
+    }
+
+    /**
+     * 转换对象（使用默认转换模式：DIRECT）
+     *
+     * @param source 源对象
+     * @param targetClass 目标类
+     * @param <T> 目标类型
+     * @return 转换后的对象
+     */
+    public static <T> T convert(Object source, Class<T> targetClass) {
+        return convert(source, targetClass, ConvertMode.DIRECT);
+    }
+
+    /**
+     * 批量转换对象（支持多种转换模式）
+     *
+     * @param sourceList 源对象列表（可以是List<Object>、List<Map>、JSON数组字符串等）
+     * @param targetClass 目标类
+     * @param mode 转换模式
+     * @param <T> 目标类型
+     * @return 转换后的对象列表
+     */
+    public static <T> List<T> convertList(Object sourceList, Class<T> targetClass, ConvertMode mode) {
+        if (sourceList == null || targetClass == null) {
+            return new ArrayList<>();
+        }
+
+        if (mode == null) {
+            mode = ConvertMode.DIRECT;
+        }
+
+        return ConvertStrategyFactory.getStrategy(mode).convertList(sourceList, targetClass);
+    }
+
+    /**
+     * 批量转换对象（使用默认转换模式：DIRECT）
+     *
+     * @param sourceList 源对象列表
+     * @param targetClass 目标类
+     * @param <T> 目标类型
+     * @return 转换后的对象列表
+     */
+    public static <T> List<T> convertList(Object sourceList, Class<T> targetClass) {
+        return convertList(sourceList, targetClass, ConvertMode.DIRECT);
+    }
+
+    /**
+     * 将对象转换为JSON字符串
+     *
+     * @param obj 源对象
+     * @param mode 转换模式
+     * @return JSON字符串
+     */
+    public static String toJson(Object obj, ConvertMode mode) {
+        if (obj == null) {
+            return null;
+        }
+
+        if (mode == null) {
+            mode = ConvertMode.DIRECT;
+        }
+
+        return ConvertStrategyFactory.getStrategy(mode).toJson(obj);
+    }
+
+    /**
+     * 将对象转换为JSON字符串（使用默认转换模式：DIRECT）
+     *
+     * @param obj 源对象
+     * @return JSON字符串
+     */
+    public static String toJson(Object obj) {
+        return toJson(obj, ConvertMode.DIRECT);
+    }
+
+    /**
+     * 将对象转换为Map
+     *
+     * @param obj 源对象
+     * @param mode 转换模式
+     * @return Map
+     */
+    public static Map<String, Object> toMap(Object obj, ConvertMode mode) {
+        if (obj == null) {
+            return null;
+        }
+
+        if (mode == null) {
+            mode = ConvertMode.DIRECT;
+        }
+
+        return ConvertStrategyFactory.getStrategy(mode).toMap(obj);
+    }
+
+    /**
+     * 将对象转换为Map（使用默认转换模式：DIRECT）
+     *
+     * @param obj 源对象
+     * @return Map
+     */
+    public static Map<String, Object> toMap(Object obj) {
+        return toMap(obj, ConvertMode.DIRECT);
     }
 
     /**
@@ -272,12 +413,11 @@ public final class ObjectMapperUtil {
         } catch (IllegalAccessException e) {
             // 忽略设置失败
         } catch (IllegalArgumentException e) {
-            // 类型不匹配，尝试类型转换
             try {
                 Object convertedValue = TypeConverterUtil.convert(value, targetField.getType());
                 targetField.set(context.getTarget(), convertedValue);
             } catch (Exception ex) {
-                // 忽略转换失败
+                throw new RuntimeException("Failed to convert value: " + e.getMessage());
             }
         }
     }
@@ -289,6 +429,13 @@ public final class ObjectMapperUtil {
         if (obj == null || fieldName == null || fieldName.isEmpty()) {
             return null;
         }
+
+        if (obj instanceof Map) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> map = (Map<String, Object>) obj;
+            return map.get(fieldName);
+        }
+
         try {
             Field field = getField(obj.getClass(), fieldName);
             if (field != null) {
@@ -328,12 +475,12 @@ public final class ObjectMapperUtil {
             return new Field[0];
         }
 
-        List<Field> fields = new java.util.ArrayList<>();
+        List<Field> fields = new ArrayList<>();
         Class<?> current = clazz;
         while (current != null && current != Object.class) {
             Field[] declaredFields = current.getDeclaredFields();
             if (declaredFields != null) {
-                fields.addAll(java.util.Arrays.asList(declaredFields));
+                fields.addAll(Arrays.asList(declaredFields));
             }
             current = current.getSuperclass();
         }
@@ -356,5 +503,163 @@ public final class ObjectMapperUtil {
         sources[0] = primarySource;
         System.arraycopy(additionalSources, 0, sources, 1, additionalSources.length);
         return sources;
+    }
+
+    /**
+     * 转换策略接口
+     */
+    private interface ConvertStrategy {
+        <T> T convert(Object source, Class<T> targetClass);
+        <T> List<T> convertList(Object sourceList, Class<T> targetClass);
+        String toJson(Object obj);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> toMap(Object obj);
+    }
+
+    /**
+     * 直接映射策略（使用反射）
+     */
+    private static class DirectConvertStrategy implements ConvertStrategy {
+        @Override
+        public <T> T convert(Object source, Class<T> targetClass) {
+            if (source == null || targetClass == null) {
+                return null;
+            }
+
+            try {
+                T target = targetClass.getDeclaredConstructor().newInstance();
+                return mapFromMapToTarget(source, target, DEFAULT_CONFIG);
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to convert using direct mapping: " + e.getMessage(), e);
+            }
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public <T> List<T> convertList(Object sourceList, Class<T> targetClass) {
+            if (sourceList == null || targetClass == null) {
+                return new ArrayList<>();
+            }
+
+            if (!(sourceList instanceof List)) {
+                throw new IllegalArgumentException("Source must be a List");
+            }
+
+            List<?> list = (List<?>) sourceList;
+            List<T> result = new ArrayList<>(list.size());
+            for (Object item : list) {
+                T target = convert(item, targetClass);
+                result.add(target);
+            }
+            return result;
+        }
+
+        @Override
+        public String toJson(Object obj) {
+            if (obj == null) {
+                return null;
+            }
+            return obj.toString();
+        }
+
+        @Override
+        public Map<String, Object> toMap(Object obj) {
+            if (obj == null) {
+                return null;
+            }
+            if (obj instanceof Map) {
+                return (Map<String, Object>) obj;
+            }
+            throw new UnsupportedOperationException("Direct mapping strategy does not support object to Map conversion. Use FASTJSON mode instead.");
+        }
+
+        @SuppressWarnings("unchecked")
+        private <T> T mapFromMapToTarget(Object source, T target, MappingConfig config) {
+            if (source == null || target == null) {
+                return target;
+            }
+
+            MappingConfig actualConfig = (config != null) ? config : DEFAULT_CONFIG;
+            MappingContext context = new MappingContext(new Object[]{source}, target, actualConfig);
+            processFields(context);
+            return target;
+        }
+    }
+
+    /**
+     * FastJson转换策略
+     */
+    private static class FastJsonConvertStrategy implements ConvertStrategy {
+        @Override
+        @SuppressWarnings("unchecked")
+        public <T> T convert(Object source, Class<T> targetClass) {
+            if (source == null || targetClass == null) {
+                return null;
+            }
+
+            try {
+                if (source instanceof String) {
+                    return com.alibaba.fastjson2.JSON.parseObject((String) source, targetClass);
+                } else {
+                    return com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(source), targetClass);
+                }
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to convert using FastJson: " + e.getMessage(), e);
+            }
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public <T> List<T> convertList(Object sourceList, Class<T> targetClass) {
+            if (sourceList == null || targetClass == null) {
+                return new ArrayList<>();
+            }
+
+            try {
+                if (sourceList instanceof String) {
+                    return com.alibaba.fastjson2.JSON.parseArray((String) sourceList, targetClass);
+                } else {
+                    return com.alibaba.fastjson2.JSON.parseArray(com.alibaba.fastjson2.JSON.toJSONString(sourceList), targetClass);
+                }
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to convert list using FastJson: " + e.getMessage(), e);
+            }
+        }
+
+        @Override
+        public String toJson(Object obj) {
+            if (obj == null) {
+                return null;
+            }
+            return com.alibaba.fastjson2.JSON.toJSONString(obj);
+        }
+
+        @Override
+        public Map<String, Object> toMap(Object obj) {
+            if (obj == null) {
+                return null;
+            }
+            String jsonStr = com.alibaba.fastjson2.JSON.toJSONString(obj);
+            return com.alibaba.fastjson2.JSON.parseObject(jsonStr, Map.class);
+        }
+    }
+
+    /**
+     * 转换策略工厂
+     */
+    private static class ConvertStrategyFactory {
+        private static final Map<ConvertMode, ConvertStrategy> STRATEGY_MAP = new java.util.HashMap<>();
+
+        static {
+            STRATEGY_MAP.put(ConvertMode.DIRECT, new DirectConvertStrategy());
+            STRATEGY_MAP.put(ConvertMode.FASTJSON, new FastJsonConvertStrategy());
+        }
+
+        public static ConvertStrategy getStrategy(ConvertMode mode) {
+            if (mode == null) {
+                return STRATEGY_MAP.get(ConvertMode.DIRECT);
+            }
+            return STRATEGY_MAP.get(mode);
+        }
     }
 }
