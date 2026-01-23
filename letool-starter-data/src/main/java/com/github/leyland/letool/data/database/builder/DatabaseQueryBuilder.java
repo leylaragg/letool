@@ -50,8 +50,7 @@ public class DatabaseQueryBuilder {
     public SqlWithParams buildPaginationSQL(DatabaseConfig.QueryConfig queryConfig, Integer offset,
                                             Map<String, Object> dynamicParams) {
         if (StringUtils.hasText(queryConfig.getCustomSql())) {
-            return buildParameterizedSQL(queryConfig.getCustomSql(),
-                    queryConfig.getSqlParams(), dynamicParams, offset);
+            return buildParameterizedSQL(queryConfig.getCustomSql(), queryConfig.getSqlParams(), dynamicParams, offset);
         }
 
         // 标准SQL构建（也支持参数）
@@ -148,11 +147,9 @@ public class DatabaseQueryBuilder {
 
         // OFFSET
         if (offset != null && offset > 0) {
-            if (!Objects.equals(config.getBatchSize(), offset)) {
-                // 设置偏移量
-                sql.append(" OFFSET ").append(" :offset");
-                params.put("offset", offset);
-            }
+            // 设置偏移量
+            sql.append(" OFFSET ").append(" :offset");
+            params.put("offset", offset);
         }
 
         return new SqlWithParams(sql.toString(), params);

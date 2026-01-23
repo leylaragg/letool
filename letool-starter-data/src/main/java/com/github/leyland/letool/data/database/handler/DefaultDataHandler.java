@@ -18,7 +18,7 @@ import java.util.*;
 @Slf4j
 @Component("defaultDataHandler")
 @RequiredArgsConstructor
-public class DefaultDataHandler implements DataHandler {
+public class DefaultDataHandler extends AbstractDataHandler {
 
     @Override
     public Object handleData(String queryKey, QueryContext context) {
