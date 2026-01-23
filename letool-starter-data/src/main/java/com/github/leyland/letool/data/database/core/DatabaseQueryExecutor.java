@@ -1,8 +1,6 @@
 package com.github.leyland.letool.data.database.core;
 
 import com.github.leyland.letool.data.database.builder.DatabaseQueryBuilder;
-import lombok.AllArgsConstructor;
-import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -10,6 +8,7 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 /**
@@ -29,6 +28,10 @@ public class DatabaseQueryExecutor {
     private final DatabaseQueryBuilder queryBuilder;
 
     private DatabaseConfig config;
+
+    // JdbcTemplate缓存，避免重复创建
+    private final Map<String, JdbcTemplate> jdbcTemplateCache = new ConcurrentHashMap<>();
+    private final Map<String, NamedParameterJdbcTemplate> namedParamJdbcTemplateCache = new ConcurrentHashMap<>();
 
     public DatabaseQueryExecutor(DatabaseManager databaseManager, DatabaseQueryBuilder queryBuilder) {
         this.databaseManager = databaseManager;
@@ -73,7 +76,7 @@ public class DatabaseQueryExecutor {
         // 如果提供了自定义SQL，使用自定义SQL
         if (customSql != null && !customSql.trim().isEmpty()) {
             String datasource = queryConfig != null ? queryConfig.getDatasource() : null;
-            return queryDataWithCustomSql(customSql, dynamicParams, datasource, queryConfig);
+            return executeSqlQuery(datasource, customSql, dynamicParams);
         }
 
         if (queryConfig == null) {
@@ -82,43 +85,25 @@ public class DatabaseQueryExecutor {
 
         log.info("开始查询数据，查询标识: {}, 参数: {}", queryKey, dynamicParams);
 
-        // 使用NamedParameterJdbcTemplate支持命名参数
-        NamedParameterJdbcTemplate jdbcTemplate = new NamedParameterJdbcTemplate(
-                databaseManager.getDataSource(queryConfig.getDatasource()));
-
         List<Map<String, Object>> allData = new ArrayList<>();
         Integer offset = 0;
         int batchCount = 0;
-        boolean hasMoreData = true;
 
-        while (hasMoreData) {
+        while (true) {
             batchCount++;
 
-            // 构建SQL和参数
-            DatabaseQueryBuilder.SqlWithParams sqlWithParams = queryBuilder.buildPaginationSQL(queryConfig, offset, dynamicParams);
-
-            List<Map<String, Object>> batchData;
-            if (sqlWithParams.hasParams()) {
-                // 使用命名参数查询
-                batchData = jdbcTemplate.queryForList(sqlWithParams.getSql(), sqlWithParams.getParams());
-            } else {
-                // 无参数查询
-                JdbcTemplate simpleTemplate = new JdbcTemplate(
-                        databaseManager.getDataSource(queryConfig.getDatasource()));
-                batchData = simpleTemplate.queryForList(sqlWithParams.getSql());
-            }
+            // 批量查询
+            List<Map<String, Object>> batchData = executeBatchQuery(queryConfig, offset, dynamicParams);
 
             if (batchData.isEmpty()) {
-                hasMoreData = false;
                 log.info("数据查询完成，共读取{}批次数据", batchCount - 1);
-                continue;
+                break;
             }
 
             allData.addAll(batchData);
             offset = getOffset(batchData, offset + queryConfig.getBatchSize());
 
             log.debug("第{}批次读取完成，本次读取{}条，累计{}条", batchCount, batchData.size(), allData.size());
-
             sleepBriefly(50);
         }
 
@@ -127,21 +112,11 @@ public class DatabaseQueryExecutor {
     }
 
     /**
-     * 使用自定义SQL查询数据
+     * 使用自定义SQL查询数据（已废弃，保留兼容性）
      */
     private List<Map<String, Object>> queryDataWithCustomSql(String customSql, Map<String, Object> params, String datasourceName, DatabaseConfig.QueryConfig queryConfig) {
         log.info("执行自定义SQL查询，数据源: {}", datasourceName);
-
-        NamedParameterJdbcTemplate jdbcTemplate = new NamedParameterJdbcTemplate(databaseManager.getDataSource(datasourceName));
-
-        List<Map<String, Object>> result;
-        if (params != null && !params.isEmpty()) {
-            result = jdbcTemplate.queryForList(customSql, params);
-        } else {
-            JdbcTemplate simpleTemplate = new JdbcTemplate(databaseManager.getDataSource(datasourceName));
-            result = simpleTemplate.queryForList(customSql);
-        }
-
+        List<Map<String, Object>> result = executeSqlQuery(datasourceName, customSql, params);
         log.info("自定义SQL查询完成，返回{}条数据", result.size());
         return result;
     }
@@ -188,7 +163,7 @@ public class DatabaseQueryExecutor {
                 queryConfig = getQueryConfig(queryKey);
                 datasource = queryConfig != null ? queryConfig.getDatasource() : null;
             }
-            streamQueryWithCustomSql2(customSql, dynamicParams, datasource, dataConsumer);
+            executeSqlStreamQuery(datasource, customSql, dynamicParams, dataConsumer);
             return;
         }
 
@@ -199,78 +174,40 @@ public class DatabaseQueryExecutor {
 
         log.info("开始流式查询数据，查询标识: {}, 参数: {}", queryKey, dynamicParams);
 
-        NamedParameterJdbcTemplate jdbcTemplate = new NamedParameterJdbcTemplate(databaseManager.getDataSource(queryConfig.getDatasource()));
-
         Integer offset = queryConfig.getBatchSize();
         int totalCount = 0;
         int batchCount = 0;
-        boolean hasMoreData = true;
 
-        while (hasMoreData) {
+        while (true) {
             batchCount++;
 
-            DatabaseQueryBuilder.SqlWithParams sqlWithParams = queryBuilder.buildPaginationSQL(queryConfig, offset, dynamicParams);
-
-            List<Map<String, Object>> batchData;
-            if (sqlWithParams.hasParams()) {
-                batchData = jdbcTemplate.queryForList(sqlWithParams.getSql(), sqlWithParams.getParams());
-            } else {
-                JdbcTemplate simpleTemplate = new JdbcTemplate(databaseManager.getDataSource(queryConfig.getDatasource()));
-                batchData = simpleTemplate.queryForList(sqlWithParams.getSql());
-            }
+            // 批量查询
+            List<Map<String, Object>> batchData = executeBatchQuery(queryConfig, offset, dynamicParams);
 
             if (batchData.isEmpty()) {
-                hasMoreData = false;
                 log.info("流式查询完成，查询 {} 表，共处理{}批次，{}条数据", queryKey, batchCount - 1, totalCount);
-                continue;
+                break;
             }
 
-            for (Map<String, Object> row : batchData) {
-                try {
-                    dataConsumer.accept(row);
-                    totalCount++;
-                } catch (Exception e) {
-                    log.error("处理数据行时发生异常，行数据: {}", row, e);
-                }
-            }
+            // 流式处理数据
+            totalCount += processBatchData(batchData, dataConsumer);
 
             offset = getOffset(batchData, offset + queryConfig.getBatchSize());
 
             if (batchCount % 10 == 0) {
                 log.info("流式查询进度: 已处理{}批次，{}条数据", batchCount, totalCount);
             }
-
             sleepBriefly(30);
         }
     }
 
     /**
-     * 使用自定义SQL流式查询数据
+     * 使用自定义SQL流式查询数据（已废弃，保留兼容性）
      */
     private void streamQueryWithCustomSql2(String customSql, Map<String, Object> params, String datasourceName, Consumer<Map<String, Object>> dataConsumer) {
         log.info("执行自定义SQL流式查询，数据源: {}", datasourceName);
-
-        NamedParameterJdbcTemplate jdbcTemplate = new NamedParameterJdbcTemplate(databaseManager.getDataSource(datasourceName));
-
-        List<Map<String, Object>> result;
-        if (params != null && !params.isEmpty()) {
-            result = jdbcTemplate.queryForList(customSql, params);
-        } else {
-            JdbcTemplate simpleTemplate = new JdbcTemplate(databaseManager.getDataSource(datasourceName));
-            result = simpleTemplate.queryForList(customSql);
-        }
-
-        int totalCount = 0;
-        for (Map<String, Object> row : result) {
-            try {
-                dataConsumer.accept(row);
-                totalCount++;
-            } catch (Exception e) {
-                log.error("处理数据行时发生异常，行数据: {}", row, e);
-            }
-        }
-
-        log.info("自定义SQL流式查询完成，共处理{}条数据", totalCount);
+        executeSqlStreamQuery(datasourceName, customSql, params, dataConsumer);
+        log.info("自定义SQL流式查询完成");
     }
 
     /**
@@ -278,7 +215,7 @@ public class DatabaseQueryExecutor {
      */
     public long getDataCount(String queryKey) {
         DatabaseConfig.QueryConfig queryConfig = getQueryConfig(queryKey);
-        JdbcTemplate jdbcTemplate = new JdbcTemplate(databaseManager.getDataSource(queryConfig.getDatasource()));
+        JdbcTemplate jdbcTemplate = getJdbcTemplate(queryConfig.getDatasource());
 
         String countSql = queryBuilder.buildCountSQL(queryConfig);
         Long count = jdbcTemplate.queryForObject(countSql, Long.class);
@@ -334,6 +271,90 @@ public class DatabaseQueryExecutor {
 
     // ============ 私有工具方法 ============
 
+    /**
+     * 获取JdbcTemplate
+     */
+    private JdbcTemplate getJdbcTemplate(String datasourceName) {
+        String cacheKey = datasourceName != null ? datasourceName : "defaultDatasource";
+
+        if (!jdbcTemplateCache.containsKey(cacheKey)) {
+            synchronized (this) {
+                if (!jdbcTemplateCache.containsKey(cacheKey)) {
+                    jdbcTemplateCache.put(cacheKey, new JdbcTemplate(databaseManager.getDataSource(null)));
+                }
+            }
+        }
+        return jdbcTemplateCache.get(cacheKey);
+    }
+
+    /**
+     * 获取NamedParameterJdbcTemplate
+     */
+    private NamedParameterJdbcTemplate getNamedParameterJdbcTemplate(String datasourceName) {
+        String cacheKey = datasourceName != null ? datasourceName : "defaultDatasource";
+
+        if (!namedParamJdbcTemplateCache.containsKey(cacheKey)) {
+            synchronized (this) {
+                if (!namedParamJdbcTemplateCache.containsKey(cacheKey)) {
+                    namedParamJdbcTemplateCache.put(cacheKey, new NamedParameterJdbcTemplate(databaseManager.getDataSource(null)));
+                }
+            }
+        }
+        return namedParamJdbcTemplateCache.get(cacheKey);
+    }
+
+    /**
+     * 执行SQL查询（通用方法）
+     */
+    private List<Map<String, Object>> executeSqlQuery(String datasourceName, String sql, Map<String, Object> params) {
+        if (params != null && !params.isEmpty()) {
+            NamedParameterJdbcTemplate template = getNamedParameterJdbcTemplate(datasourceName);
+            return template.queryForList(sql, params);
+        } else {
+            JdbcTemplate template = getJdbcTemplate(datasourceName);
+            return template.queryForList(sql);
+        }
+    }
+
+    /**
+     * 执行批量查询
+     */
+    private List<Map<String, Object>> executeBatchQuery(DatabaseConfig.QueryConfig queryConfig, Integer offset, Map<String, Object> dynamicParams) {
+        DatabaseQueryBuilder.SqlWithParams sqlWithParams = queryBuilder.buildPaginationSQL(queryConfig, offset, dynamicParams);
+
+        if (sqlWithParams.hasParams()) {
+            NamedParameterJdbcTemplate template = getNamedParameterJdbcTemplate(queryConfig.getDatasource());
+            return template.queryForList(sqlWithParams.getSql(), sqlWithParams.getParams());
+        } else {
+            JdbcTemplate template = getJdbcTemplate(queryConfig.getDatasource());
+            return template.queryForList(sqlWithParams.getSql());
+        }
+    }
+
+    /**
+     * 执行SQL流式查询
+     */
+    private void executeSqlStreamQuery(String datasourceName, String customSql, Map<String, Object> params, Consumer<Map<String, Object>> dataConsumer) {
+        List<Map<String, Object>> result = executeSqlQuery(datasourceName, customSql, params);
+        processBatchData(result, dataConsumer);
+    }
+
+    /**
+     * 处理批量数据
+     */
+    private int processBatchData(List<Map<String, Object>> batchData, Consumer<Map<String, Object>> dataConsumer) {
+        int processedCount = 0;
+        for (Map<String, Object> row : batchData) {
+            try {
+                dataConsumer.accept(row);
+                processedCount++;
+            } catch (Exception e) {
+                log.error("处理数据行时发生异常，行数据: {}", row, e);
+            }
+        }
+        return processedCount;
+    }
+
     private Integer getOffset(List<Map<String, Object>> batchData, Integer offset) {
         if (batchData.isEmpty()) {
             return 0;
@@ -350,20 +371,6 @@ public class DatabaseQueryExecutor {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("线程休眠被中断");
-        }
-    }
-
-    /**
-     * SQL和参数的包装类
-     */
-    @Data
-    @AllArgsConstructor
-    public static class SqlWithParams {
-        private String sql;
-        private Map<String, Object> params;
-
-        public boolean hasParams() {
-            return params != null && !params.isEmpty();
         }
     }
 }
