@@ -2,90 +2,63 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>com.github.leyland</groupId>
         <artifactId>letool</artifactId>
-        <version>1.0.0-beta.6</version>
+        <version>2.0.0-beta.1</version>
     </parent>
+    <modelVersion>4.0.0</modelVersion>
 
     <artifactId>letool-starter-rule</artifactId>
+    <name>letool-starter-rule</name>
+    <description>letool 规则引擎 —— 基于 LiteFlow 封装，支持规则编排(YAML/JSON/Groovy)、热加载、沙箱测试</description>
     <packaging>jar</packaging>
-    <description>规则引擎模块 - 支持数据库筛选和JSON报文校验</description>
-
-    <properties>
-        <maven.compiler.source>11</maven.compiler.source>
-        <maven.compiler.target>11</maven.compiler.target>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    </properties>
 
     <dependencies>
-        <!-- Letool Data Module -->
-        <dependency>
-            <groupId>com.github.leyland</groupId>
-            <artifactId>letool-starter-data</artifactId>
-            <version>${letool.version}</version>
-            <optional>true</optional>
-        </dependency>
-
-        <!-- Letool Tool Module -->
         <dependency>
             <groupId>com.github.leyland</groupId>
             <artifactId>letool-starter-tool</artifactId>
-            <version>${letool.version}</version>
         </dependency>
-
-        <!-- Spring Boot Starter -->
+        <dependency>
+            <groupId>com.github.leyland</groupId>
+            <artifactId>letool-starter-data</artifactId>
+            <optional>true</optional>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter</artifactId>
+            <scope>provided</scope>
         </dependency>
-
-        <!-- Spring Boot Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
-            <optional>true</optional>
+            <scope>provided</scope>
         </dependency>
-
-        <!-- Spring Boot Configuration -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-autoconfigure</artifactId>
+            <scope>provided</scope>
         </dependency>
-
-        <!-- Spring Boot Configuration Processor -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-configuration-processor</artifactId>
             <optional>true</optional>
         </dependency>
-
-        <!-- Lombok -->
         <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <scope>provided</scope>
+            <groupId>com.yomahub</groupId>
+            <artifactId>liteflow-spring-boot-starter</artifactId>
+            <optional>true</optional>
         </dependency>
 
-        <!-- SLF4J -->
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
+            <scope>provided</scope>
         </dependency>
-
-        <!-- FastJson 2.x -->
         <dependency>
-            <groupId>com.alibaba.fastjson2</groupId>
-            <artifactId>fastjson2</artifactId>
-            <version>2.0.43</version>
-        </dependency>
-
-        <!-- Test Dependencies -->
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <scope>test</scope>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -93,5 +66,4 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
-
 </project>

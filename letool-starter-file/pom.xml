@@ -3,23 +3,56 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <parent>
-        <artifactId>letool</artifactId>
         <groupId>com.github.leyland</groupId>
-        <version>1.0.0-beta.6</version>
+        <artifactId>letool</artifactId>
+        <version>2.0.0-beta.1</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>letool-starter-file</artifactId>
-    <name>${project.artifactId}</name>
-    <version>${letool.version}</version>
+    <name>letool-starter-file</name>
+    <description>letool 文件操作模块 —— 上传下载、存储抽象（本地/FTP/SFTP/MinIO/OSS）、格式转换、压缩、打印</description>
     <packaging>jar</packaging>
 
     <dependencies>
         <dependency>
+            <groupId>com.github.leyland</groupId>
+            <artifactId>letool-starter-tool</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
             <groupId>commons-net</groupId>
             <artifactId>commons-net</artifactId>
-            <version>3.8.0</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
-
 </project>

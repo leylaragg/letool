@@ -3,16 +3,56 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <parent>
-        <artifactId>letool</artifactId>
         <groupId>com.github.leyland</groupId>
-        <version>1.0.0-beta.6</version>
+        <artifactId>letool</artifactId>
+        <version>2.0.0-beta.1</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>letool-starter-swagger</artifactId>
-    <name>${project.artifactId}</name>
-    <version>${letool.version}</version>
+    <name>letool-starter-swagger</name>
+    <description>letool API 文档模块 —— 集成 Knife4j + SpringDoc，自动配置、接口分组、离线文档导出</description>
     <packaging>jar</packaging>
 
-
+    <dependencies>
+        <dependency>
+            <groupId>com.github.leyland</groupId>
+            <artifactId>letool-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>com.github.xiaoymin</groupId>
+            <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 </project>

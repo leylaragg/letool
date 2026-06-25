@@ -1,67 +1,52 @@
 package com.github.leyland.letool.tool.exception;
 
-import com.github.leyland.letool.tool.api.IResultCode;
-import com.github.leyland.letool.tool.api.SystemCode;
-
 /**
- * @ClassName <h2>SystemException</h2>
- * @Description TODO
- * @Author Rungo
- * @Version 1.0
- **/
-public class SystemException extends RuntimeException {
+ * 系统异常——因内部服务故障、资源不可用、外部依赖异常等原因导致操作无法完成时抛出.
+ *
+ * <p>此异常通常映射为 HTTP 5xx 响应码，表示服务端自身问题，调用方重试可能恢复.
+ * 全局异常处理器应记录完整堆栈日志，仅向前端返回脱敏后的错误信息.</p>
+ *
+ * <h3>典型场景</h3>
+ * <ul>
+ *   <li>数据库连接超时或查询失败</li>
+ *   <li>Redis 不可达导致缓存操作失败</li>
+ *   <li>文件系统读写异常</li>
+ *   <li>第三方 API 调用失败（非业务拒绝）</li>
+ *   <li>配置缺失导致服务无法启动</li>
+ * </ul>
+ *
+ * <h3>使用示例</h3>
+ * <pre>{@code
+ * try {
+ *     redisUtil.set("key", value);
+ * } catch (RedisException e) {
+ *     throw new SystemException("SYS_REDIS", "缓存服务暂不可用", e);
+ * }
+ * }</pre>
+ *
+ * @see LetoolException
+ * @see BusinessException
+ */
+public class SystemException extends LetoolException {
 
-    private final IResultCode resultCode;
-
-    private boolean enableCustomStackTrace = false;
-
-    public SystemException(String message) {
-        super(message);
-        this.resultCode = SystemCode.SYSTEM_ERROR;
-    }
-
-    public SystemException(IResultCode resultCode) {
-        super(resultCode.getMessage());
-        this.resultCode = resultCode;
-    }
-
-    public SystemException(IResultCode resultCode, Throwable cause) {
-        super(cause);
-        this.resultCode = resultCode;
-    }
-
-    public SystemException(IResultCode resultCode, Object... args) {
-        super(String.format(resultCode.getMessage(), args));
-        this.resultCode = resultCode;
-    }
-
-    public IResultCode getResultCode() {
-        return resultCode;
-    }
-
-    public boolean isEnableCustomStackTrace() {
-        return enableCustomStackTrace;
-    }
-
-    public void setEnableCustomStackTrace(boolean enableCustomStackTrace) {
-        this.enableCustomStackTrace = enableCustomStackTrace;
+    /**
+     * 创建系统异常.
+     *
+     * @param errorCode 系统错误码（如 "SYS_DB"）
+     * @param message   错误描述（建议不暴露内部技术细节给前端）
+     */
+    public SystemException(String errorCode, String message) {
+        super(errorCode, message);
     }
 
     /**
-     * 提高性能
+     * 创建包裹原始异常的系统异常.
      *
-     * @return Throwable
+     * @param errorCode 系统错误码
+     * @param message   错误描述
+     * @param cause     原始异常（用于日志排查，不应直接返回给前端）
      */
-    @Override
-    public Throwable fillInStackTrace() {
-        if (enableCustomStackTrace) {
-            // 执行自定义的堆栈跟踪逻辑
-            // 可以在这里添加特定的逻辑来构造自定义的堆栈跟踪信息  -- 先临时这么写吧。
-            System.out.println("Custom fillInStackTrace logic executed");
-            return this;
-        } else {
-            // 调用默认的 fillInStackTrace() 方法
-            return super.fillInStackTrace();
-        }
+    public SystemException(String errorCode, String message, Throwable cause) {
+        super(errorCode, message, cause);
     }
 }
