@@ -9,9 +9,9 @@
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>letool-starter-log</artifactId>
-    <name>letool-starter-log</name>
-    <description>letool 日志封装模块 —— 链路追踪、审计日志、动态日志级别、自动配置 Log4j2/Logback</description>
+    <artifactId>letool-starter-sensitive</artifactId>
+    <name>letool-starter-sensitive</name>
+    <description>letool 数据脱敏模块 —— 注解驱动脱敏，覆盖 JSON 序列化、日志输出、HTTP 响应、数据库字段</description>
     <packaging>jar</packaging>
 
     <dependencies>
@@ -20,17 +20,8 @@
             <artifactId>letool-starter-tool</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.github.leyland</groupId>
-            <artifactId>letool-starter-sensitive</artifactId>
-        </dependency>
-        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter</artifactId>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-aop</artifactId>
             <scope>provided</scope>
         </dependency>
         <dependency>
@@ -47,6 +38,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-configuration-processor</artifactId>
             <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
