@@ -32,6 +32,7 @@
         <module>letool-starter-tool</module>
 
         <!-- 阶段 2：核心能力模块 -->
+        <module>letool-starter-sensitive</module>
         <module>letool-starter-log</module>
         <module>letool-starter-cache</module>
         <module>letool-starter-cipher-suite</module>
@@ -148,6 +149,11 @@
             </dependency>
 
             <!-- 内部模块版本管理 -->
+            <dependency>
+                <groupId>com.github.leyland</groupId>
+                <artifactId>letool-starter-sensitive</artifactId>
+                <version>${letool.version}</version>
+            </dependency>
             <dependency>
                 <groupId>com.github.leyland</groupId>
                 <artifactId>letool-starter-tool</artifactId>

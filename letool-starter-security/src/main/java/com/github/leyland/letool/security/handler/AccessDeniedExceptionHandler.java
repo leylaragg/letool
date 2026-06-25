@@ -1,0 +1,30 @@
+package com.github.leyland.letool.security.handler;
+
+import com.github.leyland.letool.tool.model.R;
+import com.github.leyland.letool.tool.util.JsonUtil;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.MediaType;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.web.access.AccessDeniedHandler;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+
+public class AccessDeniedExceptionHandler implements AccessDeniedHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(AccessDeniedExceptionHandler.class);
+
+    @Override
+    public void handle(HttpServletRequest request, HttpServletResponse response,
+                       AccessDeniedException accessDeniedException) throws IOException {
+        log.debug("Access denied for {}: {}", request.getRequestURI(), accessDeniedException.getMessage());
+        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        R<Void> body = R.fail("AUTH_002", "权限不足");
+        response.getWriter().write(JsonUtil.toJsonString(body));
+    }
+}

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="WARN">
+    <Properties>
+        <Property name="CONSOLE_PATTERN">%d{yyyy-MM-dd HH:mm:ss.SSS} %highlight{%-5level} [%t] [%X{traceId}] %style{%c{1.}}{cyan} - %msg%n</Property>
+        <Property name="FILE_PATTERN">%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%t] [%X{traceId}] %c{1.} - %msg%n</Property>
+    </Properties>
+
+    <Appenders>
+        <Console name="CONSOLE" target="SYSTEM_OUT">
+            <PatternLayout pattern="${CONSOLE_PATTERN}"/>
+        </Console>
+
+        <RollingFile name="FILE"
+                     fileName="${sys:user.home}/.letool/logs/application.log"
+                     filePattern="${sys:user.home}/.letool/logs/application-%d{yyyy-MM-dd}-%i.log">
+            <PatternLayout pattern="${FILE_PATTERN}"/>
+            <Policies>
+                <SizeBasedTriggeringPolicy size="100MB"/>
+                <TimeBasedTriggeringPolicy interval="1"/>
+            </Policies>
+            <DefaultRolloverStrategy max="100">
+                <Delete basePath="${sys:user.home}/.letool/logs" maxDepth="1">
+                    <IfFileName glob="application-*.log"/>
+                    <IfLastModified age="30d"/>
+                </Delete>
+            </DefaultRolloverStrategy>
+        </RollingFile>
+
+        <RollingFile name="ERROR_FILE"
+                     fileName="${sys:user.home}/.letool/logs/error.log"
+                     filePattern="${sys:user.home}/.letool/logs/error-%d{yyyy-MM-dd}-%i.log">
+            <ThresholdFilter level="ERROR" onMatch="ACCEPT" onMismatch="DENY"/>
+            <PatternLayout pattern="${FILE_PATTERN}"/>
+            <Policies>
+                <SizeBasedTriggeringPolicy size="100MB"/>
+                <TimeBasedTriggeringPolicy interval="1"/>
+            </Policies>
+            <DefaultRolloverStrategy max="30">
+                <Delete basePath="${sys:user.home}/.letool/logs" maxDepth="1">
+                    <IfFileName glob="error-*.log"/>
+                    <IfLastModified age="30d"/>
+                </Delete>
+            </DefaultRolloverStrategy>
+        </RollingFile>
+    </Appenders>
+
+    <Loggers>
+        <Root level="INFO">
+            <AppenderRef ref="CONSOLE"/>
+            <AppenderRef ref="FILE"/>
+            <AppenderRef ref="ERROR_FILE"/>
+        </Root>
+    </Loggers>
+</Configuration>
