@@ -11,7 +11,8 @@
 
     <artifactId>letool-starter-monitor</artifactId>
     <name>letool-starter-monitor</name>
-    <description>letool 监控指标模块 —— Micrometer/Prometheus 集成、JVM/HTTP/SQL 指标、告警通知（钉钉/企微/邮件）</description>
+    <description>letool 监控指标模块 —— Micrometer/Prometheus 集成、JVM/HTTP/SQL 指标、告警通知（钉钉/企微/邮件）
+    </description>
     <packaging>jar</packaging>
 
     <dependencies>
