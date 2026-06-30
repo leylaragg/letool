@@ -148,7 +148,7 @@ public final class JsonUtil {
      */
     public static Map<String, Object> toMap(Object obj) {
         if (obj == null) return null;
-        return JSON.to(Map.class, obj);
+        return JSON.parseObject(JSON.toJSONString(obj), Map.class);
     }
 
     /**

@@ -32,7 +32,7 @@ class StrUtilTest {
     void format() {
         assertEquals("Hello, World!", StrUtil.format("Hello, {}!", "World"));
         assertEquals("a,b,c", StrUtil.format("{},{},{}", "a", "b", "c"));
-        assertEquals("a,{},c", StrUtil.format("{},{},{}", "a"));
+        assertEquals("a,{},{}", StrUtil.format("{},{},{}", "a"));
     }
 
     @Test

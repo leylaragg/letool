@@ -74,6 +74,10 @@ public class CacheConfig<K, V> {
         return this;
     }
 
+    public CacheConfig<K, V> build() {
+        return this;
+    }
+
     // ---- getters ----
 
     public String getName() { return name; }
