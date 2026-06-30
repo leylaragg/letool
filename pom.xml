@@ -61,6 +61,9 @@
 
         <!-- 阶段 6：增值模块 -->
         <module>letool-starter-ai</module>
+
+        <!-- 阶段 7：数据结构与决策链 -->
+        <module>letool-starter-data-structure</module>
         <module>letool-starter-websocket</module>
         <module>letool-starter-job</module>
         <module>letool-starter-monitor</module>
