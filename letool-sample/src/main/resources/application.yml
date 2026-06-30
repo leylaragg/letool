@@ -1,0 +1,49 @@
+spring:
+  application:
+    name: letool-sample
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+
+letool:
+  security:
+    enabled: true
+    auth-mode: jwt
+    jwt:
+      secret: sample-jwt-secret-key-for-demo-only-256bits!!
+      access-token-expiration: 3600
+      refresh-token-expiration: 86400
+      issuer: letool-sample
+    exclude-paths:
+      - /api/public/**
+      - /api/auth/login
+  sensitive:
+    enabled: true
+    jackson:
+      enabled: true
+    log:
+      enabled: true
+  cache:
+    enabled: true
+    redis-prefix: "letool:sample:"
+    instances:
+      - name: userCache
+        l1-max-size: 100
+        l1-ttl: 1h
+        l2-ttl: 12h
+        null-value-cache: true
+  cipher:
+    provider: software
+    aes:
+      default-mode: GCM
+      default-key-size: 256
+  log:
+    trace:
+      enabled: true
+      header-name: X-Trace-Id
+      generate-if-absent: true
+
+logging:
+  level:
+    com.github.leyland: DEBUG
