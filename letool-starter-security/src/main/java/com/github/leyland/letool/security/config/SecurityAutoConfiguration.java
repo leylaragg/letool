@@ -25,6 +25,24 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.Arrays;
 import java.util.List;
 
+/**
+ * 安全模块自动配置，注册 Spring Security 所需的全部 Bean。
+ *
+ * <p>启用条件：Web 环境 + {@code letool.security.enabled=true}（默认启用）。</p>
+ *
+ * <p>注册的 Bean：</p>
+ * <ul>
+ *   <li>{@link JwtTokenProvider} — JWT 令牌生成与解析</li>
+ *   <li>{@link JwtAuthenticationFilter} — 从 Authorization Header 提取 Token 并认证</li>
+ *   <li>{@link SecurityExceptionHandler} — 未认证请求返回 401 JSON</li>
+ *   <li>{@link AccessDeniedExceptionHandler} — 权限不足返回 403 JSON</li>
+ *   <li>{@link SecurityAnnotationAspect} — {@code @RequireRole / @RequirePermission} 切面</li>
+ *   <li>{@link SecurityFilterChain} — 无状态会话、CSRF 禁用、路径鉴权、JWT 过滤器链</li>
+ * </ul>
+ *
+ * @author leyland
+ * @since 2.0.0
+ */
 @AutoConfiguration
 @EnableConfigurationProperties(SecurityProperties.class)
 @ConditionalOnWebApplication
@@ -34,6 +52,7 @@ public class SecurityAutoConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(SecurityAutoConfiguration.class);
 
+    /** 暴露 JwtTokenProvider 供其他模块引用 */
     @Bean
     public JwtTokenProvider jwtTokenProvider(SecurityProperties properties) {
         return new JwtTokenProvider(properties);
@@ -60,6 +79,10 @@ public class SecurityAutoConfiguration {
         return new SecurityAnnotationAspect();
     }
 
+    /**
+     * 构建 SecurityFilterChain：无状态会话、禁用 CSRF、JWT 过滤器、
+     * 排除路径放行、其余请求需认证。
+     */
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
                                                     JwtAuthenticationFilter jwtFilter,
@@ -86,6 +109,9 @@ public class SecurityAutoConfiguration {
         return http.build();
     }
 
+    /**
+     * 根据配置构建 CORS 配置源，禁用时返回空配置。
+     */
     private CorsConfigurationSource corsConfigurationSource(SecurityProperties properties) {
         SecurityProperties.Cors corsProps = properties.getCors();
         if (!corsProps.isEnabled()) {

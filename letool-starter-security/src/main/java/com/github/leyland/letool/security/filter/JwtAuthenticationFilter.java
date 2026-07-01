@@ -1,6 +1,5 @@
 package com.github.leyland.letool.security.filter;
 
-import com.github.leyland.letool.security.annotation.SkipAuth;
 import com.github.leyland.letool.security.config.SecurityProperties;
 import com.github.leyland.letool.security.context.LoginUser;
 import com.github.leyland.letool.security.jwt.JwtTokenProvider;
@@ -18,6 +17,20 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
+/**
+ * JWT 认证过滤器，在每个请求中从 Authorization Header 提取 Token 并设置安全上下文。
+ *
+ * <p>Token 提取优先级：</p>
+ * <ol>
+ *   <li>Authorization Header（Bearer 前缀）</li>
+ *   <li>请求参数 {@code token}</li>
+ * </ol>
+ *
+ * <p>排除路径通过 {@link AntPathMatcher} 匹配，匹配成功的请求跳过认证。</p>
+ *
+ * @author leyland
+ * @since 2.0.0
+ */
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
@@ -31,6 +44,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         this.properties = properties;
     }
 
+    /**
+     * 判断当前请求是否应跳过过滤。
+     *
+     * @param request HTTP 请求
+     * @return {@code true} 如果路径匹配排除列表
+     */
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getServletPath();
@@ -38,6 +57,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 .anyMatch(pattern -> pathMatcher.match(pattern, path));
     }
 
+    /**
+     * 从请求中提取 Token、验证并设置 Spring Security 认证上下文。
+     */
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
@@ -57,6 +79,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
+    /**
+     * 从请求中提取 JWT Token。
+     *
+     * <p>优先从 Authorization Header（Bearer 前缀）提取，
+     * 其次从 {@code token} 请求参数提取。</p>
+     *
+     * @param request HTTP 请求
+     * @return Token 字符串，未找到返回 {@code null}
+     */
     private String extractToken(HttpServletRequest request) {
         String bearer = request.getHeader("Authorization");
         if (bearer != null && bearer.startsWith("Bearer ")) {

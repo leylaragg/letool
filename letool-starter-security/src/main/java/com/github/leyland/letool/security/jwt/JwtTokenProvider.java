@@ -2,7 +2,6 @@ package com.github.leyland.letool.security.jwt;
 
 import com.github.leyland.letool.security.config.SecurityProperties;
 import com.github.leyland.letool.security.context.LoginUser;
-import com.github.leyland.letool.tool.util.JsonUtil;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
@@ -15,8 +14,22 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.List;
-import java.util.Map;
 
+/**
+ * JWT 令牌生成与解析器，使用 HMAC-SHA256 签名算法。
+ *
+ * <p>核心职责：</p>
+ * <ul>
+ *   <li>生成 AccessToken / RefreshToken</li>
+ *   <li>解析 Token 还原为 {@link LoginUser}</li>
+ *   <li>验证 Token 签名和有效期</li>
+ * </ul>
+ *
+ * <p>Token 中存储的 Claims：sub（用户ID）、username、roles、permissions。</p>
+ *
+ * @author leyland
+ * @since 2.0.0
+ */
 public class JwtTokenProvider {
 
     private static final Logger log = LoggerFactory.getLogger(JwtTokenProvider.class);
@@ -26,18 +39,39 @@ public class JwtTokenProvider {
     private final long refreshTokenExpiration;
     private final String issuer;
 
+    /**
+     * 从配置属性初始化密钥和有效期。
+     *
+     * @param properties 安全配置属性
+     */
     public JwtTokenProvider(SecurityProperties properties) {
         byte[] keyBytes = properties.getJwt().getSecret().getBytes(StandardCharsets.UTF_8);
         this.secretKey = new SecretKeySpec(keyBytes, "HmacSHA256");
         this.accessTokenExpiration = properties.getJwt().getAccessTokenExpiration();
         this.refreshTokenExpiration = properties.getJwt().getRefreshTokenExpiration();
         this.issuer = properties.getJwt().getIssuer();
+
+        if ("letool-default-secret-change-in-production".equals(properties.getJwt().getSecret())) {
+            log.warn("JWT secret is using the default value — configure letool.security.jwt.secret for production use");
+        }
     }
 
+    /**
+     * 生成 AccessToken，有效期由 {@code letool.security.jwt.access-token-expiration} 控制。
+     *
+     * @param user 登录用户信息
+     * @return JWT 签名字符串
+     */
     public String generateAccessToken(LoginUser user) {
         return generateToken(user, accessTokenExpiration);
     }
 
+    /**
+     * 生成 RefreshToken，有效期由 {@code letool.security.jwt.refresh-token-expiration} 控制。
+     *
+     * @param user 登录用户信息
+     * @return JWT 签名字符串
+     */
     public String generateRefreshToken(LoginUser user) {
         return generateToken(user, refreshTokenExpiration);
     }
@@ -58,24 +92,38 @@ public class JwtTokenProvider {
                 .compact();
     }
 
+    /**
+     * 解析 Token 为 {@link LoginUser}。
+     *
+     * @param token JWT 签名字符串
+     * @return 解析出的用户信息，Token 无效或过期时返回 {@code null}
+     */
     public LoginUser parseToken(String token) {
         Claims claims = parseClaims(token);
         if (claims == null) return null;
 
         Long userId = Long.valueOf(claims.getSubject());
         String username = claims.get("username", String.class);
+        // JJWT stores List claims as raw List — unchecked cast is unavoidable
         @SuppressWarnings("unchecked")
         List<String> roles = claims.get("roles", List.class);
         @SuppressWarnings("unchecked")
         List<String> permissions = claims.get("permissions", List.class);
 
         LoginUser user = new LoginUser(userId, username, roles, permissions);
-        if (claims.get("nickname") != null) {
-            user.setNickname(claims.get("nickname", String.class));
+        String nickname = claims.get("nickname", String.class);
+        if (nickname != null) {
+            user.setNickname(nickname);
         }
         return user;
     }
 
+    /**
+     * 验证 Token 签名和有效期是否有效。
+     *
+     * @param token JWT 签名字符串
+     * @return {@code true} 如果 Token 签名正确且未过期
+     */
     public boolean validateToken(String token) {
         try {
             parseClaims(token);
@@ -86,6 +134,14 @@ public class JwtTokenProvider {
         }
     }
 
+    /**
+     * 解析 Token 的 Claims，不区分过期和其他错误。
+     *
+     * <p>调用方如需区分过期 Token，可以直接 catch {@link ExpiredJwtException}。</p>
+     *
+     * @param token JWT 签名字符串
+     * @return Claims 对象，解析失败或过期返回 {@code null}
+     */
     private Claims parseClaims(String token) {
         try {
             return Jwts.parser()
@@ -103,10 +159,12 @@ public class JwtTokenProvider {
         }
     }
 
+    /** @return AccessToken 有效期（秒） */
     public long getAccessTokenExpiration() {
         return accessTokenExpiration;
     }
 
+    /** @return RefreshToken 有效期（秒） */
     public long getRefreshTokenExpiration() {
         return refreshTokenExpiration;
     }

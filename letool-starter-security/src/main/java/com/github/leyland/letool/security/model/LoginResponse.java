@@ -2,18 +2,40 @@ package com.github.leyland.letool.security.model;
 
 import java.io.Serializable;
 
+/**
+ * 登录响应模型，包含 Token 信息和用户基本数据。
+ *
+ * @author leyland
+ * @since 2.0.0
+ */
 public class LoginResponse implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
+    /** Token 信息（AccessToken / RefreshToken / 有效期） */
     private TokenInfo tokenInfo;
+
+    /** 用户 ID */
     private Long userId;
+
+    /** 用户名 */
     private String username;
+
+    /** 昵称 */
     private String nickname;
+
+    /** 登录时间戳（毫秒） */
     private long loginTime;
 
     public LoginResponse() {}
 
+    /**
+     * 构造登录响应，自动记录当前时间戳。
+     *
+     * @param tokenInfo Token 信息
+     * @param userId    用户 ID
+     * @param username  用户名
+     */
     public LoginResponse(TokenInfo tokenInfo, Long userId, String username) {
         this.tokenInfo = tokenInfo;
         this.userId = userId;

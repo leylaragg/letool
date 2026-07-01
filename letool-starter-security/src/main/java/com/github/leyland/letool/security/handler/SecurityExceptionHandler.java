@@ -13,10 +13,22 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
+/**
+ * 认证失败处理器，当未登录用户访问受保护资源时返回 401 JSON 响应。
+ *
+ * <p>实现 Spring Security 的 {@link AuthenticationEntryPoint} 接口，
+ * 响应格式为 {@link R}{@code .fail("AUTH_001", "认证失败，请重新登录")}。</p>
+ *
+ * @author leyland
+ * @since 2.0.0
+ */
 public class SecurityExceptionHandler implements AuthenticationEntryPoint {
 
     private static final Logger log = LoggerFactory.getLogger(SecurityExceptionHandler.class);
 
+    /**
+     * 处理未认证请求，返回 401 状态码和 JSON 错误信息。
+     */
     @Override
     public void commence(HttpServletRequest request, HttpServletResponse response,
                          AuthenticationException authException) throws IOException {
