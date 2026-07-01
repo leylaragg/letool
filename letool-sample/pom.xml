@@ -54,6 +54,14 @@
             <groupId>com.github.leyland</groupId>
             <artifactId>letool-starter-data-structure</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.github.leyland</groupId>
+            <artifactId>letool-starter-thread</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.github.leyland</groupId>
+            <artifactId>letool-starter-ratelimiter</artifactId>
+        </dependency>
 
         <!-- 基础设施 -->
         <dependency>

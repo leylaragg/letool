@@ -43,6 +43,20 @@ letool:
       enabled: true
       header-name: X-Trace-Id
       generate-if-absent: true
+  thread:
+    pools:
+      task-executor:
+        core-pool-size: 4
+        max-pool-size: 8
+        queue-capacity: 100
+        keep-alive-seconds: 60
+        thread-name-prefix: sample-task-
+  rate-limiter:
+    enabled: true
+    default-algorithm: token-bucket
+    token-bucket:
+      capacity: 100
+      refill-rate: 10
 
 logging:
   level:
