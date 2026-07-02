@@ -2,6 +2,8 @@
 
 监控指标模块，提供 Micrometer + Prometheus 集成、JVM / HTTP / SQL 指标采集、API 调用统计以及钉钉 / 企微 / 邮件多渠道告警。
 
+> ⚠️ 当前 Micrometer/Prometheus 指标采集可用，钉钉、企业微信告警会通过 Webhook POST 真实发送；数据清理任务仍只记录日志，不执行真实 SQL 删除。生产清理需要接入真实执行策略。
+
 ## Maven 坐标
 
 ```xml

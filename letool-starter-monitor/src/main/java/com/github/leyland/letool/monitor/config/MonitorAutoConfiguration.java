@@ -165,14 +165,14 @@ public class MonitorAutoConfiguration {
         MonitorProperties.Alert.DingTalk dingTalk = properties.getAlert().getDingtalk();
         if (dingTalk.getWebhookUrl() != null && !dingTalk.getWebhookUrl().isEmpty()) {
             notifier.registerChannel(new DingTalkNotifier(properties));
-            log.info("[Monitor] 已注册钉钉告警渠道");
+            log.info("[Monitor] 已注册钉钉告警渠道（Webhook POST）");
         }
 
         // 条件注册企业微信渠道
         MonitorProperties.Alert.Wechat wechat = properties.getAlert().getWechat();
         if (wechat.getWebhookUrl() != null && !wechat.getWebhookUrl().isEmpty()) {
             notifier.registerChannel(new WechatNotifier(properties));
-            log.info("[Monitor] 已注册企业微信告警渠道");
+            log.info("[Monitor] 已注册企业微信告警渠道（Webhook POST）");
         }
 
         return notifier;
@@ -191,7 +191,7 @@ public class MonitorAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public DataCleanupScheduler dataCleanupScheduler(MonitorProperties properties) {
-        log.info("[Monitor] 创建 DataCleanupScheduler Bean");
+        log.warn("[Monitor] 创建 DataCleanupScheduler Bean（当前清理任务只记录日志，不执行真实 SQL 删除）");
         dataCleanupScheduler = new DataCleanupScheduler(properties);
         return dataCleanupScheduler;
     }

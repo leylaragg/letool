@@ -12,7 +12,11 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 
 /**
- * MQ 模块自动配置 —— 根据 {@code letool.mq.default-type} 注册对应的 {@link MqProvider} 和 {@link MqTemplate}.
+ * MQ 模块自动配置 —— 注册 {@link MqProvider} 和 {@link MqTemplate}.
+ *
+ * <p>当前版本仅内置 {@link InMemoryMqProvider}。当 {@code letool.mq.default-type}
+ * 配置为 {@code rabbitmq}、{@code rocketmq} 或 {@code kafka} 时，如果用户没有自行提供
+ * {@link MqProvider} Bean，本自动配置会回退到内存队列。</p>
  *
  * <h3>自动注册的 Bean</h3>
  * <ul>
@@ -25,7 +29,7 @@ import org.springframework.context.annotation.Bean;
  * # 使用内存队列（开发/测试环境）
  * letool.mq.default-type=memory
  *
- * # 使用 RabbitMQ
+ * # 预留给真实 RabbitMQ provider 的配置；当前版本没有内置真实 RabbitMQ provider
  * letool.mq.default-type=rabbitmq
  * letool.mq.rabbitmq.host=192.168.1.100
  * letool.mq.rabbitmq.port=5672
@@ -54,8 +58,8 @@ public class MqAutoConfiguration {
     /**
      * 注册 MQ 消息提供者 —— 根据配置创建对应实现.
      *
-     * <p>当前默认使用 {@link InMemoryMqProvider} 内存队列实现，
-     * 后续版本将根据 {@code defaultType} 配置自动装配 RabbitMQ / RocketMQ / Kafka 实现.</p>
+     * <p>当前只内置 {@link InMemoryMqProvider}。非 {@code memory} 类型会在没有用户自定义
+     * {@link MqProvider} Bean 时回退到内存队列，并输出警告日志。</p>
      *
      * @param properties MQ 配置属性
      * @return MqProvider 实例

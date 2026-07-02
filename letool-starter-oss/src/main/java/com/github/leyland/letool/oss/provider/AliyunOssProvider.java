@@ -56,7 +56,7 @@ public class AliyunOssProvider implements OssProvider {
      */
     public AliyunOssProvider(OssProperties.Aliyun config) {
         this.config = config;
-        log.info("AliyunOssProvider initialized (stub mode) - endpoint: {}, bucket: {}",
+        log.warn("AliyunOssProvider initialized in STUB mode - no real Aliyun OSS API calls will be made. endpoint={}, bucket={}",
                 config.getEndpoint(), config.getBucket());
     }
 

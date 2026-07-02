@@ -4,16 +4,16 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * MQ 消息队列配置属性 —— 统一管理 RabbitMQ / RocketMQ / Kafka 的连接参数与消费者/生产者策略.
+ * MQ 消息队列配置属性 —— 统一管理内存队列与预留的 RabbitMQ / RocketMQ / Kafka 连接参数。
+ *
+ * <p>当前 starter 只内置 {@code memory} provider。RabbitMQ / RocketMQ / Kafka 配置字段
+ * 保留给后续真实 provider 或用户自定义 {@link com.github.leyland.letool.mq.core.MqProvider} 使用。</p>
  *
  * <h3>配置前缀</h3>
  * <pre>{@code
  * letool.mq:
  *   enabled: true
- *   default-type: rabbitmq
- *   rabbitmq:
- *     host: 127.0.0.1
- *     port: 5672
+ *   default-type: memory
  *   consumer:
  *     concurrency: 5
  *     max-attempts: 5
@@ -21,10 +21,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * <h3>default-type 可选值</h3>
  * <ul>
- *   <li>{@code rabbitmq} —— RabbitMQ（默认）</li>
- *   <li>{@code rocketmq} —— RocketMQ</li>
- *   <li>{@code kafka} —— Kafka</li>
- *   <li>{@code memory} —— 内存队列（无需外部依赖，适合开发/测试）</li>
+ *   <li>{@code memory} —— 内存队列（当前内置实现，无需外部依赖，适合开发/测试）</li>
+ *   <li>{@code rabbitmq} —— 预留配置，当前无内置真实 RabbitMQ provider</li>
+ *   <li>{@code rocketmq} —— 预留配置，当前无内置真实 RocketMQ provider</li>
+ *   <li>{@code kafka} —— 预留配置，当前无内置真实 Kafka provider</li>
  * </ul>
  *
  * @author leyland
@@ -40,10 +40,11 @@ public class MqProperties {
     private boolean enabled = true;
 
     /**
-     * 默认消息队列类型，支持 rabbitmq / rocketmq / kafka / memory，
-     * 默认 {@code rabbitmq}
+     * 默认消息队列类型，支持 rabbitmq / rocketmq / kafka / memory。
+     *
+     * <p>当前只有 memory 是内置真实实现；其他类型会在没有自定义 provider 时回退到内存队列。</p>
      */
-    private String defaultType = "rabbitmq";
+    private String defaultType = "memory";
 
     // ======================== 各 MQ 配置 ========================
 

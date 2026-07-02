@@ -60,7 +60,7 @@ public class TencentCosProvider implements OssProvider {
      */
     public TencentCosProvider(OssProperties.TencentCos config) {
         this.config = config;
-        log.info("TencentCosProvider initialized (stub mode) - region: {}, bucket: {}",
+        log.warn("TencentCosProvider initialized in STUB mode - no real Tencent COS API calls will be made. region={}, bucket={}",
                 config.getRegion(), config.getBucket());
     }
 

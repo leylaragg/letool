@@ -9,13 +9,13 @@
     {
       "name": "letool.mq.default-type",
       "type": "java.lang.String",
-      "description": "默认消息队列类型。支持 rabbitmq、rocketmq、kafka、memory。",
-      "defaultValue": "rabbitmq"
+      "description": "默认消息队列类型。当前仅 memory 为内置真实实现；rabbitmq、rocketmq、kafka 预留给真实 provider 或自定义 provider。",
+      "defaultValue": "memory"
     },
     {
       "name": "letool.mq.rabbitmq.host",
       "type": "java.lang.String",
-      "description": "RabbitMQ 服务地址。",
+      "description": "RabbitMQ 服务地址。当前 starter 未内置真实 RabbitMQ provider，供后续 provider 或自定义 provider 使用。",
       "defaultValue": "127.0.0.1"
     },
     {
@@ -45,7 +45,7 @@
     {
       "name": "letool.mq.rocketmq.name-server",
       "type": "java.lang.String",
-      "description": "RocketMQ Name Server 地址，格式 ip:port;ip:port。",
+      "description": "RocketMQ Name Server 地址，格式 ip:port;ip:port。当前 starter 未内置真实 RocketMQ provider，供后续 provider 或自定义 provider 使用。",
       "defaultValue": "127.0.0.1:9876"
     },
     {
@@ -62,7 +62,7 @@
     {
       "name": "letool.mq.kafka.bootstrap-servers",
       "type": "java.lang.String",
-      "description": "Kafka Bootstrap Server 地址，格式 host1:port1,host2:port2。",
+      "description": "Kafka Bootstrap Server 地址，格式 host1:port1,host2:port2。当前 starter 未内置真实 Kafka provider，供后续 provider 或自定义 provider 使用。",
       "defaultValue": "127.0.0.1:9092"
     },
     {
@@ -106,10 +106,10 @@
     {
       "name": "letool.mq.default-type",
       "values": [
-        { "value": "rabbitmq", "description": "RabbitMQ（默认）" },
-        { "value": "rocketmq", "description": "RocketMQ" },
-        { "value": "kafka", "description": "Kafka" },
-        { "value": "memory", "description": "内存队列（无需外部依赖，适合开发/测试）" }
+        { "value": "memory", "description": "内存队列（当前内置实现，无需外部依赖，适合开发/测试）" },
+        { "value": "rabbitmq", "description": "RabbitMQ（预留，需要真实 provider 或自定义 provider）" },
+        { "value": "rocketmq", "description": "RocketMQ（预留，需要真实 provider 或自定义 provider）" },
+        { "value": "kafka", "description": "Kafka（预留，需要真实 provider 或自定义 provider）" }
       ]
     }
   ]

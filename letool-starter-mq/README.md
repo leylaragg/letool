@@ -1,6 +1,8 @@
 # letool-starter-mq
 
-> 消息队列模块，RabbitMQ/RocketMQ/Kafka 统一抽象，提供消息发送/消费、死信处理能力。
+> 消息队列模块，当前提供内存消息队列和统一发送/消费抽象，RabbitMQ/RocketMQ/Kafka 配置为真实 provider 的预留入口。
+
+> ⚠️ 当前内置 provider 只有 InMemoryMqProvider。`rabbitmq`、`rocketmq`、`kafka` 配置会回退到内存队列，不具备跨进程持久化、真实 broker 投递或分布式消费能力。
 
 ## Maven 坐标
 
@@ -20,12 +22,7 @@
 letool:
   mq:
     enabled: true
-    default-type: rabbitmq
-    rabbitmq:
-      host: 127.0.0.1
-      port: 5672
-      username: guest
-      password: guest
+    default-type: memory
     consumer:
       concurrency: 3
       max-attempts: 5
@@ -64,15 +61,15 @@ public class OrderConsumer {
 | 属性 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `letool.mq.enabled` | boolean | true | 是否启用 MQ 模块 |
-| `letool.mq.default-type` | String | rabbitmq | 默认 MQ 类型：rabbitmq / rocketmq / kafka / memory |
-| `letool.mq.rabbitmq.host` | String | 127.0.0.1 | RabbitMQ 地址 |
+| `letool.mq.default-type` | String | memory | 默认 MQ 类型：memory / rabbitmq / rocketmq / kafka；当前仅 memory 为内置真实实现 |
+| `letool.mq.rabbitmq.host` | String | 127.0.0.1 | RabbitMQ 地址，预留给真实 RabbitMQ provider 或自定义 provider |
 | `letool.mq.rabbitmq.port` | int | 5672 | RabbitMQ 端口 |
 | `letool.mq.rabbitmq.username` | String | guest | RabbitMQ 用户名 |
 | `letool.mq.rabbitmq.password` | String | guest | RabbitMQ 密码 |
 | `letool.mq.rabbitmq.virtual-host` | String | / | 虚拟主机 |
-| `letool.mq.rocketmq.name-server` | String | 127.0.0.1:9876 | RocketMQ NameServer |
+| `letool.mq.rocketmq.name-server` | String | 127.0.0.1:9876 | RocketMQ NameServer，预留给真实 RocketMQ provider 或自定义 provider |
 | `letool.mq.rocketmq.group` | String | letool-producer-group | RocketMQ 组名 |
-| `letool.mq.kafka.bootstrap-servers` | String | 127.0.0.1:9092 | Kafka 地址 |
+| `letool.mq.kafka.bootstrap-servers` | String | 127.0.0.1:9092 | Kafka 地址，预留给真实 Kafka provider 或自定义 provider |
 | `letool.mq.kafka.group-id` | String | letool-consumer-group | Kafka 消费者组 ID |
 | `letool.mq.consumer.concurrency` | int | 1 | 并发消费线程数 |
 | `letool.mq.consumer.max-attempts` | int | 3 | 最大重试次数 |

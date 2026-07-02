@@ -2,6 +2,8 @@
 
 AI 集成模块，提供 OpenAI、DeepSeek、通义千问、智谱、Ollama 等多厂商的统一 API，支持对话、嵌入向量、Function Calling、RAG 检索增强生成和流式输出。
 
+> ⚠️ OpenAI 兼容 provider 会发起真实 HTTP 请求，但统一超时、重试、流式、错误码细分、连接池和敏感日志保护仍需补齐。承载生产流量前请先补充这些控制和集成测试。
+
 ## Maven 坐标
 
 ```xml

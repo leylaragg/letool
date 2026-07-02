@@ -1,5 +1,6 @@
 # letool
 
+[![CI](https://github.com/leyland-wang/letool/actions/workflows/maven.yml/badge.svg)](https://github.com/leyland-wang/letool/actions/workflows/maven.yml)
 [![JDK](https://img.shields.io/badge/JDK-17%2B-orange)](https://openjdk.org/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.4.x-brightgreen)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
@@ -13,6 +14,18 @@
 | JDK | 17+（推荐 21） |
 | Spring Boot | 3.4.x |
 | Maven | 3.9+ |
+
+## 工程化文档
+
+| 文档 | 说明 |
+|------|------|
+| [CHANGELOG](CHANGELOG.md) | 版本变更记录 |
+| [Version Compatibility](docs/version-compatibility.md) | Java、Spring Boot、模块兼容边界 |
+| [BOM Usage](docs/bom-usage.md) | dependency management / BOM 引入方式 |
+| [Module Production Readiness](docs/module-production-readiness.md) | 各模块生产就绪度与 stub/mock 边界 |
+| [External Provider Boundaries](docs/external-provider-boundaries.md) | 外部服务 provider 的真实、mock、stub 边界 |
+| [Starter Auto-Configuration Rules](docs/starter-auto-configuration-rules.md) | starter 自动装配治理规则 |
+| [Starter Dependency Scope Audit](docs/starter-dependency-scope-audit.md) | starter 依赖作用域审计计划 |
 
 ## 模块总览
 
@@ -34,16 +47,16 @@
 | **letool-starter-distributed-lock** | 分布式锁 —— Redis/ZK/DB 悲观锁、乐观锁、幂等性 | tool, cache |
 | **letool-starter-rule** | 规则引擎 —— LiteFlow 封装、规则链编排、Groovy 脚本 | tool, data |
 | **letool-starter-net** | 网络通信 —— Netty TCP、ISO8583、HTTP 负载均衡、网关路由 | tool |
-| **letool-starter-pay** | 支付集成 —— 支付宝/微信支付，下单/回调/退款/对账 | tool, web |
-| **letool-starter-mq** | 消息队列 —— RabbitMQ/RocketMQ/Kafka 统一抽象 | tool, log |
+| **letool-starter-pay** | 支付抽象 —— 支付宝/微信支付当前为 stub/mock 实现 | tool, web |
+| **letool-starter-mq** | 消息队列 —— 当前内置内存队列，RabbitMQ/RocketMQ/Kafka 配置为后续扩展入口 | tool, log |
 | **letool-starter-ratelimiter** | 限流熔断 —— 令牌桶/滑动窗口、熔断器 | tool, cache |
-| **letool-starter-oss** | 对象存储 —— 阿里云 OSS/腾讯云 COS/MinIO 统一 API | tool, file |
-| **letool-starter-sms** | 短信通知 —— 阿里云/腾讯云短信，频率限制 | tool |
-| **letool-starter-ai** | AI 集成 —— OpenAI/DeepSeek/通义千问，对话/嵌入/Function Calling | tool |
+| **letool-starter-oss** | 对象存储抽象 —— 阿里云 OSS/腾讯云 COS/MinIO 当前为 stub 实现 | tool, file |
+| **letool-starter-sms** | 短信通知抽象 —— 阿里云/腾讯云当前为模拟调用，支持频率限制 | tool |
+| **letool-starter-ai** | AI 集成 —— OpenAI 兼容 HTTP 调用，生产控制仍需补齐 | tool |
 | **letool-starter-data-structure** | 数据结构 —— 泛型树、决策链（消除 if-else）、链表 | 无 |
 | **letool-starter-websocket** | WebSocket —— 消息路由、房间管理、分布式会话 | tool, web |
 | **letool-starter-job** | 任务调度 —— 分布式定时任务、分片、重试 | tool, thread |
-| **letool-starter-monitor** | 监控指标 —— Micrometer + Prometheus，API 统计、告警通知 | tool, log, thread |
+| **letool-starter-monitor** | 监控指标 —— Micrometer + Prometheus 可用，告警/清理仍有占位实现 | tool, log, thread |
 
 ## 快速开始
 

@@ -60,7 +60,7 @@ public class MinioProvider implements OssProvider {
      */
     public MinioProvider(OssProperties.Minio config) {
         this.config = config;
-        log.info("MinioProvider initialized (stub mode) - endpoint: {}, bucket: {}",
+        log.warn("MinioProvider initialized in STUB mode - no real MinIO API calls will be made. endpoint={}, bucket={}",
                 config.getEndpoint(), config.getBucket());
     }
 

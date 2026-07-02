@@ -77,7 +77,7 @@ public class CleanupTask {
         // 更新上次清理时间
         lastCleanupTime = System.currentTimeMillis();
 
-        log.info("[Monitor-Cleanup] 数据表 {} 清理完成（当前为占位实现，实际清理逻辑待扩展）", tableName);
+        log.warn("[Monitor-Cleanup] 数据表 {} 清理完成（当前为占位实现，未执行真实 SQL 删除）", tableName);
         return 0;
     }
 

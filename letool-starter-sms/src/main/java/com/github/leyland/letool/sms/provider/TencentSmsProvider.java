@@ -64,6 +64,7 @@ public class TencentSmsProvider implements SmsProvider {
      */
     public TencentSmsProvider(SmsProperties.Tencent config) {
         this.config = config;
+        log.warn("TencentSmsProvider initialized in STUB mode - no real Tencent SMS API calls will be made.");
     }
 
     // ======================== 短信发送实现 ========================

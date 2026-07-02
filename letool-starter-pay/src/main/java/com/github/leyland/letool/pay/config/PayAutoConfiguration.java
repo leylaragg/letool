@@ -56,7 +56,7 @@ public class PayAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public AlipayProvider alipayProvider(PayProperties properties) {
-        log.info("Registering AlipayProvider");
+        log.warn("Registering AlipayProvider in STUB mode; no real Alipay request will be sent");
         return new AlipayProvider(properties.getAlipay());
     }
 
@@ -72,7 +72,7 @@ public class PayAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public WechatPayProvider wechatPayProvider(PayProperties properties) {
-        log.info("Registering WechatPayProvider");
+        log.warn("Registering WechatPayProvider in STUB mode; no real WeChat Pay request will be sent");
         return new WechatPayProvider(properties.getWechat());
     }
 
@@ -87,7 +87,7 @@ public class PayAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public MockPayProvider mockPayProvider() {
-        log.info("Registering MockPayProvider");
+        log.info("Registering MockPayProvider for development/test use");
         return new MockPayProvider();
     }
 

@@ -2,6 +2,8 @@
 
 > 短信模块，阿里云/腾讯云短信统一 API，支持模板发送、频率限制、发送记录。
 
+> ⚠️ 当前 Aliyun/Tencent provider 为 Stub/模拟实现，Mock provider 也不会发送真实短信。业务会收到模拟成功结果，但用户不会收到短信；生产接入前需要替换为真实 SDK 或 HTTP provider。
+
 ## Maven 坐标
 
 ```xml

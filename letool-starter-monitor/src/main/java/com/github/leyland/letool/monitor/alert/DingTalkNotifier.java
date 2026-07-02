@@ -1,8 +1,17 @@
 package com.github.leyland.letool.monitor.alert;
 
 import com.github.leyland.letool.monitor.config.MonitorProperties;
+import com.github.leyland.letool.monitor.exception.MonitorException;
+import com.github.leyland.letool.tool.util.JsonUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.Map;
 
 /**
  * 钉钉（DingTalk）告警通知渠道.
@@ -10,8 +19,6 @@ import org.slf4j.LoggerFactory;
  * <p>基于钉钉自定义机器人 Webhook 发送 Markdown 格式的告警消息。
  * 需要在 {@code letool.monitor.alert.dingtalk.webhook-url} 中配置 Webhook 地址，
  * 可选配置 {@code secret} 进行加签安全校验。</p>
- *
- * <p>当前版本为轻量级占位实现（日志输出），完整实现需引入 HTTP 客户端发送 POST 请求。</p>
  *
  * @author leyland
  * @since 2.0.0
@@ -43,8 +50,7 @@ public class DingTalkNotifier implements AlertNotifier.AlertChannel {
     /**
      * 发送钉钉告警通知.
      *
-     * <p>将告警内容格式化为 Markdown 消息并通过 Webhook 发送。
-     * 当前版本为占位实现，仅输出日志。</p>
+     * <p>将告警内容格式化为 Markdown 消息并通过 Webhook 发送。</p>
      *
      * @param title   告警标题
      * @param message 告警消息内容
@@ -68,22 +74,57 @@ public class DingTalkNotifier implements AlertNotifier.AlertChannel {
                 java.time.LocalDateTime.now().toString().replace("T", " ")
         );
 
-        log.warn("[Monitor-Alert-DingTalk] >>> 模拟钉钉告警发送 <<<\n"
-                        + "  Webhook: {}\n"
-                        + "  Secret: {}\n"
-                        + "  消息内容:\n{}",
-                webhookUrl,
-                dingTalk.getSecret() != null ? "***已配置***" : "未配置",
-                markdownContent);
-
-        // TODO: 实现实际的 HTTP POST 请求到钉钉 Webhook
-        //  - 构建请求体: {"msgtype":"markdown","markdown":{"title":"...","text":"..."}}
-        //  - 如有 secret，计算签名并追加 timestamp/sign 参数
-        //  - 检查响应 code == 0 判断发送成功
+        String signedWebhookUrl = appendSignIfNecessary(webhookUrl, dingTalk.getSecret());
+        String payload = JsonUtil.toJsonString(Map.of(
+                "msgtype", "markdown",
+                "markdown", Map.of("title", title, "text", markdownContent)
+        ));
+        WebhookAlertClient.postJson("DingTalk", signedWebhookUrl, payload);
+        log.info("[Monitor-Alert-DingTalk] 钉钉告警发送成功: title={}, secretConfigured={}",
+                title, dingTalk.getSecret() != null);
     }
 
     @Override
     public String getType() {
         return "dingtalk";
+    }
+
+    /**
+     * 在启用钉钉加签时追加 timestamp/sign 参数。
+     *
+     * @param webhookUrl 原始 Webhook 地址
+     * @param secret     钉钉机器人签名密钥
+     * @return 原始地址或追加签名参数后的地址
+     */
+    private String appendSignIfNecessary(String webhookUrl, String secret) {
+        if (secret == null || secret.isBlank()) {
+            return webhookUrl;
+        }
+        long timestamp = System.currentTimeMillis();
+        String sign = sign(timestamp, secret);
+        String separator = webhookUrl.contains("?")
+                ? (webhookUrl.endsWith("?") || webhookUrl.endsWith("&") ? "" : "&")
+                : "?";
+        return webhookUrl + separator + "timestamp=" + timestamp + "&sign="
+                + URLEncoder.encode(sign, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * 计算钉钉机器人 HMAC-SHA256 签名。
+     *
+     * @param timestamp 当前毫秒时间戳
+     * @param secret    钉钉机器人签名密钥
+     * @return Base64 编码后的签名
+     */
+    private String sign(long timestamp, String secret) {
+        try {
+            String stringToSign = timestamp + "\n" + secret;
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] signData = mac.doFinal(stringToSign.getBytes(StandardCharsets.UTF_8));
+            return Base64.getEncoder().encodeToString(signData);
+        } catch (Exception e) {
+            throw new MonitorException("DingTalk webhook sign failed", e);
+        }
     }
 }

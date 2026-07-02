@@ -59,6 +59,7 @@ public class AliyunSmsProvider implements SmsProvider {
      */
     public AliyunSmsProvider(SmsProperties.Aliyun config) {
         this.config = config;
+        log.warn("AliyunSmsProvider initialized in STUB mode - no real Aliyun SMS API calls will be made.");
     }
 
     // ======================== 短信发送实现 ========================

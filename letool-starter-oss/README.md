@@ -1,6 +1,8 @@
 # letool-starter-oss
 
-> 对象存储模块，阿里云 OSS / 腾讯云 COS / MinIO / AWS S3 统一 API，支持 STS 临时凭证、URL 签名。
+> 对象存储抽象模块，保留阿里云 OSS / 腾讯云 COS / MinIO 的统一 API 入口，支持上传、下载、删除和 URL 签名模型。
+
+> ⚠️ 当前内置的 Aliyun OSS、Tencent COS、MinIO provider 均为 Stub 实现，只记录日志并返回模拟结果，不会访问真实对象存储服务。生产接入前需要替换为真实 SDK provider 或等待后续版本。
 
 ## Maven 坐标
 
