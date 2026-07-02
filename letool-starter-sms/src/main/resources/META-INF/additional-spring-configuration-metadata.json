@@ -1,0 +1,85 @@
+{
+  "properties": [
+    {
+      "name": "letool.sms.enabled",
+      "type": "java.lang.Boolean",
+      "description": "短信模块总开关。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.sms.default-provider",
+      "type": "java.lang.String",
+      "description": "默认短信服务商。可选值：aliyun、tencent、mock。",
+      "defaultValue": "aliyun"
+    },
+    {
+      "name": "letool.sms.aliyun.access-key-id",
+      "type": "java.lang.String",
+      "description": "阿里云 AccessKey ID，用于 API 鉴权。"
+    },
+    {
+      "name": "letool.sms.aliyun.access-key-secret",
+      "type": "java.lang.String",
+      "description": "阿里云 AccessKey Secret，用于 API 鉴权。"
+    },
+    {
+      "name": "letool.sms.aliyun.sign-name",
+      "type": "java.lang.String",
+      "description": "阿里云短信签名名称，需在阿里云短信控制台审核通过。"
+    },
+    {
+      "name": "letool.sms.aliyun.region-id",
+      "type": "java.lang.String",
+      "description": "阿里云短信服务所在地域。",
+      "defaultValue": "cn-hangzhou"
+    },
+    {
+      "name": "letool.sms.tencent.secret-id",
+      "type": "java.lang.String",
+      "description": "腾讯云 SecretId，用于 API 鉴权。"
+    },
+    {
+      "name": "letool.sms.tencent.secret-key",
+      "type": "java.lang.String",
+      "description": "腾讯云 SecretKey，用于 API 鉴权。"
+    },
+    {
+      "name": "letool.sms.tencent.app-id",
+      "type": "java.lang.String",
+      "description": "腾讯云短信应用 SDK AppID，在腾讯云短信控制台获取。"
+    },
+    {
+      "name": "letool.sms.tencent.sign-name",
+      "type": "java.lang.String",
+      "description": "腾讯云短信签名内容，需在腾讯云短信控制台审核通过。"
+    },
+    {
+      "name": "letool.sms.rate-limit.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用短信发送频率限制（基于内存 ConcurrentHashMap 实现）。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.sms.rate-limit.max-per-minute",
+      "type": "java.lang.Integer",
+      "description": "同一手机号每分钟最大发送次数。",
+      "defaultValue": 10
+    },
+    {
+      "name": "letool.sms.rate-limit.max-per-day",
+      "type": "java.lang.Integer",
+      "description": "同一手机号每天最大发送次数。",
+      "defaultValue": 100
+    }
+  ],
+  "hints": [
+    {
+      "name": "letool.sms.default-provider",
+      "values": [
+        { "value": "aliyun", "description": "阿里云短信服务" },
+        { "value": "tencent", "description": "腾讯云短信服务" },
+        { "value": "mock", "description": "Mock 实现，不实际发送短信" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "properties": [
+    {
+      "name": "letool.job.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用任务调度功能。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.job.thread-pool-size",
+      "type": "java.lang.Integer",
+      "description": "任务执行线程池大小。",
+      "defaultValue": 4
+    },
+    {
+      "name": "letool.job.shard.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用任务分片功能。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.job.shard.default-total",
+      "type": "java.lang.Integer",
+      "description": "默认总分片数。",
+      "defaultValue": 1
+    },
+    {
+      "name": "letool.job.retry.max-retries",
+      "type": "java.lang.Integer",
+      "description": "任务失败最大重试次数。",
+      "defaultValue": 3
+    },
+    {
+      "name": "letool.job.retry.backoff-ms",
+      "type": "java.lang.Long",
+      "description": "重试退避基础时间（毫秒）。",
+      "defaultValue": 1000
+    },
+    {
+      "name": "letool.job.retry.backoff-multiplier",
+      "type": "java.lang.Double",
+      "description": "重试退避倍率（指数退避）。",
+      "defaultValue": 2.0
+    },
+    {
+      "name": "letool.job.log.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用任务日志功能。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.job.log.retention-days",
+      "type": "java.lang.Integer",
+      "description": "任务日志保留天数。",
+      "defaultValue": 30
+    }
+  ]
+}

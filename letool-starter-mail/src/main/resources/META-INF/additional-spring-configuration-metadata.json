@@ -1,0 +1,93 @@
+{
+  "properties": [
+    {
+      "name": "letool.mail.enabled",
+      "type": "java.lang.Boolean",
+      "description": "邮件模块总开关。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.mail.default-account",
+      "type": "java.lang.String",
+      "description": "默认使用的账户名称，对应 accounts 中的 key。",
+      "defaultValue": "primary"
+    },
+    {
+      "name": "letool.mail.async",
+      "type": "java.lang.Boolean",
+      "description": "是否启用异步发送。",
+      "defaultValue": false
+    },
+    {
+      "name": "letool.mail.async-pool-size",
+      "type": "java.lang.Integer",
+      "description": "异步发送线程池大小。",
+      "defaultValue": 4
+    },
+    {
+      "name": "letool.mail.accounts.*.host",
+      "type": "java.lang.String",
+      "description": "SMTP 服务器地址。",
+      "defaultValue": "localhost"
+    },
+    {
+      "name": "letool.mail.accounts.*.port",
+      "type": "java.lang.Integer",
+      "description": "SMTP 服务器端口。",
+      "defaultValue": 25
+    },
+    {
+      "name": "letool.mail.accounts.*.username",
+      "type": "java.lang.String",
+      "description": "SMTP 登录用户名。"
+    },
+    {
+      "name": "letool.mail.accounts.*.password",
+      "type": "java.lang.String",
+      "description": "SMTP 登录密码。"
+    },
+    {
+      "name": "letool.mail.accounts.*.protocol",
+      "type": "java.lang.String",
+      "description": "邮件传输协议。",
+      "defaultValue": "smtp"
+    },
+    {
+      "name": "letool.mail.accounts.*.auth",
+      "type": "java.lang.Boolean",
+      "description": "是否启用 SMTP 认证。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.mail.accounts.*.starttls",
+      "type": "java.lang.Boolean",
+      "description": "是否启用 STARTTLS。",
+      "defaultValue": false
+    },
+    {
+      "name": "letool.mail.accounts.*.ssl",
+      "type": "java.lang.Boolean",
+      "description": "是否启用 SSL。",
+      "defaultValue": false
+    },
+    {
+      "name": "letool.mail.accounts.*.from",
+      "type": "java.lang.String",
+      "description": "发件人地址。"
+    },
+    {
+      "name": "letool.mail.accounts.*.personal",
+      "type": "java.lang.String",
+      "description": "发件人显示名称。"
+    }
+  ],
+  "hints": [
+    {
+      "name": "letool.mail.accounts.*.protocol",
+      "values": [
+        { "value": "smtp", "description": "标准 SMTP 协议" },
+        { "value": "smtps", "description": "SMTP over SSL 加密协议" }
+      ]
+    }
+  ]
+}

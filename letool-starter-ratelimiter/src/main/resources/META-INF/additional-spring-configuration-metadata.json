@@ -1,0 +1,74 @@
+{
+  "properties": [
+    {
+      "name": "letool.rate-limiter.enabled",
+      "type": "java.lang.Boolean",
+      "description": "全局开关：是否启用限流熔断模块。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.rate-limiter.default-algorithm",
+      "type": "java.lang.String",
+      "description": "默认限流算法。可选值：token-bucket（令牌桶）、sliding-window（滑动窗口）、leaky-bucket（漏桶，预留）。",
+      "defaultValue": "token-bucket"
+    },
+    {
+      "name": "letool.rate-limiter.token-bucket.capacity",
+      "type": "java.lang.Long",
+      "description": "令牌桶的最大容量（最大令牌数），决定允许的最大突发流量。",
+      "defaultValue": 100
+    },
+    {
+      "name": "letool.rate-limiter.token-bucket.refill-rate",
+      "type": "java.lang.Double",
+      "description": "令牌桶每秒补充的令牌数（稳态 QPS）。",
+      "defaultValue": 10
+    },
+    {
+      "name": "letool.rate-limiter.sliding-window.window-size",
+      "type": "java.lang.Long",
+      "description": "滑动窗口的时间长度（秒），统计此范围内的请求。",
+      "defaultValue": 60
+    },
+    {
+      "name": "letool.rate-limiter.sliding-window.max-permits",
+      "type": "java.lang.Long",
+      "description": "滑动窗口内允许的最大请求数。",
+      "defaultValue": 100
+    },
+    {
+      "name": "letool.rate-limiter.circuit-breaker.failure-threshold",
+      "type": "java.lang.Double",
+      "description": "熔断器失败率阈值（0~1），超过此值触发熔断。",
+      "defaultValue": 0.5
+    },
+    {
+      "name": "letool.rate-limiter.circuit-breaker.window-size",
+      "type": "java.lang.Long",
+      "description": "熔断器统计窗口大小（秒），在此窗口内计算失败率。",
+      "defaultValue": 60
+    },
+    {
+      "name": "letool.rate-limiter.circuit-breaker.recovery-timeout",
+      "type": "java.lang.Long",
+      "description": "熔断恢复超时（秒），超过此时间后进入半开状态。",
+      "defaultValue": 60
+    },
+    {
+      "name": "letool.rate-limiter.circuit-breaker.half-open-max-requests",
+      "type": "java.lang.Integer",
+      "description": "半开状态下允许的最大试探请求数。",
+      "defaultValue": 3
+    }
+  ],
+  "hints": [
+    {
+      "name": "letool.rate-limiter.default-algorithm",
+      "values": [
+        { "value": "token-bucket", "description": "令牌桶算法，以恒定速率补充令牌，允许突发流量" },
+        { "value": "sliding-window", "description": "滑动窗口算法，平滑控制流量，避免窗口边界突发" },
+        { "value": "leaky-bucket", "description": "漏桶算法（预留），以恒定速率处理请求" }
+      ]
+    }
+  ]
+}

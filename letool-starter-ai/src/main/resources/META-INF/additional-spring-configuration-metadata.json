@@ -1,0 +1,175 @@
+{
+  "properties": [
+    {
+      "name": "letool.ai.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用 AI 模块。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.ai.default-provider",
+      "type": "java.lang.String",
+      "description": "默认 AI 提供商名称，如 openai、deepseek、qwen、zhipu、ollama、azure 等。",
+      "defaultValue": "openai"
+    },
+    {
+      "name": "letool.ai.openai.api-key",
+      "type": "java.lang.String",
+      "description": "OpenAI API 密钥。"
+    },
+    {
+      "name": "letool.ai.openai.base-url",
+      "type": "java.lang.String",
+      "description": "OpenAI API 基础 URL。",
+      "defaultValue": "https://api.openai.com/v1"
+    },
+    {
+      "name": "letool.ai.openai.default-model",
+      "type": "java.lang.String",
+      "description": "OpenAI 默认模型名称。",
+      "defaultValue": "gpt-4o"
+    },
+    {
+      "name": "letool.ai.azure.api-key",
+      "type": "java.lang.String",
+      "description": "Azure OpenAI API 密钥。"
+    },
+    {
+      "name": "letool.ai.azure.base-url",
+      "type": "java.lang.String",
+      "description": "Azure OpenAI API 基础 URL（若不设置则从 endpoint 推导）。"
+    },
+    {
+      "name": "letool.ai.azure.default-model",
+      "type": "java.lang.String",
+      "description": "Azure OpenAI 默认模型名称（若不设置则映射到 deploymentId）。"
+    },
+    {
+      "name": "letool.ai.azure.endpoint",
+      "type": "java.lang.String",
+      "description": "Azure OpenAI 资源端点，如 https://my-resource.openai.azure.com。"
+    },
+    {
+      "name": "letool.ai.azure.deployment-id",
+      "type": "java.lang.String",
+      "description": "Azure OpenAI 部署 ID（即模型部署名称）。"
+    },
+    {
+      "name": "letool.ai.deepseek.api-key",
+      "type": "java.lang.String",
+      "description": "DeepSeek API 密钥。"
+    },
+    {
+      "name": "letool.ai.deepseek.base-url",
+      "type": "java.lang.String",
+      "description": "DeepSeek API 基础 URL（API 格式与 OpenAI 兼容）。",
+      "defaultValue": "https://api.deepseek.com/v1"
+    },
+    {
+      "name": "letool.ai.deepseek.default-model",
+      "type": "java.lang.String",
+      "description": "DeepSeek 默认模型名称。",
+      "defaultValue": "deepseek-chat"
+    },
+    {
+      "name": "letool.ai.qwen.api-key",
+      "type": "java.lang.String",
+      "description": "通义千问（Qwen）API 密钥。"
+    },
+    {
+      "name": "letool.ai.qwen.base-url",
+      "type": "java.lang.String",
+      "description": "通义千问 API 基础 URL（阿里云 DashScope 兼容模式端点）。",
+      "defaultValue": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    },
+    {
+      "name": "letool.ai.qwen.default-model",
+      "type": "java.lang.String",
+      "description": "通义千问默认模型名称。",
+      "defaultValue": "qwen-max"
+    },
+    {
+      "name": "letool.ai.zhipu.api-key",
+      "type": "java.lang.String",
+      "description": "智谱（Zhipu）API 密钥。"
+    },
+    {
+      "name": "letool.ai.zhipu.base-url",
+      "type": "java.lang.String",
+      "description": "智谱开放平台 API 基础 URL。",
+      "defaultValue": "https://open.bigmodel.cn/api/paas/v4"
+    },
+    {
+      "name": "letool.ai.zhipu.default-model",
+      "type": "java.lang.String",
+      "description": "智谱默认模型名称。",
+      "defaultValue": "glm-4"
+    },
+    {
+      "name": "letool.ai.ollama.api-key",
+      "type": "java.lang.String",
+      "description": "Ollama API 密钥（通常无需设置）。"
+    },
+    {
+      "name": "letool.ai.ollama.base-url",
+      "type": "java.lang.String",
+      "description": "Ollama 本地服务端点地址。",
+      "defaultValue": "http://localhost:11434"
+    },
+    {
+      "name": "letool.ai.ollama.default-model",
+      "type": "java.lang.String",
+      "description": "Ollama 默认模型名称。",
+      "defaultValue": "llama3"
+    },
+    {
+      "name": "letool.ai.chat.max-history-length",
+      "type": "java.lang.Integer",
+      "description": "对话最大历史记录长度，超过后自动裁剪最早的消息。",
+      "defaultValue": 20
+    },
+    {
+      "name": "letool.ai.chat.default-temperature",
+      "type": "java.lang.Double",
+      "description": "对话默认温度参数（0.0~2.0），值越高输出越随机。",
+      "defaultValue": 0.7
+    },
+    {
+      "name": "letool.ai.chat.default-max-tokens",
+      "type": "java.lang.Integer",
+      "description": "对话默认最大生成 Token 数。",
+      "defaultValue": 4096
+    },
+    {
+      "name": "letool.ai.embedding.default-model",
+      "type": "java.lang.String",
+      "description": "默认嵌入模型名称。",
+      "defaultValue": "text-embedding-3-small"
+    },
+    {
+      "name": "letool.ai.rate-limit.tokens-per-minute",
+      "type": "java.lang.Integer",
+      "description": "每分钟最大 Token 数。",
+      "defaultValue": 100000
+    },
+    {
+      "name": "letool.ai.rate-limit.requests-per-minute",
+      "type": "java.lang.Integer",
+      "description": "每分钟最大请求数。",
+      "defaultValue": 100
+    }
+  ],
+  "hints": [
+    {
+      "name": "letool.ai.default-provider",
+      "values": [
+        { "value": "openai", "description": "OpenAI" },
+        { "value": "azure", "description": "Azure OpenAI" },
+        { "value": "deepseek", "description": "DeepSeek" },
+        { "value": "qwen", "description": "通义千问（Qwen）" },
+        { "value": "zhipu", "description": "智谱（Zhipu）" },
+        { "value": "ollama", "description": "Ollama 本地模型" }
+      ]
+    }
+  ]
+}

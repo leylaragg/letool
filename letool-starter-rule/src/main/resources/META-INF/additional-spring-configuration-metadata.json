@@ -1,0 +1,73 @@
+{
+  "properties": [
+    {
+      "name": "letool.rule.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用规则引擎。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.rule.source",
+      "type": "java.lang.String",
+      "description": "规则源类型。",
+      "defaultValue": "file"
+    },
+    {
+      "name": "letool.rule.file.path",
+      "type": "java.lang.String",
+      "description": "规则链文件路径，支持 classpath: 前缀和 Ant 风格通配符。",
+      "defaultValue": "classpath:rule/chains/*.yml"
+    },
+    {
+      "name": "letool.rule.file.watch",
+      "type": "java.lang.Boolean",
+      "description": "是否启用文件变化监听（热重载）。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.rule.groovy.script-path",
+      "type": "java.lang.String",
+      "description": "Groovy 脚本存放路径，支持 classpath: 前缀。",
+      "defaultValue": "classpath:rule/scripts/"
+    },
+    {
+      "name": "letool.rule.groovy.cache-scripts",
+      "type": "java.lang.Boolean",
+      "description": "是否缓存编译后的 Groovy 脚本。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.rule.groovy.compile-timeout",
+      "type": "java.lang.Long",
+      "description": "Groovy 脚本编译超时时间（秒）。",
+      "defaultValue": 5
+    },
+    {
+      "name": "letool.rule.hot-reload.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用热重载。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.rule.hot-reload.check-interval",
+      "type": "java.lang.Long",
+      "description": "文件变更检查间隔（秒）。",
+      "defaultValue": 10
+    },
+    {
+      "name": "letool.rule.monitoring.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用规则执行监控（收集执行指标）。",
+      "defaultValue": true
+    }
+  ],
+  "hints": [
+    {
+      "name": "letool.rule.source",
+      "values": [
+        { "value": "file", "description": "从 YAML 文件加载规则链" },
+        { "value": "database", "description": "从数据库加载规则链" }
+      ]
+    }
+  ]
+}

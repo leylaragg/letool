@@ -1,0 +1,64 @@
+{
+  "properties": [
+    {
+      "name": "letool.websocket.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用 WebSocket 模块。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.websocket.path",
+      "type": "java.lang.String",
+      "description": "WebSocket 连接端点路径。",
+      "defaultValue": "/ws"
+    },
+    {
+      "name": "letool.websocket.allowed-origins",
+      "type": "java.lang.String",
+      "description": "允许的跨域来源，多个用逗号分隔。",
+      "defaultValue": "*"
+    },
+    {
+      "name": "letool.websocket.max-session-per-user",
+      "type": "java.lang.Integer",
+      "description": "单个用户最大同时在线会话数。",
+      "defaultValue": 5
+    },
+    {
+      "name": "letool.websocket.max-frame-size",
+      "type": "java.lang.Integer",
+      "description": "WebSocket 最大帧大小（字节）。",
+      "defaultValue": 65536
+    },
+    {
+      "name": "letool.websocket.heartbeat.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用 WebSocket 心跳检测，超时未收到心跳的会话将被自动断开。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.websocket.heartbeat.interval",
+      "type": "java.lang.Integer",
+      "description": "心跳检测间隔时间（秒）。",
+      "defaultValue": 30
+    },
+    {
+      "name": "letool.websocket.heartbeat.timeout",
+      "type": "java.lang.Integer",
+      "description": "心跳超时时间（秒），超过此时间未收到心跳视为超时。",
+      "defaultValue": 90
+    },
+    {
+      "name": "letool.websocket.auth.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用 WebSocket 连接鉴权。若为 false 则允许匿名连接。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.websocket.auth.token-param",
+      "type": "java.lang.String",
+      "description": "鉴权 Token 的 URL 查询参数名。",
+      "defaultValue": "token"
+    }
+  ]
+}

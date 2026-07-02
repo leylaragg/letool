@@ -1,8 +1,46 @@
 {
   "properties": [
     {
-      "name": "spring.letool.http.having",
-      "type": "java.lang.String",
-      "description": "Description for spring.letool.http.having."
-  }
-] }
+      "name": "letool.tool.http.connect-timeout",
+      "type": "java.time.Duration",
+      "description": "TCP 连接建立超时。",
+      "defaultValue": "5s"
+    },
+    {
+      "name": "letool.tool.http.read-timeout",
+      "type": "java.time.Duration",
+      "description": "等待响应数据的超时。",
+      "defaultValue": "30s"
+    },
+    {
+      "name": "letool.tool.http.write-timeout",
+      "type": "java.time.Duration",
+      "description": "写入请求体的超时。",
+      "defaultValue": "30s"
+    },
+    {
+      "name": "letool.tool.http.max-total-connections",
+      "type": "java.lang.Integer",
+      "description": "连接池最大连接数。",
+      "defaultValue": "200"
+    },
+    {
+      "name": "letool.tool.http.max-per-route",
+      "type": "java.lang.Integer",
+      "description": "每个路由（目标主机）的最大连接数。",
+      "defaultValue": "50"
+    },
+    {
+      "name": "letool.tool.http.idle-timeout",
+      "type": "java.time.Duration",
+      "description": "空闲连接驱逐超时。",
+      "defaultValue": "60s"
+    },
+    {
+      "name": "letool.tool.http.trust-all-certs",
+      "type": "java.lang.Boolean",
+      "description": "是否信任所有 SSL 证书（仅开发环境，生产必须为 false）。",
+      "defaultValue": "false"
+    }
+  ]
+}

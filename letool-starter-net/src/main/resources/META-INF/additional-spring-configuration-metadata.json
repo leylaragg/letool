@@ -1,0 +1,198 @@
+{
+  "properties": [
+    {
+      "name": "letool.net.http.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用 HTTP 客户端。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.net.http.connect-timeout",
+      "type": "java.lang.String",
+      "description": "HTTP 连接超时时间。",
+      "defaultValue": "5s"
+    },
+    {
+      "name": "letool.net.http.read-timeout",
+      "type": "java.lang.String",
+      "description": "HTTP 读取超时时间。",
+      "defaultValue": "30s"
+    },
+    {
+      "name": "letool.net.http.max-total",
+      "type": "java.lang.Integer",
+      "description": "HTTP 连接池最大连接数。",
+      "defaultValue": 200
+    },
+    {
+      "name": "letool.net.http.max-per-route",
+      "type": "java.lang.Integer",
+      "description": "HTTP 单路由最大连接数。",
+      "defaultValue": 50
+    },
+    {
+      "name": "letool.net.tcp.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用 TCP 客户端。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.net.tcp.default-connect-timeout",
+      "type": "java.lang.String",
+      "description": "TCP 默认连接超时时间。",
+      "defaultValue": "10s"
+    },
+    {
+      "name": "letool.net.tcp.default-read-timeout",
+      "type": "java.lang.String",
+      "description": "TCP 默认读取超时时间。",
+      "defaultValue": "60s"
+    },
+    {
+      "name": "letool.net.tcp.no-delay",
+      "type": "java.lang.Boolean",
+      "description": "是否禁用 Nagle 算法（TCP_NODELAY）。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.net.tcp.keep-alive",
+      "type": "java.lang.Boolean",
+      "description": "是否启用 TCP KeepAlive（TCP_KEEPALIVE）。",
+      "defaultValue": false
+    },
+    {
+      "name": "letool.net.gateway.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用网关功能。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.net.gateway.routes[].route-id",
+      "type": "java.lang.String",
+      "description": "路由唯一标识。"
+    },
+    {
+      "name": "letool.net.gateway.routes[].type",
+      "type": "java.lang.String",
+      "description": "路由类型。",
+      "defaultValue": "http"
+    },
+    {
+      "name": "letool.net.gateway.routes[].protocol",
+      "type": "java.lang.String",
+      "description": "通信协议名称。"
+    },
+    {
+      "name": "letool.net.gateway.routes[].connection-mode",
+      "type": "java.lang.String",
+      "description": "连接模式。",
+      "defaultValue": "short"
+    },
+    {
+      "name": "letool.net.gateway.routes[].servers[].host",
+      "type": "java.lang.String",
+      "description": "后端服务器主机名或 IP 地址。",
+      "defaultValue": "localhost"
+    },
+    {
+      "name": "letool.net.gateway.routes[].servers[].port",
+      "type": "java.lang.Integer",
+      "description": "后端服务器端口。",
+      "defaultValue": 80
+    },
+    {
+      "name": "letool.net.gateway.routes[].servers[].weight",
+      "type": "java.lang.Integer",
+      "description": "服务器权重（用于加权负载均衡）。",
+      "defaultValue": 1
+    },
+    {
+      "name": "letool.net.gateway.routes[].health-check.type",
+      "type": "java.lang.String",
+      "description": "健康检查类型。",
+      "defaultValue": "tcp-connect"
+    },
+    {
+      "name": "letool.net.gateway.routes[].health-check.path",
+      "type": "java.lang.String",
+      "description": "HTTP 健康检查路径（仅 type 为 http 时有效）。",
+      "defaultValue": "/health"
+    },
+    {
+      "name": "letool.net.gateway.routes[].health-check.interval",
+      "type": "java.lang.String",
+      "description": "健康检查间隔。",
+      "defaultValue": "30s"
+    },
+    {
+      "name": "letool.net.gateway.routes[].failover.strategy",
+      "type": "java.lang.String",
+      "description": "故障转移策略。",
+      "defaultValue": "retry-next"
+    },
+    {
+      "name": "letool.net.gateway.routes[].failover.max-retries",
+      "type": "java.lang.Integer",
+      "description": "最大重试次数。",
+      "defaultValue": 3
+    },
+    {
+      "name": "letool.net.gateway.routes[].circuit-break.error-threshold",
+      "type": "java.lang.Double",
+      "description": "熔断错误率阈值（0.0 ~ 1.0），超过即熔断。",
+      "defaultValue": 0.5
+    },
+    {
+      "name": "letool.net.gateway.routes[].circuit-break.window-seconds",
+      "type": "java.lang.Integer",
+      "description": "熔断统计窗口秒数。",
+      "defaultValue": 60
+    },
+    {
+      "name": "letool.net.gateway.routes[].circuit-break.recovery-seconds",
+      "type": "java.lang.Integer",
+      "description": "熔断恢复等待秒数。",
+      "defaultValue": 30
+    }
+  ],
+  "hints": [
+    {
+      "name": "letool.net.gateway.routes[].type",
+      "values": [
+        { "value": "tcp", "description": "TCP 路由，对应 GatewayRoute.RouteType.TCP" },
+        { "value": "http", "description": "HTTP 路由，对应 GatewayRoute.RouteType.HTTP" }
+      ]
+    },
+    {
+      "name": "letool.net.gateway.routes[].protocol",
+      "values": [
+        { "value": "json", "description": "JSON 协议编解码" },
+        { "value": "fixed-length", "description": "固定长度协议编解码" },
+        { "value": "length-field", "description": "长度字段协议编解码" },
+        { "value": "delimiter", "description": "分隔符协议编解码" }
+      ]
+    },
+    {
+      "name": "letool.net.gateway.routes[].connection-mode",
+      "values": [
+        { "value": "short", "description": "短连接 —— 每次请求建立新连接，对应 GatewayRoute.ConnectionMode.SHORT" },
+        { "value": "long", "description": "长连接 —— 维护持久连接池，对应 GatewayRoute.ConnectionMode.LONG" }
+      ]
+    },
+    {
+      "name": "letool.net.gateway.routes[].health-check.type",
+      "values": [
+        { "value": "tcp-connect", "description": "通过 TCP 连接检测服务器是否可达" },
+        { "value": "http", "description": "通过 HTTP 请求检测服务器是否正常" }
+      ]
+    },
+    {
+      "name": "letool.net.gateway.routes[].failover.strategy",
+      "values": [
+        { "value": "retry-next", "description": "跳过失败节点，尝试下一个健康节点（默认），对应 FailoverStrategy.Strategy.RETRY_NEXT" },
+        { "value": "retry-same", "description": "重试同一节点，对应 FailoverStrategy.Strategy.RETRY_SAME" },
+        { "value": "fail-fast", "description": "立即抛出异常，不重试，对应 FailoverStrategy.Strategy.FAIL_FAST" }
+      ]
+    }
+  ]
+}

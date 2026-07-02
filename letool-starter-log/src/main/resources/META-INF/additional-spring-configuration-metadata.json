@@ -1,0 +1,88 @@
+{
+  "properties": [
+    {
+      "name": "letool.log.trace.enabled",
+      "type": "java.lang.Boolean",
+      "description": "链路追踪总开关 —— false 则禁用 TraceId 注入。",
+      "defaultValue": "true"
+    },
+    {
+      "name": "letool.log.trace.header-name",
+      "type": "java.lang.String",
+      "description": "HTTP 请求头中读取/写入 TraceId 的键名。",
+      "defaultValue": "X-Trace-Id"
+    },
+    {
+      "name": "letool.log.trace.generate-if-absent",
+      "type": "java.lang.Boolean",
+      "description": "请求头中没有 TraceId 时是否自动生成（网关上游可能已携带）。",
+      "defaultValue": "true"
+    },
+    {
+      "name": "letool.log.audit.enabled",
+      "type": "java.lang.Boolean",
+      "description": "审计日志总开关。",
+      "defaultValue": "true"
+    },
+    {
+      "name": "letool.log.audit.async",
+      "type": "java.lang.Boolean",
+      "description": "是否异步写入 —— true 不阻塞业务线程，false 同步写入保证可靠性。",
+      "defaultValue": "true"
+    },
+    {
+      "name": "letool.log.audit.storage",
+      "type": "java.lang.String",
+      "description": "存储后端类型 —— memory（内存环形缓冲区）/ file（JSON Lines）/ database（自动检测表结构）。",
+      "defaultValue": "file"
+    },
+    {
+      "name": "letool.log.web-log.enabled",
+      "type": "java.lang.Boolean",
+      "description": "Web 请求日志总开关 —— 是否记录 Controller 层请求日志。",
+      "defaultValue": "true"
+    },
+    {
+      "name": "letool.log.web-log.include-headers",
+      "type": "java.lang.Boolean",
+      "description": "是否记录请求 Header（可能包含 Authorization Token，敏感场景建议关闭）。",
+      "defaultValue": "false"
+    },
+    {
+      "name": "letool.log.web-log.include-body",
+      "type": "java.lang.Boolean",
+      "description": "是否记录请求体和响应体（生产环境建议关闭或设置较短 maxBodyLength）。",
+      "defaultValue": "false"
+    },
+    {
+      "name": "letool.log.web-log.max-body-length",
+      "type": "java.lang.Integer",
+      "description": "请求体/响应体最大记录长度（字节），超长截断。",
+      "defaultValue": "1024"
+    },
+    {
+      "name": "letool.log.web-log.exclude-paths",
+      "type": "java.util.List<java.lang.String>",
+      "description": "不记录日志的 URL 路径列表，支持 Ant 风格通配符（如 /actuator/**）。"
+    }
+  ],
+  "hints": [
+    {
+      "name": "letool.log.audit.storage",
+      "values": [
+        {
+          "value": "memory",
+          "description": "内存环形缓冲区，重启后丢失。"
+        },
+        {
+          "value": "file",
+          "description": "JSON Lines 文件存储，适合单机或日志采集场景。"
+        },
+        {
+          "value": "database",
+          "description": "数据库自动检测表结构存储，适合多实例集中查询。"
+        }
+      ]
+    }
+  ]
+}

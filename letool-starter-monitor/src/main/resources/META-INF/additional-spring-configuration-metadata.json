@@ -1,0 +1,126 @@
+{
+  "properties": [
+    {
+      "name": "letool.monitor.enabled",
+      "type": "java.lang.Boolean",
+      "description": "监控模块总开关，设为 false 则禁用整个监控模块。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.monitor.metrics.enabled",
+      "type": "java.lang.Boolean",
+      "description": "指标采集开关。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.monitor.metrics.export-prometheus",
+      "type": "java.lang.Boolean",
+      "description": "是否导出 Prometheus 格式指标（/actuator/prometheus）。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.monitor.metrics.step",
+      "type": "java.lang.String",
+      "description": "指标采集步长，如 1m、30s、10s。",
+      "defaultValue": "1m"
+    },
+    {
+      "name": "letool.monitor.jvm.enabled",
+      "type": "java.lang.Boolean",
+      "description": "JVM 监控开关（堆内存、线程、GC 等指标）。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.monitor.jvm.collect-interval",
+      "type": "java.lang.String",
+      "description": "JVM 指标采集间隔，如 30s、1m、10s。",
+      "defaultValue": "30s"
+    },
+    {
+      "name": "letool.monitor.http.enabled",
+      "type": "java.lang.Boolean",
+      "description": "HTTP 请求监控开关。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.monitor.http.include-paths",
+      "type": "java.lang.String",
+      "description": "需要监控的 HTTP 路径模式，支持 Ant 风格通配符，如 /api/**。",
+      "defaultValue": "/**"
+    },
+    {
+      "name": "letool.monitor.api-stats.enabled",
+      "type": "java.lang.Boolean",
+      "description": "API 调用统计开关。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.monitor.api-stats.window-size",
+      "type": "java.lang.Integer",
+      "description": "API 统计时间窗口大小（分钟），超过此窗口的数据将被丢弃。",
+      "defaultValue": 60
+    },
+    {
+      "name": "letool.monitor.api-stats.retention-days",
+      "type": "java.lang.Integer",
+      "description": "API 统计数据保留天数。",
+      "defaultValue": 7
+    },
+    {
+      "name": "letool.monitor.alert.enabled",
+      "type": "java.lang.Boolean",
+      "description": "告警通知总开关。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.monitor.alert.dingtalk.webhook-url",
+      "type": "java.lang.String",
+      "description": "钉钉机器人 Webhook 地址。"
+    },
+    {
+      "name": "letool.monitor.alert.dingtalk.secret",
+      "type": "java.lang.String",
+      "description": "钉钉签名密钥（加签模式）。"
+    },
+    {
+      "name": "letool.monitor.alert.wechat.webhook-url",
+      "type": "java.lang.String",
+      "description": "企业微信机器人 Webhook 地址。"
+    },
+    {
+      "name": "letool.monitor.alert.mail.to",
+      "type": "java.util.List<java.lang.String>",
+      "description": "告警邮件接收人列表。"
+    },
+    {
+      "name": "letool.monitor.data-retention.audit-log",
+      "type": "java.lang.String",
+      "description": "审计日志保留时长，如 90d。",
+      "defaultValue": "90d"
+    },
+    {
+      "name": "letool.monitor.data-retention.request-log",
+      "type": "java.lang.String",
+      "description": "请求日志保留时长，如 30d。",
+      "defaultValue": "30d"
+    },
+    {
+      "name": "letool.monitor.data-retention.api-stats",
+      "type": "java.lang.String",
+      "description": "API 统计数据保留时长，如 7d。",
+      "defaultValue": "7d"
+    },
+    {
+      "name": "letool.monitor.data-retention.api-error",
+      "type": "java.lang.String",
+      "description": "API 异常数据保留时长，如 60d。",
+      "defaultValue": "60d"
+    },
+    {
+      "name": "letool.monitor.data-retention.clean-cron",
+      "type": "java.lang.String",
+      "description": "数据清理任务的 Cron 表达式。",
+      "defaultValue": "0 0 3 * * ?"
+    }
+  ]
+}

@@ -1,0 +1,86 @@
+{
+  "properties": [
+    {
+      "name": "letool.oss.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用 OSS 模块。设置为 false 时，将不会创建任何 OSS 相关 Bean。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.oss.default-provider",
+      "type": "java.lang.String",
+      "description": "默认存储提供商标识。可选值：aliyun（阿里云 OSS）、minio（MinIO）、tencent-cos（腾讯云 COS）。",
+      "defaultValue": "minio"
+    },
+    {
+      "name": "letool.oss.aliyun.endpoint",
+      "type": "java.lang.String",
+      "description": "阿里云 OSS 服务端点地址，如 oss-cn-hangzhou.aliyuncs.com。"
+    },
+    {
+      "name": "letool.oss.aliyun.access-key-id",
+      "type": "java.lang.String",
+      "description": "阿里云 RAM 用户 AccessKeyId。"
+    },
+    {
+      "name": "letool.oss.aliyun.access-key-secret",
+      "type": "java.lang.String",
+      "description": "阿里云 RAM 用户 AccessKeySecret。"
+    },
+    {
+      "name": "letool.oss.aliyun.bucket",
+      "type": "java.lang.String",
+      "description": "阿里云 OSS 默认 Bucket 名称。"
+    },
+    {
+      "name": "letool.oss.minio.endpoint",
+      "type": "java.lang.String",
+      "description": "MinIO 服务端点地址，如 http://localhost:9000。"
+    },
+    {
+      "name": "letool.oss.minio.access-key",
+      "type": "java.lang.String",
+      "description": "MinIO 访问密钥（Access Key），对应 MINIO_ROOT_USER。"
+    },
+    {
+      "name": "letool.oss.minio.secret-key",
+      "type": "java.lang.String",
+      "description": "MinIO 秘密密钥（Secret Key），对应 MINIO_ROOT_PASSWORD。"
+    },
+    {
+      "name": "letool.oss.minio.bucket",
+      "type": "java.lang.String",
+      "description": "MinIO 默认 Bucket 名称。"
+    },
+    {
+      "name": "letool.oss.tencent-cos.secret-id",
+      "type": "java.lang.String",
+      "description": "腾讯云 API 密钥 SecretId。"
+    },
+    {
+      "name": "letool.oss.tencent-cos.secret-key",
+      "type": "java.lang.String",
+      "description": "腾讯云 API 密钥 SecretKey。"
+    },
+    {
+      "name": "letool.oss.tencent-cos.region",
+      "type": "java.lang.String",
+      "description": "腾讯云 COS 所在地域，如 ap-guangzhou、ap-shanghai。"
+    },
+    {
+      "name": "letool.oss.tencent-cos.bucket",
+      "type": "java.lang.String",
+      "description": "腾讯云 COS 默认 Bucket 名称（需包含 APPID 后缀，格式为 BucketName-APPID）。"
+    }
+  ],
+  "hints": [
+    {
+      "name": "letool.oss.default-provider",
+      "values": [
+        { "value": "aliyun", "description": "阿里云 OSS" },
+        { "value": "minio", "description": "MinIO 对象存储" },
+        { "value": "tencent-cos", "description": "腾讯云 COS" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "properties": [
+    {
+      "name": "letool.web.enabled",
+      "type": "java.lang.Boolean",
+      "description": "Web 模块总开关。",
+      "defaultValue": "true"
+    },
+    {
+      "name": "letool.web.response-wrapper.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用统一响应包装（Controller 返回值自动封装为统一格式）。",
+      "defaultValue": "true"
+    },
+    {
+      "name": "letool.web.response-wrapper.exclude-paths",
+      "type": "java.util.List<java.lang.String>",
+      "description": "不进行响应包装的 URL 路径列表，支持 Ant 风格通配符。"
+    },
+    {
+      "name": "letool.web.xss-filter.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用 XSS 过滤。",
+      "defaultValue": "true"
+    },
+    {
+      "name": "letool.web.xss-filter.exclude-paths",
+      "type": "java.util.List<java.lang.String>",
+      "description": "不进行 XSS 过滤的 URL 路径列表，支持 Ant 风格通配符。"
+    },
+    {
+      "name": "letool.web.sql-injection-filter.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用 SQL 注入防御。",
+      "defaultValue": "true"
+    },
+    {
+      "name": "letool.web.request-log.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用请求日志记录。",
+      "defaultValue": "true"
+    },
+    {
+      "name": "letool.web.request-log.include-body",
+      "type": "java.lang.Boolean",
+      "description": "是否记录请求体（可能包含敏感数据）。",
+      "defaultValue": "false"
+    },
+    {
+      "name": "letool.web.request-log.max-body-size",
+      "type": "java.lang.Integer",
+      "description": "请求体最大记录大小（字节），超长截断。",
+      "defaultValue": "4096"
+    }
+  ]
+}

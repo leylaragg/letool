@@ -1,0 +1,113 @@
+{
+  "properties": [
+    {
+      "name": "letool.pay.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用支付模块。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.pay.callback-path",
+      "type": "java.lang.String",
+      "description": "支付平台回调的统一路径前缀。",
+      "defaultValue": "/api/pay/callback"
+    },
+    {
+      "name": "letool.pay.verify-sign",
+      "type": "java.lang.Boolean",
+      "description": "是否验证支付平台的异步回调签名。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.pay.alipay.app-id",
+      "type": "java.lang.String",
+      "description": "支付宝分配给开发者的应用 ID。"
+    },
+    {
+      "name": "letool.pay.alipay.private-key",
+      "type": "java.lang.String",
+      "description": "应用私钥（PKCS8 格式，去除头尾和换行），用于请求签名。"
+    },
+    {
+      "name": "letool.pay.alipay.alipay-public-key",
+      "type": "java.lang.String",
+      "description": "支付宝公钥，用于验证支付宝回调通知的签名。"
+    },
+    {
+      "name": "letool.pay.alipay.notify-url",
+      "type": "java.lang.String",
+      "description": "支付宝异步通知地址，支付完成后支付宝会向此地址发送通知。"
+    },
+    {
+      "name": "letool.pay.alipay.sign-type",
+      "type": "java.lang.String",
+      "description": "签名算法类型。",
+      "defaultValue": "RSA2"
+    },
+    {
+      "name": "letool.pay.alipay.gateway-url",
+      "type": "java.lang.String",
+      "description": "支付宝网关地址。",
+      "defaultValue": "https://openapi.alipay.com/gateway.do"
+    },
+    {
+      "name": "letool.pay.wechat.app-id",
+      "type": "java.lang.String",
+      "description": "微信支付分配的公众账号 ID（appId）。"
+    },
+    {
+      "name": "letool.pay.wechat.mch-id",
+      "type": "java.lang.String",
+      "description": "微信支付分配的商户号（mchId）。"
+    },
+    {
+      "name": "letool.pay.wechat.api-v3-key",
+      "type": "java.lang.String",
+      "description": "API V3 密钥，用于回调通知的解密和签名。"
+    },
+    {
+      "name": "letool.pay.wechat.private-key-path",
+      "type": "java.lang.String",
+      "description": "商户 API 私钥证书文件路径（PEM 格式）。"
+    },
+    {
+      "name": "letool.pay.wechat.cert-serial-no",
+      "type": "java.lang.String",
+      "description": "商户 API 证书序列号，用于请求签名。"
+    },
+    {
+      "name": "letool.pay.wechat.notify-url",
+      "type": "java.lang.String",
+      "description": "微信支付异步通知地址。"
+    },
+    {
+      "name": "letool.pay.union.merchant-id",
+      "type": "java.lang.String",
+      "description": "银联分配的商户号。"
+    },
+    {
+      "name": "letool.pay.union.private-key",
+      "type": "java.lang.String",
+      "description": "商户签名私钥路径（PFX 或 PEM 格式）。"
+    },
+    {
+      "name": "letool.pay.union.union-public-key",
+      "type": "java.lang.String",
+      "description": "银联公钥路径，用于验证银联回调签名。"
+    },
+    {
+      "name": "letool.pay.union.notify-url",
+      "type": "java.lang.String",
+      "description": "银联异步通知地址。"
+    }
+  ],
+  "hints": [
+    {
+      "name": "letool.pay.alipay.sign-type",
+      "values": [
+        { "value": "RSA2", "description": "SHA256 with RSA 签名算法（推荐）" },
+        { "value": "RSA", "description": "SHA1 with RSA 签名算法" }
+      ]
+    }
+  ]
+}

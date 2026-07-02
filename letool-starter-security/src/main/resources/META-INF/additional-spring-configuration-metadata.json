@@ -1,0 +1,94 @@
+{
+  "properties": [
+    {
+      "name": "letool.security.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用安全模块。",
+      "defaultValue": "true"
+    },
+    {
+      "name": "letool.security.auth-mode",
+      "type": "com.github.leyland.letool.security.enums.AuthMode",
+      "description": "认证模式 —— JWT（无状态 JWT 认证）/ JWT_REDIS（JWT + Redis 存储，支持主动失效）/ SESSION（传统 Session 认证）。",
+      "defaultValue": "JWT"
+    },
+    {
+      "name": "letool.security.jwt.secret",
+      "type": "java.lang.String",
+      "description": "JWT 签名密钥（HMAC-SHA256），生产环境必须通过环境变量覆盖。",
+      "defaultValue": "letool-default-secret-change-in-production"
+    },
+    {
+      "name": "letool.security.jwt.access-token-expiration",
+      "type": "java.lang.Long",
+      "description": "AccessToken 有效期（秒）。",
+      "defaultValue": "1800"
+    },
+    {
+      "name": "letool.security.jwt.refresh-token-expiration",
+      "type": "java.lang.Long",
+      "description": "RefreshToken 有效期（秒）。",
+      "defaultValue": "604800"
+    },
+    {
+      "name": "letool.security.jwt.issuer",
+      "type": "java.lang.String",
+      "description": "JWT 签发者标识。",
+      "defaultValue": "letool"
+    },
+    {
+      "name": "letool.security.exclude-paths",
+      "type": "java.util.List<java.lang.String>",
+      "description": "不经过安全过滤的路径列表（支持 Ant 风格通配符）。"
+    },
+    {
+      "name": "letool.security.cors.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用跨域支持。",
+      "defaultValue": "true"
+    },
+    {
+      "name": "letool.security.cors.allowed-origins",
+      "type": "java.lang.String",
+      "description": "允许的源，多个用逗号分隔。",
+      "defaultValue": "*"
+    },
+    {
+      "name": "letool.security.cors.allowed-methods",
+      "type": "java.lang.String",
+      "description": "允许的 HTTP 方法，多个用逗号分隔。",
+      "defaultValue": "GET,POST,PUT,DELETE,OPTIONS"
+    },
+    {
+      "name": "letool.security.cors.allowed-headers",
+      "type": "java.lang.String",
+      "description": "允许的请求头，多个用逗号分隔。",
+      "defaultValue": "*"
+    },
+    {
+      "name": "letool.security.cors.max-age",
+      "type": "java.lang.Long",
+      "description": "预检请求缓存时间（秒）。",
+      "defaultValue": "3600"
+    }
+  ],
+  "hints": [
+    {
+      "name": "letool.security.auth-mode",
+      "values": [
+        {
+          "value": "JWT",
+          "description": "无状态 JWT 认证，Token 自包含用户信息。"
+        },
+        {
+          "value": "JWT_REDIS",
+          "description": "JWT + Redis 存储，支持主动失效和分布式会话。"
+        },
+        {
+          "value": "SESSION",
+          "description": "传统 Session 会话认证。"
+        }
+      ]
+    }
+  ]
+}

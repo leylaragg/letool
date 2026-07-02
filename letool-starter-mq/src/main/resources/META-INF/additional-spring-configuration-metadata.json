@@ -1,0 +1,116 @@
+{
+  "properties": [
+    {
+      "name": "letool.mq.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用 MQ 模块。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.mq.default-type",
+      "type": "java.lang.String",
+      "description": "默认消息队列类型。支持 rabbitmq、rocketmq、kafka、memory。",
+      "defaultValue": "rabbitmq"
+    },
+    {
+      "name": "letool.mq.rabbitmq.host",
+      "type": "java.lang.String",
+      "description": "RabbitMQ 服务地址。",
+      "defaultValue": "127.0.0.1"
+    },
+    {
+      "name": "letool.mq.rabbitmq.port",
+      "type": "java.lang.Integer",
+      "description": "RabbitMQ 端口。",
+      "defaultValue": 5672
+    },
+    {
+      "name": "letool.mq.rabbitmq.username",
+      "type": "java.lang.String",
+      "description": "RabbitMQ 用户名。",
+      "defaultValue": "guest"
+    },
+    {
+      "name": "letool.mq.rabbitmq.password",
+      "type": "java.lang.String",
+      "description": "RabbitMQ 密码。",
+      "defaultValue": "guest"
+    },
+    {
+      "name": "letool.mq.rabbitmq.virtual-host",
+      "type": "java.lang.String",
+      "description": "RabbitMQ 虚拟主机。",
+      "defaultValue": "/"
+    },
+    {
+      "name": "letool.mq.rocketmq.name-server",
+      "type": "java.lang.String",
+      "description": "RocketMQ Name Server 地址，格式 ip:port;ip:port。",
+      "defaultValue": "127.0.0.1:9876"
+    },
+    {
+      "name": "letool.mq.rocketmq.group",
+      "type": "java.lang.String",
+      "description": "RocketMQ 生产者/消费者组名。",
+      "defaultValue": "letool-producer-group"
+    },
+    {
+      "name": "letool.mq.rocketmq.topic",
+      "type": "java.lang.String",
+      "description": "RocketMQ 默认主题。"
+    },
+    {
+      "name": "letool.mq.kafka.bootstrap-servers",
+      "type": "java.lang.String",
+      "description": "Kafka Bootstrap Server 地址，格式 host1:port1,host2:port2。",
+      "defaultValue": "127.0.0.1:9092"
+    },
+    {
+      "name": "letool.mq.kafka.group-id",
+      "type": "java.lang.String",
+      "description": "Kafka 消费者组 ID。",
+      "defaultValue": "letool-consumer-group"
+    },
+    {
+      "name": "letool.mq.consumer.concurrency",
+      "type": "java.lang.Integer",
+      "description": "消费者并发消费线程数。",
+      "defaultValue": 1
+    },
+    {
+      "name": "letool.mq.consumer.max-attempts",
+      "type": "java.lang.Integer",
+      "description": "消费者最大重试次数。",
+      "defaultValue": 3
+    },
+    {
+      "name": "letool.mq.consumer.backoff-initial",
+      "type": "java.lang.Long",
+      "description": "消费者重试初始退避时间（毫秒）。",
+      "defaultValue": 1000
+    },
+    {
+      "name": "letool.mq.producer.retry-times",
+      "type": "java.lang.Integer",
+      "description": "生产者发送重试次数。",
+      "defaultValue": 3
+    },
+    {
+      "name": "letool.mq.producer.send-timeout",
+      "type": "java.lang.Long",
+      "description": "生产者发送超时时间（毫秒）。",
+      "defaultValue": 3000
+    }
+  ],
+  "hints": [
+    {
+      "name": "letool.mq.default-type",
+      "values": [
+        { "value": "rabbitmq", "description": "RabbitMQ（默认）" },
+        { "value": "rocketmq", "description": "RocketMQ" },
+        { "value": "kafka", "description": "Kafka" },
+        { "value": "memory", "description": "内存队列（无需外部依赖，适合开发/测试）" }
+      ]
+    }
+  ]
+}

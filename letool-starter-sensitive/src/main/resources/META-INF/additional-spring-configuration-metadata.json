@@ -1,0 +1,50 @@
+{
+  "properties": [
+    {
+      "name": "letool.sensitive.enabled",
+      "type": "java.lang.Boolean",
+      "description": "总开关 —— false 则禁用整个脱敏模块。",
+      "defaultValue": "true"
+    },
+    {
+      "name": "letool.sensitive.jackson.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否在 ObjectMapper 中注册 SensitiveModule（JSON 序列化时自动脱敏）。",
+      "defaultValue": "true"
+    },
+    {
+      "name": "letool.sensitive.log.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用日志脱敏转换器（Logback/Log4j2 使用 %maskedMsg / %masked{m} 自动脱敏）。",
+      "defaultValue": "true"
+    },
+    {
+      "name": "letool.sensitive.dynamic.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用动态脱敏（根据用户角色或请求头动态决定脱敏级别）。",
+      "defaultValue": "true"
+    },
+    {
+      "name": "letool.sensitive.dynamic.admin-roles",
+      "type": "java.util.List<java.lang.String>",
+      "description": "管理员角色列表 —— 拥有这些角色的用户看到原文。",
+      "defaultValue": "ADMIN"
+    },
+    {
+      "name": "letool.sensitive.dynamic.header-name",
+      "type": "java.lang.String",
+      "description": "请求头名称 —— 值为 NONE（不脱敏）/ PARTIAL（部分脱敏）/ FULL（完全脱敏）。",
+      "defaultValue": "X-Sensitive-Level"
+    },
+    {
+      "name": "letool.sensitive.excludes.paths",
+      "type": "java.util.List<java.lang.String>",
+      "description": "不脱敏的 URL 路径列表，支持 Ant 风格通配符（如 /admin/**）。"
+    },
+    {
+      "name": "letool.sensitive.excludes.fields",
+      "type": "java.util.List<java.lang.String>",
+      "description": "不脱敏的字段名列表，支持通配符（如 *.createTime 匹配所有类的 createTime 字段）。"
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "properties": [
+    {
+      "name": "letool.thread.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用线程池模块。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.thread.pools",
+      "type": "java.util.Map<java.lang.String, com.github.leyland.letool.thread.config.ThreadPoolProperties$PoolConfig>",
+      "description": "线程池定义映射，key 为线程池名称，value 为单个线程池的配置。"
+    },
+    {
+      "name": "letool.thread.pools.*.core-pool-size",
+      "type": "java.lang.Integer",
+      "description": "核心线程数。",
+      "defaultValue": 5
+    },
+    {
+      "name": "letool.thread.pools.*.max-pool-size",
+      "type": "java.lang.Integer",
+      "description": "最大线程数。",
+      "defaultValue": 20
+    },
+    {
+      "name": "letool.thread.pools.*.queue-capacity",
+      "type": "java.lang.Integer",
+      "description": "任务队列容量（基于 LinkedBlockingQueue）。",
+      "defaultValue": 500
+    },
+    {
+      "name": "letool.thread.pools.*.thread-name-prefix",
+      "type": "java.lang.String",
+      "description": "线程名前缀。",
+      "defaultValue": "letool-"
+    },
+    {
+      "name": "letool.thread.pools.*.keep-alive-seconds",
+      "type": "java.lang.Integer",
+      "description": "非核心线程保活时间（秒）。",
+      "defaultValue": 60
+    },
+    {
+      "name": "letool.thread.pools.*.virtual-threads",
+      "type": "java.lang.Boolean",
+      "description": "是否使用虚拟线程（Java 21+）。",
+      "defaultValue": false
+    },
+    {
+      "name": "letool.thread.monitoring.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用线程池监控，启用后可通过 ThreadPoolMonitor 获取各线程池的运行指标。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.thread.monitoring.metrics-export",
+      "type": "java.lang.Boolean",
+      "description": "是否将线程池指标导出到 Micrometer。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.thread.context-propagation.mdc",
+      "type": "java.lang.Boolean",
+      "description": "是否传递 MDC 日志上下文（如 TraceId）到子线程。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.thread.context-propagation.security",
+      "type": "java.lang.Boolean",
+      "description": "是否传递安全上下文（如当前用户信息）到子线程。",
+      "defaultValue": true
+    }
+  ],
+  "hints": []
+}

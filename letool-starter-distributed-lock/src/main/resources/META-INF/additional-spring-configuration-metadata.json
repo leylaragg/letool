@@ -1,0 +1,78 @@
+{
+  "properties": [
+    {
+      "name": "letool.lock.enabled",
+      "type": "java.lang.Boolean",
+      "description": "全局开关：是否启用分布式锁模块。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.lock.backend",
+      "type": "java.lang.String",
+      "description": "分布式锁后端实现类型。",
+      "defaultValue": "redis"
+    },
+    {
+      "name": "letool.lock.pessimistic.lock-prefix",
+      "type": "java.lang.String",
+      "description": "Redis 中锁 key 的前缀。",
+      "defaultValue": "letool:lock:"
+    },
+    {
+      "name": "letool.lock.pessimistic.default-lease-time",
+      "type": "java.lang.Long",
+      "description": "默认持锁时间（秒），超过此时间锁自动释放。",
+      "defaultValue": 30
+    },
+    {
+      "name": "letool.lock.pessimistic.default-wait-time",
+      "type": "java.lang.Long",
+      "description": "默认等待获取锁的最长时间（秒），超时返回失败。",
+      "defaultValue": 3
+    },
+    {
+      "name": "letool.lock.pessimistic.fair-lock",
+      "type": "java.lang.Boolean",
+      "description": "是否启用公平锁（按请求顺序排队获取）。",
+      "defaultValue": false
+    },
+    {
+      "name": "letool.lock.pessimistic.auto-renewal",
+      "type": "java.lang.Boolean",
+      "description": "是否启用自动续期（看门狗机制）。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.lock.pessimistic.renewal-interval",
+      "type": "java.lang.Long",
+      "description": "自动续期间隔（秒）。",
+      "defaultValue": 10
+    },
+    {
+      "name": "letool.lock.idempotent.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用幂等检查，通过 Redis 缓存请求标记来防止重复执行。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.lock.idempotent.key-prefix",
+      "type": "java.lang.String",
+      "description": "Redis 中幂等 key 的前缀。",
+      "defaultValue": "letool:idempotent:"
+    },
+    {
+      "name": "letool.lock.idempotent.ttl",
+      "type": "java.lang.Long",
+      "description": "幂等标记的过期时间（秒），超过此时间允许重新执行。",
+      "defaultValue": 86400
+    }
+  ],
+  "hints": [
+    {
+      "name": "letool.lock.backend",
+      "values": [
+        { "value": "redis", "description": "基于 Redis 实现的分布式锁" }
+      ]
+    }
+  ]
+}

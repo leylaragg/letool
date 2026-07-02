@@ -1,0 +1,78 @@
+{
+  "properties": [
+    {
+      "name": "letool.swagger.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用 Swagger 文档功能。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.swagger.title",
+      "type": "java.lang.String",
+      "description": "API 文档标题。",
+      "defaultValue": "API Documentation"
+    },
+    {
+      "name": "letool.swagger.description",
+      "type": "java.lang.String",
+      "description": "API 文档描述信息。",
+      "defaultValue": ""
+    },
+    {
+      "name": "letool.swagger.version",
+      "type": "java.lang.String",
+      "description": "API 文档版本号。",
+      "defaultValue": "1.0.0"
+    },
+    {
+      "name": "letool.swagger.contact.name",
+      "type": "java.lang.String",
+      "description": "联系人姓名。"
+    },
+    {
+      "name": "letool.swagger.contact.email",
+      "type": "java.lang.String",
+      "description": "联系人邮箱。"
+    },
+    {
+      "name": "letool.swagger.contact.url",
+      "type": "java.lang.String",
+      "description": "联系人主页 URL。"
+    },
+    {
+      "name": "letool.swagger.security.bearer-token",
+      "type": "java.lang.Boolean",
+      "description": "是否启用 Bearer Token 认证，启用后 Swagger UI 中会出现 Authorize 按钮。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.swagger.security.header-name",
+      "type": "java.lang.String",
+      "description": "Bearer Token 在 HTTP 请求头中的名称。",
+      "defaultValue": "Authorization"
+    },
+    {
+      "name": "letool.swagger.knife4j.offline-docs",
+      "type": "java.lang.Boolean",
+      "description": "是否启用 Knife4j 离线文档功能。",
+      "defaultValue": false
+    },
+    {
+      "name": "letool.swagger.knife4j.enable-footer",
+      "type": "java.lang.Boolean",
+      "description": "是否启用 Knife4j 自定义页脚。",
+      "defaultValue": false
+    },
+    {
+      "name": "letool.swagger.groups[].name",
+      "type": "java.lang.String",
+      "description": "API 分组名称，在文档界面中作为分组标识展示。"
+    },
+    {
+      "name": "letool.swagger.groups[].base-package",
+      "type": "java.lang.String",
+      "description": "该分组对应的 Java 包路径，用于扫描包含的 Controller。"
+    }
+  ],
+  "hints": []
+}
