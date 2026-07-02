@@ -35,6 +35,12 @@ public class AiException extends RuntimeException {
     /** HTTP 状态码（如 401、429、500），非 HTTP 错误时为 0 */
     private final int statusCode;
 
+    /** 上游服务返回的错误码，如 invalid_api_key、rate_limit_exceeded */
+    private final String errorCode;
+
+    /** 上游服务返回的错误类型，如 invalid_request_error、server_error */
+    private final String errorType;
+
     // ======================== 构造方法 ========================
 
     /**
@@ -47,6 +53,8 @@ public class AiException extends RuntimeException {
         super(message);
         this.provider = provider;
         this.statusCode = 0;
+        this.errorCode = null;
+        this.errorType = null;
     }
 
     /**
@@ -60,6 +68,8 @@ public class AiException extends RuntimeException {
         super(message, cause);
         this.provider = provider;
         this.statusCode = 0;
+        this.errorCode = null;
+        this.errorType = null;
     }
 
     /**
@@ -73,6 +83,25 @@ public class AiException extends RuntimeException {
         super(message);
         this.provider = provider;
         this.statusCode = statusCode;
+        this.errorCode = null;
+        this.errorType = null;
+    }
+
+    /**
+     * 创建带 HTTP 状态码和上游错误详情的 AI 异常.
+     *
+     * @param statusCode HTTP 状态码
+     * @param message    错误描述
+     * @param provider   提供商名称
+     * @param errorCode  上游错误码
+     * @param errorType  上游错误类型
+     */
+    public AiException(int statusCode, String message, String provider, String errorCode, String errorType) {
+        super(message);
+        this.provider = provider;
+        this.statusCode = statusCode;
+        this.errorCode = errorCode;
+        this.errorType = errorType;
     }
 
     /**
@@ -87,6 +116,31 @@ public class AiException extends RuntimeException {
         super(message, cause);
         this.provider = provider;
         this.statusCode = statusCode;
+        this.errorCode = null;
+        this.errorType = null;
+    }
+
+    /**
+     * 创建带 HTTP 状态码、上游错误详情和原始异常的 AI 异常.
+     *
+     * @param statusCode HTTP 状态码
+     * @param message    错误描述
+     * @param provider   提供商名称
+     * @param errorCode  上游错误码
+     * @param errorType  上游错误类型
+     * @param cause      原始异常
+     */
+    public AiException(int statusCode,
+                       String message,
+                       String provider,
+                       String errorCode,
+                       String errorType,
+                       Throwable cause) {
+        super(message, cause);
+        this.provider = provider;
+        this.statusCode = statusCode;
+        this.errorCode = errorCode;
+        this.errorType = errorType;
     }
 
     // ======================== getter ========================
@@ -107,6 +161,24 @@ public class AiException extends RuntimeException {
      */
     public int getStatusCode() {
         return statusCode;
+    }
+
+    /**
+     * 获取上游服务错误码.
+     *
+     * @return 错误码，非上游结构化错误时为 {@code null}
+     */
+    public String getErrorCode() {
+        return errorCode;
+    }
+
+    /**
+     * 获取上游服务错误类型.
+     *
+     * @return 错误类型，非上游结构化错误时为 {@code null}
+     */
+    public String getErrorType() {
+        return errorType;
     }
 
     /**

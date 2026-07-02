@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
+import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -105,7 +106,7 @@ public class OpenAiProvider implements AiProvider {
 
             // 解析响应
             ChatResponse response = parseChatResponse(responseBody);
-            response.setProvider(PROVIDER_NAME);
+            response.setProvider(getProviderName());
             response.setLatencyMs(System.currentTimeMillis() - startTime);
 
             log.debug("OpenAI chat 调用成功: model={}, tokens={}, latency={}ms",
@@ -117,7 +118,7 @@ public class OpenAiProvider implements AiProvider {
         } catch (AiException e) {
             throw e;
         } catch (Exception e) {
-            throw new AiException("OpenAI 对话请求失败: " + e.getMessage(), PROVIDER_NAME, e);
+            throw new AiException("OpenAI 对话请求失败: " + redactSensitive(e.getMessage()), getProviderName(), e);
         }
     }
 
@@ -144,7 +145,7 @@ public class OpenAiProvider implements AiProvider {
         } catch (AiException e) {
             throw e;
         } catch (Exception e) {
-            throw new AiException("OpenAI 嵌入请求失败: " + e.getMessage(), PROVIDER_NAME, e);
+            throw new AiException("OpenAI 嵌入请求失败: " + redactSensitive(e.getMessage()), getProviderName(), e);
         }
     }
 
@@ -205,7 +206,7 @@ public class OpenAiProvider implements AiProvider {
      */
     protected void checkApiKey() {
         if (config.getApiKey() == null || config.getApiKey().isEmpty()) {
-            throw new AiException("OpenAI API 密钥未配置，请在 letool.ai.openai.api-key 中设置", PROVIDER_NAME);
+            throw new AiException("OpenAI API 密钥未配置，请在 letool.ai.openai.api-key 中设置", getProviderName());
         }
     }
 
@@ -391,14 +392,48 @@ public class OpenAiProvider implements AiProvider {
      * @throws AiException 当 API 返回非 2xx 状态码时
      */
     protected String httpPost(String apiUrl, String jsonBody) throws IOException {
+        int maxRetries = Math.max(0, config.getMaxRetries());
+        for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                return doHttpPost(apiUrl, jsonBody);
+            } catch (SocketTimeoutException e) {
+                if (attempt >= maxRetries) {
+                    throw new AiException("OpenAI 请求超时: " + redactSensitive(e.getMessage()), getProviderName(), e);
+                }
+                sleepBeforeRetry(attempt);
+            } catch (AiException e) {
+                if (!isRetryableStatus(e.getStatusCode()) || attempt >= maxRetries) {
+                    throw e;
+                }
+                sleepBeforeRetry(attempt);
+            } catch (IOException e) {
+                if (attempt >= maxRetries) {
+                    throw e;
+                }
+                sleepBeforeRetry(attempt);
+            }
+        }
+        throw new AiException("OpenAI 请求失败: 已耗尽重试次数", getProviderName());
+    }
+
+    /**
+     * 执行单次 HTTP POST 请求.
+     *
+     * @param apiUrl   API URL
+     * @param jsonBody JSON 请求体
+     * @return 响应体字符串
+     * @throws IOException 当网络请求失败时
+     * @throws AiException 当 API 返回非 2xx 状态码时
+     */
+    private String doHttpPost(String apiUrl, String jsonBody) throws IOException {
         HttpURLConnection conn = null;
         try {
             URL url = URI.create(apiUrl).toURL();
             conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
             conn.setDoOutput(true);
-            conn.setConnectTimeout(30000);
-            conn.setReadTimeout(120000);
+            conn.setConnectTimeout(normalizeTimeout(config.getConnectTimeoutMillis(), 10000));
+            conn.setReadTimeout(normalizeTimeout(config.getReadTimeoutMillis(), 60000));
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setRequestProperty("Authorization", "Bearer " + config.getApiKey());
             conn.setRequestProperty("Accept", "application/json");
@@ -409,14 +444,12 @@ public class OpenAiProvider implements AiProvider {
             }
 
             int statusCode = conn.getResponseCode();
-            if (statusCode >= 400) {
+            if (statusCode < 200 || statusCode >= 300) {
                 String errorBody;
                 try (java.io.InputStream es = conn.getErrorStream()) {
                     errorBody = es != null ? new String(es.readAllBytes(), StandardCharsets.UTF_8) : "";
                 }
-                throw new AiException(statusCode,
-                        String.format("OpenAI API 返回错误 (HTTP %d): %s", statusCode, errorBody),
-                        PROVIDER_NAME);
+                throw buildApiException(statusCode, errorBody);
             }
 
             try (java.io.InputStream is = conn.getInputStream()) {
@@ -427,5 +460,96 @@ public class OpenAiProvider implements AiProvider {
                 conn.disconnect();
             }
         }
+    }
+
+    /**
+     * 构建结构化 API 异常，提取 OpenAI 兼容错误对象并执行敏感信息脱敏。
+     *
+     * @param statusCode HTTP 状态码
+     * @param errorBody  上游错误响应体
+     * @return AI 异常
+     */
+    private AiException buildApiException(int statusCode, String errorBody) {
+        String errorMessage = errorBody;
+        String errorType = null;
+        String errorCode = null;
+
+        try {
+            JSONObject json = JSON.parseObject(errorBody);
+            JSONObject error = json != null ? json.getJSONObject("error") : null;
+            if (error != null) {
+                errorMessage = error.getString("message");
+                errorType = error.getString("type");
+                errorCode = error.getString("code");
+            }
+        } catch (Exception ignored) {
+            // 非 JSON 错误响应保留原始响应体，后续统一脱敏。
+        }
+
+        String message = String.format("OpenAI API 返回错误 (HTTP %d, code=%s, type=%s): %s",
+                statusCode,
+                errorCode != null ? errorCode : "unknown",
+                errorType != null ? errorType : "unknown",
+                redactSensitive(errorMessage));
+        return new AiException(statusCode, message, getProviderName(), errorCode, errorType);
+    }
+
+    /**
+     * 判断 HTTP 状态是否适合重试。
+     *
+     * @param statusCode HTTP 状态码
+     * @return {@code true} 表示临时错误，可按配置重试
+     */
+    private boolean isRetryableStatus(int statusCode) {
+        return statusCode == 408 || statusCode == 429 || statusCode >= 500;
+    }
+
+    /**
+     * 重试前退避等待。
+     *
+     * @param attempt 当前尝试次数（从 0 开始）
+     */
+    private void sleepBeforeRetry(int attempt) {
+        long backoff = Math.max(0, config.getRetryBackoffMillis());
+        if (backoff == 0) {
+            return;
+        }
+        try {
+            Thread.sleep(backoff * (attempt + 1));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AiException("OpenAI 请求重试等待被中断", getProviderName(), e);
+        }
+    }
+
+    /**
+     * 归一化超时配置，避免 0 或负数导致无期限等待。
+     *
+     * @param value        配置值
+     * @param defaultValue 默认值
+     * @return 可用于 {@link HttpURLConnection} 的超时时间
+     */
+    private int normalizeTimeout(int value, int defaultValue) {
+        return value > 0 ? value : defaultValue;
+    }
+
+    /**
+     * 对错误消息中的 API key 和 Bearer token 进行脱敏。
+     *
+     * @param value 原始文本
+     * @return 脱敏后的文本
+     */
+    protected String redactSensitive(String value) {
+        if (value == null) {
+            return null;
+        }
+        String redacted = value;
+        String apiKey = config.getApiKey();
+        if (apiKey != null && !apiKey.isBlank()) {
+            redacted = redacted.replace(apiKey, "[REDACTED]");
+        }
+        redacted = redacted.replaceAll("(?i)Bearer\\s+[A-Za-z0-9._\\-]+", "Bearer [REDACTED]");
+        redacted = redacted.replaceAll("sk-[A-Za-z0-9._\\-]+", "sk-[REDACTED]");
+        return redacted;
     }
 }

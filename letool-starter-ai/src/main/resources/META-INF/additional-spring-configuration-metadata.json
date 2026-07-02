@@ -30,6 +30,30 @@
       "defaultValue": "gpt-4o"
     },
     {
+      "name": "letool.ai.openai.connect-timeout-millis",
+      "type": "java.lang.Integer",
+      "description": "OpenAI HTTP 连接超时时间（毫秒）。",
+      "defaultValue": 10000
+    },
+    {
+      "name": "letool.ai.openai.read-timeout-millis",
+      "type": "java.lang.Integer",
+      "description": "OpenAI HTTP 读取超时时间（毫秒）。",
+      "defaultValue": 60000
+    },
+    {
+      "name": "letool.ai.openai.max-retries",
+      "type": "java.lang.Integer",
+      "description": "OpenAI 临时错误最大重试次数。5xx、408、429 和网络异常会按该配置重试。",
+      "defaultValue": 2
+    },
+    {
+      "name": "letool.ai.openai.retry-backoff-millis",
+      "type": "java.lang.Long",
+      "description": "OpenAI 重试退避基准时间（毫秒），按尝试次数线性递增。",
+      "defaultValue": 200
+    },
+    {
       "name": "letool.ai.azure.api-key",
       "type": "java.lang.String",
       "description": "Azure OpenAI API 密钥。"
@@ -55,6 +79,30 @@
       "description": "Azure OpenAI 部署 ID（即模型部署名称）。"
     },
     {
+      "name": "letool.ai.azure.connect-timeout-millis",
+      "type": "java.lang.Integer",
+      "description": "Azure OpenAI HTTP 连接超时时间（毫秒）。",
+      "defaultValue": 10000
+    },
+    {
+      "name": "letool.ai.azure.read-timeout-millis",
+      "type": "java.lang.Integer",
+      "description": "Azure OpenAI HTTP 读取超时时间（毫秒）。",
+      "defaultValue": 60000
+    },
+    {
+      "name": "letool.ai.azure.max-retries",
+      "type": "java.lang.Integer",
+      "description": "Azure OpenAI 临时错误最大重试次数。5xx、408、429 和网络异常会按该配置重试。",
+      "defaultValue": 2
+    },
+    {
+      "name": "letool.ai.azure.retry-backoff-millis",
+      "type": "java.lang.Long",
+      "description": "Azure OpenAI 重试退避基准时间（毫秒），按尝试次数线性递增。",
+      "defaultValue": 200
+    },
+    {
       "name": "letool.ai.deepseek.api-key",
       "type": "java.lang.String",
       "description": "DeepSeek API 密钥。"
@@ -70,6 +118,30 @@
       "type": "java.lang.String",
       "description": "DeepSeek 默认模型名称。",
       "defaultValue": "deepseek-chat"
+    },
+    {
+      "name": "letool.ai.deepseek.connect-timeout-millis",
+      "type": "java.lang.Integer",
+      "description": "DeepSeek HTTP 连接超时时间（毫秒）。",
+      "defaultValue": 10000
+    },
+    {
+      "name": "letool.ai.deepseek.read-timeout-millis",
+      "type": "java.lang.Integer",
+      "description": "DeepSeek HTTP 读取超时时间（毫秒）。",
+      "defaultValue": 60000
+    },
+    {
+      "name": "letool.ai.deepseek.max-retries",
+      "type": "java.lang.Integer",
+      "description": "DeepSeek 临时错误最大重试次数。5xx、408、429 和网络异常会按该配置重试。",
+      "defaultValue": 2
+    },
+    {
+      "name": "letool.ai.deepseek.retry-backoff-millis",
+      "type": "java.lang.Long",
+      "description": "DeepSeek 重试退避基准时间（毫秒），按尝试次数线性递增。",
+      "defaultValue": 200
     },
     {
       "name": "letool.ai.qwen.api-key",
@@ -89,6 +161,30 @@
       "defaultValue": "qwen-max"
     },
     {
+      "name": "letool.ai.qwen.connect-timeout-millis",
+      "type": "java.lang.Integer",
+      "description": "通义千问 HTTP 连接超时时间（毫秒）。",
+      "defaultValue": 10000
+    },
+    {
+      "name": "letool.ai.qwen.read-timeout-millis",
+      "type": "java.lang.Integer",
+      "description": "通义千问 HTTP 读取超时时间（毫秒）。",
+      "defaultValue": 60000
+    },
+    {
+      "name": "letool.ai.qwen.max-retries",
+      "type": "java.lang.Integer",
+      "description": "通义千问临时错误最大重试次数。5xx、408、429 和网络异常会按该配置重试。",
+      "defaultValue": 2
+    },
+    {
+      "name": "letool.ai.qwen.retry-backoff-millis",
+      "type": "java.lang.Long",
+      "description": "通义千问重试退避基准时间（毫秒），按尝试次数线性递增。",
+      "defaultValue": 200
+    },
+    {
       "name": "letool.ai.zhipu.api-key",
       "type": "java.lang.String",
       "description": "智谱（Zhipu）API 密钥。"
@@ -106,6 +202,30 @@
       "defaultValue": "glm-4"
     },
     {
+      "name": "letool.ai.zhipu.connect-timeout-millis",
+      "type": "java.lang.Integer",
+      "description": "智谱 HTTP 连接超时时间（毫秒）。",
+      "defaultValue": 10000
+    },
+    {
+      "name": "letool.ai.zhipu.read-timeout-millis",
+      "type": "java.lang.Integer",
+      "description": "智谱 HTTP 读取超时时间（毫秒）。",
+      "defaultValue": 60000
+    },
+    {
+      "name": "letool.ai.zhipu.max-retries",
+      "type": "java.lang.Integer",
+      "description": "智谱临时错误最大重试次数。5xx、408、429 和网络异常会按该配置重试。",
+      "defaultValue": 2
+    },
+    {
+      "name": "letool.ai.zhipu.retry-backoff-millis",
+      "type": "java.lang.Long",
+      "description": "智谱重试退避基准时间（毫秒），按尝试次数线性递增。",
+      "defaultValue": 200
+    },
+    {
       "name": "letool.ai.ollama.api-key",
       "type": "java.lang.String",
       "description": "Ollama API 密钥（通常无需设置）。"
@@ -121,6 +241,30 @@
       "type": "java.lang.String",
       "description": "Ollama 默认模型名称。",
       "defaultValue": "llama3"
+    },
+    {
+      "name": "letool.ai.ollama.connect-timeout-millis",
+      "type": "java.lang.Integer",
+      "description": "Ollama HTTP 连接超时时间（毫秒）。",
+      "defaultValue": 10000
+    },
+    {
+      "name": "letool.ai.ollama.read-timeout-millis",
+      "type": "java.lang.Integer",
+      "description": "Ollama HTTP 读取超时时间（毫秒）。",
+      "defaultValue": 60000
+    },
+    {
+      "name": "letool.ai.ollama.max-retries",
+      "type": "java.lang.Integer",
+      "description": "Ollama 临时错误最大重试次数。5xx、408、429 和网络异常会按该配置重试。",
+      "defaultValue": 2
+    },
+    {
+      "name": "letool.ai.ollama.retry-backoff-millis",
+      "type": "java.lang.Long",
+      "description": "Ollama 重试退避基准时间（毫秒），按尝试次数线性递增。",
+      "defaultValue": 200
     },
     {
       "name": "letool.ai.chat.max-history-length",

@@ -21,6 +21,10 @@ import java.util.Map;
  *       api-key: sk-xxx
  *       base-url: https://api.openai.com/v1
  *       default-model: gpt-4o
+ *       connect-timeout-millis: 10000
+ *       read-timeout-millis: 60000
+ *       max-retries: 2
+ *       retry-backoff-millis: 200
  *     azure:
  *       api-key: xxx
  *       endpoint: https://my-resource.openai.azure.com
@@ -265,6 +269,26 @@ public class AiProperties {
          */
         private String defaultModel;
 
+        /**
+         * 连接超时时间（毫秒），默认 10 秒。
+         */
+        private int connectTimeoutMillis = 10000;
+
+        /**
+         * 读取超时时间（毫秒），默认 60 秒。
+         */
+        private int readTimeoutMillis = 60000;
+
+        /**
+         * 临时错误最大重试次数，默认重试 2 次。
+         */
+        private int maxRetries = 2;
+
+        /**
+         * 重试退避时间（毫秒），默认 200 毫秒。
+         */
+        private long retryBackoffMillis = 200;
+
         // ======================== getter / setter ========================
 
         public String getApiKey() {
@@ -289,6 +313,38 @@ public class AiProperties {
 
         public void setDefaultModel(String defaultModel) {
             this.defaultModel = defaultModel;
+        }
+
+        public int getConnectTimeoutMillis() {
+            return connectTimeoutMillis;
+        }
+
+        public void setConnectTimeoutMillis(int connectTimeoutMillis) {
+            this.connectTimeoutMillis = connectTimeoutMillis;
+        }
+
+        public int getReadTimeoutMillis() {
+            return readTimeoutMillis;
+        }
+
+        public void setReadTimeoutMillis(int readTimeoutMillis) {
+            this.readTimeoutMillis = readTimeoutMillis;
+        }
+
+        public int getMaxRetries() {
+            return maxRetries;
+        }
+
+        public void setMaxRetries(int maxRetries) {
+            this.maxRetries = maxRetries;
+        }
+
+        public long getRetryBackoffMillis() {
+            return retryBackoffMillis;
+        }
+
+        public void setRetryBackoffMillis(long retryBackoffMillis) {
+            this.retryBackoffMillis = retryBackoffMillis;
         }
     }
 

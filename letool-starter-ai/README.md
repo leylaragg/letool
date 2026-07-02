@@ -1,8 +1,8 @@
 # letool-starter-ai
 
-AI 集成模块，提供 OpenAI、DeepSeek、通义千问、智谱、Ollama 等多厂商的统一 API，支持对话、嵌入向量、Function Calling、RAG 检索增强生成和流式输出。
+AI 集成模块，提供 OpenAI、DeepSeek、通义千问、智谱、Ollama 等多厂商的统一 API，支持对话、嵌入向量、Function Calling、RAG 检索增强生成等能力。
 
-> ⚠️ OpenAI 兼容 provider 会发起真实 HTTP 请求，但统一超时、重试、流式、错误码细分、连接池和敏感日志保护仍需补齐。承载生产流量前请先补充这些控制和集成测试。
+> ⚠️ OpenAI 兼容 provider 会发起真实 HTTP 请求，已支持超时、临时错误重试、上游错误码解析和敏感信息脱敏。流式输出、连接池、投递审计和更完整的集成测试仍需继续补齐。
 
 ## Maven 坐标
 
@@ -24,6 +24,10 @@ letool:
     default-provider: openai
     openai:
       api-key: sk-your-key
+      connect-timeout-millis: 10000
+      read-timeout-millis: 60000
+      max-retries: 2
+      retry-backoff-millis: 200
     deepseek:
       api-key: sk-your-key
 ```
@@ -56,6 +60,10 @@ public String chat() {
 | `letool.ai.openai.api-key` | - | OpenAI API 密钥 |
 | `letool.ai.openai.base-url` | `https://api.openai.com/v1` | OpenAI 端点 |
 | `letool.ai.openai.default-model` | `gpt-4o` | 默认模型 |
+| `letool.ai.<provider>.connect-timeout-millis` | `10000` | 连接超时时间，适用于 openai/deepseek/qwen/zhipu/ollama/azure/custom provider |
+| `letool.ai.<provider>.read-timeout-millis` | `60000` | 读取超时时间 |
+| `letool.ai.<provider>.max-retries` | `2` | 5xx、408、429、网络异常等临时错误最大重试次数 |
+| `letool.ai.<provider>.retry-backoff-millis` | `200` | 重试退避基准时间，按尝试次数线性递增 |
 | `letool.ai.deepseek.api-key` | - | DeepSeek API 密钥 |
 | `letool.ai.deepseek.default-model` | `deepseek-chat` | 默认模型 |
 | `letool.ai.qwen.api-key` | - | 通义千问 API 密钥 |

@@ -52,7 +52,7 @@
 | **letool-starter-ratelimiter** | 限流熔断 —— 令牌桶/滑动窗口、熔断器 | tool, cache |
 | **letool-starter-oss** | 对象存储抽象 —— 阿里云 OSS/腾讯云 COS/MinIO 当前为 stub 实现 | tool, file |
 | **letool-starter-sms** | 短信通知抽象 —— 阿里云/腾讯云当前为模拟调用，支持频率限制 | tool |
-| **letool-starter-ai** | AI 集成 —— OpenAI 兼容 HTTP 调用，生产控制仍需补齐 | tool |
+| **letool-starter-ai** | AI 集成 —— OpenAI 兼容 HTTP 调用，已具备超时、重试、错误脱敏基础控制 | tool |
 | **letool-starter-data-structure** | 数据结构 —— 泛型树、决策链（消除 if-else）、链表 | 无 |
 | **letool-starter-websocket** | WebSocket —— 消息路由、房间管理、分布式会话 | tool, web |
 | **letool-starter-job** | 任务调度 —— 分布式定时任务、分片、重试 | tool, thread |
