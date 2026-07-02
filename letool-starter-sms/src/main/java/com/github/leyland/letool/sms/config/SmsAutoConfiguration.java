@@ -41,7 +41,7 @@ import org.springframework.context.annotation.Bean;
  * <h3>Bean 覆盖机制</h3>
  * <ul>
  *   <li>{@link SmsProvider} 标注了 {@code @ConditionalOnMissingBean}，用户可自行提供自定义实现来覆盖默认行为。</li>
- *   <li>{@link SmsTemplate} 不标注 {@code @ConditionalOnMissingBean}，始终由本配置类创建。</li>
+ *   <li>{@link SmsTemplate} 同样标注了 {@code @ConditionalOnMissingBean}，用户可自行接管短信操作门面。</li>
  * </ul>
  *
  * @author leyland
@@ -99,6 +99,7 @@ public class SmsAutoConfiguration {
      * @return 短信模板实例
      */
     @Bean
+    @ConditionalOnMissingBean(SmsTemplate.class)
     public SmsTemplate smsTemplate(SmsProvider smsProvider, SmsProperties properties) {
         return new SmsTemplate(smsProvider, properties);
     }

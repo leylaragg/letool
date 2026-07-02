@@ -55,7 +55,7 @@ public class LogAutoConfiguration {
      * 注册 MDC 任务装饰器 —— 线程池执行任务时自动传递父线程的 MDC 上下文到子线程.
      */
     @Bean
-    @ConditionalOnMissingBean(TaskDecorator.class)
+    @ConditionalOnMissingBean(value = TaskDecorator.class, name = "mdcTaskDecorator")
     public TaskDecorator mdcTaskDecorator() {
         return new MdcTaskDecorator();
     }

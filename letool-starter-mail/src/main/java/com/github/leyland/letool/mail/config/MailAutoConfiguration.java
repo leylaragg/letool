@@ -31,7 +31,7 @@ import org.springframework.context.annotation.Bean;
  * <h3>Bean 覆盖机制</h3>
  * <ul>
  *   <li>{@link MailSender} 标注了 {@code @ConditionalOnMissingBean}，用户可自行提供自定义实现来覆盖默认行为。</li>
- *   <li>{@link MailTemplate} 不标注 {@code @ConditionalOnMissingBean}，始终由本配置类创建。</li>
+ *   <li>{@link MailTemplate} 同样标注了 {@code @ConditionalOnMissingBean}，用户可自行接管邮件操作门面。</li>
  * </ul>
  *
  * @author leyland
@@ -76,6 +76,7 @@ public class MailAutoConfiguration {
      * @return 邮件模板实例
      */
     @Bean
+    @ConditionalOnMissingBean(MailTemplate.class)
     public MailTemplate mailTemplate(MailSender mailSender, MailProperties properties) {
         return new MailTemplate(mailSender, properties.getAsyncPoolSize());
     }

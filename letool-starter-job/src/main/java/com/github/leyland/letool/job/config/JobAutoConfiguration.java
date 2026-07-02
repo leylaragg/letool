@@ -5,6 +5,7 @@ import com.github.leyland.letool.job.core.JobScheduler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -63,6 +64,7 @@ public class JobAutoConfiguration {
      * @return 调度线程池实例
      */
     @Bean
+    @ConditionalOnMissingBean(name = "jobScheduledExecutor")
     public ScheduledThreadPoolExecutor jobScheduledExecutor(JobProperties properties) {
         int poolSize = properties.getThreadPoolSize();
         if (poolSize <= 0) {
@@ -88,6 +90,7 @@ public class JobAutoConfiguration {
      * @return 日志服务实例
      */
     @Bean
+    @ConditionalOnMissingBean(JobLogService.class)
     public JobLogService jobLogService() {
         return new JobLogService();
     }
@@ -104,6 +107,7 @@ public class JobAutoConfiguration {
      * @return 调度器实例
      */
     @Bean
+    @ConditionalOnMissingBean(JobScheduler.class)
     public JobScheduler jobScheduler(ScheduledThreadPoolExecutor jobScheduledExecutor,
                                      JobLogService jobLogService,
                                      JobProperties properties) {

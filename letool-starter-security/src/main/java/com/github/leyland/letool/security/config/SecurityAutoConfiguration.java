@@ -8,6 +8,8 @@ import com.github.leyland.letool.security.jwt.JwtTokenProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -45,6 +47,7 @@ import java.util.List;
  */
 @AutoConfiguration
 @EnableConfigurationProperties(SecurityProperties.class)
+@ConditionalOnClass({HttpSecurity.class, SecurityFilterChain.class})
 @ConditionalOnWebApplication
 @ConditionalOnProperty(prefix = "letool.security", name = "enabled", havingValue = "true", matchIfMissing = true)
 @EnableMethodSecurity
@@ -54,27 +57,32 @@ public class SecurityAutoConfiguration {
 
     /** 暴露 JwtTokenProvider 供其他模块引用 */
     @Bean
+    @ConditionalOnMissingBean(JwtTokenProvider.class)
     public JwtTokenProvider jwtTokenProvider(SecurityProperties properties) {
         return new JwtTokenProvider(properties);
     }
 
     @Bean
+    @ConditionalOnMissingBean(JwtAuthenticationFilter.class)
     public JwtAuthenticationFilter jwtAuthenticationFilter(JwtTokenProvider jwtTokenProvider,
                                                             SecurityProperties properties) {
         return new JwtAuthenticationFilter(jwtTokenProvider, properties);
     }
 
     @Bean
+    @ConditionalOnMissingBean(SecurityExceptionHandler.class)
     public SecurityExceptionHandler securityExceptionHandler() {
         return new SecurityExceptionHandler();
     }
 
     @Bean
+    @ConditionalOnMissingBean(AccessDeniedExceptionHandler.class)
     public AccessDeniedExceptionHandler accessDeniedExceptionHandler() {
         return new AccessDeniedExceptionHandler();
     }
 
     @Bean
+    @ConditionalOnMissingBean(SecurityAnnotationAspect.class)
     public SecurityAnnotationAspect securityAnnotationAspect() {
         return new SecurityAnnotationAspect();
     }
@@ -84,6 +92,7 @@ public class SecurityAutoConfiguration {
      * 排除路径放行、其余请求需认证。
      */
     @Bean
+    @ConditionalOnMissingBean(SecurityFilterChain.class)
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
                                                     JwtAuthenticationFilter jwtFilter,
                                                     SecurityExceptionHandler authEntryPoint,

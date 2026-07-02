@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -33,6 +34,7 @@ public class CacheAutoConfiguration {
      * 注册默认的 Jackson 序列化器.
      */
     @Bean
+    @ConditionalOnMissingBean(CacheSerializer.class)
     public CacheSerializer cacheSerializer() {
         return new JacksonCacheSerializer();
     }
@@ -41,6 +43,7 @@ public class CacheAutoConfiguration {
      * 注册缓存管理器 —— 如果存在 RedisUtil 则传给 CacheManager 以启用 L2.
      */
     @Bean
+    @ConditionalOnMissingBean(CacheManager.class)
     public CacheManager cacheManager(CacheSerializer serializer,
                                      @org.springframework.beans.factory.annotation.Autowired(required = false) RedisUtil redisUtil) {
         CacheManager manager = new CacheManager(redisUtil, serializer);
@@ -53,6 +56,7 @@ public class CacheAutoConfiguration {
      */
     @Bean
     @ConditionalOnBean(CacheManager.class)
+    @ConditionalOnMissingBean(CacheAspect.class)
     public CacheAspect cacheAspect(CacheManager cacheManager) {
         return new CacheAspect(cacheManager);
     }
@@ -62,6 +66,7 @@ public class CacheAutoConfiguration {
      */
     @Bean
     @ConditionalOnBean(CacheManager.class)
+    @ConditionalOnMissingBean(CacheMonitor.class)
     @ConditionalOnProperty(prefix = "letool.cache.monitoring", name = "enabled", havingValue = "true", matchIfMissing = true)
     public CacheMonitor cacheMonitor(CacheManager cacheManager) {
         return new CacheMonitor(cacheManager);
@@ -71,6 +76,7 @@ public class CacheAutoConfiguration {
      * 根据配置文件中的实例列表预注册缓存.
      */
     @Bean
+    @ConditionalOnMissingBean(name = "cacheInstancesInitializer")
     public Object cacheInstancesInitializer(CacheManager cacheManager, CacheProperties properties) {
         for (CacheProperties.InstanceConfig ic : properties.getInstances()) {
             CacheConfig<Object, Object> config = CacheConfig.builder(ic.getName())

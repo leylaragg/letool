@@ -47,9 +47,13 @@ public class ThreadPoolAutoConfiguration {
     /**
      * 注册线程池管理器 Bean。
      *
+     * <p>当业务侧已经声明 {@link ThreadPoolManager} 时自动退让，避免 starter
+     * 创建第二个管理器导致线程池注册、监控和注入路径不一致。</p>
+     *
      * @return ThreadPoolManager 实例
      */
     @Bean
+    @ConditionalOnMissingBean(ThreadPoolManager.class)
     public ThreadPoolManager threadPoolManager() {
         return new ThreadPoolManager();
     }
@@ -60,7 +64,7 @@ public class ThreadPoolAutoConfiguration {
      * @return MdcTaskDecorator 实例
      */
     @Bean
-    @ConditionalOnMissingBean(TaskDecorator.class)
+    @ConditionalOnMissingBean(value = TaskDecorator.class, name = "mdcTaskDecorator")
     public MdcTaskDecorator mdcTaskDecorator() {
         return new MdcTaskDecorator();
     }
@@ -68,11 +72,15 @@ public class ThreadPoolAutoConfiguration {
     /**
      * 注册线程池监控器。
      *
+     * <p>当业务侧已经声明 {@link ThreadPoolMonitor} 时自动退让，允许应用自行决定
+     * 指标采集、上报和生命周期管理方式。</p>
+     *
      * @param manager    线程池管理器
      * @param properties 线程池配置属性
      * @return ThreadPoolMonitor 实例
      */
     @Bean
+    @ConditionalOnMissingBean(ThreadPoolMonitor.class)
     public ThreadPoolMonitor threadPoolMonitor(ThreadPoolManager manager, ThreadPoolProperties properties) {
         return new ThreadPoolMonitor(manager, properties.getMonitoring().isEnabled());
     }

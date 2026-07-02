@@ -9,6 +9,7 @@ import com.github.leyland.letool.ratelimiter.core.RateLimiter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -58,6 +59,7 @@ public class RateLimiterAutoConfiguration {
      * @return 令牌桶限流器实例
      */
     @Bean(destroyMethod = "shutdown")
+    @ConditionalOnMissingBean(TokenBucketLimiter.class)
     public TokenBucketLimiter tokenBucketLimiter(RateLimiterProperties properties) {
         RateLimiterProperties.TokenBucket config = properties.getTokenBucket();
         log.info("Initializing TokenBucketLimiter: capacity={}, refillRate={}",
@@ -74,6 +76,7 @@ public class RateLimiterAutoConfiguration {
      * @return 滑动窗口限流器实例
      */
     @Bean(destroyMethod = "shutdown")
+    @ConditionalOnMissingBean(SlidingWindowLimiter.class)
     public SlidingWindowLimiter slidingWindowLimiter(RateLimiterProperties properties) {
         RateLimiterProperties.SlidingWindow config = properties.getSlidingWindow();
         log.info("Initializing SlidingWindowLimiter: windowSize={}s, maxPermits={}",
@@ -99,6 +102,7 @@ public class RateLimiterAutoConfiguration {
      * @return 限流模板实例
      */
     @Bean
+    @ConditionalOnMissingBean(RateLimitTemplate.class)
     public RateLimitTemplate rateLimitTemplate(RateLimiterProperties properties,
                                                 TokenBucketLimiter tokenBucketLimiter,
                                                 SlidingWindowLimiter slidingWindowLimiter) {
@@ -132,6 +136,7 @@ public class RateLimiterAutoConfiguration {
      * @return 默认熔断器实例
      */
     @Bean
+    @ConditionalOnMissingBean(DefaultCircuitBreaker.class)
     public DefaultCircuitBreaker defaultCircuitBreaker(RateLimiterProperties properties) {
         RateLimiterProperties.CircuitBreaker config = properties.getCircuitBreaker();
         log.info("Initializing DefaultCircuitBreaker: failureThreshold={}, windowSize={}s, "
@@ -158,6 +163,7 @@ public class RateLimiterAutoConfiguration {
      * @return 限流/熔断切面实例
      */
     @Bean
+    @ConditionalOnMissingBean(RateLimitAspect.class)
     public RateLimitAspect rateLimitAspect(RateLimitTemplate rateLimitTemplate,
                                            RateLimiterProperties properties) {
         RateLimiterProperties.CircuitBreaker cbConfig = properties.getCircuitBreaker();

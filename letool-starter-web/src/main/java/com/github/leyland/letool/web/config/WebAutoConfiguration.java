@@ -9,6 +9,7 @@ import com.github.leyland.letool.web.version.ApiVersionRequestMappingHandlerMapp
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
@@ -25,7 +26,12 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
  */
 @AutoConfiguration
 @EnableConfigurationProperties(WebProperties.class)
-@ConditionalOnWebApplication
+@ConditionalOnClass(name = {
+        "org.springframework.web.servlet.DispatcherServlet",
+        "org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping",
+        "org.springframework.boot.web.servlet.FilterRegistrationBean"
+})
+@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @ConditionalOnProperty(prefix = "letool.web", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class WebAutoConfiguration {
 
@@ -35,6 +41,7 @@ public class WebAutoConfiguration {
      * 全局异常处理器.
      */
     @Bean
+    @ConditionalOnMissingBean(GlobalExceptionHandler.class)
     public GlobalExceptionHandler globalExceptionHandler() {
         return new GlobalExceptionHandler();
     }
@@ -43,6 +50,7 @@ public class WebAutoConfiguration {
      * 响应体统一包装.
      */
     @Bean
+    @ConditionalOnMissingBean(ResponseWrapperAdvice.class)
     public ResponseWrapperAdvice responseBodyAdvice() {
         return new ResponseWrapperAdvice();
     }
@@ -77,6 +85,7 @@ public class WebAutoConfiguration {
      */
     @Bean
     @ConditionalOnProperty(prefix = "letool.web.xss-filter", name = "enabled", havingValue = "true", matchIfMissing = true)
+    @ConditionalOnMissingBean(name = "xssFilterRegistration")
     public FilterRegistrationBean<XssFilter> xssFilterRegistration() {
         FilterRegistrationBean<XssFilter> registration = new FilterRegistrationBean<>();
         registration.setFilter(new XssFilter());
@@ -92,6 +101,7 @@ public class WebAutoConfiguration {
      */
     @Bean
     @ConditionalOnProperty(prefix = "letool.web.sql-injection-filter", name = "enabled", havingValue = "true", matchIfMissing = true)
+    @ConditionalOnMissingBean(name = "sqlInjectionFilterRegistration")
     public FilterRegistrationBean<SqlInjectionFilter> sqlInjectionFilterRegistration() {
         FilterRegistrationBean<SqlInjectionFilter> registration = new FilterRegistrationBean<>();
         registration.setFilter(new SqlInjectionFilter());
@@ -106,6 +116,7 @@ public class WebAutoConfiguration {
      * 可重复读请求体过滤器.
      */
     @Bean
+    @ConditionalOnMissingBean(name = "repeatableRequestFilterRegistration")
     public FilterRegistrationBean<RepeatableRequestFilter> repeatableRequestFilterRegistration() {
         FilterRegistrationBean<RepeatableRequestFilter> registration = new FilterRegistrationBean<>();
         registration.setFilter(new RepeatableRequestFilter());
