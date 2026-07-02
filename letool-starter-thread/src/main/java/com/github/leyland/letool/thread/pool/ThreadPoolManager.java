@@ -80,11 +80,23 @@ public class ThreadPoolManager {
      * @param config 线程池配置
      * @return ExecutorService 实例
      */
-    public ExecutorService getOrCreate(String name, ThreadPoolProperties.PoolConfig config) {
+    public synchronized ExecutorService getOrCreate(String name, ThreadPoolProperties.PoolConfig config) {
         if (config.isVirtualThreads()) {
-            return virtualPools.computeIfAbsent(name, k -> createVirtualExecutor(name));
+            ExecutorService existing = virtualPools.get(name);
+            if (existing != null) {
+                return existing;
+            }
+            existing = pools.get(name);
+            if (existing != null) {
+                return existing;
+            }
+            return createVirtualExecutor(name);
         }
-        return pools.computeIfAbsent(name, k -> create(name, config));
+        ThreadPoolExecutor existing = pools.get(name);
+        if (existing != null) {
+            return existing;
+        }
+        return create(name, config);
     }
 
     /**

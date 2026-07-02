@@ -7,9 +7,11 @@ import com.github.leyland.letool.thread.propagation.MdcTaskDecorator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.task.TaskDecorator;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -58,6 +60,7 @@ public class ThreadPoolAutoConfiguration {
      * @return MdcTaskDecorator 实例
      */
     @Bean
+    @ConditionalOnMissingBean(TaskDecorator.class)
     public MdcTaskDecorator mdcTaskDecorator() {
         return new MdcTaskDecorator();
     }
@@ -84,6 +87,7 @@ public class ThreadPoolAutoConfiguration {
      * @return taskExecutor 线程池
      */
     @Bean("taskExecutor")
+    @ConditionalOnMissingBean(name = "taskExecutor")
     public ExecutorService taskExecutor(ThreadPoolManager manager, ThreadPoolProperties properties) {
         ThreadPoolProperties.PoolConfig config = properties.getPools().get("task-executor");
         if (config == null) {
@@ -109,6 +113,7 @@ public class ThreadPoolAutoConfiguration {
      * @return ioExecutor 线程池
      */
     @Bean("ioExecutor")
+    @ConditionalOnMissingBean(name = "ioExecutor")
     public ExecutorService ioExecutor(ThreadPoolManager manager, ThreadPoolProperties properties) {
         ThreadPoolProperties.PoolConfig config = properties.getPools().get("io-executor");
         if (config == null) {

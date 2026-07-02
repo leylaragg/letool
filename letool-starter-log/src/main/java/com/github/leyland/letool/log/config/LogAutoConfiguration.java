@@ -12,6 +12,7 @@ import com.github.leyland.letool.log.trace.MdcTaskDecorator;
 import com.github.leyland.letool.log.trace.TraceIdFilter;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -54,6 +55,7 @@ public class LogAutoConfiguration {
      * 注册 MDC 任务装饰器 —— 线程池执行任务时自动传递父线程的 MDC 上下文到子线程.
      */
     @Bean
+    @ConditionalOnMissingBean(TaskDecorator.class)
     public TaskDecorator mdcTaskDecorator() {
         return new MdcTaskDecorator();
     }
