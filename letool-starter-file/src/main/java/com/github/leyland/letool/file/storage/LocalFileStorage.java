@@ -26,7 +26,7 @@ public class LocalFileStorage implements FileStorageProvider {
     private static final Logger log = LoggerFactory.getLogger(LocalFileStorage.class);
 
     /** 本地文件存储的根目录 */
-    private final String basePath;
+    private final Path basePath;
 
     /**
      * 构造本地文件存储实例，并确保根目录存在。
@@ -35,9 +35,9 @@ public class LocalFileStorage implements FileStorageProvider {
      * @throws UncheckedIOException 根目录创建失败时抛出
      */
     public LocalFileStorage(String basePath) {
-        this.basePath = basePath;
+        this.basePath = Paths.get(basePath).toAbsolutePath().normalize();
         try {
-            Files.createDirectories(Paths.get(basePath));
+            Files.createDirectories(this.basePath);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to create base directory: " + basePath, e);
         }
@@ -59,9 +59,9 @@ public class LocalFileStorage implements FileStorageProvider {
     @Override
     public String upload(InputStream inputStream, String path, String fileName) {
         try {
-            Path dir = Paths.get(basePath, path);
+            Path dir = resolveStoragePath(path);
             Files.createDirectories(dir);
-            Path filePath = dir.resolve(fileName);
+            Path filePath = ensureInsideBasePath(dir.resolve(fileName));
             Files.copy(inputStream, filePath, StandardCopyOption.REPLACE_EXISTING);
             log.debug("File uploaded: {}", filePath);
             return filePath.toString();
@@ -82,7 +82,7 @@ public class LocalFileStorage implements FileStorageProvider {
     @Override
     public InputStream download(String path) {
         try {
-            Path filePath = Paths.get(basePath, path);
+            Path filePath = resolveStoragePath(path);
             return Files.newInputStream(filePath);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to download file: " + path, e);
@@ -101,7 +101,7 @@ public class LocalFileStorage implements FileStorageProvider {
     @Override
     public boolean delete(String path) {
         try {
-            Path filePath = Paths.get(basePath, path);
+            Path filePath = resolveStoragePath(path);
             return Files.deleteIfExists(filePath);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to delete file: " + path, e);
@@ -118,7 +118,7 @@ public class LocalFileStorage implements FileStorageProvider {
      */
     @Override
     public boolean exists(String path) {
-        return Files.exists(Paths.get(basePath, path));
+        return Files.exists(resolveStoragePath(path));
     }
 
     // ===== 目录列表 =====
@@ -135,7 +135,7 @@ public class LocalFileStorage implements FileStorageProvider {
     @Override
     public List<FileInfo> list(String path) {
         List<FileInfo> result = new ArrayList<>();
-        Path dir = Paths.get(basePath, path);
+        Path dir = resolveStoragePath(path);
         if (!Files.exists(dir)) return result;
         try (Stream<Path> stream = Files.list(dir)) {
             stream.forEach(p -> {
@@ -156,5 +156,41 @@ public class LocalFileStorage implements FileStorageProvider {
             throw new UncheckedIOException("Failed to list directory: " + path, e);
         }
         return result;
+    }
+
+    /**
+     * Resolves a user supplied storage path against the configured base directory.
+     *
+     * <p>Relative paths are resolved below {@code basePath}; absolute paths are accepted only
+     * when they already point inside {@code basePath}. This keeps callers compatible with the
+     * absolute path returned by {@link #upload(InputStream, String, String)} while still blocking
+     * {@code ..} traversal and accidental writes outside the local storage root.</p>
+     *
+     * @param path relative storage key or absolute path returned by this storage provider
+     * @return normalized absolute path inside {@code basePath}
+     * @throws IllegalArgumentException when the resolved path escapes {@code basePath}
+     */
+    private Path resolveStoragePath(String path) {
+        if (path == null || path.isBlank()) {
+            return basePath;
+        }
+        Path inputPath = Paths.get(path);
+        Path candidate = inputPath.isAbsolute() ? inputPath : basePath.resolve(inputPath);
+        return ensureInsideBasePath(candidate);
+    }
+
+    /**
+     * Normalizes a candidate path and verifies that it remains below the configured base path.
+     *
+     * @param candidate candidate path produced by a storage operation
+     * @return normalized absolute path inside {@code basePath}
+     * @throws IllegalArgumentException when the candidate points outside {@code basePath}
+     */
+    private Path ensureInsideBasePath(Path candidate) {
+        Path normalized = candidate.toAbsolutePath().normalize();
+        if (!normalized.startsWith(basePath)) {
+            throw new IllegalArgumentException("Path escapes local storage base directory: " + candidate);
+        }
+        return normalized;
     }
 }

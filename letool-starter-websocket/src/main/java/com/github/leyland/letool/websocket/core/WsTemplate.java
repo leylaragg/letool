@@ -2,6 +2,7 @@ package com.github.leyland.letool.websocket.core;
 
 import com.github.leyland.letool.tool.util.JsonUtil;
 import com.github.leyland.letool.websocket.exception.WsException;
+import com.github.leyland.letool.websocket.room.WsRoomManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,6 +52,9 @@ public class WsTemplate {
     /** 会话管理器，提供会话查询能力 */
     private final WsSessionManager sessionManager;
 
+    /** 房间管理器，提供房间成员查询和广播能力 */
+    private final WsRoomManager roomManager;
+
     // ======================== 构造 ========================
 
     /**
@@ -59,7 +63,18 @@ public class WsTemplate {
      * @param sessionManager 会话管理器 Bean
      */
     public WsTemplate(WsSessionManager sessionManager) {
+        this(sessionManager, null);
+    }
+
+    /**
+     * 创建支持房间广播的 WebSocket 消息模板。
+     *
+     * @param sessionManager 会话管理器 Bean
+     * @param roomManager    房间管理器 Bean，用于按房间成员范围广播
+     */
+    public WsTemplate(WsSessionManager sessionManager, WsRoomManager roomManager) {
         this.sessionManager = Objects.requireNonNull(sessionManager, "sessionManager must not be null");
+        this.roomManager = roomManager;
     }
 
     // ======================== 定向推送 ========================
@@ -182,13 +197,11 @@ public class WsTemplate {
             log.warn("Cannot send to null roomId");
             return;
         }
-        Collection<WsSession> allSessions = sessionManager.getAllSessions();
-        for (WsSession session : allSessions) {
-            if (Objects.equals(session.getSessionId(), excludeSessionId)) continue;
-            if (session.isAlive()) {
-                sendToSessionInternal(session, message);
-            }
+        if (roomManager == null) {
+            log.warn("Cannot send to room {} because WsRoomManager is not configured", roomId);
+            return;
         }
+        roomManager.broadcast(roomId, message, excludeSessionId);
     }
 
     // ======================== 全量广播 ========================
@@ -276,5 +289,14 @@ public class WsTemplate {
      */
     public WsSessionManager getSessionManager() {
         return sessionManager;
+    }
+
+    /**
+     * 获取关联的房间管理器。
+     *
+     * @return WsRoomManager 实例；使用兼容构造器创建时可能为 {@code null}
+     */
+    public WsRoomManager getRoomManager() {
+        return roomManager;
     }
 }

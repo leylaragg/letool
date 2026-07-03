@@ -71,13 +71,14 @@ public class WebSocketAutoConfiguration {
      * 创建 WebSocket 消息发送模板 Bean。
      *
      * @param sessionManager 会话管理器
+     * @param roomManager    房间管理器
      * @return WsTemplate 实例
      */
     @Bean
     @ConditionalOnMissingBean
-    public WsTemplate wsTemplate(WsSessionManager sessionManager) {
+    public WsTemplate wsTemplate(WsSessionManager sessionManager, WsRoomManager roomManager) {
         log.info("Creating WsTemplate");
-        return new WsTemplate(sessionManager);
+        return new WsTemplate(sessionManager, roomManager);
     }
 
     /**

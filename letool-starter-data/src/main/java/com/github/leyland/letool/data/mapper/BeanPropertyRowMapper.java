@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.RowMapper;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
@@ -111,7 +112,9 @@ public class BeanPropertyRowMapper<T> implements RowMapper<T> {
     @Override
     public T mapRow(ResultSet rs, int rowNum) throws SQLException {
         try {
-            T instance = mappedClass.getDeclaredConstructor().newInstance();
+            Constructor<T> constructor = mappedClass.getDeclaredConstructor();
+            constructor.setAccessible(true);
+            T instance = constructor.newInstance();
             ResultSetMetaData meta = rs.getMetaData();
             int columnCount = meta.getColumnCount();
 

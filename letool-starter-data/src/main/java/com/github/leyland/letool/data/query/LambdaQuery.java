@@ -1,8 +1,12 @@
 package com.github.leyland.letool.data.query;
 
+import com.github.leyland.letool.data.annotation.Column;
 import com.github.leyland.letool.data.core.PaginationResult;
 import com.github.leyland.letool.tool.util.StrUtil;
 
+import java.lang.invoke.SerializedLambda;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
@@ -229,12 +233,52 @@ public class LambdaQuery<T> {
      * @return 对应的数据库列名（snake_case）
      */
     private String resolveColumn(SFunction<T, ?> func) {
-        String implName = func.getClass().getDeclaredMethods()[0].getName();
+        String propertyName = resolvePropertyName(func);
+        try {
+            Field field = entityClass.getDeclaredField(propertyName);
+            Column column = field.getAnnotation(Column.class);
+            if (column != null) {
+                return column.value();
+            }
+        } catch (NoSuchFieldException ignored) {
+            // Fallback to naming convention below.
+        }
+        return StrUtil.toSnakeCase(propertyName);
+    }
+
+    /**
+     * 从可序列化方法引用中解析 Java 属性名。
+     *
+     * @param func getter 方法引用
+     * @return Java 属性名
+     */
+    private String resolvePropertyName(SFunction<T, ?> func) {
+        String implName = resolveImplMethodName(func);
         if (implName.startsWith("get")) {
             implName = implName.substring(3);
         } else if (implName.startsWith("is")) {
             implName = implName.substring(2);
         }
-        return StrUtil.toSnakeCase(implName);
+        if (implName.isEmpty()) {
+            return implName;
+        }
+        return Character.toLowerCase(implName.charAt(0)) + implName.substring(1);
+    }
+
+    /**
+     * 读取 Lambda 序列化元数据中的实现方法名。
+     *
+     * @param func getter 方法引用
+     * @return 实现方法名，如 {@code getUserName}
+     */
+    private String resolveImplMethodName(SFunction<T, ?> func) {
+        try {
+            Method writeReplace = func.getClass().getDeclaredMethod("writeReplace");
+            writeReplace.setAccessible(true);
+            SerializedLambda lambda = (SerializedLambda) writeReplace.invoke(func);
+            return lambda.getImplMethodName();
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalArgumentException("无法解析 Lambda 字段引用", e);
+        }
     }
 }

@@ -11,6 +11,7 @@ package com.github.leyland.letool.data.dialect;
  * <ul>
  *   <li>{@link MySqlDialect} — MySQL / MariaDB</li>
  *   <li>{@link com.github.leyland.letool.data.dialect.PostgreSqlDialect} — PostgreSQL</li>
+ *   <li>{@link H2Dialect} — H2 embedded database</li>
  * </ul>
  *
  * @author leyland

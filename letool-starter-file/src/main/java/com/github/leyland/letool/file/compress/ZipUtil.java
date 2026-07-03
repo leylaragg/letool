@@ -111,11 +111,12 @@ public final class ZipUtil {
      * @throws UncheckedIOException 解压过程中发生 I/O 错误时抛出
      */
     public static void decompress(String inputZip, String targetDir) {
-        Path targetPath = Paths.get(targetDir);
+        Path targetPath = Paths.get(targetDir).toAbsolutePath().normalize();
         try (ZipInputStream zis = new ZipInputStream(Files.newInputStream(Paths.get(inputZip)))) {
+            Files.createDirectories(targetPath);
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
-                Path filePath = targetPath.resolve(entry.getName());
+                Path filePath = resolveZipEntry(targetPath, entry.getName());
                 if (entry.isDirectory()) {
                     // 目录条目 — 仅创建目录
                     Files.createDirectories(filePath);
@@ -130,6 +131,26 @@ public final class ZipUtil {
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to decompress: " + inputZip, e);
         }
+    }
+
+    /**
+     * Resolves a ZIP entry below the extraction target and rejects path traversal entries.
+     *
+     * <p>ZIP files may contain entries such as {@code ../evil.txt} or absolute paths. Normalizing
+     * and checking the resolved path before writing prevents those entries from escaping the target
+     * directory during extraction.</p>
+     *
+     * @param targetPath normalized extraction root
+     * @param entryName  entry name read from the ZIP archive
+     * @return normalized path for the entry inside {@code targetPath}
+     * @throws IllegalArgumentException when the entry points outside {@code targetPath}
+     */
+    private static Path resolveZipEntry(Path targetPath, String entryName) {
+        Path filePath = targetPath.resolve(entryName).normalize();
+        if (!filePath.startsWith(targetPath)) {
+            throw new IllegalArgumentException("ZIP entry escapes target directory: " + entryName);
+        }
+        return filePath;
     }
 
     // ===== 内存字节压缩 =====

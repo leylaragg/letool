@@ -207,16 +207,22 @@ public class NetHttpTemplate {
             byte[] responseBytes = readResponse(conn);
             String responseBody = new String(responseBytes, StandardCharsets.UTF_8);
 
-            // 熔断 - 记录成功
-            if (circuitBreaker != null) {
-                if (statusCode >= 200 && statusCode < 400) {
-                    circuitBreaker.recordSuccess();
-                } else {
+            if (statusCode >= 400) {
+                if (circuitBreaker != null) {
                     circuitBreaker.recordFailure();
                 }
+                throw new NetException("HTTP " + method + " " + urlStr
+                        + " failed with status " + statusCode + ": " + responseBody);
+            }
+
+            // 熔断 - 记录成功
+            if (circuitBreaker != null) {
+                circuitBreaker.recordSuccess();
             }
 
             return responseBody;
+        } catch (NetException e) {
+            throw e;
         } catch (Exception e) {
             // 熔断 - 记录失败
             if (circuitBreaker != null) {

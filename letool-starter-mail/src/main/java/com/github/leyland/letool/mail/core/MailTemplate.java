@@ -104,7 +104,7 @@ import java.util.concurrent.Executors;
  * @author leyland
  * @since 1.0.0
  */
-public class MailTemplate {
+public class MailTemplate implements AutoCloseable {
 
     // ======================== 日志与成员变量 ========================
 
@@ -177,6 +177,17 @@ public class MailTemplate {
                 throw new MailException("Async mail send failed", e);
             }
         }, asyncExecutor);
+    }
+
+    /**
+     * Shuts down the internal async mail executor.
+     *
+     * <p>Spring can infer this method as a bean destroy callback, and standalone users may call it
+     * directly when a manually created {@code MailTemplate} is no longer needed.</p>
+     */
+    @Override
+    public void close() {
+        asyncExecutor.shutdown();
     }
 
     // ======================== 内部类：邮件请求构建器 ========================

@@ -4,6 +4,7 @@ import com.alibaba.excel.EasyExcel;
 import com.alibaba.excel.context.AnalysisContext;
 import com.alibaba.excel.read.listener.ReadListener;
 import com.alibaba.excel.write.style.column.LongestMatchColumnWidthStyleStrategy;
+import com.github.leyland.letool.excel.annotation.ExcelColumn;
 import com.github.leyland.letool.excel.style.StyleTemplate;
 import com.github.leyland.letool.excel.validation.DataValidator;
 import com.github.leyland.letool.excel.validation.ValidationResult;
@@ -12,8 +13,12 @@ import org.slf4j.LoggerFactory;
 
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
 /**
@@ -137,6 +142,9 @@ public final class ExcelUtil {
      * @return 解析后的实体列表，不会为 {@code null}（无数据时返回空列表）
      */
     public static <T> List<T> read(String filePath, Class<T> clazz, int sheetNo, int headRowNumber) {
+        if (hasExcelColumnMetadata(clazz)) {
+            return readWithExcelColumn(filePath, clazz, sheetNo, headRowNumber);
+        }
         List<T> result = new ArrayList<>();
         EasyExcel.read(filePath, clazz, new ReadListener<T>() {
             @Override
@@ -181,6 +189,9 @@ public final class ExcelUtil {
      * @return 解析后的实体列表，不会为 {@code null}（无数据时返回空列表）
      */
     public static <T> List<T> read(InputStream inputStream, Class<T> clazz, int sheetNo, int headRowNumber) {
+        if (hasExcelColumnMetadata(clazz)) {
+            return readWithExcelColumn(inputStream, clazz, sheetNo, headRowNumber);
+        }
         List<T> result = new ArrayList<>();
         EasyExcel.read(inputStream, clazz, new ReadListener<T>() {
             @Override
@@ -255,6 +266,10 @@ public final class ExcelUtil {
      * @param clazz     数据实体类，用于字段映射为列
      */
     public static <T> void write(String filePath, String sheetName, List<T> data, Class<T> clazz) {
+        if (hasExcelColumnMetadata(clazz)) {
+            writeWithExcelColumn(filePath, sheetName, data, clazz);
+            return;
+        }
         EasyExcel.write(filePath, clazz)
                 .registerWriteHandler(StyleTemplate.defaultStyle())
                 .registerWriteHandler(new LongestMatchColumnWidthStyleStrategy())
@@ -287,6 +302,10 @@ public final class ExcelUtil {
      * @param clazz        数据实体类，用于字段映射为列
      */
     public static <T> void write(OutputStream outputStream, String sheetName, List<T> data, Class<T> clazz) {
+        if (hasExcelColumnMetadata(clazz)) {
+            writeWithExcelColumn(outputStream, sheetName, data, clazz);
+            return;
+        }
         EasyExcel.write(outputStream, clazz)
                 .registerWriteHandler(StyleTemplate.defaultStyle())
                 .registerWriteHandler(new LongestMatchColumnWidthStyleStrategy())
@@ -324,6 +343,15 @@ public final class ExcelUtil {
      * @return 校验结果容器；{@link ValidationResult#hasErrors()} 返回 {@code true} 表示存在校验错误
      */
     public static <T> ValidationResult readAndValidate(String filePath, Class<T> clazz) {
+        if (hasExcelColumnMetadata(clazz)) {
+            ValidationResult result = new ValidationResult();
+            List<T> rows = read(filePath, clazz);
+            for (int i = 0; i < rows.size(); i++) {
+                ValidationResult rowResult = DataValidator.validate(rows.get(i), i + 2);
+                result.getErrors().addAll(rowResult.getErrors());
+            }
+            return result;
+        }
         ValidationResult result = new ValidationResult();
         EasyExcel.read(filePath, clazz, new ReadListener<T>() {
             private int rowNum = 1; // 行号从1开始（表头占第1行，数据从第2行开始）
@@ -340,4 +368,362 @@ public final class ExcelUtil {
         }).sheet().doRead();
         return result;
     }
+
+    /**
+     * Checks whether the entity class uses letool's {@link ExcelColumn} mapping annotation.
+     *
+     * @param clazz entity class to inspect
+     * @return {@code true} when at least one declared field is annotated with {@link ExcelColumn}
+     */
+    private static boolean hasExcelColumnMetadata(Class<?> clazz) {
+        for (Field field : clazz.getDeclaredFields()) {
+            if (field.isAnnotationPresent(ExcelColumn.class)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Reads an Excel file path using letool's {@link ExcelColumn} metadata.
+     *
+     * @param filePath      Excel file path
+     * @param clazz         target entity class
+     * @param sheetNo       sheet number, starting from zero
+     * @param headRowNumber number of header rows to skip
+     * @param <T>           entity type
+     * @return mapped entity list
+     */
+    private static <T> List<T> readWithExcelColumn(
+            String filePath, Class<T> clazz, int sheetNo, int headRowNumber) {
+        List<ColumnMapping> columns = resolveColumnMappings(clazz);
+        List<T> result = new ArrayList<>();
+        EasyExcel.read(filePath, new ReadListener<Map<Integer, String>>() {
+            @Override
+            public void invoke(Map<Integer, String> row, AnalysisContext context) {
+                result.add(mapRowToEntity(row, clazz, columns));
+            }
+
+            @Override
+            public void doAfterAllAnalysed(AnalysisContext context) {
+                log.debug("Excel read complete with @ExcelColumn: {} rows", result.size());
+            }
+        }).sheet(sheetNo).headRowNumber(headRowNumber).doRead();
+        return result;
+    }
+
+    /**
+     * Reads an Excel input stream using letool's {@link ExcelColumn} metadata.
+     *
+     * @param inputStream   Excel file input stream
+     * @param clazz         target entity class
+     * @param sheetNo       sheet number, starting from zero
+     * @param headRowNumber number of header rows to skip
+     * @param <T>           entity type
+     * @return mapped entity list
+     */
+    private static <T> List<T> readWithExcelColumn(
+            InputStream inputStream, Class<T> clazz, int sheetNo, int headRowNumber) {
+        List<ColumnMapping> columns = resolveColumnMappings(clazz);
+        List<T> result = new ArrayList<>();
+        EasyExcel.read(inputStream, new ReadListener<Map<Integer, String>>() {
+            @Override
+            public void invoke(Map<Integer, String> row, AnalysisContext context) {
+                result.add(mapRowToEntity(row, clazz, columns));
+            }
+
+            @Override
+            public void doAfterAllAnalysed(AnalysisContext context) {
+                log.debug("Excel stream read complete with @ExcelColumn: {} rows", result.size());
+            }
+        }).sheet(sheetNo).headRowNumber(headRowNumber).doRead();
+        return result;
+    }
+
+    /**
+     * Writes data to an Excel file path using letool's {@link ExcelColumn} metadata.
+     *
+     * @param filePath  output file path
+     * @param sheetName sheet name
+     * @param data      data rows
+     * @param clazz     entity class
+     * @param <T>       entity type
+     */
+    private static <T> void writeWithExcelColumn(String filePath, String sheetName, List<T> data, Class<T> clazz) {
+        List<ColumnMapping> columns = resolveColumnMappings(clazz);
+        EasyExcel.write(filePath)
+                .head(buildHead(columns))
+                .registerWriteHandler(StyleTemplate.defaultStyle())
+                .registerWriteHandler(new LongestMatchColumnWidthStyleStrategy())
+                .sheet(sheetName)
+                .doWrite(toRows(data, columns));
+    }
+
+    /**
+     * Writes data to an Excel output stream using letool's {@link ExcelColumn} metadata.
+     *
+     * @param outputStream output stream
+     * @param sheetName    sheet name
+     * @param data         data rows
+     * @param clazz        entity class
+     * @param <T>          entity type
+     */
+    private static <T> void writeWithExcelColumn(
+            OutputStream outputStream, String sheetName, List<T> data, Class<T> clazz) {
+        List<ColumnMapping> columns = resolveColumnMappings(clazz);
+        EasyExcel.write(outputStream)
+                .head(buildHead(columns))
+                .registerWriteHandler(StyleTemplate.defaultStyle())
+                .registerWriteHandler(new LongestMatchColumnWidthStyleStrategy())
+                .sheet(sheetName)
+                .doWrite(toRows(data, columns));
+    }
+
+    /**
+     * Resolves annotated fields into deterministic column mappings.
+     *
+     * <p>Explicit {@link ExcelColumn#index()} values are honored first. Fields without an explicit
+     * index are assigned to the next available column in declaration order.</p>
+     *
+     * @param clazz entity class
+     * @return sorted column mappings
+     */
+    private static List<ColumnMapping> resolveColumnMappings(Class<?> clazz) {
+        List<ColumnMapping> mappings = new ArrayList<>();
+        List<PendingColumnMapping> pendingColumns = new ArrayList<>();
+        boolean[] usedIndexes = new boolean[Math.max(16, clazz.getDeclaredFields().length * 2)];
+        int declarationOrder = 0;
+        for (Field field : clazz.getDeclaredFields()) {
+            ExcelColumn annotation = field.getAnnotation(ExcelColumn.class);
+            if (annotation == null) {
+                continue;
+            }
+            field.setAccessible(true);
+            if (annotation.index() >= 0) {
+                usedIndexes = ensureIndexCapacity(usedIndexes, annotation.index());
+                usedIndexes[annotation.index()] = true;
+                mappings.add(new ColumnMapping(
+                        field,
+                        resolveHeaderName(field, annotation),
+                        annotation.index(),
+                        declarationOrder++));
+            } else {
+                pendingColumns.add(new PendingColumnMapping(field, annotation, declarationOrder++));
+            }
+        }
+        for (PendingColumnMapping pendingColumn : pendingColumns) {
+            int columnIndex = nextAvailableIndex(usedIndexes, 0);
+            usedIndexes = ensureIndexCapacity(usedIndexes, columnIndex);
+            usedIndexes[columnIndex] = true;
+            mappings.add(new ColumnMapping(
+                    pendingColumn.field(),
+                    resolveHeaderName(pendingColumn.field(), pendingColumn.annotation()),
+                    columnIndex,
+                    pendingColumn.declarationOrder()));
+        }
+        mappings.sort(Comparator
+                .comparingInt(ColumnMapping::columnIndex)
+                .thenComparingInt(ColumnMapping::declarationOrder));
+        return mappings;
+    }
+
+    /**
+     * Resolves the visible Excel header name for an annotated field.
+     *
+     * @param field      entity field
+     * @param annotation field annotation
+     * @return configured header value, or the field name when the annotation value is blank
+     */
+    private static String resolveHeaderName(Field field, ExcelColumn annotation) {
+        return annotation.value().isBlank() ? field.getName() : annotation.value();
+    }
+
+    /**
+     * Finds the next unused column index.
+     *
+     * @param usedIndexes current index usage flags
+     * @param start       first candidate index
+     * @return first available index at or after {@code start}
+     */
+    private static int nextAvailableIndex(boolean[] usedIndexes, int start) {
+        int index = start;
+        while (index < usedIndexes.length && usedIndexes[index]) {
+            index++;
+        }
+        return index;
+    }
+
+    /**
+     * Ensures the index tracking array can hold the requested column index.
+     *
+     * @param usedIndexes current usage flags
+     * @param index       required index
+     * @return original or expanded usage flags
+     */
+    private static boolean[] ensureIndexCapacity(boolean[] usedIndexes, int index) {
+        if (index < usedIndexes.length) {
+            return usedIndexes;
+        }
+        boolean[] expanded = new boolean[index + 16];
+        System.arraycopy(usedIndexes, 0, expanded, 0, usedIndexes.length);
+        return expanded;
+    }
+
+    /**
+     * Builds EasyExcel dynamic headers from column mappings.
+     *
+     * @param columns resolved column mappings
+     * @return EasyExcel head definition
+     */
+    private static List<List<String>> buildHead(List<ColumnMapping> columns) {
+        int maxIndex = columns.stream().mapToInt(ColumnMapping::columnIndex).max().orElse(-1);
+        List<List<String>> head = new ArrayList<>();
+        for (int i = 0; i <= maxIndex; i++) {
+            head.add(List.of(""));
+        }
+        for (ColumnMapping column : columns) {
+            head.set(column.columnIndex(), List.of(column.headerName()));
+        }
+        return head;
+    }
+
+    /**
+     * Converts entity rows into EasyExcel dynamic row data.
+     *
+     * @param data    entity rows
+     * @param columns resolved column mappings
+     * @param <T>     entity type
+     * @return row data aligned to column indexes
+     */
+    private static <T> List<List<Object>> toRows(List<T> data, List<ColumnMapping> columns) {
+        int maxIndex = columns.stream().mapToInt(ColumnMapping::columnIndex).max().orElse(-1);
+        List<List<Object>> rows = new ArrayList<>();
+        for (T item : data) {
+            List<Object> row = new ArrayList<>();
+            for (int i = 0; i <= maxIndex; i++) {
+                row.add(null);
+            }
+            for (ColumnMapping column : columns) {
+                try {
+                    row.set(column.columnIndex(), column.field().get(item));
+                } catch (IllegalAccessException e) {
+                    throw new IllegalStateException("Failed to read Excel field: " + column.field().getName(), e);
+                }
+            }
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    /**
+     * Maps one EasyExcel row map into an entity instance.
+     *
+     * @param row     raw row keyed by column index
+     * @param clazz   target entity class
+     * @param columns resolved column mappings
+     * @param <T>     entity type
+     * @return populated entity
+     */
+    private static <T> T mapRowToEntity(Map<Integer, String> row, Class<T> clazz, List<ColumnMapping> columns) {
+        T instance = instantiate(clazz);
+        for (ColumnMapping column : columns) {
+            String value = row.get(column.columnIndex());
+            Object converted = convertCellValue(value, column.field().getType());
+            if (converted != null || !column.field().getType().isPrimitive()) {
+                try {
+                    column.field().set(instance, converted);
+                } catch (IllegalAccessException e) {
+                    throw new IllegalStateException("Failed to set Excel field: " + column.field().getName(), e);
+                }
+            }
+        }
+        return instance;
+    }
+
+    /**
+     * Creates an entity instance using a no-args constructor.
+     *
+     * @param clazz target entity class
+     * @param <T>   entity type
+     * @return new instance
+     */
+    private static <T> T instantiate(Class<T> clazz) {
+        try {
+            Constructor<T> constructor = clazz.getDeclaredConstructor();
+            constructor.setAccessible(true);
+            return constructor.newInstance();
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Excel entity requires an accessible no-args constructor: "
+                    + clazz.getName(), e);
+        }
+    }
+
+    /**
+     * Converts a raw cell string into a common Java field type.
+     *
+     * @param value      raw cell value from EasyExcel
+     * @param targetType target field type
+     * @return converted value, or {@code null} for blank non-string cells
+     */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static Object convertCellValue(String value, Class<?> targetType) {
+        if (targetType == String.class) {
+            return value;
+        }
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalized = trimTrailingDecimalZero(value.trim());
+        if (targetType == Integer.class || targetType == int.class) {
+            return Integer.valueOf(normalized);
+        }
+        if (targetType == Long.class || targetType == long.class) {
+            return Long.valueOf(normalized);
+        }
+        if (targetType == Double.class || targetType == double.class) {
+            return Double.valueOf(value.trim());
+        }
+        if (targetType == Float.class || targetType == float.class) {
+            return Float.valueOf(value.trim());
+        }
+        if (targetType == Boolean.class || targetType == boolean.class) {
+            return Boolean.valueOf(value.trim());
+        }
+        if (targetType.isEnum()) {
+            return Enum.valueOf((Class<? extends Enum>) targetType, value.trim());
+        }
+        return value;
+    }
+
+    /**
+     * Removes EasyExcel's common {@code .0} suffix when numeric cells are read as strings.
+     *
+     * @param value raw numeric text
+     * @return integer-like numeric text when applicable
+     */
+    private static String trimTrailingDecimalZero(String value) {
+        if (value.matches("-?\\d+\\.0")) {
+            return value.substring(0, value.length() - 2);
+        }
+        return value;
+    }
+
+    /**
+     * Immutable mapping between one entity field and one Excel column.
+     *
+     * @param field            reflected entity field
+     * @param headerName       Excel header name
+     * @param columnIndex      zero-based column index
+     * @param declarationOrder original field declaration order
+     */
+    private record ColumnMapping(Field field, String headerName, int columnIndex, int declarationOrder) {}
+
+    /**
+     * Temporary holder for fields without an explicit Excel column index.
+     *
+     * @param field            reflected entity field
+     * @param annotation       field annotation
+     * @param declarationOrder original field declaration order
+     */
+    private record PendingColumnMapping(Field field, ExcelColumn annotation, int declarationOrder) {}
 }

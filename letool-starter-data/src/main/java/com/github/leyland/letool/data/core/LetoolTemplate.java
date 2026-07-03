@@ -5,6 +5,7 @@ import com.github.leyland.letool.data.annotation.Id;
 import com.github.leyland.letool.data.annotation.Table;
 import com.github.leyland.letool.data.annotation.Transient;
 import com.github.leyland.letool.data.config.DataProperties;
+import com.github.leyland.letool.data.dialect.H2Dialect;
 import com.github.leyland.letool.data.dialect.MySqlDialect;
 import com.github.leyland.letool.data.dialect.SqlDialect;
 import com.github.leyland.letool.data.exception.DataException;
@@ -42,6 +43,7 @@ import java.util.stream.Collectors;
  *
  * <p>数据库方言在构造时通过 JDBC URL 自动检测：</p>
  * <ul>
+ *   <li>URL 包含 {@code :h2:} → {@link H2Dialect}</li>
  *   <li>URL 包含 {@code mysql} → {@link MySqlDialect}</li>
  *   <li>URL 包含 {@code postgresql} → {@link com.github.leyland.letool.data.dialect.PostgreSqlDialect}</li>
  *   <li>检测失败 → 默认回退为 MySQL 方言</li>
@@ -81,8 +83,10 @@ public class LetoolTemplate {
     private SqlDialect detectDialect(JdbcTemplate jt) {
         try {
             String url = jt.getDataSource().getConnection().getMetaData().getURL();
-            if (url.contains("mysql")) return new MySqlDialect();
-            if (url.contains("postgresql")) return new com.github.leyland.letool.data.dialect.PostgreSqlDialect();
+            String normalizedUrl = url.toLowerCase(Locale.ROOT);
+            if (normalizedUrl.contains(":h2:")) return new H2Dialect();
+            if (normalizedUrl.contains("mysql")) return new MySqlDialect();
+            if (normalizedUrl.contains("postgresql")) return new com.github.leyland.letool.data.dialect.PostgreSqlDialect();
         } catch (Exception e) {
             log.debug("Failed to detect database dialect, defaulting to MySQL", e);
         }
@@ -225,7 +229,10 @@ public class LetoolTemplate {
      */
     public <T> int insert(T entity) {
         String tableName = resolveTableName(entity.getClass());
-        Map<String, Object> fieldValues = extractFieldValues(entity, false);
+        boolean shouldUseGeneratedKey = properties.getMapping().isUseGeneratedKeys()
+                && hasAutoIncrementId(entity.getClass())
+                && getIdValue(entity) == null;
+        Map<String, Object> fieldValues = extractFieldValues(entity, shouldUseGeneratedKey);
         if (fieldValues.isEmpty()) {
             throw new DataException("DATA_002", "No fields to insert for " + entity.getClass().getName());
         }
@@ -233,7 +240,7 @@ public class LetoolTemplate {
         String placeholders = fieldValues.keySet().stream().map(k -> "?").collect(Collectors.joining(", "));
         String sql = "INSERT INTO " + tableName + " (" + columns + ") VALUES (" + placeholders + ")";
 
-        if (properties.getMapping().isUseGeneratedKeys() && hasAutoIncrementId(entity.getClass())) {
+        if (shouldUseGeneratedKey) {
             GeneratedKeyHolder keyHolder = new GeneratedKeyHolder();
             jdbcTemplate.update(con -> {
                 PreparedStatement ps = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);

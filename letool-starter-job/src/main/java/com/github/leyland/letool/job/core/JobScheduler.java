@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
@@ -51,9 +52,14 @@ public class JobScheduler {
     private final ConcurrentHashMap<String, JobDefinition> jobs = new ConcurrentHashMap<>();
 
     /**
-     * 运行中的任务: 任务名 → ScheduledFuture（用于取消和暂停）.
+     * 正在执行中的任务: 任务名 → Future 集合（用于查询真实执行状态）.
      */
-    private final ConcurrentHashMap<String, ScheduledFuture<?>> runningJobs = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Set<Future<?>>> runningJobs = new ConcurrentHashMap<>();
+
+    /**
+     * 已安排的定时调度: 任务名 → ScheduledFuture（用于取消和暂停 Cron 调度）.
+     */
+    private final ConcurrentHashMap<String, ScheduledFuture<?>> scheduledJobs = new ConcurrentHashMap<>();
 
     /**
      * 已暂停的任务名称集合.
@@ -154,7 +160,7 @@ public class JobScheduler {
         JobResult result = new JobResult(context);
         log.info("手动触发任务: {}, executionId={}", jobName, result.getExecutionId());
 
-        executor.execute(() -> executeJob(job, context, result));
+        submitExecution(job, context, result);
         return result;
     }
 
@@ -206,8 +212,8 @@ public class JobScheduler {
      * @return {@code true} 如果任务正在执行
      */
     public boolean isRunning(String jobName) {
-        ScheduledFuture<?> future = runningJobs.get(jobName);
-        return future != null && !future.isDone() && !future.isCancelled();
+        Set<Future<?>> futures = runningJobs.get(jobName);
+        return futures != null && futures.stream().anyMatch(this::isActive);
     }
 
     /**
@@ -246,7 +252,7 @@ public class JobScheduler {
      */
     public List<String> getRunningJobs() {
         return runningJobs.entrySet().stream()
-                .filter(e -> !e.getValue().isDone() && !e.getValue().isCancelled())
+                .filter(e -> e.getValue().stream().anyMatch(this::isActive))
                 .map(Map.Entry::getKey)
                 .collect(Collectors.toList());
     }
@@ -297,11 +303,11 @@ public class JobScheduler {
                     JobContext context = new JobContext(
                             job.getJobName(), job.getShardIndex(), job.getShardTotal(), job.getParams());
                     JobResult result = new JobResult(context);
-                    executeJob(job, context, result);
+                    submitExecution(job, context, result);
                 }
             }, initialDelay, period, TimeUnit.MILLISECONDS);
 
-            runningJobs.put(job.getJobName(), future);
+            scheduledJobs.put(job.getJobName(), future);
             log.info("任务 '{}' 已调度: cron={}, initialDelay={}ms, period={}ms",
                     job.getJobName(), cron, initialDelay, period);
         } catch (Exception e) {
@@ -315,7 +321,7 @@ public class JobScheduler {
      * @param jobName 任务名称
      */
     private void cancelSchedule(String jobName) {
-        ScheduledFuture<?> future = runningJobs.remove(jobName);
+        ScheduledFuture<?> future = scheduledJobs.remove(jobName);
         if (future != null) {
             future.cancel(false);
             log.debug("取消任务调度: {}", jobName);
@@ -323,6 +329,67 @@ public class JobScheduler {
     }
 
     // ======================== 内部方法 - 执行 ========================
+
+    /**
+     * 提交一次任务执行并跟踪其运行状态。
+     *
+     * <p>{@code runningJobs} 只保存真实执行中的任务，而 Cron 调度本身保存在
+     * {@code scheduledJobs} 中。这样 {@link #isRunning(String)} 不会把“已安排定时调度”
+     * 误判为“任务正在执行”。</p>
+     *
+     * @param job     任务定义
+     * @param context 执行上下文
+     * @param result  执行结果
+     */
+    private void submitExecution(JobDefinition job, JobContext context, JobResult result) {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        Runnable task = () -> {
+            try {
+                executeJob(job, context, result);
+                future.complete(null);
+            } catch (RuntimeException | Error ex) {
+                future.completeExceptionally(ex);
+                throw ex;
+            } finally {
+                removeRunningFuture(job.getJobName(), future);
+            }
+        };
+        runningJobs.computeIfAbsent(job.getJobName(), key -> ConcurrentHashMap.newKeySet()).add(future);
+        try {
+            executor.execute(task);
+        } catch (RuntimeException ex) {
+            removeRunningFuture(job.getJobName(), future);
+            future.completeExceptionally(ex);
+            throw ex;
+        }
+    }
+
+    /**
+     * 移除一次已结束或提交失败的执行记录。
+     *
+     * @param jobName 任务名称
+     * @param future  本次执行的 Future
+     */
+    private void removeRunningFuture(String jobName, Future<?> future) {
+        Set<Future<?>> futures = runningJobs.get(jobName);
+        if (futures == null) {
+            return;
+        }
+        futures.remove(future);
+        if (futures.isEmpty()) {
+            runningJobs.remove(jobName, futures);
+        }
+    }
+
+    /**
+     * 判断一次任务执行是否仍处于活动状态。
+     *
+     * @param future 任务执行 Future
+     * @return {@code true} 如果该执行尚未完成且未取消
+     */
+    private boolean isActive(Future<?> future) {
+        return !future.isDone() && !future.isCancelled();
+    }
 
     /**
      * 执行任务（含重试逻辑）.
