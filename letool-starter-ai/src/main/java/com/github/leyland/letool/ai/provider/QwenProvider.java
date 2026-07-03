@@ -1,6 +1,7 @@
 package com.github.leyland.letool.ai.provider;
 
 import com.github.leyland.letool.ai.config.AiProperties;
+import com.github.leyland.letool.ai.http.AiHttpTransport;
 
 import java.util.Arrays;
 import java.util.List;
@@ -45,6 +46,16 @@ public class QwenProvider extends OpenAiProvider {
      */
     public QwenProvider(AiProperties.Qwen config) {
         super(config);
+    }
+
+    /**
+     * 创建通义千问提供商实例。
+     *
+     * @param config        通义千问配置属性
+     * @param httpTransport HTTP 传输层
+     */
+    public QwenProvider(AiProperties.Qwen config, AiHttpTransport httpTransport) {
+        super(config, httpTransport);
     }
 
     // ======================== 元信息（覆盖） ========================

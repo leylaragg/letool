@@ -6,18 +6,16 @@ import com.alibaba.fastjson2.JSONObject;
 import com.github.leyland.letool.ai.config.AiProperties;
 import com.github.leyland.letool.ai.core.*;
 import com.github.leyland.letool.ai.exception.AiException;
+import com.github.leyland.letool.ai.http.AiHttpRequest;
+import com.github.leyland.letool.ai.http.AiHttpResponse;
+import com.github.leyland.letool.ai.http.AiHttpTransport;
+import com.github.leyland.letool.ai.http.JdkAiHttpTransport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URI;
 import java.net.SocketTimeoutException;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
+import java.net.http.HttpTimeoutException;
 import java.util.*;
 import java.util.function.Consumer;
 
@@ -69,6 +67,11 @@ public class OpenAiProvider implements AiProvider {
      */
     protected final String defaultModel;
 
+    /**
+     * HTTP 传输层，可由 Spring Bean 或构造方法替换。
+     */
+    protected final AiHttpTransport httpTransport;
+
     // ======================== 构造方法 ========================
 
     /**
@@ -77,8 +80,19 @@ public class OpenAiProvider implements AiProvider {
      * @param config OpenAI 配置属性
      */
     public OpenAiProvider(AiProperties.Provider config) {
+        this(config, new JdkAiHttpTransport());
+    }
+
+    /**
+     * 创建 OpenAI 兼容 provider 实例。
+     *
+     * @param config        provider 配置
+     * @param httpTransport HTTP 传输层
+     */
+    public OpenAiProvider(AiProperties.Provider config, AiHttpTransport httpTransport) {
         this.config = config;
         this.defaultModel = config.getDefaultModel() != null ? config.getDefaultModel() : "gpt-4o";
+        this.httpTransport = Objects.requireNonNull(httpTransport, "httpTransport must not be null");
     }
 
     // ======================== 核心方法：对话 ========================
@@ -454,6 +468,13 @@ public class OpenAiProvider implements AiProvider {
                 }
                 sleepBeforeRetry(attempt);
             } catch (IOException e) {
+                if (isTimeoutException(e)) {
+                    if (attempt >= maxRetries) {
+                        throw new AiException("OpenAI 请求超时: " + redactSensitive(e.getMessage()), getProviderName(), e);
+                    }
+                    sleepBeforeRetry(attempt);
+                    continue;
+                }
                 if (attempt >= maxRetries) {
                     throw e;
                 }
@@ -472,44 +493,18 @@ public class OpenAiProvider implements AiProvider {
      * @throws IOException 当网络请求失败时
      */
     protected void httpPostStream(String apiUrl, String jsonBody, Consumer<String> onDelta) throws IOException {
-        HttpURLConnection conn = null;
         try {
-            URL url = URI.create(apiUrl).toURL();
-            conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("POST");
-            conn.setDoOutput(true);
-            conn.setConnectTimeout(normalizeTimeout(config.getConnectTimeoutMillis(), 10000));
-            conn.setReadTimeout(normalizeTimeout(config.getReadTimeoutMillis(), 60000));
-            conn.setRequestProperty("Content-Type", "application/json");
-            conn.setRequestProperty("Authorization", "Bearer " + config.getApiKey());
-            conn.setRequestProperty("Accept", "text/event-stream");
-
-            try (OutputStream os = conn.getOutputStream()) {
-                os.write(jsonBody.getBytes(StandardCharsets.UTF_8));
+            AiHttpResponse response = httpTransport.postStream(
+                    buildHttpRequest(apiUrl, jsonBody, "text/event-stream"),
+                    line -> handleStreamLine(line, onDelta));
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw buildApiException(response.statusCode(), response.body());
             }
-
-            int statusCode = conn.getResponseCode();
-            if (statusCode < 200 || statusCode >= 300) {
-                String errorBody;
-                try (java.io.InputStream es = conn.getErrorStream()) {
-                    errorBody = es != null ? new String(es.readAllBytes(), StandardCharsets.UTF_8) : "";
-                }
-                throw buildApiException(statusCode, errorBody);
+        } catch (IOException e) {
+            if (!isTimeoutException(e)) {
+                throw e;
             }
-
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    handleStreamLine(line, onDelta);
-                }
-            }
-        } catch (SocketTimeoutException e) {
             throw new AiException("OpenAI 流式请求超时: " + redactSensitive(e.getMessage()), getProviderName(), e);
-        } finally {
-            if (conn != null) {
-                conn.disconnect();
-            }
         }
     }
 
@@ -561,40 +556,30 @@ public class OpenAiProvider implements AiProvider {
      * @throws AiException 当 API 返回非 2xx 状态码时
      */
     private String doHttpPost(String apiUrl, String jsonBody) throws IOException {
-        HttpURLConnection conn = null;
-        try {
-            URL url = URI.create(apiUrl).toURL();
-            conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("POST");
-            conn.setDoOutput(true);
-            conn.setConnectTimeout(normalizeTimeout(config.getConnectTimeoutMillis(), 10000));
-            conn.setReadTimeout(normalizeTimeout(config.getReadTimeoutMillis(), 60000));
-            conn.setRequestProperty("Content-Type", "application/json");
-            conn.setRequestProperty("Authorization", "Bearer " + config.getApiKey());
-            conn.setRequestProperty("Accept", "application/json");
-
-            // 写请求体
-            try (OutputStream os = conn.getOutputStream()) {
-                os.write(jsonBody.getBytes(StandardCharsets.UTF_8));
-            }
-
-            int statusCode = conn.getResponseCode();
-            if (statusCode < 200 || statusCode >= 300) {
-                String errorBody;
-                try (java.io.InputStream es = conn.getErrorStream()) {
-                    errorBody = es != null ? new String(es.readAllBytes(), StandardCharsets.UTF_8) : "";
-                }
-                throw buildApiException(statusCode, errorBody);
-            }
-
-            try (java.io.InputStream is = conn.getInputStream()) {
-                return new String(is.readAllBytes(), StandardCharsets.UTF_8);
-            }
-        } finally {
-            if (conn != null) {
-                conn.disconnect();
-            }
+        AiHttpResponse response = httpTransport.post(buildHttpRequest(apiUrl, jsonBody, "application/json"));
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw buildApiException(response.statusCode(), response.body());
         }
+        return response.body();
+    }
+
+    /**
+     * 构建 provider HTTP 请求，统一设置鉴权、内容类型和超时。
+     *
+     * @param apiUrl   API URL
+     * @param jsonBody JSON 请求体
+     * @param accept   Accept 请求头
+     * @return HTTP 请求描述
+     */
+    private AiHttpRequest buildHttpRequest(String apiUrl, String jsonBody, String accept) {
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("Authorization", "Bearer " + config.getApiKey());
+        headers.put("Accept", accept);
+        return AiHttpRequest.postJson(apiUrl,
+                headers,
+                jsonBody,
+                normalizeTimeout(config.getConnectTimeoutMillis(), 10000),
+                normalizeTimeout(config.getReadTimeoutMillis(), 60000));
     }
 
     /**
@@ -640,6 +625,16 @@ public class OpenAiProvider implements AiProvider {
     }
 
     /**
+     * 判断传输异常是否属于超时。
+     *
+     * @param e IO 异常
+     * @return {@code true} 表示超时异常
+     */
+    private boolean isTimeoutException(IOException e) {
+        return e instanceof SocketTimeoutException || e instanceof HttpTimeoutException;
+    }
+
+    /**
      * 重试前退避等待。
      *
      * @param attempt 当前尝试次数（从 0 开始）
@@ -662,7 +657,7 @@ public class OpenAiProvider implements AiProvider {
      *
      * @param value        配置值
      * @param defaultValue 默认值
-     * @return 可用于 {@link HttpURLConnection} 的超时时间
+     * @return 可用于 HTTP 传输层的超时时间
      */
     private int normalizeTimeout(int value, int defaultValue) {
         return value > 0 ? value : defaultValue;

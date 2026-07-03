@@ -6,6 +6,8 @@ import com.github.leyland.letool.ai.core.AiProvider;
 import com.github.leyland.letool.ai.core.AiTemplate;
 import com.github.leyland.letool.ai.embedding.EmbeddingService;
 import com.github.leyland.letool.ai.function.FunctionCallHandler;
+import com.github.leyland.letool.ai.http.AiHttpTransport;
+import com.github.leyland.letool.ai.http.JdkAiHttpTransport;
 import com.github.leyland.letool.ai.provider.DeepSeekProvider;
 import com.github.leyland.letool.ai.provider.OpenAiProvider;
 import com.github.leyland.letool.ai.provider.QwenProvider;
@@ -18,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -57,42 +60,61 @@ public class AiAutoConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(AiAutoConfiguration.class);
 
+    // ======================== HTTP 传输层 ========================
+
+    /**
+     * 注册默认 AI HTTP 传输层。
+     *
+     * <p>默认实现基于 JDK HttpClient，不引入额外依赖；用户可以自定义
+     * {@link AiHttpTransport} Bean 来接入统一网关、代理、观测或其他 HTTP 客户端。</p>
+     *
+     * @return AI HTTP 传输层
+     */
+    @Bean
+    @ConditionalOnMissingBean(AiHttpTransport.class)
+    public AiHttpTransport aiHttpTransport() {
+        return new JdkAiHttpTransport();
+    }
+
     // ======================== 提供商注册 ========================
 
     /**
      * 注册 OpenAI 提供商.
      *
-     * @param properties AI 配置属性
+     * @param properties    AI 配置属性
+     * @param httpTransport HTTP 传输层
      * @return OpenAI 提供商实例
      */
     @Bean
-    public OpenAiProvider openAiProvider(AiProperties properties) {
+    public OpenAiProvider openAiProvider(AiProperties properties, AiHttpTransport httpTransport) {
         log.info("注册 OpenAI 提供商: model={}", properties.getOpenai().getDefaultModel());
-        return new OpenAiProvider(properties.getOpenai());
+        return new OpenAiProvider(properties.getOpenai(), httpTransport);
     }
 
     /**
      * 注册 DeepSeek 提供商.
      *
-     * @param properties AI 配置属性
+     * @param properties    AI 配置属性
+     * @param httpTransport HTTP 传输层
      * @return DeepSeek 提供商实例
      */
     @Bean
-    public DeepSeekProvider deepSeekProvider(AiProperties properties) {
+    public DeepSeekProvider deepSeekProvider(AiProperties properties, AiHttpTransport httpTransport) {
         log.info("注册 DeepSeek 提供商: model={}", properties.getDeepseek().getDefaultModel());
-        return new DeepSeekProvider(properties.getDeepseek());
+        return new DeepSeekProvider(properties.getDeepseek(), httpTransport);
     }
 
     /**
      * 注册通义千问（Qwen）提供商.
      *
-     * @param properties AI 配置属性
+     * @param properties    AI 配置属性
+     * @param httpTransport HTTP 传输层
      * @return 通义千问提供商实例
      */
     @Bean
-    public QwenProvider qwenProvider(AiProperties properties) {
+    public QwenProvider qwenProvider(AiProperties properties, AiHttpTransport httpTransport) {
         log.info("注册通义千问提供商: model={}", properties.getQwen().getDefaultModel());
-        return new QwenProvider(properties.getQwen());
+        return new QwenProvider(properties.getQwen(), httpTransport);
     }
 
     // ======================== 核心 Bean ========================

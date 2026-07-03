@@ -2,7 +2,7 @@
 
 AI 集成模块，提供 OpenAI、DeepSeek、通义千问、智谱、Ollama 等多厂商的统一 API，支持对话、流式输出、嵌入向量、Function Calling、RAG 检索增强生成等能力。
 
-> ⚠️ OpenAI 兼容 provider 会发起真实 HTTP 请求，已支持超时、临时错误重试、上游错误码解析、敏感信息脱敏和流式输出。连接池、投递审计和更完整的集成测试仍需继续补齐。
+> ⚠️ OpenAI 兼容 provider 会发起真实 HTTP 请求，已支持超时、临时错误重试、上游错误码解析、敏感信息脱敏、流式输出和基于 JDK HttpClient 的可复用 HTTP 传输层。投递审计和更完整的集成测试仍需继续补齐。
 
 ## Maven 坐标
 
@@ -87,6 +87,17 @@ letool:
         api-key: xxx
         base-url: https://my-api.example.com/v1
         default-model: my-model
+```
+
+### 自定义 HTTP 传输层
+
+默认传输层使用 JDK `HttpClient`，不额外引入第三方依赖。业务项目如需统一代理、网关、链路追踪或自定义连接策略，可以提供自己的 `AiHttpTransport` Bean：
+
+```java
+@Bean
+AiHttpTransport aiHttpTransport() {
+    return new MyCompanyAiHttpTransport();
+}
 ```
 
 ## 核心 API 示例
