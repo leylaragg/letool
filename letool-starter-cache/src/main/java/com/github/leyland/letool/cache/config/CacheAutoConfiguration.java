@@ -57,6 +57,7 @@ public class CacheAutoConfiguration {
     @Bean
     @ConditionalOnBean(CacheManager.class)
     @ConditionalOnMissingBean(CacheAspect.class)
+    @ConditionalOnProperty(prefix = "letool.cache.annotation", name = "enabled", havingValue = "true", matchIfMissing = true)
     public CacheAspect cacheAspect(CacheManager cacheManager) {
         return new CacheAspect(cacheManager);
     }

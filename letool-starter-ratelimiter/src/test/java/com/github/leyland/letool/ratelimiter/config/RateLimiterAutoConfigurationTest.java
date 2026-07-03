@@ -53,6 +53,22 @@ class RateLimiterAutoConfigurationTest {
     /**
      * 模拟业务项目自行接管 ratelimiter 基础设施的配置。
      */
+    /**
+     * Disabling annotation support should keep the programmatic rate-limit API available.
+     */
+    @Test
+    void shouldDisableRateLimitAspectWhenAnnotationSupportIsDisabled() {
+        contextRunner
+                .withPropertyValues("letool.rate-limiter.annotation.enabled=false")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(TokenBucketLimiter.class);
+                    assertThat(context).hasSingleBean(SlidingWindowLimiter.class);
+                    assertThat(context).hasSingleBean(RateLimitTemplate.class);
+                    assertThat(context).hasSingleBean(DefaultCircuitBreaker.class);
+                    assertThat(context).doesNotHaveBean(RateLimitAspect.class);
+                });
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class UserRateLimiterConfiguration {
 

@@ -29,6 +29,9 @@ import java.util.List;
 @ConfigurationProperties(prefix = "letool.log")
 public class LogProperties {
 
+    /** Whether the entire log starter is enabled. */
+    private boolean enabled = true;
+
     /** 链路追踪配置 */
     private Trace trace = new Trace();
     /** 审计日志配置 */
@@ -36,6 +39,8 @@ public class LogProperties {
     /** Web 请求日志配置 */
     private WebLog webLog = new WebLog();
 
+    public boolean isEnabled() { return enabled; }
+    public void setEnabled(boolean enabled) { this.enabled = enabled; }
     public Trace getTrace() { return trace; }
     public void setTrace(Trace trace) { this.trace = trace; }
     public Audit getAudit() { return audit; }

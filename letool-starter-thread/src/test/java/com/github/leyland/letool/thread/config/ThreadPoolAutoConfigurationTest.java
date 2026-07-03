@@ -7,6 +7,7 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.task.TaskDecorator;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -58,6 +59,22 @@ class ThreadPoolAutoConfigurationTest {
     /**
      * 仅提供线程池管理器的用户侧配置。
      */
+    /**
+     * Disabling MDC propagation should keep thread pools available without a task decorator.
+     */
+    @Test
+    void shouldDisableMdcTaskDecoratorWhenMdcPropagationIsDisabled() {
+        contextRunner
+                .withPropertyValues("letool.thread.context-propagation.mdc=false")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(ThreadPoolManager.class);
+                    assertThat(context).hasBean("taskExecutor");
+                    assertThat(context).hasBean("ioExecutor");
+                    assertThat(context).doesNotHaveBean(TaskDecorator.class);
+                    assertThat(context).doesNotHaveBean("mdcTaskDecorator");
+                });
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class UserManagerConfiguration {
 

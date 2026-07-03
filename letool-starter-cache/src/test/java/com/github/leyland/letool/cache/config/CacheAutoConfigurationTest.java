@@ -52,6 +52,20 @@ class CacheAutoConfigurationTest {
     /**
      * 模拟业务项目自行接管缓存基础设施的配置。
      */
+    /**
+     * Disabling annotation support should keep the programmatic cache API available.
+     */
+    @Test
+    void shouldDisableCacheAspectWhenAnnotationSupportIsDisabled() {
+        contextRunner
+                .withPropertyValues("letool.cache.annotation.enabled=false")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(CacheManager.class);
+                    assertThat(context).hasSingleBean(CacheSerializer.class);
+                    assertThat(context).doesNotHaveBean(CacheAspect.class);
+                });
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class UserCacheConfiguration {
 

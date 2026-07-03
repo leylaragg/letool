@@ -164,6 +164,7 @@ public class RateLimiterAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean(RateLimitAspect.class)
+    @ConditionalOnProperty(prefix = "letool.rate-limiter.annotation", name = "enabled", havingValue = "true", matchIfMissing = true)
     public RateLimitAspect rateLimitAspect(RateLimitTemplate rateLimitTemplate,
                                            RateLimiterProperties properties) {
         RateLimiterProperties.CircuitBreaker cbConfig = properties.getCircuitBreaker();

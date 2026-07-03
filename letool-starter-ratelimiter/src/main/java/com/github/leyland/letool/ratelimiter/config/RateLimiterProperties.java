@@ -66,6 +66,9 @@ public class RateLimiterProperties {
     /** 熔断器子配置 */
     private CircuitBreaker circuitBreaker = new CircuitBreaker();
 
+    /** Annotation-based rate-limit and circuit-breaker AOP configuration. */
+    private AnnotationConfig annotation = new AnnotationConfig();
+
     // ======================== Getter / Setter ========================
 
     public boolean isEnabled() {
@@ -106,6 +109,30 @@ public class RateLimiterProperties {
 
     public void setCircuitBreaker(CircuitBreaker circuitBreaker) {
         this.circuitBreaker = circuitBreaker;
+    }
+
+    public AnnotationConfig getAnnotation() {
+        return annotation;
+    }
+
+    public void setAnnotation(AnnotationConfig annotation) {
+        this.annotation = annotation;
+    }
+
+    /**
+     * Controls annotation-driven rate limiting such as {@code @RateLimit}.
+     */
+    public static class AnnotationConfig {
+
+        private boolean enabled = true;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
     }
 
     // ======================== 内部类：令牌桶配置 ========================

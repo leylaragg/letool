@@ -39,7 +39,7 @@
 | **letool-starter-web** | Web 增强 —— 全局异常处理、响应包装、XSS/SQL 注入防御 | tool, log, sensitive |
 | **letool-starter-security** | 安全认证 —— JWT、注解权限、多种认证模式 | tool, web, cache, sensitive |
 | **letool-starter-data** | 数据库封装 —— Lambda 查询、分页、注解映射、字段加密 | tool, cache, sensitive |
-| **letool-starter-thread** | 线程管理 —— 动态线程池、上下文传递、虚拟线程 | tool, log |
+| **letool-starter-thread** | 线程管理 —— 动态线程池、上下文传递、虚拟线程 | tool |
 | **letool-starter-swagger** | API 文档 —— Knife4j + SpringDoc，自动配置、离线导出 | web |
 | **letool-starter-file** | 文件操作 —— 上传下载、FTP/SFTP/MinIO/OSS、魔数检测 | tool, web |
 | **letool-starter-excel** | Excel 操作 —— EasyExcel 封装，链式 API、批量处理 | tool, file |
@@ -193,17 +193,33 @@ letool:
     log:
       enabled: true
   log:
+    enabled: true
     trace:
       enabled: true
       header-name: X-Trace-Id
+    web-log:
+      enabled: true
+    audit:
+      enabled: true
+      storage: file
   cache:
     enabled: true
+    annotation:
+      enabled: true
     redis-prefix: "letool:"
     instances:
       - name: userCache
         l1-max-size: 2000
         l1-ttl: 24h
         l2-ttl: 72h
+  thread:
+    enabled: true
+    context-propagation:
+      mdc: true
+  rate-limiter:
+    enabled: true
+    annotation:
+      enabled: true
   security:
     enabled: true
     auth-mode: jwt

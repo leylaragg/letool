@@ -64,6 +64,7 @@ public class ThreadPoolAutoConfiguration {
      * @return MdcTaskDecorator 实例
      */
     @Bean
+    @ConditionalOnProperty(prefix = "letool.thread.context-propagation", name = "mdc", havingValue = "true", matchIfMissing = true)
     @ConditionalOnMissingBean(value = TaskDecorator.class, name = "mdcTaskDecorator")
     public MdcTaskDecorator mdcTaskDecorator() {
         return new MdcTaskDecorator();

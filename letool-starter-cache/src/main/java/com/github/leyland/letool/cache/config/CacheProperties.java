@@ -27,6 +27,9 @@ public class CacheProperties {
     /** 监控配置 */
     private Monitoring monitoring = new Monitoring();
 
+    /** Annotation-based cache AOP configuration. */
+    private AnnotationConfig annotation = new AnnotationConfig();
+
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
     public String getRedisPrefix() { return redisPrefix; }
@@ -37,6 +40,8 @@ public class CacheProperties {
     public void setDegradation(Degradation degradation) { this.degradation = degradation; }
     public Monitoring getMonitoring() { return monitoring; }
     public void setMonitoring(Monitoring monitoring) { this.monitoring = monitoring; }
+    public AnnotationConfig getAnnotation() { return annotation; }
+    public void setAnnotation(AnnotationConfig annotation) { this.annotation = annotation; }
 
     /** 单个缓存实例配置 */
     public static class InstanceConfig {
@@ -76,6 +81,16 @@ public class CacheProperties {
 
     /** 监控配置 */
     public static class Monitoring {
+        private boolean enabled = true;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+    }
+
+    /**
+     * Controls annotation-driven cache operations such as {@code @MultiLevelCacheable}.
+     */
+    public static class AnnotationConfig {
         private boolean enabled = true;
 
         public boolean isEnabled() { return enabled; }
