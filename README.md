@@ -47,16 +47,16 @@
 | **letool-starter-distributed-lock** | 分布式锁 —— Redis/ZK/DB 悲观锁、乐观锁、幂等性 | tool, cache |
 | **letool-starter-rule** | 规则引擎 —— LiteFlow 封装、规则链编排、Groovy 脚本 | tool, data |
 | **letool-starter-net** | 网络通信 —— Netty TCP、ISO8583、HTTP 负载均衡、网关路由 | tool |
-| **letool-starter-pay** | 支付抽象 —— 支付宝/微信支付当前为 stub/mock 实现 | tool, web |
-| **letool-starter-mq** | 消息队列 —— 当前内置内存队列，RabbitMQ/RocketMQ/Kafka 配置为后续扩展入口 | tool, log |
+| **letool-starter-pay** | 支付抽象 —— 默认不启用，内置支付宝/微信支付仅显式 stub 或自定义 provider | tool, web |
+| **letool-starter-mq** | 消息队列 —— 当前内置内存队列，RabbitMQ/RocketMQ/Kafka 需自定义 provider 或后续真实扩展 | tool, log |
 | **letool-starter-ratelimiter** | 限流熔断 —— 令牌桶/滑动窗口、熔断器 | tool, cache |
-| **letool-starter-oss** | 对象存储抽象 —— 阿里云 OSS/腾讯云 COS/MinIO 当前为 stub 实现 | tool, file |
-| **letool-starter-sms** | 短信通知抽象 —— 阿里云/腾讯云当前为模拟调用，支持频率限制 | tool |
+| **letool-starter-oss** | 对象存储抽象 —— 默认不启用，内置 OSS/COS/MinIO 仅显式 stub 或自定义 provider | tool, file |
+| **letool-starter-sms** | 短信通知抽象 —— 默认不启用，内置阿里云/腾讯云仅显式 mock/stub 或自定义 provider | tool |
 | **letool-starter-ai** | AI 集成 —— OpenAI 兼容 HTTP 调用，已具备超时、重试、错误脱敏、流式输出和可替换 HTTP 传输层 | tool |
 | **letool-starter-data-structure** | 数据结构 —— 泛型树、决策链（消除 if-else）、链表 | 无 |
 | **letool-starter-websocket** | WebSocket —— 消息路由、房间管理、分布式会话 | tool, web |
 | **letool-starter-job** | 任务调度 —— 分布式定时任务、分片、重试 | tool, thread |
-| **letool-starter-monitor** | 监控指标 —— Micrometer + Prometheus 可用，告警/清理仍有占位实现 | tool, log, thread |
+| **letool-starter-monitor** | 监控指标 —— 指标采集可用，Webhook 告警真实发送，清理调度默认关闭且仍为占位实现 | tool, log, thread |
 
 ## 快速开始
 

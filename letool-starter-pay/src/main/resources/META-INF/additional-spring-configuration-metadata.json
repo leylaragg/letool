@@ -3,8 +3,14 @@
     {
       "name": "letool.pay.enabled",
       "type": "java.lang.Boolean",
-      "description": "是否启用支付模块。",
-      "defaultValue": true
+      "description": "是否启用支付模块。默认关闭，避免引入 starter 后自动创建模拟支付 provider。",
+      "defaultValue": false
+    },
+    {
+      "name": "letool.pay.stub-enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否允许创建内置 Mock/Stub provider。当前支付宝、微信支付和 Mock provider 均不会访问真实支付平台；生产环境必须关闭并注册自定义 PayProvider。",
+      "defaultValue": false
     },
     {
       "name": "letool.pay.callback-path",
@@ -15,7 +21,7 @@
     {
       "name": "letool.pay.verify-sign",
       "type": "java.lang.Boolean",
-      "description": "是否验证支付平台的异步回调签名。",
+      "description": "是否验证支付平台的异步回调签名。注意：内置 Stub provider 的验签为模拟行为，生产环境必须使用真实 PayProvider。",
       "defaultValue": true
     },
     {

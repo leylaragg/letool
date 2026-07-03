@@ -2,7 +2,7 @@
 
 > 支付抽象模块，保留支付宝/微信支付/Mock 支付的统一 API 入口，支持下单、回调、退款和查询模型。
 
-> ⚠️ 当前支付宝、微信支付 provider 为 Stub 实现，Mock provider 仅用于开发测试。下单、查询、退款、验签和回调处理均为模拟行为，不能用于真实资金链路。
+> ⚠️ 当前支付宝、微信支付 provider 为 Stub 实现，Mock provider 仅用于开发测试。支付 starter 默认不启用；如需开发演示必须显式设置 `letool.pay.stub-enabled=true`。下单、查询、退款、验签和回调处理均为模拟行为，不能用于真实资金链路，生产接入请注册真实 `PayProvider`。
 
 ## Maven 坐标
 
@@ -14,7 +14,7 @@
 </dependency>
 ```
 
-## 快速开始（3 分钟上手）
+## 快速开始（开发 Stub 模式）
 
 ### 1. 添加依赖并配置
 
@@ -22,6 +22,7 @@
 letool:
   pay:
     enabled: true
+    stub-enabled: true
     callback-path: /api/pay/callback
     verify-sign: true
     alipay:
@@ -63,7 +64,7 @@ public class OrderPayCallbackHandler implements PayCallbackHandler {
 
     @Override
     public PayResult handleCallback(PayChannel channel, Map<String, String> params) {
-        // 验签由框架自动完成，此处处理业务逻辑
+        // 内置 Stub 仅做模拟验签；生产环境必须使用真实 PayProvider
         String outTradeNo = params.get("out_trade_no");
         updateOrderStatus(outTradeNo, "PAID");
         return PayResult.success(outTradeNo);
@@ -75,9 +76,10 @@ public class OrderPayCallbackHandler implements PayCallbackHandler {
 
 | 属性 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `letool.pay.enabled` | boolean | true | 是否启用支付模块 |
+| `letool.pay.enabled` | boolean | false | 是否启用支付模块 |
+| `letool.pay.stub-enabled` | boolean | false | 是否允许创建内置 Mock/Stub provider；生产环境必须关闭并注册真实 PayProvider |
 | `letool.pay.callback-path` | String | /api/pay/callback | 回调路径前缀 |
-| `letool.pay.verify-sign` | boolean | true | 是否校验回调签名 |
+| `letool.pay.verify-sign` | boolean | true | 是否校验回调签名；内置 Stub provider 的验签是模拟行为 |
 | `letool.pay.alipay.app-id` | String | - | 支付宝应用 ID |
 | `letool.pay.alipay.private-key` | String | - | 应用私钥（PKCS8） |
 | `letool.pay.alipay.alipay-public-key` | String | - | 支付宝公钥 |

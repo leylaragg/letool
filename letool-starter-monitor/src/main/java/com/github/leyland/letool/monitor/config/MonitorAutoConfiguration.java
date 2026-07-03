@@ -9,8 +9,6 @@ import com.github.leyland.letool.monitor.api.ApiStatsCollector;
 import com.github.leyland.letool.monitor.cleanup.DataCleanupScheduler;
 import com.github.leyland.letool.monitor.metrics.JvmMetrics;
 import com.github.leyland.letool.monitor.metrics.MetricsCollector;
-import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -25,14 +23,14 @@ import org.springframework.context.annotation.Bean;
  * <h3>自动注册的 Bean</h3>
  * <ul>
  *   <li>{@link MetricsCollector} —— Micrometer 风格通用指标采集器</li>
- *   <li>{@link JvmMetrics} —— JVM 指标采集器（通过 {@code @PostConstruct} 自动启动）</li>
+ *   <li>{@link JvmMetrics} —— JVM 指标采集器（通过 Bean init/destroy 生命周期启动和停止）</li>
  *   <li>{@link ApiStatsAggregator} —— API 统计聚合器</li>
  *   <li>{@link ApiStatsCollector} —— API 调用统计采集器（滑动窗口聚合引擎）</li>
  *   <li>{@link ApiErrorCollector} —— API 异常/错误采集器</li>
  *   <li>{@link AlertNotifier} —— 告警通知分发器（条件：{@code letool.monitor.alert.enabled=true}）</li>
  *   <li>{@link DingTalkNotifier} —— 钉钉通知渠道（条件：配置了 webhook-url）</li>
  *   <li>{@link WechatNotifier} —— 企业微信通知渠道（条件：配置了 webhook-url）</li>
- *   <li>{@link DataCleanupScheduler} —— 数据清理调度器（通过 {@code @PostConstruct} 自动启动）</li>
+ *   <li>{@link DataCleanupScheduler} —— 数据清理调度器（条件：{@code letool.monitor.data-retention.enabled=true}）</li>
  * </ul>
  *
  * <h3>激活方式</h3>
@@ -41,8 +39,8 @@ import org.springframework.context.annotation.Bean;
  * 前提是 {@code letool.monitor.enabled} 不为 {@code false}。</p>
  *
  * <h3>生命周期</h3>
- * <p>{@link JvmMetrics} 和 {@link DataCleanupScheduler} 在 {@code @PostConstruct} 时启动，
- * 在 {@code @PreDestroy}（或 Context 关闭）时停止，确保资源正确释放。</p>
+ * <p>{@link JvmMetrics} 和 {@link DataCleanupScheduler} 通过 Bean 的
+ * {@code initMethod}/{@code destroyMethod} 启动和停止，确保资源正确释放。</p>
  *
  * <p>注意：使用 Spring Boot 3.x 的 {@link AutoConfiguration} 注解替代旧的 {@code @Configuration}，
  * 并通过 {@code AutoConfiguration.imports} 文件注册（替代旧的 {@code spring.factories}）.</p>
@@ -58,14 +56,6 @@ public class MonitorAutoConfiguration {
     // ======================== 日志 ========================
 
     private static final Logger log = LoggerFactory.getLogger(MonitorAutoConfiguration.class);
-
-    // ======================== 字段 ========================
-
-    /** JVM 指标采集器引用（用于生命周期管理） */
-    private JvmMetrics jvmMetrics;
-
-    /** 数据清理调度器引用（用于生命周期管理） */
-    private DataCleanupScheduler dataCleanupScheduler;
 
     // ======================== 指标采集 Bean ========================
 
@@ -86,18 +76,17 @@ public class MonitorAutoConfiguration {
     /**
      * 注册 JVM 指标采集器 Bean.
      *
-     * <p>在 {@code @PostConstruct} 中自动启动定期采集。</p>
+     * <p>通过 Bean 的 {@code initMethod}/{@code destroyMethod} 自动启动和停止定期采集。</p>
      *
      * @param properties 监控模块配置属性
      * @return JvmMetrics 实例（单例）
      */
-    @Bean
+    @Bean(initMethod = "start", destroyMethod = "stop")
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "letool.monitor.jvm", name = "enabled", havingValue = "true", matchIfMissing = true)
     public JvmMetrics jvmMetrics(MonitorProperties properties) {
         log.info("[Monitor] 创建 JvmMetrics Bean");
-        jvmMetrics = new JvmMetrics(properties);
-        return jvmMetrics;
+        return new JvmMetrics(properties);
     }
 
     // ======================== API 统计 Bean ========================
@@ -183,56 +172,17 @@ public class MonitorAutoConfiguration {
     /**
      * 注册数据清理调度器 Bean.
      *
-     * <p>在 {@code @PostConstruct} 中自动启动定期清理调度。</p>
+     * <p>当前清理任务只记录日志，不执行真实 SQL 删除，因此必须显式设置
+     * {@code letool.monitor.data-retention.enabled=true} 才会创建。</p>
      *
      * @param properties 监控模块配置属性
      * @return DataCleanupScheduler 实例（单例）
      */
-    @Bean
+    @Bean(initMethod = "start", destroyMethod = "stop")
     @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "letool.monitor.data-retention", name = "enabled", havingValue = "true")
     public DataCleanupScheduler dataCleanupScheduler(MonitorProperties properties) {
         log.warn("[Monitor] 创建 DataCleanupScheduler Bean（当前清理任务只记录日志，不执行真实 SQL 删除）");
-        dataCleanupScheduler = new DataCleanupScheduler(properties);
-        return dataCleanupScheduler;
-    }
-
-    // ======================== 生命周期管理 ========================
-
-    /**
-     * 在 Bean 初始化完成后启动后台采集和调度任务.
-     *
-     * <p>使用 {@code @PostConstruct} 确保所有依赖注入完成后才启动。</p>
-     */
-    @PostConstruct
-    public void startBackgroundTasks() {
-        log.info("[Monitor] letool-starter-monitor 自动配置初始化完成，启动后台任务...");
-
-        // 启动 JVM 指标采集
-        if (jvmMetrics != null) {
-            jvmMetrics.start();
-        }
-
-        // 启动数据清理调度
-        if (dataCleanupScheduler != null) {
-            dataCleanupScheduler.start();
-        }
-    }
-
-    /**
-     * 在容器销毁前停止后台任务，释放资源.
-     */
-    @PreDestroy
-    public void stopBackgroundTasks() {
-        log.info("[Monitor] 正在停止 letool-starter-monitor 后台任务...");
-
-        if (jvmMetrics != null) {
-            jvmMetrics.stop();
-        }
-
-        if (dataCleanupScheduler != null) {
-            dataCleanupScheduler.stop();
-        }
-
-        log.info("[Monitor] letool-starter-monitor 后台任务已停止");
+        return new DataCleanupScheduler(properties);
     }
 }

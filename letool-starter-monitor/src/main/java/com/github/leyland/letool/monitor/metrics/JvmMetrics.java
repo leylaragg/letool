@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * 通过 {@link ScheduledExecutorService} 定期采集，可从 {@link #getMetrics()} 获取最新快照。</p>
  *
  * <p>生命周期：调用 {@link #start()} 开始采集，调用 {@link #stop()} 停止。
- * 建议在 {@link org.springframework.context.annotation.Bean @Bean} 的 {@code @PostConstruct} 中启动。</p>
+ * 在 Spring 环境中建议通过 {@code @Bean(initMethod = "start", destroyMethod = "stop")} 管理。</p>
  *
  * @author leyland
  * @since 2.0.0

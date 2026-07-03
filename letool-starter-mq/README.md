@@ -1,8 +1,8 @@
 # letool-starter-mq
 
-> 消息队列模块，当前提供内存消息队列和统一发送/消费抽象，RabbitMQ/RocketMQ/Kafka 配置为真实 provider 的预留入口。
+> 消息队列模块，当前提供内存消息队列和统一发送/消费抽象，RabbitMQ/RocketMQ/Kafka 配置为真实 provider 或自定义 provider 的预留入口。
 
-> ⚠️ 当前内置 provider 只有 InMemoryMqProvider。`rabbitmq`、`rocketmq`、`kafka` 配置会回退到内存队列，不具备跨进程持久化、真实 broker 投递或分布式消费能力。
+> ⚠️ 当前内置 provider 只有 `InMemoryMqProvider`。`rabbitmq`、`rocketmq`、`kafka` 没有内置真实 broker provider；如果配置这些类型但没有注册自定义 `MqProvider` Bean，应用会启动失败，避免误把内存队列当作真实外部 MQ。
 
 ## Maven 坐标
 
@@ -61,7 +61,7 @@ public class OrderConsumer {
 | 属性 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `letool.mq.enabled` | boolean | true | 是否启用 MQ 模块 |
-| `letool.mq.default-type` | String | memory | 默认 MQ 类型：memory / rabbitmq / rocketmq / kafka；当前仅 memory 为内置真实实现 |
+| `letool.mq.default-type` | String | memory | 默认 MQ 类型：memory / rabbitmq / rocketmq / kafka；当前仅 memory 为内置实现，其他类型需要自定义 MqProvider |
 | `letool.mq.rabbitmq.host` | String | 127.0.0.1 | RabbitMQ 地址，预留给真实 RabbitMQ provider 或自定义 provider |
 | `letool.mq.rabbitmq.port` | int | 5672 | RabbitMQ 端口 |
 | `letool.mq.rabbitmq.username` | String | guest | RabbitMQ 用户名 |

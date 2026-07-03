@@ -93,6 +93,12 @@
       "description": "告警邮件接收人列表。"
     },
     {
+      "name": "letool.monitor.data-retention.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用内置数据清理调度。当前清理任务只记录日志，不执行真实 SQL 删除，默认关闭。",
+      "defaultValue": false
+    },
+    {
       "name": "letool.monitor.data-retention.audit-log",
       "type": "java.lang.String",
       "description": "审计日志保留时长，如 90d。",

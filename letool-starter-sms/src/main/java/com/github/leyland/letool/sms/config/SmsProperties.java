@@ -19,7 +19,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * letool:
  *   sms:
  *     enabled: true
- *     default-provider: aliyun
+ *     mock-enabled: true
+ *     default-provider: mock
  *     aliyun:
  *       access-key-id: your-access-key-id
  *       access-key-secret: your-access-key-secret
@@ -38,8 +39,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * <h3>设计说明</h3>
  * <ul>
- *   <li>{@code defaultProvider} 决定自动配置类将注册哪个服务商的 Provider Bean。</li>
- *   <li>当未配置任何服务商参数时，自动配置类将回退到 Mock 实现。</li>
+ *   <li>当前内置 Provider 均为 mock/stub，不会发送真实短信。</li>
+ *   <li>{@code defaultProvider} 决定显式 mock 模式下注册哪个模拟 Provider Bean。</li>
  *   <li>频率限制基于内存中的 {@code ConcurrentHashMap} 实现，重启后计数清零。</li>
  * </ul>
  *
@@ -51,11 +52,14 @@ public class SmsProperties {
 
     // ======================== 全局配置字段 ========================
 
-    /** 短信模块总开关，默认开启 */
-    private boolean enabled = true;
+    /** 短信模块总开关，默认关闭 */
+    private boolean enabled = false;
 
-    /** 默认短信服务商：aliyun / tencent / mock，默认 aliyun */
-    private String defaultProvider = "aliyun";
+    /** 是否允许创建内置 mock/stub provider，默认关闭 */
+    private boolean mockEnabled = false;
+
+    /** 默认短信服务商：aliyun / tencent / mock，默认 mock */
+    private String defaultProvider = "mock";
 
     /** 阿里云短信配置 */
     private Aliyun aliyun = new Aliyun();
@@ -71,6 +75,10 @@ public class SmsProperties {
     public boolean isEnabled() { return enabled; }
 
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
+
+    public boolean isMockEnabled() { return mockEnabled; }
+
+    public void setMockEnabled(boolean mockEnabled) { this.mockEnabled = mockEnabled; }
 
     public String getDefaultProvider() { return defaultProvider; }
 

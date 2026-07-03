@@ -2,7 +2,7 @@
 
 > 短信模块，阿里云/腾讯云短信统一 API，支持模板发送、频率限制、发送记录。
 
-> ⚠️ 当前 Aliyun/Tencent provider 为 Stub/模拟实现，Mock provider 也不会发送真实短信。业务会收到模拟成功结果，但用户不会收到短信；生产接入前需要替换为真实 SDK 或 HTTP provider。
+> ⚠️ 当前 Aliyun/Tencent provider 为 Stub/模拟实现，Mock provider 也不会发送真实短信。短信 starter 默认不启用；如需开发演示必须显式设置 `letool.sms.mock-enabled=true`，生产接入请在业务项目中注册真实 `SmsProvider`。
 
 ## Maven 坐标
 
@@ -14,7 +14,7 @@
 </dependency>
 ```
 
-## 快速开始（3 分钟上手）
+## 快速开始（开发 Mock 模式）
 
 ### 1. 添加依赖并配置
 
@@ -22,7 +22,8 @@
 letool:
   sms:
     enabled: true
-    default-provider: aliyun
+    mock-enabled: true
+    default-provider: mock
     aliyun:
       access-key-id: your-access-key-id
       access-key-secret: your-access-key-secret
@@ -66,8 +67,9 @@ SmsResult result = smsTemplate.batchSend(
 
 | 属性 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `letool.sms.enabled` | boolean | true | 是否启用短信模块 |
-| `letool.sms.default-provider` | String | aliyun | 默认服务商：aliyun / tencent / mock |
+| `letool.sms.enabled` | boolean | false | 是否启用短信模块 |
+| `letool.sms.mock-enabled` | boolean | false | 是否允许创建内置 Mock/Stub provider；生产环境建议关闭并注册真实 SmsProvider |
+| `letool.sms.default-provider` | String | mock | 默认模拟服务商：aliyun / tencent / mock |
 | `letool.sms.aliyun.access-key-id` | String | - | 阿里云 AccessKey ID |
 | `letool.sms.aliyun.access-key-secret` | String | - | 阿里云 AccessKey Secret |
 | `letool.sms.aliyun.sign-name` | String | - | 短信签名（需审核通过） |
@@ -151,12 +153,14 @@ Map<String, Integer> snapshot = smsTemplate.getRateLimitSnapshot("13800138000");
 // 返回: {"minute:202601011430": 5, "day:20260101": 42}
 ```
 
-### 注解声明式——通过配置切换服务商
+### 开发 Mock——通过配置切换模拟服务商
 
 ```yaml
 letool:
   sms:
-    default-provider: tencent    # 切换到腾讯云，无需修改业务代码
+    enabled: true
+    mock-enabled: true
+    default-provider: tencent    # 切换到腾讯云模拟 provider，无需修改业务代码
     tencent:
       secret-id: your-secret-id
       secret-key: your-secret-key
@@ -168,4 +172,4 @@ letool:
       max-per-day: 50
 ```
 
-模块根据 `default-provider` 自动创建对应的 `SmsProvider` 实现（AliyunSmsProvider / TencentSmsProvider）。业务代码注入的 `SmsTemplate` 无需任何改动——只需修改 YAML 配置即可在不同短信服务商之间切换。未配置任何服务商参数时，自动回退到 Mock 实现以便开发测试。频率限制基于内存中 `ConcurrentHashMap` + `AtomicInteger` 实现，保证并发安全，重启后计数清零。
+模块仅在 `mock-enabled=true` 时根据 `default-provider` 自动创建对应的模拟 `SmsProvider` 实现。业务代码注入的 `SmsTemplate` 无需任何改动即可切换模拟服务商。生产环境请注册自己的真实 `SmsProvider` Bean；自动配置会检测到该 Bean 并退让。频率限制基于内存中 `ConcurrentHashMap` + `AtomicInteger` 实现，保证并发安全，重启后计数清零。

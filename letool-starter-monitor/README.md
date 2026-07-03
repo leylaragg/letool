@@ -2,7 +2,7 @@
 
 监控指标模块，提供 Micrometer + Prometheus 集成、JVM / HTTP / SQL 指标采集、API 调用统计以及钉钉 / 企微 / 邮件多渠道告警。
 
-> ⚠️ 当前 Micrometer/Prometheus 指标采集可用，钉钉、企业微信告警会通过 Webhook POST 真实发送；数据清理任务仍只记录日志，不执行真实 SQL 删除。生产清理需要接入真实执行策略。
+> ⚠️ 当前 Micrometer/Prometheus 指标采集可用，钉钉、企业微信告警会通过 Webhook POST 真实发送；数据清理调度默认关闭。即使显式开启，内置清理任务也只记录日志，不执行真实 SQL 删除。生产清理需要接入真实执行策略。
 
 ## Maven 坐标
 
@@ -72,6 +72,7 @@ public void createOrder(Order order) {
 | `letool.monitor.alert.dingtalk.secret` | - | 钉钉签名密钥 |
 | `letool.monitor.alert.wechat.webhook-url` | - | 企微 Webhook |
 | `letool.monitor.alert.mail.to` | - | 告警邮件接收人 |
+| `letool.monitor.data-retention.enabled` | `false` | 是否启用内置数据清理调度；当前只记录日志，不执行 SQL 删除 |
 | `letool.monitor.data-retention.clean-cron` | `0 0 3 * * ?` | 清理 Cron |
 
 ## 核心 API 示例

@@ -16,8 +16,9 @@ import java.util.concurrent.atomic.AtomicReference;
  * <p>管理多个 {@link CleanupTask}，根据 Cron 表达式或固定间隔周期性执行数据清理。
  * 内部使用 {@link ScheduledExecutorService} 驱动调度。</p>
  *
- * <h3>默认行为</h3>
- * <p>按照 {@code letool.monitor.data-retention} 中配置的保留天数，自动注册以下清理任务：
+ * <h3>显式启用后的行为</h3>
+ * <p>该调度器仅在 {@code letool.monitor.data-retention.enabled=true} 时由自动配置创建。
+ * 启动后会按照 {@code letool.monitor.data-retention} 中配置的保留天数，自动注册以下清理任务：
  * <ul>
  *   <li>{@code monitor_audit_log} —— 审计日志</li>
  *   <li>{@code monitor_request_log} —— 请求日志</li>
@@ -25,7 +26,8 @@ import java.util.concurrent.atomic.AtomicReference;
  *   <li>{@code monitor_api_error} —— API 错误记录</li>
  * </ul></p>
  *
- * <p>可通过 {@link #registerTask(CleanupTask)} 注册自定义清理任务。</p>
+ * <p>当前内置 {@link CleanupTask} 只记录日志，不执行真实 SQL 删除。
+ * 可通过 {@link #registerTask(CleanupTask)} 注册自定义清理任务。</p>
  *
  * @author leyland
  * @since 2.0.0

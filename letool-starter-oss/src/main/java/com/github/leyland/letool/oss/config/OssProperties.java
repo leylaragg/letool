@@ -5,13 +5,17 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 /**
  * 对象存储（OSS）模块配置属性类，对应 YAML 中的 {@code letool.oss} 前缀。
  *
- * <p>该配置类聚合了阿里云 OSS、MinIO、腾讯云 COS 三大对象存储服务的连接参数。
- * 使用者可在 {@code application.yml} 中按如下结构配置：</p>
+ * <p>该配置类聚合了阿里云 OSS、MinIO、腾讯云 COS 三类对象存储连接参数。
+ * 当前 starter 内置 provider 均为 stub，不会访问真实对象存储；
+ * 生产接入应由业务项目注册真实 {@link com.github.leyland.letool.oss.core.OssProvider}。</p>
+ *
+ * <p>OSS 模块默认不启用。使用者可在 {@code application.yml} 中按如下结构配置：</p>
  *
  * <pre>{@code
  * letool:
  *   oss:
- *     enabled: true                   # 是否启用 OSS 模块，默认 true
+ *     enabled: true                   # 是否启用 OSS 模块，默认 false
+ *     stub-enabled: true              # 是否允许内置 stub provider，默认 false
  *     default-provider: minio         # 默认存储提供商：aliyun / minio / tencent-cos
  *     aliyun:
  *       endpoint: oss-cn-hangzhou.aliyuncs.com
@@ -39,11 +43,19 @@ public class OssProperties {
     // ======================== 顶层属性 ========================
 
     /**
-     * 是否启用 OSS 模块，默认 {@code true}。
+     * 是否启用 OSS 模块，默认 {@code false}。
      *
      * <p>设置为 {@code false} 时，将不会创建任何 OSS 相关 Bean。</p>
      */
-    private boolean enabled = true;
+    private boolean enabled = false;
+
+    /**
+     * 是否允许创建内置 stub provider，默认 {@code false}。
+     *
+     * <p>当前 starter 尚未内置真实云厂商 SDK provider。生产环境建议保持关闭，并在业务项目中
+     * 注册自定义 {@link com.github.leyland.letool.oss.core.OssProvider} Bean。</p>
+     */
+    private boolean stubEnabled = false;
 
     /**
      * 默认存储提供商标识，默认 {@code "minio"}。
@@ -81,6 +93,14 @@ public class OssProperties {
 
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public boolean isStubEnabled() {
+        return stubEnabled;
+    }
+
+    public void setStubEnabled(boolean stubEnabled) {
+        this.stubEnabled = stubEnabled;
     }
 
     public String getDefaultProvider() {

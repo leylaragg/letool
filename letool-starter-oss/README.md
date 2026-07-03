@@ -2,7 +2,7 @@
 
 > 对象存储抽象模块，保留阿里云 OSS / 腾讯云 COS / MinIO 的统一 API 入口，支持上传、下载、删除和 URL 签名模型。
 
-> ⚠️ 当前内置的 Aliyun OSS、Tencent COS、MinIO provider 均为 Stub 实现，只记录日志并返回模拟结果，不会访问真实对象存储服务。生产接入前需要替换为真实 SDK provider 或等待后续版本。
+> ⚠️ 当前内置的 Aliyun OSS、Tencent COS、MinIO provider 均为 Stub 实现，只记录日志并返回模拟结果，不会访问真实对象存储服务。OSS starter 默认不启用；如需开发演示必须显式设置 `letool.oss.stub-enabled=true`，生产接入请在业务项目中注册真实 `OssProvider`。
 
 ## Maven 坐标
 
@@ -14,7 +14,7 @@
 </dependency>
 ```
 
-## 快速开始（3 分钟上手）
+## 快速开始（开发 Stub 模式）
 
 ### 1. 添加依赖并配置
 
@@ -22,6 +22,7 @@
 letool:
   oss:
     enabled: true
+    stub-enabled: true
     default-provider: minio
     minio:
       endpoint: http://localhost:9000
@@ -57,8 +58,9 @@ ossTemplate.delete("photos/avatar.png");
 
 | 属性 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `letool.oss.enabled` | boolean | true | 是否启用 OSS 模块 |
-| `letool.oss.default-provider` | String | minio | 默认提供商：aliyun / minio / tencent-cos |
+| `letool.oss.enabled` | boolean | false | 是否启用 OSS 模块 |
+| `letool.oss.stub-enabled` | boolean | false | 是否允许创建内置 Stub provider；生产环境建议关闭并注册真实 OssProvider |
+| `letool.oss.default-provider` | String | minio | 默认 Stub 提供商：aliyun / minio / tencent-cos |
 | `letool.oss.aliyun.endpoint` | String | - | 阿里云 OSS Endpoint |
 | `letool.oss.aliyun.access-key-id` | String | - | AccessKeyId |
 | `letool.oss.aliyun.access-key-secret` | String | - | AccessKeySecret |
@@ -149,12 +151,14 @@ boolean exists = ossTemplate.builder()
         .exists();
 ```
 
-### 注解声明式——通过配置切换多提供商
+### 开发 Stub——通过配置切换多提供商
 
 ```yaml
 letool:
   oss:
-    default-provider: aliyun   # 切换到阿里云 OSS，无需修改代码
+    enabled: true
+    stub-enabled: true
+    default-provider: aliyun   # 切换到阿里云 OSS Stub，无需修改代码
     aliyun:
       endpoint: oss-cn-hangzhou.aliyuncs.com
       access-key-id: your-access-key-id
@@ -162,4 +166,4 @@ letool:
       bucket: prod-bucket
 ```
 
-模块根据 `default-provider` 自动创建对应的 `OssProvider` 实现，业务代码中注入的 `OssTemplate` 无需任何改动即可切换存储后端。如需同时使用多个提供商，可通过 Builder 模式在每次操作时手动指定 `bucket` 参数来路由到不同配置。
+模块仅在 `stub-enabled=true` 时根据 `default-provider` 自动创建对应的 Stub `OssProvider` 实现，业务代码中注入的 `OssTemplate` 无需任何改动即可切换模拟存储后端。生产环境请注册自己的真实 `OssProvider` Bean；自动配置会检测到该 Bean 并退让，只创建 `OssTemplate`。

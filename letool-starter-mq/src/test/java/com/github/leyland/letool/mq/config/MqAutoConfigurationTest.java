@@ -40,17 +40,18 @@ class MqAutoConfigurationTest {
     }
 
     /**
-     * 验证未内置真实 provider 的类型会回退到内存队列，而不是假装连接真实 broker。
+     * 验证未内置真实 provider 的类型会 fail-fast，而不是静默回退到内存队列。
      */
     @Test
-    void shouldFallbackToInMemoryProviderWhenConfiguredTypeIsNotImplemented() {
+    void shouldFailFastWhenConfiguredTypeIsNotImplemented() {
         contextRunner
                 .withPropertyValues("letool.mq.default-type=kafka")
                 .run(context -> {
-                    assertThat(context.getBean(MqProperties.class).getDefaultType()).isEqualTo("kafka");
-                    assertThat(context).hasSingleBean(MqProvider.class);
-                    assertThat(context.getBean(MqProvider.class)).isInstanceOf(InMemoryMqProvider.class);
-                    assertThat(context).hasSingleBean(MqTemplate.class);
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("kafka")
+                            .hasMessageContaining("未内置真实 MqProvider")
+                            .hasMessageContaining("自定义 MqProvider");
                 });
     }
 

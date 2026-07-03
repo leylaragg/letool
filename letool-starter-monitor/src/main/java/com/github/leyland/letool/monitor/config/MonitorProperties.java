@@ -38,6 +38,7 @@ import java.util.List;
  *         - admin@example.com
  *         - dev@example.com
  *   data-retention:
+ *     enabled: false
  *     audit-log: 90d
  *     request-log: 30d
  *     api-stats: 7d
@@ -312,6 +313,9 @@ public class MonitorProperties {
      */
     public static class DataRetention {
 
+        /** 是否启用数据清理调度器，默认关闭 */
+        private boolean enabled = false;
+
         /** 审计日志保留时长，如 90d */
         private String auditLog = "90d";
 
@@ -326,6 +330,10 @@ public class MonitorProperties {
 
         /** 清理任务的 Cron 表达式，默认每天凌晨 3:00 执行 */
         private String cleanCron = "0 0 3 * * ?";
+
+        public boolean isEnabled() { return enabled; }
+
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
 
         public String getAuditLog() { return auditLog; }
 

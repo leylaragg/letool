@@ -42,7 +42,7 @@ public class MqProperties {
     /**
      * 默认消息队列类型，支持 rabbitmq / rocketmq / kafka / memory。
      *
-     * <p>当前只有 memory 是内置真实实现；其他类型会在没有自定义 provider 时回退到内存队列。</p>
+     * <p>当前只有 memory 是内置实现；其他类型需要用户注册自定义 provider，否则启动失败。</p>
      */
     private String defaultType = "memory";
 

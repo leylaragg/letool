@@ -46,8 +46,8 @@ import java.util.UUID;
  *
  * <h3>设计说明</h3>
  * <ul>
- *   <li>当 {@link com.github.leyland.letool.sms.config.SmsAutoConfiguration}
- *       未匹配到任何真实提供者的注册条件时，自动注册为本 Mock 实现作为默认后备。</li>
+ *   <li>仅在业务项目直接注册，或配置 {@code letool.sms.mock-enabled=true} 时，
+ *       由 {@link com.github.leyland.letool.sms.config.SmsAutoConfiguration} 创建。</li>
  *   <li>支持通过 {@link #clearMessages()} 清空已发送消息记录。</li>
  * </ul>
  *

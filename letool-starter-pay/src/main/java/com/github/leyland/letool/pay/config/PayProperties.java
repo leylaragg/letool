@@ -9,12 +9,16 @@ import java.util.Map;
  * 支付模块配置属性类，对应 YAML 中的 {@code letool.pay} 前缀。
  *
  * <p>该配置类聚合了支付宝、微信支付、银联支付三大渠道的全局配置项。
+ * 当前 starter 内置 provider 均为 mock/stub，不会访问真实支付平台；
+ * 生产接入应由业务项目注册真实 {@link com.github.leyland.letool.pay.core.PayProvider}。</p>
+ *
  * 使用者可在 {@code application.yml} 中按如下结构配置：</p>
  *
  * <pre>{@code
  * letool:
  *   pay:
- *     enabled: true                  # 是否启用支付模块
+ *     enabled: true                  # 是否启用支付模块，默认 false
+ *     stub-enabled: true             # 是否允许内置 mock/stub provider，默认 false
  *     callback-path: /api/pay/callback  # 回调路径
  *     verify-sign: true              # 是否校验回调签名
  *     alipay:
@@ -41,8 +45,11 @@ public class PayProperties {
 
     // ======================== 全局属性 ========================
 
-    /** 是否启用支付模块，默认 true */
-    private boolean enabled = true;
+    /** 是否启用支付模块，默认 false */
+    private boolean enabled = false;
+
+    /** 是否允许创建内置 mock/stub provider，默认 false */
+    private boolean stubEnabled = false;
 
     /** 支付平台回调的统一路径前缀，默认 /api/pay/callback */
     private String callbackPath = "/api/pay/callback";
@@ -63,6 +70,9 @@ public class PayProperties {
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
+
+    public boolean isStubEnabled() { return stubEnabled; }
+    public void setStubEnabled(boolean stubEnabled) { this.stubEnabled = stubEnabled; }
 
     public String getCallbackPath() { return callbackPath; }
     public void setCallbackPath(String callbackPath) { this.callbackPath = callbackPath; }

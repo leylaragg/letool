@@ -3,14 +3,20 @@
     {
       "name": "letool.sms.enabled",
       "type": "java.lang.Boolean",
-      "description": "短信模块总开关。",
-      "defaultValue": true
+      "description": "短信模块总开关。默认关闭，避免引入 starter 后自动创建模拟发送 provider。",
+      "defaultValue": false
+    },
+    {
+      "name": "letool.sms.mock-enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否允许创建内置 Mock/Stub provider。当前 Aliyun、Tencent 和 Mock provider 均不会发送真实短信；生产环境建议关闭并注册自定义 SmsProvider。",
+      "defaultValue": false
     },
     {
       "name": "letool.sms.default-provider",
       "type": "java.lang.String",
-      "description": "默认短信服务商。可选值：aliyun、tencent、mock。",
-      "defaultValue": "aliyun"
+      "description": "默认模拟短信服务商。可选值：aliyun、tencent、mock。",
+      "defaultValue": "mock"
     },
     {
       "name": "letool.sms.aliyun.access-key-id",
@@ -76,8 +82,8 @@
     {
       "name": "letool.sms.default-provider",
       "values": [
-        { "value": "aliyun", "description": "阿里云短信服务" },
-        { "value": "tencent", "description": "腾讯云短信服务" },
+        { "value": "aliyun", "description": "阿里云短信 Stub，不实际发送短信" },
+        { "value": "tencent", "description": "腾讯云短信 Stub，不实际发送短信" },
         { "value": "mock", "description": "Mock 实现，不实际发送短信" }
       ]
     }
