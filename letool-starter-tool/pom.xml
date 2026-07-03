@@ -22,13 +22,6 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- Spring Boot Web（提供 HttpServletRequest/Response 等，用于工具类需要 Servlet API 的场景） -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-            <scope>provided</scope>
-        </dependency>
-
         <!-- Spring Boot 自动配置 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

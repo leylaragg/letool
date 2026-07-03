@@ -10,6 +10,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 
 // ======================== 类级别说明 ========================
 
@@ -24,8 +25,8 @@ import org.springframework.context.annotation.Bean;
  *
  * <h3>启用条件</h3>
  * <ul>
- *   <li>当 {@code letool.mail.enabled=true} 时生效（该属性默认为 {@code true}，即引入依赖后自动启用）。</li>
- *   <li>可通过设置 {@code letool.mail.enabled=false} 显式禁用整个邮件模块。</li>
+ *   <li>当 {@code letool.mail.enabled=true} 时生效。</li>
+ *   <li>邮件发送基础设施默认关闭，避免引入工具包后意外创建 SMTP adapter。</li>
  * </ul>
  *
  * <h3>Bean 覆盖机制</h3>
@@ -39,45 +40,50 @@ import org.springframework.context.annotation.Bean;
  */
 @AutoConfiguration
 @EnableConfigurationProperties(MailProperties.class)
-@ConditionalOnProperty(prefix = "letool.mail", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class MailAutoConfiguration {
 
     // ======================== 日志记录器 ========================
 
     private static final Logger log = LoggerFactory.getLogger(MailAutoConfiguration.class);
 
-    // ======================== Bean 定义 ========================
-
     /**
-     * 创建邮件发送器 Bean。
-     *
-     * <p>基于 {@code properties} 中的活跃账户配置构建 {@link DefaultMailSender} 实例。
-     * 日志会记录当前使用的 SMTP 主机和协议信息，便于启动时排查配置问题。</p>
-     *
-     * @param properties 邮件配置属性（由 Spring Boot 自动绑定）
-     * @return 邮件发送器实例
+     * Mail runtime infrastructure beans.
      */
-    @Bean
-    @ConditionalOnMissingBean
-    public MailSender mailSender(MailProperties properties) {
-        log.info("Initializing mail sender: host={}, protocol={}",
-                properties.getActiveAccount().getHost(), properties.getActiveAccount().getProtocol());
-        return new DefaultMailSender(properties);
-    }
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnProperty(prefix = "letool.mail", name = "enabled", havingValue = "true")
+    static class MailInfrastructureConfiguration {
 
-    /**
-     * 创建邮件模板 Bean — 用户操作邮件的核心入口。
-     *
-     * <p>{@link MailTemplate} 封装了 {@link MailSender} 与异步线程池，
-     * 提供 Builder 模式的链式调用 API，简化邮件构建与发送流程。</p>
-     *
-     * @param mailSender 邮件发送器
-     * @param properties 邮件配置属性（用于读取异步线程池大小）
-     * @return 邮件模板实例
-     */
-    @Bean
-    @ConditionalOnMissingBean(MailTemplate.class)
-    public MailTemplate mailTemplate(MailSender mailSender, MailProperties properties) {
-        return new MailTemplate(mailSender, properties.getAsyncPoolSize());
+        /**
+         * 创建邮件发送器 Bean。
+         *
+         * <p>基于 {@code properties} 中的活跃账户配置构建 {@link DefaultMailSender} 实例。
+         * 日志会记录当前使用的 SMTP 主机和协议信息，便于启动时排查配置问题。</p>
+         *
+         * @param properties 邮件配置属性（由 Spring Boot 自动绑定）
+         * @return 邮件发送器实例
+         */
+        @Bean
+        @ConditionalOnMissingBean
+        public MailSender mailSender(MailProperties properties) {
+            log.info("Initializing mail sender: host={}, protocol={}",
+                    properties.getActiveAccount().getHost(), properties.getActiveAccount().getProtocol());
+            return new DefaultMailSender(properties);
+        }
+
+        /**
+         * 创建邮件模板 Bean — 用户操作邮件的核心入口。
+         *
+         * <p>{@link MailTemplate} 封装了 {@link MailSender} 与异步线程池，
+         * 提供 Builder 模式的链式调用 API，简化邮件构建与发送流程。</p>
+         *
+         * @param mailSender 邮件发送器
+         * @param properties 邮件配置属性（用于读取异步线程池大小）
+         * @return 邮件模板实例
+         */
+        @Bean
+        @ConditionalOnMissingBean(MailTemplate.class)
+        public MailTemplate mailTemplate(MailSender mailSender, MailProperties properties) {
+            return new MailTemplate(mailSender, properties.getAsyncPoolSize());
+        }
     }
 }

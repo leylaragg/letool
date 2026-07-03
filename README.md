@@ -31,22 +31,22 @@
 
 | 模块 | 说明 | 依赖 |
 |------|------|------|
-| **letool-starter-tool** | 核心工具 —— JSON、HTTP、Redis、ID 生成、字符串、集合、树工具、i18n | 无 |
+| **letool-starter-tool** | 核心工具 —— JSON、HTTP、ID 生成、字符串、集合、树工具；Spring/Redis helper 为可选适配器 | 无 |
 | **letool-starter-sensitive** | 数据脱敏 —— 注解驱动，Jackson 序列化 + 日志输出自动脱敏 | tool |
 | **letool-starter-log** | 日志封装 —— 链路追踪、审计日志、方法日志、动态日志级别 | tool, sensitive |
 | **letool-starter-cache** | 二级缓存 —— L1 Caffeine + L2 Redis，读穿/写穿、自动降级 | tool |
 | **letool-starter-cipher-suite** | 加密套件 —— AES/RSA/SM2/SM3/SM4、数字签名 | tool |
 | **letool-starter-web** | Web 增强 —— 全局异常处理、响应包装、XSS/SQL 注入防御 | tool, log, sensitive |
 | **letool-starter-security** | 安全认证 —— JWT、注解权限、多种认证模式 | tool, web, cache, sensitive |
-| **letool-starter-data** | 数据库封装 —— Lambda 查询、分页、注解映射、字段加密 | tool, cache, sensitive |
+| **letool-starter-data** | 数据库封装 —— Lambda 查询、分页、注解映射；JDBC Template 为按需适配器 | tool, cache, sensitive |
 | **letool-starter-thread** | 线程管理 —— 动态线程池、上下文传递、虚拟线程 | tool |
 | **letool-starter-swagger** | API 文档 —— Knife4j + SpringDoc，自动配置、离线导出 | web |
 | **letool-starter-file** | 文件操作 —— 上传下载、FTP/SFTP/MinIO/OSS、魔数检测 | tool, web |
 | **letool-starter-excel** | Excel 操作 —— EasyExcel 封装，链式 API、批量处理 | tool, file |
-| **letool-starter-mail** | 邮件发送 —— 模板邮件、异步发送、多账户 | tool |
+| **letool-starter-mail** | 邮件发送 —— 默认不启用，显式开启后提供模板邮件、异步发送、多账户 | tool |
 | **letool-starter-distributed-lock** | 分布式锁 —— Redis/ZK/DB 悲观锁、乐观锁、幂等性 | tool, cache |
 | **letool-starter-rule** | 规则引擎 —— LiteFlow 封装、规则链编排、Groovy 脚本 | tool, data |
-| **letool-starter-net** | 网络通信 —— Netty TCP、ISO8583、HTTP 负载均衡、网关路由 | tool |
+| **letool-starter-net** | 网络通信 —— 默认不启用运行时 Bean，显式开启 TCP/HTTP/网关适配器 | tool |
 | **letool-starter-pay** | 支付抽象 —— 默认不启用，内置支付宝/微信支付仅显式 stub 或自定义 provider | tool, web |
 | **letool-starter-mq** | 消息队列 —— 当前内置内存队列，RabbitMQ/RocketMQ/Kafka 需自定义 provider 或后续真实扩展 | tool, log |
 | **letool-starter-ratelimiter** | 限流熔断 —— 令牌桶/滑动窗口、熔断器 | tool, cache |

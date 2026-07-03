@@ -2,22 +2,19 @@ package com.github.leyland.letool.tool.redis;
 
 import com.github.leyland.letool.tool.util.CollUtil;
 import com.github.leyland.letool.tool.util.JsonUtil;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.data.redis.core.*;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
-import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Redis 操作工具——封装 StringRedisTemplate 的常用操作.
+ * Redis operation helper backed by {@link StringRedisTemplate}.
  *
- * <h3>激活条件</h3>
- * <p>仅在 classpath 存在 {@code spring-boot-starter-data-redis} 时由
- * {@link ConditionalOnClass @ConditionalOnClass(RedisTemplate.class)} 注册为 Spring Bean.
- * 未引入 Redis 依赖时不会加载，避免启动报错.</p>
+ * <h3>Activation</h3>
+ * <p>The tool starter registers this helper only when a {@link StringRedisTemplate}
+ * bean exists. Applications can also instantiate it directly for plain utility usage.</p>
  *
  * <h3>支持的操作类型</h3>
  * <ul>
@@ -50,8 +47,6 @@ import java.util.concurrent.TimeUnit;
  * String result = redisUtil.executeScript(script, List.of("key1"));
  * }</pre>
  */
-@Component
-@ConditionalOnClass(RedisTemplate.class)
 public class RedisUtil {
 
     private final StringRedisTemplate redisTemplate;
@@ -358,6 +353,14 @@ public class RedisUtil {
      * @return 每条命令的返回值列表
      */
     public List<Object> pipeline(java.util.function.Consumer<RedisOperations<String, String>> consumer) {
-        return redisTemplate.executePipelined((org.springframework.data.redis.core.RedisCallback<Object>) connection -> null);
+        return redisTemplate.executePipelined(new SessionCallback<>() {
+            @Override
+            public <K, V> Object execute(RedisOperations<K, V> operations) {
+                @SuppressWarnings("unchecked")
+                RedisOperations<String, String> stringOperations = (RedisOperations<String, String>) operations;
+                consumer.accept(stringOperations);
+                return null;
+            }
+        });
     }
 }

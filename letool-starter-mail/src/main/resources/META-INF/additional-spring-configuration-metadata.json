@@ -4,7 +4,7 @@
       "name": "letool.mail.enabled",
       "type": "java.lang.Boolean",
       "description": "邮件模块总开关。",
-      "defaultValue": true
+      "defaultValue": false
     },
     {
       "name": "letool.mail.default-account",

@@ -54,8 +54,8 @@ public class MailProperties {
 
     // ======================== 全局配置字段 ========================
 
-    /** 邮件模块总开关，默认开启 */
-    private boolean enabled = true;
+    /** 邮件模块总开关，默认关闭 */
+    private boolean enabled = false;
 
     /** 默认使用的账户名称，对应 {@code accounts} 中的 key */
     private String defaultAccount = "primary";

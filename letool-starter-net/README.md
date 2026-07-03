@@ -70,16 +70,16 @@ byte[] response = tcpClient.sendAndReceive(requestBytes);
 
 | 属性 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `letool.net.http.enabled` | boolean | true | 是否启用 HTTP 客户端 |
+| `letool.net.http.enabled` | boolean | false | 是否启用 HTTP 客户端 |
 | `letool.net.http.connect-timeout` | String | 5s | 连接超时 |
 | `letool.net.http.read-timeout` | String | 30s | 读取超时 |
 | `letool.net.http.max-total` | int | 200 | 连接池最大连接数 |
 | `letool.net.http.max-per-route` | int | 50 | 单路由最大连接数 |
-| `letool.net.tcp.enabled` | boolean | true | 是否启用 TCP 客户端 |
+| `letool.net.tcp.enabled` | boolean | false | 是否启用 TCP 客户端 |
 | `letool.net.tcp.default-connect-timeout` | String | 10s | TCP 连接超时 |
 | `letool.net.tcp.no-delay` | boolean | true | 禁用 Nagle 算法 |
 | `letool.net.tcp.keep-alive` | boolean | false | 启用 TCP KeepAlive |
-| `letool.net.gateway.enabled` | boolean | true | 是否启用网关 |
+| `letool.net.gateway.enabled` | boolean | false | 是否启用网关 |
 | `letool.net.gateway.routes[].route-id` | String | - | 路由唯一标识 |
 | `letool.net.gateway.routes[].type` | String | http | 路由类型：tcp / http |
 | `letool.net.gateway.routes[].protocol` | String | - | 协议：json / length-field / fixed-length |

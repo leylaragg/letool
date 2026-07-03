@@ -4,7 +4,7 @@
       "name": "letool.net.http.enabled",
       "type": "java.lang.Boolean",
       "description": "是否启用 HTTP 客户端。",
-      "defaultValue": true
+      "defaultValue": false
     },
     {
       "name": "letool.net.http.connect-timeout",
@@ -34,7 +34,7 @@
       "name": "letool.net.tcp.enabled",
       "type": "java.lang.Boolean",
       "description": "是否启用 TCP 客户端。",
-      "defaultValue": true
+      "defaultValue": false
     },
     {
       "name": "letool.net.tcp.default-connect-timeout",
@@ -64,7 +64,7 @@
       "name": "letool.net.gateway.enabled",
       "type": "java.lang.Boolean",
       "description": "是否启用网关功能。",
-      "defaultValue": true
+      "defaultValue": false
     },
     {
       "name": "letool.net.gateway.routes[].route-id",

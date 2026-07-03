@@ -1,12 +1,10 @@
 package com.github.leyland.letool.data.config;
 
 import com.github.leyland.letool.data.core.LetoolTemplate;
-import com.github.leyland.letool.data.dialect.MySqlDialect;
-import com.github.leyland.letool.data.dialect.PostgreSqlDialect;
-import com.github.leyland.letool.data.dialect.SqlDialect;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -17,9 +15,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 /**
  * 数据库模块自动配置类。
  *
- * <p>当 classpath 中存在 {@link JdbcTemplate} 且配置
- * {@code letool.data.enabled=true}（默认为 true）时自动激活。
- * 注册核心 Bean {@link LetoolTemplate}，封装 JdbcTemplate 提供更便捷的 CRUD 操作。</p>
+ * <p>当 classpath 中存在 {@link JdbcTemplate}、容器中已有 {@link JdbcTemplate}
+ * Bean，且配置 {@code letool.data.enabled=true}（默认为 true）时注册 JDBC adapter
+ * {@link LetoolTemplate}。查询条件、分页模型等纯工具类型可脱离 Spring 直接使用。</p>
  *
  * <p>数据库方言通过 JDBC URL 自动检测，支持 MySQL 和 PostgreSQL。
  * 检测失败时默认回退为 MySQL 方言。</p>
@@ -46,6 +44,7 @@ public class DataAutoConfiguration {
      * @return LetoolTemplate 实例
      */
     @Bean
+    @ConditionalOnBean(JdbcTemplate.class)
     @ConditionalOnMissingBean
     public LetoolTemplate letoolTemplate(JdbcTemplate jdbcTemplate, DataProperties properties) {
         log.info("LetoolTemplate initialized, dialect: {}",

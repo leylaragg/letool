@@ -2,25 +2,21 @@ package com.github.leyland.letool.net.config;
 
 import com.github.leyland.letool.net.gateway.NetGateway;
 import com.github.leyland.letool.net.http.NetHttpTemplate;
-import com.github.leyland.letool.net.tcp.TcpClient;
-import com.github.leyland.letool.net.tcp.TcpLongClient;
-import com.github.leyland.letool.net.tcp.TcpShortClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 
 /**
- * 网络通信模块自动配置 —— 激活 {@code letool-starter-net} 的所有核心 Bean.
+ * 网络通信模块自动配置 —— 绑定配置并按需激活运行时 Bean.
  *
  * <h3>自动注册的 Bean</h3>
  * <ul>
- *   <li>{@link NetGateway} —— 企业级统一网络网关，管理 TCP 和 HTTP 路由（始终注册）</li>
- *   <li>{@link NetHttpTemplate} —— HTTP 客户端模板（有条件激活，需要 HttpClient 依赖）</li>
+ *   <li>{@link NetGateway} —— 企业级统一网络网关，管理 TCP 和 HTTP 路由（显式开启时注册）</li>
+ *   <li>{@link NetHttpTemplate} —— HTTP 客户端模板（显式开启时注册）</li>
  * </ul>
  *
  * <h3>配置绑定</h3>
@@ -28,7 +24,8 @@ import org.springframework.context.annotation.Bean;
  * 所有 {@code letool.net.*} 前缀的 YAML 配置将被自动绑定.</p>
  *
  * <h3>禁用方式</h3>
- * <p>设置 {@code letool.net.gateway.enabled=false} 可禁用网关功能.</p>
+ * <p>网络运行时 Bean 默认不注册。设置 {@code letool.net.gateway.enabled=true}
+ * 可启用网关功能，设置 {@code letool.net.http.enabled=true} 可启用 HTTP 模板.</p>
  *
  * <p><b>注意：</b>TCP 客户端的创建由 {@link NetGateway} 按需管理，不由自动配置直接注入.</p>
  *
@@ -46,7 +43,7 @@ public class NetAutoConfiguration {
     /**
      * 创建 {@link NetGateway} Bean —— 统一网络网关.
      *
-     * <p>通过 {@code letool.net.gateway.enabled} 控制，默认为启用.</p>
+     * <p>通过 {@code letool.net.gateway.enabled} 控制，默认关闭.</p>
      *
      * <p>网关负责：</p>
      * <ul>
@@ -60,7 +57,7 @@ public class NetAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnProperty(prefix = "letool.net.gateway", name = "enabled", havingValue = "true", matchIfMissing = true)
+    @ConditionalOnProperty(prefix = "letool.net.gateway", name = "enabled", havingValue = "true")
     public NetGateway netGateway(NetProperties properties) {
         log.info("Initializing NetGateway...");
         NetGateway gateway = new NetGateway(properties);
@@ -76,7 +73,7 @@ public class NetAutoConfiguration {
     /**
      * 创建 {@link NetHttpTemplate} Bean —— HTTP 客户端模板.
      *
-     * <p>该 Bean 有条件激活：仅在 classpath 中存在 HTTP 客户端依赖时创建.
+     * <p>该 Bean 默认关闭，需要设置 {@code letool.net.http.enabled=true} 后创建.
      * 目前使用 JDK 内置的 {@link java.net.HttpURLConnection}，无需外部依赖.</p>
      *
      * <p>当项目中已定义同名 Bean 或设置 {@code letool.net.http.enabled=false} 时，此方法不执行.</p>
@@ -86,7 +83,7 @@ public class NetAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnProperty(prefix = "letool.net.http", name = "enabled", havingValue = "true", matchIfMissing = true)
+    @ConditionalOnProperty(prefix = "letool.net.http", name = "enabled", havingValue = "true")
     public NetHttpTemplate netHttpTemplate(NetProperties properties) {
         log.info("Initializing NetHttpTemplate...");
         return new NetHttpTemplate(properties);

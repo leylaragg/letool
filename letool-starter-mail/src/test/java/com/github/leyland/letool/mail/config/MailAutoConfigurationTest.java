@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * {@link MailAutoConfiguration} 的自动装配契约测试。
  *
- * <p>重点覆盖业务项目自定义邮件发送器和邮件模板时，mail starter 是否正确退让。</p>
+ * <p>重点覆盖 mail starter 的默认轻量化、显式启用和业务项目自定义 Bean 退让行为。</p>
  */
 class MailAutoConfigurationTest {
 
@@ -24,18 +24,30 @@ class MailAutoConfigurationTest {
             .withPropertyValues("spring.main.allow-bean-definition-overriding=false");
 
     /**
-     * 验证用户提供邮件发送器和邮件模板时，自动配置不会创建重复 Bean。
-     */
-    /**
-     * 验证默认配置下会注册邮件发送器、邮件模板和配置属性 Bean。
+     * 验证默认配置下只绑定属性，不主动创建邮件基础设施 Bean。
      */
     @Test
-    void shouldCreateDefaultMailBeansWhenEnabled() {
+    void shouldOnlyBindPropertiesByDefault() {
         contextRunner.run(context -> {
-            assertThat(context).hasSingleBean(MailSender.class);
-            assertThat(context).hasSingleBean(MailTemplate.class);
+            assertThat(context).doesNotHaveBean(MailSender.class);
+            assertThat(context).doesNotHaveBean(MailTemplate.class);
             assertThat(context).hasSingleBean(MailProperties.class);
+            assertThat(context.getBean(MailProperties.class).isEnabled()).isFalse();
         });
+    }
+
+    /**
+     * 验证显式开启邮件模块时会注册邮件发送器、邮件模板和配置属性 Bean。
+     */
+    @Test
+    void shouldCreateMailBeansWhenExplicitlyEnabled() {
+        contextRunner
+                .withPropertyValues("letool.mail.enabled=true")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(MailSender.class);
+                    assertThat(context).hasSingleBean(MailTemplate.class);
+                    assertThat(context).hasSingleBean(MailProperties.class);
+                });
     }
 
     /**
@@ -54,6 +66,7 @@ class MailAutoConfigurationTest {
     @Test
     void shouldBackOffWhenUserProvidesMailInfrastructureBeans() {
         contextRunner
+                .withPropertyValues("letool.mail.enabled=true")
                 .withUserConfiguration(UserMailConfiguration.class)
                 .run(context -> {
                     assertThat(context).hasSingleBean(MailSender.class);

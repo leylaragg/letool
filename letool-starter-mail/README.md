@@ -66,7 +66,7 @@ mailTemplate.builder()
 ```yaml
 letool:
   mail:
-    enabled: true                # 模块开关，默认 true
+    enabled: true                # 模块开关，默认 false；需要显式开启邮件发送基础设施
     default-account: primary     # 默认账户名，对应 accounts 下的 key
     async: false                 # 是否异步发送，默认 false（同步）
     async-pool-size: 4           # 异步线程池大小，默认 4

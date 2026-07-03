@@ -4,7 +4,6 @@ import org.springframework.beans.BeansException;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 import org.springframework.lang.NonNull;
-import org.springframework.stereotype.Component;
 
 import java.util.Map;
 
@@ -38,7 +37,6 @@ import java.util.Map;
  * <p>注意：必须在 Spring 容器中注册（由 {@code @ComponentScan} 扫描到），
  * 静态方法在容器初始化前调用会 NPE.</p>
  */
-@Component
 public class SpringUtil implements ApplicationContextAware {
 
     private static ApplicationContext context;

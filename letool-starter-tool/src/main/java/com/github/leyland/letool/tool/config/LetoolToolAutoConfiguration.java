@@ -1,25 +1,54 @@
 package com.github.leyland.letool.tool.config;
 
+import com.github.leyland.letool.tool.redis.RedisUtil;
+import com.github.leyland.letool.tool.spring.SpringUtil;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.context.annotation.ComponentScan;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 /**
- * letool-starter-tool 自动配置——激活整个 tool 模块的 Spring 组件.
+ * Auto-configuration for the base tool starter.
  *
- * <h3>自动注册的 Bean</h3>
- * <ul>
- *   <li>{@link com.github.leyland.letool.tool.spring.SpringUtil SpringUtil} — ApplicationContext 持有者</li>
- *   <li>{@link com.github.leyland.letool.tool.redis.RedisUtil RedisUtil} — Redis 操作工具（有条件激活，需引入 Redis 依赖）</li>
- * </ul>
- *
- * <h3>激活方式</h3>
- * <p>引入 {@code letool-starter-tool} 依赖后自动激活（通过
- * {@code META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports}）.</p>
- *
- * <p>注意：使用 Spring Boot 3.x 的 {@link AutoConfiguration} 注解替代旧的 {@code @Configuration}，
- * 并通过 {@code AutoConfiguration.imports} 文件注册（替代旧的 {@code spring.factories}）.</p>
+ * <p>This module is the lightweight toolkit foundation. It registers only the
+ * Spring adapter beans that are useful by default and keeps optional adapters,
+ * such as Redis, behind explicit classpath and bean conditions.</p>
  */
 @AutoConfiguration
-@ComponentScan(basePackages = "com.github.leyland.letool.tool")
 public class LetoolToolAutoConfiguration {
+
+    /**
+     * Registers the Spring application-context helper unless the application owns it.
+     *
+     * @return Spring application-context helper.
+     */
+    @Bean
+    @ConditionalOnMissingBean(SpringUtil.class)
+    public SpringUtil springUtil() {
+        return new SpringUtil();
+    }
+
+    /**
+     * Redis-specific adapter configuration.
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(StringRedisTemplate.class)
+    static class RedisToolConfiguration {
+
+        /**
+         * Registers Redis helper only when application Redis infrastructure exists.
+         *
+         * @param stringRedisTemplate Spring Redis string template.
+         * @return Redis helper wrapper.
+         */
+        @Bean
+        @ConditionalOnBean(StringRedisTemplate.class)
+        @ConditionalOnMissingBean(RedisUtil.class)
+        public RedisUtil redisUtil(StringRedisTemplate stringRedisTemplate) {
+            return new RedisUtil(stringRedisTemplate);
+        }
+    }
 }

@@ -105,9 +105,9 @@ public class NetProperties {
     public static class Http {
 
         /**
-         * 是否启用 HTTP 客户端.
+         * 是否启用 HTTP 客户端，默认关闭.
          */
-        private boolean enabled = true;
+        private boolean enabled = false;
 
         /**
          * 连接超时时间，默认 5 秒.
@@ -180,9 +180,9 @@ public class NetProperties {
     public static class Tcp {
 
         /**
-         * 是否启用 TCP 客户端.
+         * 是否启用 TCP 客户端，默认关闭.
          */
-        private boolean enabled = true;
+        private boolean enabled = false;
 
         /**
          * 默认连接超时时间，默认 10 秒.
@@ -255,9 +255,9 @@ public class NetProperties {
     public static class Gateway {
 
         /**
-         * 是否启用网关功能.
+         * 是否启用网关功能，默认关闭.
          */
-        private boolean enabled = true;
+        private boolean enabled = false;
 
         /**
          * 路由列表.
