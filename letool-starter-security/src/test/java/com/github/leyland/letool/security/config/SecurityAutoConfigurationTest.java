@@ -108,7 +108,6 @@ class SecurityAutoConfigurationTest {
         @Bean
         SecurityFilterChain userSecurityFilterChain(HttpSecurity http) throws Exception {
             return http
-                    .securityMatcher("/custom/**")
                     .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
                     .build();
         }

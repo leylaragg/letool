@@ -11,8 +11,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
@@ -44,6 +46,8 @@ import java.util.List;
 @AutoConfiguration
 @EnableWebSocket
 @EnableConfigurationProperties(WebSocketProperties.class)
+@ConditionalOnClass(WebSocketConfigurer.class)
+@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @ConditionalOnProperty(prefix = "letool.websocket", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class WebSocketAutoConfiguration {
 
@@ -160,8 +164,9 @@ public class WebSocketAutoConfiguration {
      * @param wsHandler      默认 WebSocket 处理器
      * @param wsInterceptor  握手拦截器
      * @return WebSocketConfigurer 实例
-     */
+    */
     @Bean
+    @ConditionalOnMissingBean(name = "webSocketConfigurer")
     public WebSocketConfigurer webSocketConfigurer(WebSocketProperties properties,
                                                     DefaultWsHandler wsHandler,
                                                     WsHandshakeInterceptor wsInterceptor) {

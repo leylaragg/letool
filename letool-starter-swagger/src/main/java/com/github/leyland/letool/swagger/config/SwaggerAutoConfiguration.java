@@ -10,11 +10,14 @@ import org.slf4j.LoggerFactory;
 import org.springdoc.core.models.GroupedOpenApi;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Swagger / Knife4j 自动配置类（基于 SpringDoc OpenAPI 3.x + Knife4j 4.5.0）。
@@ -109,6 +112,7 @@ public class SwaggerAutoConfiguration {
      * @return 构建完成的 {@link OpenAPI} 实例，交由 Spring 容器管理
      */
     @Bean
+    @ConditionalOnMissingBean(OpenAPI.class)
     public OpenAPI letoolOpenAPI(SwaggerProperties properties) {
         // ---------- 构建联系人信息 ----------
         SwaggerProperties.Contact contactProps = properties.getContact();
@@ -189,22 +193,27 @@ public class SwaggerAutoConfiguration {
      * @return 构建完成的 {@link GroupedOpenApi} 实例，交由 Spring 容器管理
      */
     @Bean
+    @ConditionalOnMissingBean(name = "defaultGroupApi")
     public GroupedOpenApi defaultGroupApi(SwaggerProperties properties) {
         // ---------- 构建基础分组配置 ----------
         GroupedOpenApi.Builder builder = GroupedOpenApi.builder()
                 .group("default")
-                .displayName(properties.getTitle())
-                .packagesToScan("com.github.leyland");
+                .displayName(properties.getTitle());
+
+        Set<String> packagesToScan = new LinkedHashSet<>();
+        packagesToScan.add("com.github.leyland");
 
         // ---------- 合并自定义分组包路径 ----------
         List<SwaggerProperties.Group> groups = properties.getGroups();
         if (groups != null && !groups.isEmpty()) {
-            String[] packages = groups.stream()
+            groups.stream()
                     .map(SwaggerProperties.Group::getBasePackage)
-                    .toArray(String[]::new);
-            builder.packagesToScan(packages);
+                    .filter(basePackage -> basePackage != null && !basePackage.isBlank())
+                    .map(String::trim)
+                    .forEach(packagesToScan::add);
         }
 
+        builder.packagesToScan(packagesToScan.toArray(String[]::new));
         return builder.build();
     }
 }

@@ -63,7 +63,7 @@ public class JobAutoConfiguration {
      * @param properties 任务配置属性
      * @return 调度线程池实例
      */
-    @Bean
+    @Bean(destroyMethod = "shutdown")
     @ConditionalOnMissingBean(name = "jobScheduledExecutor")
     public ScheduledThreadPoolExecutor jobScheduledExecutor(JobProperties properties) {
         int poolSize = properties.getThreadPoolSize();

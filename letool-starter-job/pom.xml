@@ -20,18 +20,8 @@
             <artifactId>letool-starter-tool</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.github.leyland</groupId>
-            <artifactId>letool-starter-thread</artifactId>
-            <optional>true</optional>
-        </dependency>
-        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter</artifactId>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-aop</artifactId>
             <scope>provided</scope>
         </dependency>
         <dependency>

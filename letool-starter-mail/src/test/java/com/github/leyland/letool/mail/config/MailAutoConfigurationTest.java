@@ -26,6 +26,31 @@ class MailAutoConfigurationTest {
     /**
      * 验证用户提供邮件发送器和邮件模板时，自动配置不会创建重复 Bean。
      */
+    /**
+     * 验证默认配置下会注册邮件发送器、邮件模板和配置属性 Bean。
+     */
+    @Test
+    void shouldCreateDefaultMailBeansWhenEnabled() {
+        contextRunner.run(context -> {
+            assertThat(context).hasSingleBean(MailSender.class);
+            assertThat(context).hasSingleBean(MailTemplate.class);
+            assertThat(context).hasSingleBean(MailProperties.class);
+        });
+    }
+
+    /**
+     * 验证显式关闭邮件模块时不会创建邮件基础设施 Bean。
+     */
+    @Test
+    void shouldNotCreateMailBeansWhenDisabled() {
+        contextRunner
+                .withPropertyValues("letool.mail.enabled=false")
+                .run(context -> {
+                    assertThat(context).doesNotHaveBean(MailSender.class);
+                    assertThat(context).doesNotHaveBean(MailTemplate.class);
+                });
+    }
+
     @Test
     void shouldBackOffWhenUserProvidesMailInfrastructureBeans() {
         contextRunner

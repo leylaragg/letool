@@ -26,6 +26,33 @@ class JobAutoConfigurationTest {
     /**
      * 验证用户提供任务执行器、日志服务和调度器时，自动配置不会创建重复 Bean。
      */
+    /**
+     * 验证默认配置下会注册任务调度核心 Bean。
+     */
+    @Test
+    void shouldCreateDefaultJobBeansWhenEnabled() {
+        contextRunner.run(context -> {
+            assertThat(context).hasSingleBean(ScheduledThreadPoolExecutor.class);
+            assertThat(context).hasSingleBean(JobLogService.class);
+            assertThat(context).hasSingleBean(JobScheduler.class);
+            assertThat(context).hasSingleBean(JobProperties.class);
+        });
+    }
+
+    /**
+     * 验证显式关闭任务模块时不会创建调度基础设施 Bean。
+     */
+    @Test
+    void shouldNotCreateJobBeansWhenDisabled() {
+        contextRunner
+                .withPropertyValues("letool.job.enabled=false")
+                .run(context -> {
+                    assertThat(context).doesNotHaveBean(ScheduledThreadPoolExecutor.class);
+                    assertThat(context).doesNotHaveBean(JobLogService.class);
+                    assertThat(context).doesNotHaveBean(JobScheduler.class);
+                });
+    }
+
     @Test
     void shouldBackOffWhenUserProvidesJobInfrastructureBeans() {
         contextRunner

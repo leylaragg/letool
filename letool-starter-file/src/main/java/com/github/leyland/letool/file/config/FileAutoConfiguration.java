@@ -73,8 +73,9 @@ public class FileAutoConfiguration {
      * @param storageProvider 文件存储提供者
      * @param properties      文件模块配置属性（含上传限制等）
      * @return FileUploadService 实例
-     */
+    */
     @Bean
+    @ConditionalOnMissingBean
     public FileUploadService fileUploadService(FileStorageProvider storageProvider, FileProperties properties) {
         return new FileUploadService(storageProvider, properties);
     }
@@ -84,8 +85,9 @@ public class FileAutoConfiguration {
      *
      * @param storageProvider 文件存储提供者
      * @return FileDownloadService 实例
-     */
+    */
     @Bean
+    @ConditionalOnMissingBean
     public FileDownloadService fileDownloadService(FileStorageProvider storageProvider) {
         return new FileDownloadService(storageProvider);
     }
