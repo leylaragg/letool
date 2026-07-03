@@ -68,6 +68,7 @@ public class MonitorAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "letool.monitor.metrics", name = "enabled", havingValue = "true", matchIfMissing = true)
     public MetricsCollector metricsCollector() {
         log.info("[Monitor] 创建 MetricsCollector Bean");
         return new MetricsCollector();
@@ -98,6 +99,7 @@ public class MonitorAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "letool.monitor.api-stats", name = "enabled", havingValue = "true", matchIfMissing = true)
     public ApiStatsAggregator apiStatsAggregator() {
         log.info("[Monitor] 创建 ApiStatsAggregator Bean");
         return new ApiStatsAggregator();
@@ -127,6 +129,7 @@ public class MonitorAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "letool.monitor.api-stats", name = "enabled", havingValue = "true", matchIfMissing = true)
     public ApiErrorCollector apiErrorCollector() {
         log.info("[Monitor] 创建 ApiErrorCollector Bean");
         return new ApiErrorCollector();

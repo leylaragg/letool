@@ -7,6 +7,7 @@ import com.github.leyland.letool.ratelimiter.circuit.DefaultCircuitBreaker;
 import com.github.leyland.letool.ratelimiter.core.RateLimitTemplate;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,6 +24,65 @@ class RateLimiterAutoConfigurationTest {
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(RateLimiterAutoConfiguration.class))
             .withPropertyValues("spring.main.allow-bean-definition-overriding=false");
+
+    /**
+     * 默认启用时应创建编程式限流、熔断和注解切面基础设施。
+     */
+    @Test
+    void shouldCreateDefaultRateLimiterInfrastructureBeans() {
+        contextRunner.run(context -> {
+            assertThat(context).hasSingleBean(RateLimiterProperties.class);
+            assertThat(context).hasSingleBean(TokenBucketLimiter.class);
+            assertThat(context).hasSingleBean(SlidingWindowLimiter.class);
+            assertThat(context).hasSingleBean(RateLimitTemplate.class);
+            assertThat(context).hasSingleBean(DefaultCircuitBreaker.class);
+            assertThat(context).hasSingleBean(RateLimitAspect.class);
+        });
+    }
+
+    /**
+     * 总开关关闭时，ratelimiter starter 不应创建任何限流基础设施。
+     */
+    @Test
+    void shouldDisableRateLimiterAutoConfiguration() {
+        contextRunner
+                .withPropertyValues("letool.rate-limiter.enabled=false")
+                .run(context -> {
+                    assertThat(context).doesNotHaveBean(RateLimiterProperties.class);
+                    assertThat(context).doesNotHaveBean(RateLimitTemplate.class);
+                    assertThat(context).doesNotHaveBean(RateLimitAspect.class);
+                });
+    }
+
+    /**
+     * 没有 AspectJ 时，应保留编程式限流 API，并跳过注解切面。
+     */
+    @Test
+    void shouldStartWithoutRateLimitAspectWhenAspectJClasspathIsMissing() {
+        contextRunner
+                .withClassLoader(new FilteredClassLoader("org.aspectj"))
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(RateLimitTemplate.class);
+                    assertThat(context).hasSingleBean(DefaultCircuitBreaker.class);
+                    assertThat(context).doesNotHaveBean(RateLimitAspect.class);
+                });
+    }
+
+    /**
+     * 限流核心不应依赖 cache/redis classpath，缺失时仍可作为纯本地算法工具使用。
+     */
+    @Test
+    void shouldStartWithoutCacheAndRedisClasspath() {
+        contextRunner
+                .withClassLoader(new FilteredClassLoader(
+                        "com.github.leyland.letool.cache",
+                        "org.springframework.data.redis"))
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(RateLimitTemplate.class);
+                });
+    }
 
     /**
      * 验证用户提供限流器、模板、熔断器和切面时，自动配置不会创建重复 Bean。
@@ -50,9 +110,6 @@ class RateLimiterAutoConfigurationTest {
                 });
     }
 
-    /**
-     * 模拟业务项目自行接管 ratelimiter 基础设施的配置。
-     */
     /**
      * Disabling annotation support should keep the programmatic rate-limit API available.
      */

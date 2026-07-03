@@ -12,6 +12,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -65,6 +67,8 @@ public class LockAutoConfiguration {
      */
     @Bean
     @ConditionalOnBean(RedisUtil.class)
+    @ConditionalOnProperty(prefix = "letool.lock", name = "backend", havingValue = "redis", matchIfMissing = true)
+    @ConditionalOnMissingBean(DistributedLock.class)
     public DistributedLock distributedLock(RedisUtil redisUtil, LockProperties properties) {
         log.info("Initializing Redis distributed lock: prefix={}", properties.getPessimistic().getLockPrefix());
         return new RedisPessimisticLock(redisUtil, properties);
@@ -80,6 +84,7 @@ public class LockAutoConfiguration {
      */
     @Bean
     @ConditionalOnBean(DistributedLock.class)
+    @ConditionalOnMissingBean(LockTemplate.class)
     public LockTemplate lockTemplate(DistributedLock lock) {
         return new LockTemplate(lock);
     }
@@ -94,6 +99,7 @@ public class LockAutoConfiguration {
      */
     @Bean
     @ConditionalOnBean(LockTemplate.class)
+    @ConditionalOnMissingBean(LockAspect.class)
     public LockAspect lockAspect(LockTemplate lockTemplate) {
         return new LockAspect(lockTemplate);
     }
@@ -112,6 +118,8 @@ public class LockAutoConfiguration {
      */
     @Bean
     @ConditionalOnBean(RedisUtil.class)
+    @ConditionalOnMissingBean(IdempotentService.class)
+    @ConditionalOnExpression("'${letool.lock.backend:redis}' == 'redis' && '${letool.lock.idempotent.enabled:true}' == 'true'")
     public IdempotentService idempotentService(RedisUtil redisUtil, LockProperties properties) {
         return new IdempotentService(redisUtil, properties);
     }
@@ -126,6 +134,8 @@ public class LockAutoConfiguration {
      */
     @Bean
     @ConditionalOnBean(IdempotentService.class)
+    @ConditionalOnMissingBean(IdempotentAspect.class)
+    @ConditionalOnExpression("'${letool.lock.backend:redis}' == 'redis' && '${letool.lock.idempotent.enabled:true}' == 'true'")
     public IdempotentAspect idempotentAspect(IdempotentService idempotentService) {
         return new IdempotentAspect(idempotentService);
     }

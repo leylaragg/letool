@@ -2,7 +2,7 @@
 
 ## 模块简介
 
-分布式锁模块，提供基于 Redis 的分布式锁和幂等性保证能力。支持注解声明式（`@Lock`、`@Idempotent`）和编程式（`LockTemplate`、`IdempotentService`）两种使用方式。内置自动续期（看门狗）、公平锁、SpEL 动态 key、幂等标记回滚等特性。
+分布式锁模块，提供基于 Redis 的分布式锁和幂等性保证能力。支持注解声明式（`@Lock`、`@Idempotent`）和编程式（`LockTemplate`、`IdempotentService`）两种使用方式。当前内置实现使用 Redis Lua 脚本完成原子加锁/释放，支持 SpEL 动态 key 和幂等标记回滚。
 
 ## Maven 坐标
 
@@ -27,7 +27,7 @@ letool:
       lock-prefix: "myapp:lock:"
       default-lease-time: 30      # 默认持锁 30 秒
       default-wait-time: 3        # 默认等待 3 秒
-      auto-renewal: true          # 看门狗自动续期
+      auto-renewal: true          # 预留配置，当前内置 Redis 锁暂未执行自动续期
     idempotent:
       enabled: true
       key-prefix: "myapp:idempotent:"
@@ -72,9 +72,9 @@ letool:
       lock-prefix: "letool:lock:"  # Redis 锁 key 前缀
       default-lease-time: 30       # 默认持锁时间（秒），默认 30
       default-wait-time: 3         # 默认等待时间（秒），默认 3
-      fair-lock: false             # 是否公平锁（排队获取），默认 false
-      auto-renewal: true           # 看门狗自动续期，默认 true
-      renewal-interval: 10         # 续期间隔（秒），默认 10
+      fair-lock: false             # 预留配置，当前内置 Redis 锁暂未实现公平队列
+      auto-renewal: true           # 预留配置，当前内置 Redis 锁暂未执行自动续期
+      renewal-interval: 10         # 预留配置，自动续期间隔（秒）
     idempotent:
       enabled: true                # 幂等检查开关，默认 true
       key-prefix: "letool:idempotent:"  # 幂等 key 前缀
@@ -161,6 +161,6 @@ public PaymentResult pay(Long orderId) {
 
 注意：如果 supplier 抛出异常，IdempotentService 会自动删除 Redis 中的幂等标记（回滚），允许后续请求重试。
 
-### 5. 自动续期（看门狗）
+### 5. 当前实现边界
 
-配置 `auto-renewal: true` 后，持锁期间每隔 `renewal-interval` 秒自动续期，防止业务执行超时导致锁提前释放。适合处理时间不确定的批量任务。配置 `fair-lock: true` 可启用公平锁，按请求顺序排队获取。
+当前内置 `RedisPessimisticLock` 通过 Redis `SET NX PX` 和 Lua 释放脚本实现互斥锁，锁会按照 `leaseTime` 自动过期释放。`auto-renewal`、`renewal-interval` 和 `fair-lock` 目前是配置预留项，内置 Redis 锁暂未实现看门狗续期和公平队列；需要这些能力时可以注册自定义 `DistributedLock` Bean，starter 会自动退让。

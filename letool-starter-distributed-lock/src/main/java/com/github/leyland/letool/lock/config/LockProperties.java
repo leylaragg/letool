@@ -10,7 +10,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * <ul>
  *   <li><b>Pessimistic（悲观锁）</b>：控制分布式锁的行为，包括锁的 key 前缀、
- *       默认持锁时间、默认等待时间、是否公平锁、是否自动续期等。</li>
+ *       默认持锁时间和默认等待时间；公平锁、自动续期字段为后续实现预留。</li>
  *   <li><b>Idempotent（幂等性）</b>：控制幂等检查的行为，包括是否启用、
  *       缓存 key 前缀、结果缓存时间等。</li>
  * </ul>
@@ -68,8 +68,8 @@ public class LockProperties {
     /**
      * 悲观锁（Pessimistic Lock）相关配置。
      *
-     * <p>控制 Redis 分布式锁的运行时行为，包括锁的 key 命名规则、
-     * 超时策略、公平性以及自动续期机制。</p>
+     * <p>控制 Redis 分布式锁的运行时行为，包括锁的 key 命名规则和超时策略。
+     * 公平性以及自动续期字段目前为后续实现预留。</p>
      */
     public static class Pessimistic {
 
@@ -82,13 +82,13 @@ public class LockProperties {
         /** 默认等待获取锁的最长时间（秒），超时返回失败，默认 {@code 3} */
         private long defaultWaitTime = 3;
 
-        /** 是否启用公平锁（按请求顺序排队获取），默认 {@code false} */
+        /** 是否启用公平锁（预留字段，当前内置 Redis 锁暂未实现公平队列），默认 {@code false} */
         private boolean fairLock = false;
 
-        /** 是否启用自动续期（看门狗机制），默认 {@code true} */
+        /** 是否启用自动续期（预留字段，当前内置 Redis 锁暂未执行自动续期），默认 {@code true} */
         private boolean autoRenewal = true;
 
-        /** 自动续期间隔（秒），默认 {@code 10} */
+        /** 自动续期间隔（秒，预留字段），默认 {@code 10} */
         private long renewalInterval = 10;
 
         // ======================== Getter / Setter ========================

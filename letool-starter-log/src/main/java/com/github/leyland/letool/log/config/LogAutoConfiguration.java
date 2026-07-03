@@ -19,6 +19,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplicat
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.core.task.TaskDecorator;
 
 /**
@@ -81,6 +82,7 @@ public class LogAutoConfiguration {
      * Registers request logging for Spring MVC controllers.
      */
     @Bean
+    @ConditionalOnClass(name = "org.aspectj.lang.annotation.Aspect")
     @ConditionalOnWebApplication
     @ConditionalOnProperty(prefix = "letool.log.web-log", name = "enabled", havingValue = "true", matchIfMissing = true)
     @ConditionalOnMissingBean(WebLogAspect.class)
@@ -89,34 +91,41 @@ public class LogAutoConfiguration {
     }
 
     /**
-     * Registers the audit log service and wires it to the available audit store.
+     * Groups audit logging beans behind the audit feature switch.
      */
-    @Bean
+    @Configuration(proxyBeanMethods = false)
     @ConditionalOnProperty(prefix = "letool.log.audit", name = "enabled", havingValue = "true", matchIfMissing = true)
-    @ConditionalOnMissingBean(AuditLogService.class)
-    public AuditLogService auditLogService(ObjectProvider<LogRecordStore<AuditLogEvent>> auditLogStoreProvider) {
-        LogRecordStore<AuditLogEvent> store = auditLogStoreProvider.getIfAvailable(() -> new MemoryLogStore<>(10000));
-        return new DefaultAuditLogProcessor(store);
-    }
+    static class AuditLogConfiguration {
 
-    /**
-     * Registers an in-memory audit store for lightweight local applications and tests.
-     */
-    @Bean
-    @ConditionalOnProperty(prefix = "letool.log.audit", name = "storage", havingValue = "memory")
-    @ConditionalOnMissingBean(LogRecordStore.class)
-    public LogRecordStore<AuditLogEvent> auditMemoryLogStore() {
-        return new MemoryLogStore<>(10000);
-    }
+        /**
+         * Registers the audit log service and wires it to the available audit store.
+         */
+        @Bean
+        @ConditionalOnMissingBean(AuditLogService.class)
+        public AuditLogService auditLogService(ObjectProvider<LogRecordStore<AuditLogEvent>> auditLogStoreProvider) {
+            LogRecordStore<AuditLogEvent> store = auditLogStoreProvider.getIfAvailable(() -> new MemoryLogStore<>(10000));
+            return new DefaultAuditLogProcessor(store);
+        }
 
-    /**
-     * Registers a JSON Lines audit file store when file storage is selected.
-     */
-    @Bean
-    @ConditionalOnProperty(prefix = "letool.log.audit", name = "storage", havingValue = "file", matchIfMissing = true)
-    @ConditionalOnMissingBean(LogRecordStore.class)
-    public LogRecordStore<AuditLogEvent> auditFileLogStore(LogProperties properties) {
-        String baseDir = System.getProperty("user.home") + "/.letool/logs/audit-log";
-        return new FileLogStore<>(baseDir, AuditLogEvent.class);
+        /**
+         * Registers an in-memory audit store for lightweight local applications and tests.
+         */
+        @Bean
+        @ConditionalOnProperty(prefix = "letool.log.audit", name = "storage", havingValue = "memory")
+        @ConditionalOnMissingBean(LogRecordStore.class)
+        public LogRecordStore<AuditLogEvent> auditMemoryLogStore() {
+            return new MemoryLogStore<>(10000);
+        }
+
+        /**
+         * Registers a JSON Lines audit file store when file storage is selected.
+         */
+        @Bean
+        @ConditionalOnProperty(prefix = "letool.log.audit", name = "storage", havingValue = "file", matchIfMissing = true)
+        @ConditionalOnMissingBean(LogRecordStore.class)
+        public LogRecordStore<AuditLogEvent> auditFileLogStore(LogProperties properties) {
+            String baseDir = System.getProperty("user.home") + "/.letool/logs/audit-log";
+            return new FileLogStore<>(baseDir, AuditLogEvent.class);
+        }
     }
 }

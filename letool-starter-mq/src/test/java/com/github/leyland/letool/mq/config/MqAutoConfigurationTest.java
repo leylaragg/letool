@@ -40,6 +40,64 @@ class MqAutoConfigurationTest {
     }
 
     /**
+     * 验证关闭 MQ 模块后不会注册运行时消息队列组件。
+     */
+    @Test
+    void shouldNotCreateRuntimeBeansWhenDisabled() {
+        contextRunner
+                .withPropertyValues("letool.mq.enabled=false")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(MqProperties.class);
+                    assertThat(context).doesNotHaveBean(MqProvider.class);
+                    assertThat(context).doesNotHaveBean(MqTemplate.class);
+                });
+    }
+
+    /**
+     * 验证 MQ 属性绑定覆盖所有预留 provider 和通用生产/消费配置。
+     */
+    @Test
+    void shouldBindMqProperties() {
+        contextRunner
+                .withPropertyValues(
+                        "letool.mq.default-type=memory",
+                        "letool.mq.rabbitmq.host=10.0.0.8",
+                        "letool.mq.rabbitmq.port=5673",
+                        "letool.mq.rabbitmq.username=admin",
+                        "letool.mq.rabbitmq.password=secret",
+                        "letool.mq.rabbitmq.virtual-host=/letool",
+                        "letool.mq.rocketmq.name-server=10.0.0.9:9876",
+                        "letool.mq.rocketmq.group=rocket-group",
+                        "letool.mq.rocketmq.topic=orders",
+                        "letool.mq.kafka.bootstrap-servers=10.0.0.10:9092",
+                        "letool.mq.kafka.group-id=kafka-group",
+                        "letool.mq.consumer.concurrency=4",
+                        "letool.mq.consumer.max-attempts=6",
+                        "letool.mq.consumer.backoff-initial=2500",
+                        "letool.mq.producer.retry-times=5",
+                        "letool.mq.producer.send-timeout=8000")
+                .run(context -> {
+                    MqProperties properties = context.getBean(MqProperties.class);
+
+                    assertThat(properties.getRabbitMQ().getHost()).isEqualTo("10.0.0.8");
+                    assertThat(properties.getRabbitMQ().getPort()).isEqualTo(5673);
+                    assertThat(properties.getRabbitMQ().getUsername()).isEqualTo("admin");
+                    assertThat(properties.getRabbitMQ().getPassword()).isEqualTo("secret");
+                    assertThat(properties.getRabbitMQ().getVirtualHost()).isEqualTo("/letool");
+                    assertThat(properties.getRocketMQ().getNameServer()).isEqualTo("10.0.0.9:9876");
+                    assertThat(properties.getRocketMQ().getGroup()).isEqualTo("rocket-group");
+                    assertThat(properties.getRocketMQ().getTopic()).isEqualTo("orders");
+                    assertThat(properties.getKafka().getBootstrapServers()).isEqualTo("10.0.0.10:9092");
+                    assertThat(properties.getKafka().getGroupId()).isEqualTo("kafka-group");
+                    assertThat(properties.getConsumer().getConcurrency()).isEqualTo(4);
+                    assertThat(properties.getConsumer().getMaxAttempts()).isEqualTo(6);
+                    assertThat(properties.getConsumer().getBackoffInitial()).isEqualTo(2500L);
+                    assertThat(properties.getProducer().getRetryTimes()).isEqualTo(5);
+                    assertThat(properties.getProducer().getSendTimeout()).isEqualTo(8000L);
+                });
+    }
+
+    /**
      * 验证未内置真实 provider 的类型会 fail-fast，而不是静默回退到内存队列。
      */
     @Test
@@ -66,6 +124,21 @@ class MqAutoConfigurationTest {
                     assertThat(context).hasSingleBean(MqProvider.class);
                     assertThat(context.getBean(MqProvider.class))
                             .isSameAs(context.getBean("mqProvider"));
+                    assertThat(context).hasSingleBean(MqTemplate.class);
+                });
+    }
+
+    /**
+     * 验证用户自行提供真实 provider 时，预留类型不会触发内置 fail-fast。
+     */
+    @Test
+    void shouldAllowReservedTypeWhenUserProvidesMqProvider() {
+        contextRunner
+                .withUserConfiguration(UserMqConfiguration.class)
+                .withPropertyValues("letool.mq.default-type=rabbitmq")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(MqProvider.class);
+                    assertThat(context.getBean(MqProvider.class)).isInstanceOf(TestMqProvider.class);
                     assertThat(context).hasSingleBean(MqTemplate.class);
                 });
     }

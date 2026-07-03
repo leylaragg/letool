@@ -86,6 +86,7 @@ public class AiAutoConfiguration {
      * @return OpenAI 提供商实例
      */
     @Bean
+    @ConditionalOnMissingBean(name = "openAiProvider")
     public OpenAiProvider openAiProvider(AiProperties properties, AiHttpTransport httpTransport) {
         log.info("注册 OpenAI 提供商: model={}", properties.getOpenai().getDefaultModel());
         return new OpenAiProvider(properties.getOpenai(), httpTransport);
@@ -99,6 +100,7 @@ public class AiAutoConfiguration {
      * @return DeepSeek 提供商实例
      */
     @Bean
+    @ConditionalOnMissingBean(name = "deepSeekProvider")
     public DeepSeekProvider deepSeekProvider(AiProperties properties, AiHttpTransport httpTransport) {
         log.info("注册 DeepSeek 提供商: model={}", properties.getDeepseek().getDefaultModel());
         return new DeepSeekProvider(properties.getDeepseek(), httpTransport);
@@ -112,6 +114,7 @@ public class AiAutoConfiguration {
      * @return 通义千问提供商实例
      */
     @Bean
+    @ConditionalOnMissingBean(name = "qwenProvider")
     public QwenProvider qwenProvider(AiProperties properties, AiHttpTransport httpTransport) {
         log.info("注册通义千问提供商: model={}", properties.getQwen().getDefaultModel());
         return new QwenProvider(properties.getQwen(), httpTransport);
@@ -129,6 +132,7 @@ public class AiAutoConfiguration {
      * @return AiTemplate 实例
      */
     @Bean
+    @ConditionalOnMissingBean(AiTemplate.class)
     public AiTemplate aiTemplate(List<AiProvider> providers, AiProperties properties) {
         return new AiTemplate(providers, properties);
     }
@@ -144,6 +148,7 @@ public class AiAutoConfiguration {
      */
     @Bean
     @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+    @ConditionalOnMissingBean(ChatSession.class)
     public ChatSession chatSession(AiTemplate aiTemplate, AiProperties aiProperties) {
         return new ChatSession(aiTemplate, aiProperties);
     }
@@ -155,6 +160,7 @@ public class AiAutoConfiguration {
      * @return EmbeddingService 实例
      */
     @Bean
+    @ConditionalOnMissingBean(EmbeddingService.class)
     public EmbeddingService embeddingService(AiTemplate aiTemplate) {
         return new EmbeddingService(aiTemplate);
     }
@@ -168,6 +174,7 @@ public class AiAutoConfiguration {
      * @return VectorStore 实例
      */
     @Bean
+    @ConditionalOnMissingBean(VectorStore.class)
     public VectorStore vectorStore(EmbeddingService embeddingService) {
         return new VectorStore(embeddingService);
     }
@@ -185,6 +192,7 @@ public class AiAutoConfiguration {
      */
     @Bean
     @ConditionalOnBean(VectorStore.class)
+    @ConditionalOnMissingBean(RagService.class)
     public RagService ragService(EmbeddingService embeddingService,
                                  VectorStore vectorStore,
                                  AiTemplate aiTemplate) {
@@ -200,6 +208,7 @@ public class AiAutoConfiguration {
      * @return PromptTemplate 实例
      */
     @Bean
+    @ConditionalOnMissingBean(PromptTemplate.class)
     public PromptTemplate promptTemplate() {
         return new PromptTemplate();
     }
@@ -210,6 +219,7 @@ public class AiAutoConfiguration {
      * @return FunctionCallHandler 实例
      */
     @Bean
+    @ConditionalOnMissingBean(FunctionCallHandler.class)
     public FunctionCallHandler functionCallHandler() {
         return new FunctionCallHandler();
     }
@@ -220,6 +230,7 @@ public class AiAutoConfiguration {
      * @return DocumentLoader 实例
      */
     @Bean
+    @ConditionalOnMissingBean(DocumentLoader.class)
     public DocumentLoader documentLoader() {
         return new DocumentLoader();
     }
@@ -230,6 +241,7 @@ public class AiAutoConfiguration {
      * @return TextSplitter 实例
      */
     @Bean
+    @ConditionalOnMissingBean(TextSplitter.class)
     public TextSplitter textSplitter() {
         return new TextSplitter();
     }

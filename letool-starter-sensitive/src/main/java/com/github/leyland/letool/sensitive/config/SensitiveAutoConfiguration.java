@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.leyland.letool.sensitive.jackson.SensitiveModule;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -33,6 +34,7 @@ public class SensitiveAutoConfiguration {
      */
     @Bean
     @ConditionalOnClass(ObjectMapper.class)
+    @ConditionalOnMissingBean(SensitiveModule.class)
     @ConditionalOnProperty(prefix = "letool.sensitive.jackson", name = "enabled", havingValue = "true", matchIfMissing = true)
     public SensitiveModule sensitiveModule() {
         return new SensitiveModule();
@@ -43,6 +45,7 @@ public class SensitiveAutoConfiguration {
      * 此 Bean 确保日志层面的脱敏集成状态可被 Spring 管理和条件化禁用.
      */
     @Bean
+    @ConditionalOnMissingBean(SensitiveLogInitializer.class)
     @ConditionalOnProperty(prefix = "letool.sensitive.log", name = "enabled", havingValue = "true", matchIfMissing = true)
     public SensitiveLogInitializer sensitiveLogInitializer() {
         return new SensitiveLogInitializer();
@@ -52,8 +55,8 @@ public class SensitiveAutoConfiguration {
      * 日志脱敏集成标记 —— 实际脱敏由 Logback SensitiveMessageConverter / Log4j2 SensitivePatternConverter 通过 SPI 实现，
      * 此 Bean 作为 Spring 容器中的哨兵，表示日志脱敏已激活.
      */
-    static class SensitiveLogInitializer {
-        SensitiveLogInitializer() {
+    public static class SensitiveLogInitializer {
+        public SensitiveLogInitializer() {
             // 占位构造器 —— 实际的 PatternLayout 转换器通过 logback.xml 中的 %maskedMsg 或
             // Log4j2 PatternLayout 中的 %maskedMsg 触发，由对应的 Converter 实现类处理
         }

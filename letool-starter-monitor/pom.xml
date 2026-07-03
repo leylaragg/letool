@@ -11,7 +11,7 @@
 
     <artifactId>letool-starter-monitor</artifactId>
     <name>letool-starter-monitor</name>
-    <description>letool 监控指标模块 —— Micrometer/Prometheus 集成、JVM/HTTP/SQL 指标、告警通知（钉钉/企微/邮件）
+    <description>letool 监控指标模块 —— 轻量指标采集、JVM/API 统计、Webhook 告警、显式数据清理调度
     </description>
     <packaging>jar</packaging>
 
@@ -19,21 +19,6 @@
         <dependency>
             <groupId>com.github.leyland</groupId>
             <artifactId>letool-starter-tool</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.github.leyland</groupId>
-            <artifactId>letool-starter-log</artifactId>
-            <optional>true</optional>
-        </dependency>
-        <dependency>
-            <groupId>com.github.leyland</groupId>
-            <artifactId>letool-starter-thread</artifactId>
-            <optional>true</optional>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-actuator</artifactId>
-            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -54,11 +39,6 @@
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
             <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

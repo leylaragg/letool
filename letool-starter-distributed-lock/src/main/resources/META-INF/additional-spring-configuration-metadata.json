@@ -33,19 +33,19 @@
     {
       "name": "letool.lock.pessimistic.fair-lock",
       "type": "java.lang.Boolean",
-      "description": "是否启用公平锁（按请求顺序排队获取）。",
+      "description": "预留配置：是否启用公平锁；当前内置 Redis 锁暂未实现公平队列。",
       "defaultValue": false
     },
     {
       "name": "letool.lock.pessimistic.auto-renewal",
       "type": "java.lang.Boolean",
-      "description": "是否启用自动续期（看门狗机制）。",
+      "description": "预留配置：是否启用自动续期；当前内置 Redis 锁暂未执行自动续期。",
       "defaultValue": true
     },
     {
       "name": "letool.lock.pessimistic.renewal-interval",
       "type": "java.lang.Long",
-      "description": "自动续期间隔（秒）。",
+      "description": "预留配置：自动续期间隔（秒）。",
       "defaultValue": 10
     },
     {

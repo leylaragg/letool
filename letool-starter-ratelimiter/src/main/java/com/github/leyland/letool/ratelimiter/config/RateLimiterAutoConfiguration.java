@@ -9,6 +9,7 @@ import com.github.leyland.letool.ratelimiter.core.RateLimiter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -163,6 +164,7 @@ public class RateLimiterAutoConfiguration {
      * @return 限流/熔断切面实例
      */
     @Bean
+    @ConditionalOnClass(name = "org.aspectj.lang.annotation.Aspect")
     @ConditionalOnMissingBean(RateLimitAspect.class)
     @ConditionalOnProperty(prefix = "letool.rate-limiter.annotation", name = "enabled", havingValue = "true", matchIfMissing = true)
     public RateLimitAspect rateLimitAspect(RateLimitTemplate rateLimitTemplate,

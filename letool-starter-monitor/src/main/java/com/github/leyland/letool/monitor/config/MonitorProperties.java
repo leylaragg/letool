@@ -98,7 +98,7 @@ public class MonitorProperties {
     // ======================== 内部类：指标采集配置 ========================
 
     /**
-     * 指标采集配置 —— 控制 Micrometer/Prometheus 指标的采集策略.
+     * 指标采集配置 —— 控制轻量指标采集策略.
      *
      * @author leyland
      * @since 2.0.0
@@ -108,7 +108,7 @@ public class MonitorProperties {
         /** 指标采集开关 */
         private boolean enabled = true;
 
-        /** 是否导出 Prometheus 格式指标（/actuator/prometheus） */
+        /** 是否预留 Prometheus 导出配置；当前 starter 未内置 Actuator/Prometheus endpoint */
         private boolean exportPrometheus = true;
 
         /** 指标采集步长，如 1m / 30s / 10s */

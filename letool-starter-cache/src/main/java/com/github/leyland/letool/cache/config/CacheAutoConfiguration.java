@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -55,6 +56,7 @@ public class CacheAutoConfiguration {
      * 注册缓存 AOP 切面.
      */
     @Bean
+    @ConditionalOnClass(name = "org.aspectj.lang.annotation.Aspect")
     @ConditionalOnBean(CacheManager.class)
     @ConditionalOnMissingBean(CacheAspect.class)
     @ConditionalOnProperty(prefix = "letool.cache.annotation", name = "enabled", havingValue = "true", matchIfMissing = true)

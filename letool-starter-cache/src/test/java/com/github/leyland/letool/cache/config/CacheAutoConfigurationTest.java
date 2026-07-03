@@ -7,6 +7,7 @@ import com.github.leyland.letool.cache.serializer.JacksonCacheSerializer;
 import com.github.leyland.letool.cache.support.CacheMonitor;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,6 +24,77 @@ class CacheAutoConfigurationTest {
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(CacheAutoConfiguration.class))
             .withPropertyValues("spring.main.allow-bean-definition-overriding=false");
+
+    /**
+     * 默认启用时应装配 L1 缓存所需的核心组件，并保持注解和监控能力可用。
+     */
+    @Test
+    void shouldCreateDefaultCacheInfrastructureBeans() {
+        contextRunner.run(context -> {
+            assertThat(context).hasSingleBean(CacheProperties.class);
+            assertThat(context).hasSingleBean(CacheSerializer.class);
+            assertThat(context).hasSingleBean(CacheManager.class);
+            assertThat(context).hasSingleBean(CacheAspect.class);
+            assertThat(context).hasSingleBean(CacheMonitor.class);
+            assertThat(context).hasBean("cacheInstancesInitializer");
+        });
+    }
+
+    /**
+     * 总开关关闭时，缓存 starter 不应留下任何运行时基础设施 Bean。
+     */
+    @Test
+    void shouldDisableCacheAutoConfiguration() {
+        contextRunner
+                .withPropertyValues("letool.cache.enabled=false")
+                .run(context -> {
+                    assertThat(context).doesNotHaveBean(CacheProperties.class);
+                    assertThat(context).doesNotHaveBean(CacheManager.class);
+                    assertThat(context).doesNotHaveBean(CacheAspect.class);
+                    assertThat(context).doesNotHaveBean(CacheMonitor.class);
+                });
+    }
+
+    /**
+     * 没有 Redis 相关 classpath 时，cache starter 仍应以 L1-only 模式启动。
+     */
+    @Test
+    void shouldStartAsL1OnlyCacheWhenRedisClasspathIsMissing() {
+        contextRunner
+                .withClassLoader(new FilteredClassLoader("org.springframework.data.redis"))
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(CacheManager.class);
+                    assertThat(context).hasSingleBean(CacheMonitor.class);
+                });
+    }
+
+    /**
+     * 没有 AspectJ 时，注解切面不应加载，但编程式缓存 API 仍然可用。
+     */
+    @Test
+    void shouldStartWithoutCacheAspectWhenAspectJClasspathIsMissing() {
+        contextRunner
+                .withClassLoader(new FilteredClassLoader("org.aspectj"))
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(CacheManager.class);
+                    assertThat(context).doesNotHaveBean(CacheAspect.class);
+                });
+    }
+
+    /**
+     * 关闭监控时，只应移除 CacheMonitor，不影响核心缓存管理器。
+     */
+    @Test
+    void shouldDisableCacheMonitoringOnly() {
+        contextRunner
+                .withPropertyValues("letool.cache.monitoring.enabled=false")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(CacheManager.class);
+                    assertThat(context).doesNotHaveBean(CacheMonitor.class);
+                });
+    }
 
     /**
      * 验证用户提供序列化器、管理器、切面、监控器和初始化器时，自动配置不会创建重复 Bean。
@@ -49,9 +121,6 @@ class CacheAutoConfigurationTest {
                 });
     }
 
-    /**
-     * 模拟业务项目自行接管缓存基础设施的配置。
-     */
     /**
      * Disabling annotation support should keep the programmatic cache API available.
      */
