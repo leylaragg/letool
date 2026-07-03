@@ -9,7 +9,9 @@ import com.github.leyland.letool.ai.exception.AiException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
@@ -17,6 +19,7 @@ import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.function.Consumer;
 
 /**
  * OpenAI 提供商实现 —— 通过 HTTP 调用 OpenAI 兼容 API.
@@ -122,6 +125,35 @@ public class OpenAiProvider implements AiProvider {
         }
     }
 
+    /**
+     * 发送流式对话请求到 OpenAI 兼容 API。
+     *
+     * <p>解析 {@code text/event-stream} 中的 {@code data: ...} 行，提取
+     * {@code choices[0].delta.content} 并按顺序回调给调用方。</p>
+     *
+     * @param request 对话请求
+     * @param onDelta 增量文本回调
+     * @throws AiException 当 API 调用失败时
+     */
+    @Override
+    public void chatStream(ChatRequest request, Consumer<String> onDelta) {
+        checkApiKey();
+        if (onDelta == null) {
+            throw new AiException("OpenAI 流式回调不能为空", getProviderName());
+        }
+
+        try {
+            String model = request.getModel() != null ? request.getModel() : defaultModel;
+            String jsonBody = buildChatRequestBody(request, model, true);
+            String apiUrl = getBaseUrl() + CHAT_PATH;
+            httpPostStream(apiUrl, jsonBody, onDelta);
+        } catch (AiException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new AiException("OpenAI 流式对话请求失败: " + redactSensitive(e.getMessage()), getProviderName(), e);
+        }
+    }
+
     // ======================== 核心方法：嵌入 ========================
 
     /**
@@ -220,8 +252,23 @@ public class OpenAiProvider implements AiProvider {
      * @return JSON 字符串
      */
     protected String buildChatRequestBody(ChatRequest request, String model) {
+        return buildChatRequestBody(request, model, false);
+    }
+
+    /**
+     * 构建对话请求的 JSON 请求体.
+     *
+     * @param request 对话请求
+     * @param model   模型名称
+     * @param stream  是否启用流式输出
+     * @return JSON 字符串
+     */
+    protected String buildChatRequestBody(ChatRequest request, String model, boolean stream) {
         JSONObject body = new JSONObject();
         body.put("model", model);
+        if (stream) {
+            body.put("stream", true);
+        }
 
         // 消息列表
         JSONArray messages = new JSONArray();
@@ -414,6 +461,94 @@ public class OpenAiProvider implements AiProvider {
             }
         }
         throw new AiException("OpenAI 请求失败: 已耗尽重试次数", getProviderName());
+    }
+
+    /**
+     * 发送流式 HTTP POST 请求。
+     *
+     * @param apiUrl   API URL
+     * @param jsonBody JSON 请求体
+     * @param onDelta  增量文本回调
+     * @throws IOException 当网络请求失败时
+     */
+    protected void httpPostStream(String apiUrl, String jsonBody, Consumer<String> onDelta) throws IOException {
+        HttpURLConnection conn = null;
+        try {
+            URL url = URI.create(apiUrl).toURL();
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(normalizeTimeout(config.getConnectTimeoutMillis(), 10000));
+            conn.setReadTimeout(normalizeTimeout(config.getReadTimeoutMillis(), 60000));
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty("Authorization", "Bearer " + config.getApiKey());
+            conn.setRequestProperty("Accept", "text/event-stream");
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(jsonBody.getBytes(StandardCharsets.UTF_8));
+            }
+
+            int statusCode = conn.getResponseCode();
+            if (statusCode < 200 || statusCode >= 300) {
+                String errorBody;
+                try (java.io.InputStream es = conn.getErrorStream()) {
+                    errorBody = es != null ? new String(es.readAllBytes(), StandardCharsets.UTF_8) : "";
+                }
+                throw buildApiException(statusCode, errorBody);
+            }
+
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    handleStreamLine(line, onDelta);
+                }
+            }
+        } catch (SocketTimeoutException e) {
+            throw new AiException("OpenAI 流式请求超时: " + redactSensitive(e.getMessage()), getProviderName(), e);
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
+        }
+    }
+
+    /**
+     * 处理单行 SSE 数据。
+     *
+     * @param line    SSE 行
+     * @param onDelta 增量文本回调
+     */
+    private void handleStreamLine(String line, Consumer<String> onDelta) {
+        if (line == null || line.isBlank() || !line.startsWith("data:")) {
+            return;
+        }
+
+        String data = line.substring("data:".length()).trim();
+        if ("[DONE]".equals(data)) {
+            return;
+        }
+
+        JSONObject json = JSON.parseObject(data);
+        JSONArray choices = json.getJSONArray("choices");
+        if (choices == null || choices.isEmpty()) {
+            return;
+        }
+
+        JSONObject choice = choices.getJSONObject(0);
+        if (choice == null) {
+            return;
+        }
+
+        JSONObject delta = choice.getJSONObject("delta");
+        if (delta == null) {
+            return;
+        }
+
+        String content = delta.getString("content");
+        if (content != null && !content.isEmpty()) {
+            onDelta.accept(content);
+        }
     }
 
     /**

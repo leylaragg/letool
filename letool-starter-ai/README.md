@@ -1,8 +1,8 @@
 # letool-starter-ai
 
-AI 集成模块，提供 OpenAI、DeepSeek、通义千问、智谱、Ollama 等多厂商的统一 API，支持对话、嵌入向量、Function Calling、RAG 检索增强生成等能力。
+AI 集成模块，提供 OpenAI、DeepSeek、通义千问、智谱、Ollama 等多厂商的统一 API，支持对话、流式输出、嵌入向量、Function Calling、RAG 检索增强生成等能力。
 
-> ⚠️ OpenAI 兼容 provider 会发起真实 HTTP 请求，已支持超时、临时错误重试、上游错误码解析和敏感信息脱敏。流式输出、连接池、投递审计和更完整的集成测试仍需继续补齐。
+> ⚠️ OpenAI 兼容 provider 会发起真实 HTTP 请求，已支持超时、临时错误重试、上游错误码解析、敏感信息脱敏和流式输出。连接池、投递审计和更完整的集成测试仍需继续补齐。
 
 ## Maven 坐标
 
@@ -105,6 +105,12 @@ ChatResponse response = aiTemplate.chat()
     .system("你是一个助手")
     .user("你好")
     .execute();
+
+// 流式对话
+aiTemplate.chat()
+    .provider("openai")
+    .user("写一句欢迎语")
+    .executeStream(System.out::print);
 
 // 多轮对话（带历史）
 ChatResponse response = aiTemplate.chat()

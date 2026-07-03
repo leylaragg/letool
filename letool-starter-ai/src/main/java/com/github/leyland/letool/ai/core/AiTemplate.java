@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /**
@@ -33,6 +34,12 @@ import java.util.stream.Collectors;
  *     .execute();
  *
  * System.out.println(response.getContent());
+ *
+ * // 流式对话
+ * aiTemplate.chat()
+ *     .provider("openai")
+ *     .user("写一段欢迎语")
+ *     .executeStream(System.out::print);
  *
  * // 获取嵌入向量
  * float[] vector = aiTemplate.embedding()
@@ -318,6 +325,27 @@ public class AiTemplate {
          * @throws AiException 当调用失败时
          */
         public ChatResponse execute() {
+            ChatInvocation invocation = getProviderAndRequest();
+            return invocation.provider.chat(invocation.request);
+        }
+
+        /**
+         * 构建请求并执行流式对话，逐段回调增量文本。
+         *
+         * @param onDelta 增量文本回调
+         * @throws AiException 当调用失败或 provider 不支持流式输出时
+         */
+        public void executeStream(Consumer<String> onDelta) {
+            ChatInvocation invocation = getProviderAndRequest();
+            invocation.provider.chatStream(invocation.request, onDelta);
+        }
+
+        /**
+         * 解析 provider 并构建最终请求。
+         *
+         * @return 对话调用上下文
+         */
+        private ChatInvocation getProviderAndRequest() {
             String resolvedProvider = (provider != null && !provider.isEmpty())
                     ? provider : properties.getDefaultProvider();
             AiProvider aiProvider = getProvider(resolvedProvider);
@@ -331,7 +359,16 @@ public class AiTemplate {
                     .functions(functions)
                     .build();
 
-            return aiProvider.chat(request);
+            return new ChatInvocation(aiProvider, request);
+        }
+
+        /**
+         * 对话调用上下文。
+         *
+         * @param provider AI 提供商
+         * @param request  对话请求
+         */
+        private record ChatInvocation(AiProvider provider, ChatRequest request) {
         }
     }
 
