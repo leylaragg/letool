@@ -155,6 +155,30 @@ class JobDefinitionTest {
         }
 
         @Test
+        @DisplayName("shardIndex 超出 shardTotal 时应抛异常")
+        void shardIndexOutOfRangeShouldThrow() {
+            assertThrows(IllegalArgumentException.class, () ->
+                    JobDefinition.builder()
+                            .jobName("test")
+                            .handler(ctx -> {})
+                            .shardTotal(2)
+                            .shardIndex(2)
+                            .build());
+        }
+
+        @Test
+        @DisplayName("shardIndex 为负数时应抛异常")
+        void negativeShardIndexShouldThrow() {
+            assertThrows(IllegalArgumentException.class, () ->
+                    JobDefinition.builder()
+                            .jobName("test")
+                            .handler(ctx -> {})
+                            .shardTotal(2)
+                            .shardIndex(-1)
+                            .build());
+        }
+
+        @Test
         @DisplayName("异常消息应包含有意义的提示")
         void exceptionMessageShouldBeMeaningful() {
             Exception ex = assertThrows(IllegalArgumentException.class, () ->

@@ -5,7 +5,9 @@ import com.github.leyland.letool.job.exception.JobException;
 import com.github.leyland.letool.job.retry.RetryPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.support.CronExpression;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -38,7 +40,7 @@ import java.util.stream.Collectors;
  * @see JobHandler
  * @see JobLogService
  */
-public class JobScheduler {
+public class JobScheduler implements AutoCloseable {
 
     // ======================== 日志 ========================
 
@@ -92,6 +94,7 @@ public class JobScheduler {
      */
     public JobScheduler(ScheduledThreadPoolExecutor executor, JobLogService logService, JobProperties properties) {
         this.executor = executor;
+        this.executor.setRemoveOnCancelPolicy(true);
         this.logService = logService;
         this.properties = properties;
     }
@@ -116,9 +119,14 @@ public class JobScheduler {
         log.info("注册任务: {}, cron={}, shardTotal={}, maxRetries={}",
                 jobName, job.getCron(), job.getShardTotal(), job.getMaxRetries());
 
-        // 如果定义了 cron 表达式，则启动定时调度
-        if (job.getCron() != null && !job.getCron().isEmpty()) {
-            scheduleJob(job);
+        try {
+            // 如果定义了 cron 表达式，则启动定时调度
+            if (job.getCron() != null && !job.getCron().isEmpty()) {
+                scheduleJob(job);
+            }
+        } catch (RuntimeException e) {
+            jobs.remove(jobName, job);
+            throw e;
         }
     }
 
@@ -275,6 +283,30 @@ public class JobScheduler {
         return jobs.size();
     }
 
+    /**
+     * 关闭调度器并释放本地调度资源。
+     *
+     * <p>该方法会取消所有 Cron 调度、清理运行状态索引，并关闭底层执行线程池。
+     * 已经进入业务处理器的任务不会被强制中断，适合作为 Spring Bean destroy method
+     * 或独立工具使用时的显式生命周期出口。</p>
+     */
+    public void shutdown() {
+        scheduledJobs.forEach((jobName, future) -> future.cancel(false));
+        scheduledJobs.clear();
+        runningJobs.clear();
+        pausedJobs.clear();
+        executor.shutdown();
+        log.info("任务调度器已关闭");
+    }
+
+    /**
+     * AutoCloseable 适配，便于 try-with-resources 或通用资源关闭流程调用。
+     */
+    @Override
+    public void close() {
+        shutdown();
+    }
+
     // ======================== 内部方法 - 调度 ========================
 
     /**
@@ -288,30 +320,47 @@ public class JobScheduler {
     private void scheduleJob(JobDefinition job) {
         String cron = job.getCron();
         try {
-            // 计算首次延迟和间隔
             CronSchedule schedule = parseCron(cron);
-            long initialDelay = schedule.initialDelayMs;
-            long period = schedule.periodMs;
-
-            // 创建固定频率调度
-            ScheduledFuture<?> future = executor.scheduleAtFixedRate(() -> {
-                if (pausedJobs.containsKey(job.getJobName())) {
-                    return; // 已暂停，跳过执行
-                }
-                // 检查 Cron 是否匹配当前时间
-                if (matchesCurrentTime(cron)) {
-                    JobContext context = new JobContext(
-                            job.getJobName(), job.getShardIndex(), job.getShardTotal(), job.getParams());
-                    JobResult result = new JobResult(context);
-                    submitExecution(job, context, result);
-                }
-            }, initialDelay, period, TimeUnit.MILLISECONDS);
-
-            scheduledJobs.put(job.getJobName(), future);
-            log.info("任务 '{}' 已调度: cron={}, initialDelay={}ms, period={}ms",
-                    job.getJobName(), cron, initialDelay, period);
+            scheduleNextExecution(job, schedule.expression, schedule.initialDelayMs);
+            log.info("任务 '{}' 已调度: cron={}, nextExecutionTime={}, initialDelay={}ms",
+                    job.getJobName(), cron, schedule.nextExecutionTime, schedule.initialDelayMs);
         } catch (Exception e) {
             throw new JobException("Cron 表达式解析失败: " + cron, job.getJobName(), e);
+        }
+    }
+
+    /**
+     * 根据 Cron 表达式安排下一次单次触发，并在触发后继续计算后续触发点.
+     *
+     * <p>使用 Spring 的 {@link CronExpression} 负责完整 Cron 语义，避免内置调度器只按固定
+     * period 轮询而错过具体分钟、小时、列表或范围表达式。该方法只维护本地生命周期和重新调度。</p>
+     *
+     * @param job            任务定义
+     * @param cronExpression 已解析的 Cron 表达式
+     * @param delayMs        距离下一次触发的延迟毫秒数
+     */
+    private void scheduleNextExecution(JobDefinition job, CronExpression cronExpression, long delayMs) {
+        ScheduledFuture<?> future = executor.schedule(() -> {
+            scheduledJobs.remove(job.getJobName());
+            if (!jobs.containsKey(job.getJobName()) || pausedJobs.containsKey(job.getJobName())) {
+                return;
+            }
+
+            JobContext context = new JobContext(
+                    job.getJobName(), job.getShardIndex(), job.getShardTotal(), job.getParams());
+            JobResult result = new JobResult(context);
+            submitExecution(job, context, result);
+
+            if (jobs.containsKey(job.getJobName()) && !pausedJobs.containsKey(job.getJobName())
+                    && !executor.isShutdown()) {
+                CronSchedule nextSchedule = createCronSchedule(cronExpression);
+                scheduleNextExecution(job, cronExpression, nextSchedule.initialDelayMs);
+            }
+        }, Math.max(0, delayMs), TimeUnit.MILLISECONDS);
+
+        ScheduledFuture<?> previous = scheduledJobs.put(job.getJobName(), future);
+        if (previous != null) {
+            previous.cancel(false);
         }
     }
 
@@ -414,7 +463,7 @@ public class JobScheduler {
                 log.debug("执行任务: {}, executionId={}, retry={}",
                         job.getJobName(), context.getExecutionId(), retry);
                 job.getHandler().execute(context);
-                result.success("执行成功");
+                result.success("执行成功", retry);
                 log.info("任务执行成功: {}, executionId={}, durationMs={}",
                         job.getJobName(), result.getExecutionId(), result.getDurationMs());
                 break;
@@ -461,221 +510,45 @@ public class JobScheduler {
     private static class CronSchedule {
         /** 首次执行延迟（毫秒） */
         long initialDelayMs;
-        /** 执行间隔（毫秒） */
-        long periodMs;
+        /** 下一次触发时间 */
+        LocalDateTime nextExecutionTime;
+        /** Spring Cron 表达式 */
+        CronExpression expression;
 
-        CronSchedule(long initialDelayMs, long periodMs) {
+        CronSchedule(long initialDelayMs, LocalDateTime nextExecutionTime, CronExpression expression) {
             this.initialDelayMs = initialDelayMs;
-            this.periodMs = periodMs;
+            this.nextExecutionTime = nextExecutionTime;
+            this.expression = expression;
         }
     }
 
     /**
-     * 解析 Cron 表达式为初始延迟和间隔.
+     * 解析 Cron 表达式并计算首次触发信息.
      *
-     * <p>这是一个简化的 Cron 解析实现，用于计算调度间隔.
-     * 支持 * 通配符和具体数值. 实际精确匹配由 {@link #matchesCurrentTime(String)} 完成.</p>
-     *
-     * <p>支持的格式：</p>
-     * <ul>
-     *   <li>6 位: 秒 分 时 日 月 周</li>
-     *   <li>7 位: 秒 分 时 日 月 周 年</li>
-     * </ul>
+     * <p>这里委托 Spring {@link CronExpression} 处理完整 Cron 语义，支持列表、范围、步进、
+     * 问号占位等标准写法，避免本地调度器自行解析造成语义偏差。</p>
      *
      * @param cron Cron 表达式
      * @return 调度信息
      */
     private CronSchedule parseCron(String cron) {
-        String[] parts = cron.trim().split("\\s+");
-        if (parts.length < 6 || parts.length > 7) {
-            throw new IllegalArgumentException("Cron 表达式必须为6位或7位: " + cron);
-        }
-
-        long period = calculatePeriod(parts);
-        long now = System.currentTimeMillis();
-        long next = findNextExecutionTime(parts, now);
-        long initialDelay = Math.max(0, next - now);
-
-        return new CronSchedule(initialDelay, period);
+        CronExpression expression = CronExpression.parse(cron);
+        return createCronSchedule(expression);
     }
 
     /**
-     * 根据 Cron 字段计算调度间隔.
+     * 根据已解析 Cron 表达式计算下一次触发信息.
      *
-     * <p>从最小粒度的非"*"字段推断执行间隔.</p>
-     *
-     * @param parts Cron 表达式各字段
-     * @return 间隔毫秒数
+     * @param expression 已解析的 Spring Cron 表达式
+     * @return 包含下一次触发时间和延迟的调度信息
      */
-    private long calculatePeriod(String[] parts) {
-        // 按粒度从细到粗：秒、分、时、日、月、周、年
-        // 找到第一个非"*"且非"?"的字段来确定间隔
-        String second = parts[0].trim();
-        String minute = parts[1].trim();
-        String hour = parts[2].trim();
-        String dayOfMonth = parts[3].trim();
-
-        if (!"*".equals(second) && !"?".equals(second)) {
-            return parseFieldInterval(second) * 1000L;
+    private CronSchedule createCronSchedule(CronExpression expression) {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime next = expression.next(now);
+        if (next == null) {
+            throw new IllegalArgumentException("Cron 表达式没有可计算的下一次触发时间");
         }
-        if (!"*".equals(minute) && !"?".equals(minute)) {
-            return parseFieldInterval(minute) * 60 * 1000L;
-        }
-        if (!"*".equals(hour) && !"?".equals(hour)) {
-            return parseFieldInterval(hour) * 3600 * 1000L;
-        }
-        if (!"*".equals(dayOfMonth) && !"?".equals(dayOfMonth)) {
-            return parseFieldInterval(dayOfMonth) * 86400 * 1000L;
-        }
-        // 默认每分钟检查一次
-        return 60_000L;
-    }
-
-    /**
-     * 解析 Cron 字段的间隔值（支持 * /N 格式）.
-     *
-     * @param field Cron 字段值
-     * @return 间隔数值
-     */
-    private long parseFieldInterval(String field) {
-        if (field.startsWith("*/")) {
-            return Long.parseLong(field.substring(2));
-        }
-        // 对于具体数值，返回域最大值
-        return 1;
-    }
-
-    /**
-     * 计算下一个 Cron 匹配时间.
-     *
-     * <p>简化实现：根据 Cron 字段计算下一个合适的时间点.</p>
-     *
-     * @param parts  Cron 表达式各字段
-     * @param fromMs 起始时间（毫秒时间戳）
-     * @return 下一个匹配时间的毫秒时间戳
-     */
-    private long findNextExecutionTime(String[] parts, long fromMs) {
-        // 简化实现：计算到下一个匹配时间点
-        String second = parts[0].trim();
-        String minute = parts[1].trim();
-
-        java.util.Calendar cal = java.util.Calendar.getInstance();
-        cal.setTimeInMillis(fromMs);
-
-        // 处理秒
-        if (!"*".equals(second) && !"?".equals(second)) {
-            int targetSecond = parseFirstValue(second);
-            int currentSecond = cal.get(java.util.Calendar.SECOND);
-            if (currentSecond >= targetSecond) {
-                cal.add(java.util.Calendar.MINUTE, 1);
-                cal.set(java.util.Calendar.SECOND, targetSecond);
-                cal.set(java.util.Calendar.MILLISECOND, 0);
-            } else {
-                cal.set(java.util.Calendar.SECOND, targetSecond);
-                cal.set(java.util.Calendar.MILLISECOND, 0);
-            }
-            return cal.getTimeInMillis();
-        }
-
-        // 处理分
-        if (!"*".equals(minute) && !"?".equals(minute)) {
-            int targetMinute = parseFirstValue(minute);
-            int currentMinute = cal.get(java.util.Calendar.MINUTE);
-            cal.set(java.util.Calendar.SECOND, 0);
-            cal.set(java.util.Calendar.MILLISECOND, 0);
-            if (currentMinute >= targetMinute) {
-                cal.add(java.util.Calendar.HOUR_OF_DAY, 1);
-                cal.set(java.util.Calendar.MINUTE, targetMinute);
-            } else {
-                cal.set(java.util.Calendar.MINUTE, targetMinute);
-            }
-            return cal.getTimeInMillis();
-        }
-
-        // 默认下一秒
-        cal.set(java.util.Calendar.SECOND, 0);
-        cal.set(java.util.Calendar.MILLISECOND, 0);
-        cal.add(java.util.Calendar.MINUTE, 1);
-        return cal.getTimeInMillis();
-    }
-
-    /**
-     * 解析字段的第一个数值（支持 * /N 格式）.
-     *
-     * @param field Cron 字段值
-     * @return 第一个数值
-     */
-    private int parseFirstValue(String field) {
-        if (field.startsWith("*/")) {
-            return Integer.parseInt(field.substring(2));
-        }
-        try {
-            return Integer.parseInt(field);
-        } catch (NumberFormatException e) {
-            return 0;
-        }
-    }
-
-    /**
-     * 检查当前时间是否匹配 Cron 表达式.
-     *
-     * <p>简化实现：将 Cron 转为每分钟检查的周期，然后验证具体时间字段是否匹配.</p>
-     *
-     * @param cron Cron 表达式
-     * @return {@code true} 如果当前时间匹配
-     */
-    private boolean matchesCurrentTime(String cron) {
-        try {
-            String[] parts = cron.trim().split("\\s+");
-            java.util.Calendar cal = java.util.Calendar.getInstance();
-
-            // 简化匹配：检查分和时
-            if (parts.length >= 2) {
-                if (!fieldMatches(parts[1].trim(), cal.get(java.util.Calendar.MINUTE), 0, 59)) return false;
-            }
-            if (parts.length >= 3) {
-                if (!fieldMatches(parts[2].trim(), cal.get(java.util.Calendar.HOUR_OF_DAY), 0, 23)) return false;
-            }
-            if (parts.length >= 4) {
-                if (!fieldMatches(parts[3].trim(), cal.get(java.util.Calendar.DAY_OF_MONTH), 1, 31)) return false;
-            }
-            if (parts.length >= 5) {
-                if (!fieldMatches(parts[4].trim(), cal.get(java.util.Calendar.MONTH) + 1, 1, 12)) return false;
-            }
-            if (parts.length >= 6) {
-                if (!fieldMatches(parts[5].trim(), cal.get(java.util.Calendar.DAY_OF_WEEK) - 1, 0, 6)) return false;
-            }
-            return true;
-        } catch (Exception e) {
-            log.warn("Cron 表达式时间匹配异常: {}", e.getMessage());
-            return true; // 解析异常时默认执行
-        }
-    }
-
-    /**
-     * 检查单个字段是否匹配.
-     *
-     * <p>支持：*（全部匹配）、具体数值、* /N（每N）.</p>
-     *
-     * @param field  Cron 字段值
-     * @param value  当前时间值
-     * @param min    字段最小值（保留参数）
-     * @param max    字段最大值（保留参数）
-     * @return {@code true} 如果匹配
-     */
-    private boolean fieldMatches(String field, int value, int min, int max) {
-        if ("*".equals(field) || "?".equals(field)) {
-            return true;
-        }
-        if (field.startsWith("*/")) {
-            int interval = Integer.parseInt(field.substring(2));
-            return (value % interval) == 0;
-        }
-        // 具体值
-        try {
-            return Integer.parseInt(field) == value;
-        } catch (NumberFormatException e) {
-            return true; // 无法解析则默认匹配
-        }
+        long initialDelay = Math.max(0, Duration.between(now, next).toMillis());
+        return new CronSchedule(initialDelay, next, expression);
     }
 }

@@ -69,25 +69,47 @@ public class LogAutoConfiguration {
     }
 
     /**
-     * Registers the method logging aspect for {@code @MethodLog}.
+     * Groups AOP-based method logging behind an AspectJ classpath guard.
      */
-    @Bean
-    @ConditionalOnClass(name = "org.aspectj.lang.annotation.Aspect")
-    @ConditionalOnMissingBean(MethodLogAspect.class)
-    public MethodLogAspect methodLogAspect() {
-        return new MethodLogAspect();
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = {
+            "org.aspectj.lang.ProceedingJoinPoint",
+            "org.aspectj.lang.annotation.Aspect"
+    })
+    static class MethodLogAspectConfiguration {
+
+        /**
+         * Registers the method logging aspect for {@code @MethodLog}.
+         */
+        @Bean
+        @ConditionalOnMissingBean(type = "com.github.leyland.letool.log.aspect.MethodLogAspect")
+        public MethodLogAspect methodLogAspect() {
+            return new MethodLogAspect();
+        }
     }
 
     /**
-     * Registers request logging for Spring MVC controllers.
+     * Groups servlet request logging behind both AspectJ and Servlet classpath guards.
      */
-    @Bean
-    @ConditionalOnClass(name = "org.aspectj.lang.annotation.Aspect")
-    @ConditionalOnWebApplication
-    @ConditionalOnProperty(prefix = "letool.log.web-log", name = "enabled", havingValue = "true", matchIfMissing = true)
-    @ConditionalOnMissingBean(WebLogAspect.class)
-    public WebLogAspect webLogAspect(LogProperties properties) {
-        return new WebLogAspect(properties);
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = {
+            "org.aspectj.lang.ProceedingJoinPoint",
+            "org.aspectj.lang.annotation.Aspect",
+            "jakarta.servlet.http.HttpServletRequest",
+            "org.springframework.web.context.request.RequestContextHolder"
+    })
+    @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
+    static class WebLogAspectConfiguration {
+
+        /**
+         * Registers request logging for Spring MVC controllers.
+         */
+        @Bean
+        @ConditionalOnProperty(prefix = "letool.log.web-log", name = "enabled", havingValue = "true", matchIfMissing = true)
+        @ConditionalOnMissingBean(type = "com.github.leyland.letool.log.aspect.WebLogAspect")
+        public WebLogAspect webLogAspect(LogProperties properties) {
+            return new WebLogAspect(properties);
+        }
     }
 
     /**

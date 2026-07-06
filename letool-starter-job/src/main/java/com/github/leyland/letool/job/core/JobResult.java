@@ -110,10 +110,22 @@ public class JobResult {
      * @return 当前实例（链式调用）
      */
     public JobResult success(String result) {
+        return success(result, 0);
+    }
+
+    /**
+     * 将执行结果标记为成功并记录成功前的重试次数.
+     *
+     * @param result     结果摘要文本
+     * @param retryCount 已重试次数
+     * @return 当前实例（链式调用）
+     */
+    public JobResult success(String result, int retryCount) {
         this.status = JobStatus.SUCCESS;
         this.endTime = LocalDateTime.now();
         this.durationMs = java.time.Duration.between(startTime, endTime).toMillis();
         this.result = result;
+        this.retryCount = retryCount;
         return this;
     }
 

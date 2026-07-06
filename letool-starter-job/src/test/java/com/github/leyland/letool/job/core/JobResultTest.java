@@ -59,6 +59,17 @@ class JobResultTest {
             JobResult result = new JobResult("e1", "job1");
             assertSame(result, result.success("ok"));
         }
+
+        @Test
+        @DisplayName("success(result, retryCount) 应记录成功前重试次数")
+        void shouldRecordRetryCountForSuccessfulRetry() {
+            JobResult result = new JobResult("e1", "job1");
+            result.success("ok", 2);
+
+            assertEquals(JobStatus.SUCCESS, result.getStatus());
+            assertEquals("ok", result.getResult());
+            assertEquals(2, result.getRetryCount());
+        }
     }
 
     @Nested

@@ -364,6 +364,10 @@ public class JobDefinition {
             if (handler == null) {
                 throw new IllegalArgumentException("handler 不能为 null");
             }
+            int effectiveShardTotal = shardTotal > 0 ? shardTotal : 1;
+            if (shardIndex < 0 || shardIndex >= effectiveShardTotal) {
+                throw new IllegalArgumentException("shardIndex 必须在 [0, shardTotal) 范围内");
+            }
             return new JobDefinition(this);
         }
     }

@@ -106,7 +106,8 @@ public class WebAutoConfiguration {
         FilterRegistrationBean<SqlInjectionFilter> registration = new FilterRegistrationBean<>();
         registration.setFilter(new SqlInjectionFilter());
         registration.addUrlPatterns("/*");
-        registration.setOrder(-101);
+        // Run before XSS escaping so generated HTML entities such as "&lt;" are not treated as SQL separators.
+        registration.setOrder(-103);
         registration.setName("sqlInjectionFilter");
         log.info("SQL injection filter registered");
         return registration;

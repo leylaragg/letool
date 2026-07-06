@@ -106,7 +106,7 @@ public class JobAutoConfiguration {
      * @param properties           任务配置属性
      * @return 调度器实例
      */
-    @Bean
+    @Bean(destroyMethod = "shutdown")
     @ConditionalOnMissingBean(JobScheduler.class)
     public JobScheduler jobScheduler(ScheduledThreadPoolExecutor jobScheduledExecutor,
                                      JobLogService jobLogService,
