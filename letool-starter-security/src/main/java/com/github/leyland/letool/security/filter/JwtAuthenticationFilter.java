@@ -90,8 +90,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      */
     private String extractToken(HttpServletRequest request) {
         String bearer = request.getHeader("Authorization");
-        if (bearer != null && bearer.startsWith("Bearer ")) {
-            return bearer.substring(7);
+        // RFC 7235: 认证方案名大小写不敏感，提取后 trim 去除多余空白
+        if (bearer != null && bearer.length() > 7
+                && bearer.substring(0, 7).equalsIgnoreCase("Bearer ")) {
+            return bearer.substring(7).trim();
         }
         String param = request.getParameter("token");
         if (param != null && !param.isEmpty()) {

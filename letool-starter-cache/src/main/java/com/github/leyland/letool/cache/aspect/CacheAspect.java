@@ -59,6 +59,8 @@ public class CacheAspect {
         java.util.function.Function<Object, Object> loader = k -> {
             try {
                 return joinPoint.proceed();
+            } catch (RuntimeException e) {
+                throw e;
             } catch (Throwable e) {
                 throw new BusinessInvocationException(e);
             }

@@ -57,9 +57,11 @@ public class LoginUser implements Serializable {
     public void setUsername(String username) { this.username = username; }
     public String getNickname() { return nickname; }
     public void setNickname(String nickname) { this.nickname = nickname; }
-    public List<String> getRoles() { return roles; }
+    /** @return 不可变的角色列表 */
+    public List<String> getRoles() { return Collections.unmodifiableList(roles); }
     public void setRoles(List<String> roles) { this.roles = roles; }
-    public List<String> getPermissions() { return permissions; }
+    /** @return 不可变的权限列表 */
+    public List<String> getPermissions() { return Collections.unmodifiableList(permissions); }
     public void setPermissions(List<String> permissions) { this.permissions = permissions; }
     public Object getExtra() { return extra; }
     public void setExtra(Object extra) { this.extra = extra; }

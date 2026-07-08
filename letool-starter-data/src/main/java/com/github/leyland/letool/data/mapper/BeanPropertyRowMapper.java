@@ -79,21 +79,28 @@ public class BeanPropertyRowMapper<T> implements RowMapper<T> {
      */
     private Map<String, Field> buildColumnMapping() {
         Map<String, Field> mapping = new LinkedHashMap<>();
-        for (Field field : mappedClass.getDeclaredFields()) {
-            if (field.isAnnotationPresent(Transient.class)) continue;
-            if (java.lang.reflect.Modifier.isStatic(field.getModifiers())) continue;
+        // 遍历整个类层次结构，包含父类中使用 @Column 注解的继承字段
+        Class<?> clazz = mappedClass;
+        while (clazz != null && clazz != Object.class) {
+            for (Field field : clazz.getDeclaredFields()) {
+                if (field.isAnnotationPresent(Transient.class)) continue;
+                if (java.lang.reflect.Modifier.isStatic(field.getModifiers())) continue;
+                // 子类字段覆盖父类同名字段
+                if (mapping.containsKey(field.getName().toLowerCase())) continue;
 
-            field.setAccessible(true);
-            String columnName;
-            Column colAnn = field.getAnnotation(Column.class);
-            if (colAnn != null) {
-                columnName = colAnn.value();
-            } else if (autoCamelCase) {
-                columnName = StrUtil.toSnakeCase(field.getName());
-            } else {
-                columnName = field.getName();
+                field.setAccessible(true);
+                String columnName;
+                Column colAnn = field.getAnnotation(Column.class);
+                if (colAnn != null) {
+                    columnName = colAnn.value();
+                } else if (autoCamelCase) {
+                    columnName = StrUtil.toSnakeCase(field.getName());
+                } else {
+                    columnName = field.getName();
+                }
+                mapping.put(columnName.toLowerCase(), field);
             }
-            mapping.put(columnName.toLowerCase(), field);
+            clazz = clazz.getSuperclass();
         }
         return mapping;
     }
@@ -154,13 +161,26 @@ public class BeanPropertyRowMapper<T> implements RowMapper<T> {
         if (targetType.isEnum() && value instanceof String) {
             return Enum.valueOf((Class<? extends Enum>) targetType, (String) value);
         }
-        if (targetType == Long.class && value instanceof Number) {
+        // 处理基本类型及其包装类型，确保 DB 驱动返回的 Number 可赋值给原始类型字段
+        if ((targetType == Long.class || targetType == long.class) && value instanceof Number) {
             return ((Number) value).longValue();
         }
-        if (targetType == Integer.class && value instanceof Number) {
+        if ((targetType == Integer.class || targetType == int.class) && value instanceof Number) {
             return ((Number) value).intValue();
         }
-        if (targetType == Boolean.class && value instanceof Number) {
+        if ((targetType == Short.class || targetType == short.class) && value instanceof Number) {
+            return ((Number) value).shortValue();
+        }
+        if ((targetType == Byte.class || targetType == byte.class) && value instanceof Number) {
+            return ((Number) value).byteValue();
+        }
+        if ((targetType == Double.class || targetType == double.class) && value instanceof Number) {
+            return ((Number) value).doubleValue();
+        }
+        if ((targetType == Float.class || targetType == float.class) && value instanceof Number) {
+            return ((Number) value).floatValue();
+        }
+        if ((targetType == Boolean.class || targetType == boolean.class) && value instanceof Number) {
             return ((Number) value).intValue() != 0;
         }
         return value;

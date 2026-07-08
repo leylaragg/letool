@@ -123,6 +123,7 @@ public class PageResult<T> {
      */
     public void setPageSize(int pageSize) {
         this.pageSize = pageSize;
+        this.totalPages = (int) Math.ceil((double) this.total / Math.max(1, pageSize));
     }
 
     /** 获取总页数（由 total 和 pageSize 自动计算）. */

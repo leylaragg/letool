@@ -2,6 +2,8 @@ package com.github.leyland.letool.sensitive.core;
 
 import com.github.leyland.letool.sensitive.annotation.Sensitive;
 import com.github.leyland.letool.sensitive.strategy.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Field;
 import java.util.Map;
@@ -22,6 +24,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * 第三方可通过 {@link #register(SensitiveType, SensitiveStrategy)} 注册自定义策略，覆盖内置实现。</p>
  */
 public class SensitiveProcessor {
+
+    private static final Logger log = LoggerFactory.getLogger(SensitiveProcessor.class);
 
     /**
      * 策略注册表 —— key=SensitiveType 枚举值，value=对应的脱敏策略实现。
@@ -100,21 +104,28 @@ public class SensitiveProcessor {
         try {
             // 无参构造克隆对象，避免修改原对象
             T clone = (T) object.getClass().getDeclaredConstructor().newInstance();
-            for (Field field : object.getClass().getDeclaredFields()) {
-                field.setAccessible(true);
-                Object value = field.get(object);
-                // 仅处理标注了 @Sensitive 的 String 类型字段
-                Sensitive annotation = field.getAnnotation(Sensitive.class);
-                if (annotation != null && value instanceof String) {
-                    value = mask((String) value, annotation);
+            // 遍历整个类层次结构，确保父类中的 @Sensitive 字段也会被脱敏
+            Class<?> clazz = object.getClass();
+            while (clazz != null && clazz != Object.class) {
+                for (Field field : clazz.getDeclaredFields()) {
+                    field.setAccessible(true);
+                    Object value = field.get(object);
+                    // 仅处理标注了 @Sensitive 的 String 类型字段
+                    Sensitive annotation = field.getAnnotation(Sensitive.class);
+                    if (annotation != null && value instanceof String) {
+                        value = mask((String) value, annotation);
+                    }
+                    Field cloneField = clazz.getDeclaredField(field.getName());
+                    cloneField.setAccessible(true);
+                    cloneField.set(clone, value);
                 }
-                Field cloneField = object.getClass().getDeclaredField(field.getName());
-                cloneField.setAccessible(true);
-                cloneField.set(clone, value);
+                clazz = clazz.getSuperclass();
             }
             return clone;
         } catch (Exception e) {
-            // 无参构造缺失或字段不可访问时，回退返回原对象
+            // 无参构造缺失或字段不可访问时，记录警告后返回原对象
+            log.warn("脱敏失败：无法克隆或反射访问类型 {} 的字段，将返回未脱敏的原对象。"
+                    + "请确保该类有无参构造器且字段可访问。", object.getClass().getName(), e);
             return object;
         }
     }

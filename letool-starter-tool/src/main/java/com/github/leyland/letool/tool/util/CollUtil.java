@@ -182,6 +182,7 @@ public final class CollUtil {
      */
     public static <T> List<List<T>> partition(List<T> list, int size) {
         if (isEmpty(list)) return Collections.emptyList();
+        if (size <= 0) throw new IllegalArgumentException("size must be positive: " + size);
         List<List<T>> result = new ArrayList<>();
         for (int i = 0; i < list.size(); i += size) {
             result.add(new ArrayList<>(list.subList(i, Math.min(i + size, list.size()))));

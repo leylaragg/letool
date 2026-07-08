@@ -12,11 +12,17 @@ import java.security.spec.X509EncodedKeySpec;
 /**
  * RSA 非对称加密 —— 公钥加密 / 私钥解密.
  *
- * <p>默认使用 RSA/ECB/PKCS1Padding，密钥大小 2048 位.</p>
+ * <p><b>安全警告：</b>默认使用 RSA/ECB/PKCS1Padding，PKCS#1 v1.5 存在 Bleichenbacher 填充预言攻击风险。
+ * 生产环境推荐使用 {@link #RSA_ALGORITHM_OAEP} ({@code "RSA/ECB/OAEPWithSHA-256AndMGF1Padding"})。</p>
+ *
+ * <p>密钥大小 2048 位.</p>
  */
 public final class RsaCipher {
 
+    /** 默认算法（兼容性保留），注意 PKCS1Padding 存在已知安全缺陷 */
     private static final String RSA_ALGORITHM = "RSA/ECB/PKCS1Padding";
+    /** 推荐算法：OAEP 填充，抗填充预言攻击 */
+    public static final String RSA_ALGORITHM_OAEP = "RSA/ECB/OAEPWithSHA-256AndMGF1Padding";
 
     private RsaCipher() {}
 

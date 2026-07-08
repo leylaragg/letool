@@ -59,10 +59,55 @@ public final class HmacUtil {
         }
     }
 
+    /**
+     * 使用原始字节密钥计算 HMAC（推荐方法）.
+     * <p>与 String 重载不同，此方法直接使用给定的字节数组作为密钥，不会经过 UTF-8 编码，
+     * 因此可使用 {@link KeyGenerator#generateHmacKey()} 的 Base64 解码后的完整随机密钥。</p>
+     */
+    public static String hmacSha256(String data, byte[] key) {
+        return hmac(data, key, "HmacSHA256");
+    }
+
+    public static String hmacSha256Base64(String data, byte[] key) {
+        return hmacBase64(data, key, "HmacSHA256");
+    }
+
+    public static String hmacSha512(String data, byte[] key) {
+        return hmac(data, key, "HmacSHA512");
+    }
+
+    public static String hmacSha512Base64(String data, byte[] key) {
+        return hmacBase64(data, key, "HmacSHA512");
+    }
+
+    private static String hmac(String data, byte[] key, String algorithm) {
+        if (data == null || key == null) return null;
+        try {
+            SecretKeySpec keySpec = new SecretKeySpec(key, algorithm);
+            Mac mac = Mac.getInstance(algorithm);
+            mac.init(keySpec);
+            return HexUtil.encodeHex(mac.doFinal(data.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception e) {
+            throw new CipherException(algorithm + " failed", e);
+        }
+    }
+
     private static String hmacBase64(String data, String key, String algorithm) {
         if (data == null || key == null) return null;
         try {
             SecretKeySpec keySpec = new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), algorithm);
+            Mac mac = Mac.getInstance(algorithm);
+            mac.init(keySpec);
+            return Base64Util.encode(mac.doFinal(data.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception e) {
+            throw new CipherException(algorithm + " failed", e);
+        }
+    }
+
+    private static String hmacBase64(String data, byte[] key, String algorithm) {
+        if (data == null || key == null) return null;
+        try {
+            SecretKeySpec keySpec = new SecretKeySpec(key, algorithm);
             Mac mac = Mac.getInstance(algorithm);
             mac.init(keySpec);
             return Base64Util.encode(mac.doFinal(data.getBytes(StandardCharsets.UTF_8)));

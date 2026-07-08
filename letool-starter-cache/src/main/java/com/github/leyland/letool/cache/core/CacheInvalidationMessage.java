@@ -62,8 +62,15 @@ public final class CacheInvalidationMessage {
 
     String toPayload() {
         // 为了不强依赖 JSON 序列化库，失效消息使用轻量字符串格式：source|cacheName|allFlag|keys。
-        String keyPart = all ? ALL_MARKER : String.join(",", keys);
-        return escape(sourceInstanceId) + "|" + escape(cacheName) + "|" + (all ? "1" : "0") + "|" + escape(keyPart);
+        // 先对每个 key 单独转义（保护 key 内部的逗号和分隔符），再用逗号拼接，
+        // 确保反序列化时能正确区分 key 分隔符和 key 内部内容。
+        String keyPart;
+        if (all) {
+            keyPart = ALL_MARKER;
+        } else {
+            keyPart = keys.stream().map(CacheInvalidationMessage::escape).collect(java.util.stream.Collectors.joining(","));
+        }
+        return escape(sourceInstanceId) + "|" + escape(cacheName) + "|" + (all ? "1" : "0") + "|" + keyPart;
     }
 
     /**
@@ -86,7 +93,12 @@ public final class CacheInvalidationMessage {
         }
         List<String> keys = new ArrayList<>();
         if (!rawKeys.isBlank()) {
-            Collections.addAll(keys, rawKeys.split(","));
+            // 按逗号切分后逐个 unescape，与 toPayload 的逐 key escape 对应
+            for (String k : rawKeys.split(",")) {
+                if (!k.isEmpty()) {
+                    keys.add(unescape(k));
+                }
+            }
         }
         return keys(cache, keys, source);
     }

@@ -248,19 +248,20 @@ public class RateLimitAspect {
      */
     private CircuitBreaker getOrCreateCircuitBreaker(CircuitBreak circuitBreak) {
         return circuitBreakers.computeIfAbsent(circuitBreak.name(), name -> {
-            double failureThreshold = circuitBreak.failureThreshold() != 0.5
+            double failureThreshold = circuitBreak.failureThreshold() >= 0
                     ? circuitBreak.failureThreshold()
                     : defaultCircuitBreakerConfig.failureThreshold();
 
-            int windowSize = circuitBreak.windowSize() != 60
+            int windowSize = circuitBreak.windowSize() > 0
                     ? circuitBreak.windowSize()
                     : defaultCircuitBreakerConfig.windowSize();
 
-            int recoveryTimeout = circuitBreak.recoveryTimeout() != 60
+            int recoveryTimeout = circuitBreak.recoveryTimeout() > 0
                     ? circuitBreak.recoveryTimeout()
                     : defaultCircuitBreakerConfig.recoveryTimeout();
 
-            int halfOpenMaxRequests = 3;  // 使用全局配置的默认值
+            // halfOpenMaxRequests 只能通过全局配置设置（注解未暴露该属性）
+            int halfOpenMaxRequests = defaultCircuitBreakerConfig.halfOpenMaxRequests();
 
             log.info("Creating CircuitBreaker: name={}, failureThreshold={}, windowSize={}, "
                             + "recoveryTimeout={}, halfOpenMaxRequests={}",

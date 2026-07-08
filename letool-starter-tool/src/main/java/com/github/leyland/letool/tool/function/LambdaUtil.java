@@ -52,7 +52,13 @@ public final class LambdaUtil {
     public static <T, R> String getPropertyName(SFunction<T, R> func) {
         SerializedLambda lambda = resolve(func);
         String methodName = lambda.getImplMethodName();
-        String prefix = methodName.startsWith("is") ? "is" : "get";
+        // 校验 "is" 后第一个字符必须大写（JavaBeans 规范），避免误匹配 issueCount、isomorphic 等方法
+        String prefix;
+        if (methodName.startsWith("is") && methodName.length() > 2 && Character.isUpperCase(methodName.charAt(2))) {
+            prefix = "is";
+        } else {
+            prefix = "get";
+        }
         return Introspector.decapitalize(methodName.substring(prefix.length()));
     }
 

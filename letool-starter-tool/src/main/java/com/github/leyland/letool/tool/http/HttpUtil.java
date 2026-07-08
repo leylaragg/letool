@@ -48,7 +48,7 @@ public final class HttpUtil {
     private HttpUtil() {}
 
     /** 全局默认配置，可通过 {@link #setGlobalConfig(HttpConfig)} 覆盖 */
-    private static HttpConfig globalConfig = new HttpConfig();
+    private static volatile HttpConfig globalConfig = new HttpConfig();
     /** 当前检测到的 HTTP 引擎，延迟初始化 */
     private static volatile Engine engine;
 

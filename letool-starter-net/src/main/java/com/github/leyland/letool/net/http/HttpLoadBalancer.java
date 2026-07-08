@@ -104,7 +104,8 @@ public class HttpLoadBalancer {
         int size = servers.size();
         // 最多尝试所有节点
         for (int i = 0; i < size; i++) {
-            int idx = Math.abs(currentIndex.getAndIncrement() % size);
+            // 使用 floorMod 而非 Math.abs(%)，避免 Integer.MIN_VALUE 溢出返回负数
+            int idx = Math.floorMod(currentIndex.getAndIncrement(), size);
             BackendServer server = servers.get(idx);
             if (server.isHealthy()) {
                 return server;
@@ -138,7 +139,7 @@ public class HttpLoadBalancer {
             log.warn("All servers unhealthy in weighted selection");
             return servers.get(0);
         }
-        int idx = Math.abs(weightedIndex.getAndIncrement() % totalWeight);
+        int idx = Math.floorMod(weightedIndex.getAndIncrement(), totalWeight);
         int cumulative = 0;
         for (BackendServer s : servers) {
             if (s.isHealthy()) {

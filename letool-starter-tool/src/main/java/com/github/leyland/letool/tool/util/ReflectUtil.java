@@ -156,7 +156,8 @@ public final class ReflectUtil {
         if (obj == null) return null;
         Class<?>[] paramTypes = new Class<?>[args.length];
         for (int i = 0; i < args.length; i++) {
-            paramTypes[i] = args[i].getClass();
+            // null 参数默认使用 Object.class，避免 NPE
+            paramTypes[i] = args[i] != null ? args[i].getClass() : Object.class;
         }
         Method method = getMethod(obj.getClass(), methodName, paramTypes);
         if (method == null) throw new IllegalArgumentException("Method not found: " + methodName);

@@ -49,13 +49,20 @@ public class MdcTaskDecorator implements TaskDecorator {
     public Runnable decorate(@NonNull Runnable runnable) {
         Map<String, String> contextMap = MDC.getCopyOfContextMap();
         return () -> {
+            // 保存工作线程原有的 MDC 上下文
+            Map<String, String> previous = MDC.getCopyOfContextMap();
             try {
                 if (contextMap != null) {
                     MDC.setContextMap(contextMap);
                 }
                 runnable.run();
             } finally {
-                MDC.clear();
+                // 恢复工作线程原有的 MDC 上下文，而非直接 clear()
+                if (previous != null) {
+                    MDC.setContextMap(previous);
+                } else {
+                    MDC.clear();
+                }
             }
         };
     }

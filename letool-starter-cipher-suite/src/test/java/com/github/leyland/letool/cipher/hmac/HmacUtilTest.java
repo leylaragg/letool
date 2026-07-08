@@ -88,7 +88,7 @@ class HmacUtilTest {
         @Test
         @DisplayName("null 密钥应返回 null")
         void shouldReturnNullForNullKey() {
-            assertNull(HmacUtil.hmacSha256("data", null));
+            assertNull(HmacUtil.hmacSha256("data", (String) null));
         }
     }
 
@@ -128,7 +128,7 @@ class HmacUtilTest {
         @DisplayName("null 数据或 null 密钥应返回 null")
         void shouldReturnNullForNullInputs() {
             assertNull(HmacUtil.hmacSha256Base64(null, key));
-            assertNull(HmacUtil.hmacSha256Base64("data", null));
+            assertNull(HmacUtil.hmacSha256Base64("data", (String) null));
         }
     }
 
@@ -168,7 +168,7 @@ class HmacUtilTest {
         @DisplayName("null 数据或 null 密钥应返回 null")
         void shouldReturnNullForNullInputs() {
             assertNull(HmacUtil.hmacSha512(null, key));
-            assertNull(HmacUtil.hmacSha512("data", null));
+            assertNull(HmacUtil.hmacSha512("data", (String) null));
         }
     }
 
@@ -199,7 +199,7 @@ class HmacUtilTest {
         @DisplayName("null 输入应返回 null")
         void shouldReturnNullForNullInputs() {
             assertNull(HmacUtil.hmacSha512Base64(null, key));
-            assertNull(HmacUtil.hmacSha512Base64("data", null));
+            assertNull(HmacUtil.hmacSha512Base64("data", (String) null));
         }
     }
 

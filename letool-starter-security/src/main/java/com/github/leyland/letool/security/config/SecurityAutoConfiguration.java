@@ -127,11 +127,20 @@ public class SecurityAutoConfiguration {
             return request -> null;
         }
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of(corsProps.getAllowedOrigins().split(",")));
-        config.setAllowedMethods(Arrays.asList(corsProps.getAllowedMethods().split(",")));
-        config.setAllowedHeaders(List.of(corsProps.getAllowedHeaders().split(",")));
+        config.setAllowedOriginPatterns(Arrays.stream(corsProps.getAllowedOrigins().split(","))
+                .map(String::trim).toList());
+        config.setAllowedMethods(Arrays.stream(corsProps.getAllowedMethods().split(","))
+                .map(String::trim).toList());
+        config.setAllowedHeaders(Arrays.stream(corsProps.getAllowedHeaders().split(","))
+                .map(String::trim).toList());
         config.setAllowCredentials(true);
         config.setMaxAge(corsProps.getMaxAge());
+        // 安全警告：allowCredentials=true 配合通配符 origin 存在跨域凭据泄漏风险
+        if (corsProps.getAllowedOrigins().contains("*")) {
+            log.warn("CORS allowCredentials=true with wildcard origin (*) — "
+                    + "this allows any website to make credentialed requests. "
+                    + "Consider restricting allowedOrigins to specific domains in production.");
+        }
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         return source;

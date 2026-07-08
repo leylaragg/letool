@@ -102,7 +102,16 @@ public class JwtTokenProvider {
         Claims claims = parseClaims(token);
         if (claims == null) return null;
 
-        Long userId = Long.valueOf(claims.getSubject());
+        // 防御性解析 sub 字段：恶意或非法的 JWT 可能包含空或非数字的 sub 值
+        String sub = claims.getSubject();
+        if (sub == null || sub.isBlank()) return null;
+        Long userId;
+        try {
+            userId = Long.valueOf(sub);
+        } catch (NumberFormatException e) {
+            log.debug("Invalid JWT subject (not a valid userId): {}", sub);
+            return null;
+        }
         String username = claims.get("username", String.class);
         // JJWT stores List claims as raw List — unchecked cast is unavoidable
         @SuppressWarnings("unchecked")

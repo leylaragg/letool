@@ -290,7 +290,8 @@ public class DefaultCircuitBreaker implements CircuitBreaker {
         }
 
         double failureRate = (double) failures / total;
-        if (failureRate >= failureThreshold) {
+        // 至少需要一次失败才触发熔断，避免 failureThreshold=0 时纯成功请求误触发
+        if (failures > 0 && failureRate >= failureThreshold) {
             transitionTo(CircuitBreakerState.OPEN);
             log.warn("CircuitBreaker [{}] CLOSED → OPEN: failureRate={}/{} (threshold={}), "
                             + "successes={}, failures={}",

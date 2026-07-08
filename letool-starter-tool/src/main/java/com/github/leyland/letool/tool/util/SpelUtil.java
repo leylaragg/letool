@@ -4,6 +4,8 @@ import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -87,7 +89,11 @@ public final class SpelUtil {
         if (template == null) return null;
         if (variables == null || variables.isEmpty()) return template;
         String result = template;
-        for (Map.Entry<String, Object> entry : variables.entrySet()) {
+        // 按 key 长度降序排序，避免短 key 先替换破坏长 key 的占位符
+        // 例如先替换 #{userName} 再替换 #{user}，防止 #{user} 误匹配 #{userName}
+        List<Map.Entry<String, Object>> sortedEntries = new ArrayList<>(variables.entrySet());
+        sortedEntries.sort((a, b) -> Integer.compare(b.getKey().length(), a.getKey().length()));
+        for (Map.Entry<String, Object> entry : sortedEntries) {
             result = result.replace("#{" + entry.getKey() + "}",
                     String.valueOf(entry.getValue()));
         }
