@@ -24,6 +24,9 @@ class CacheConfigTest {
         assertEquals(2000, config.getL1MaxSize());
         assertEquals(Duration.ofHours(24), config.getL1Ttl());
         assertEquals(Duration.ofDays(3), config.getL2Ttl());
+        assertTrue(config.isL1Enabled());
+        assertTrue(config.isL2Enabled());
+        assertTrue(config.isStrongConsistency());
         assertTrue(config.isNullValueCache());
         assertEquals(Duration.ofMinutes(5), config.getNullValueTtl());
         assertEquals("letool:cache:", config.getRedisKeyPrefix());
@@ -90,6 +93,9 @@ class CacheConfigTest {
                 .l1MaxSize(1000)
                 .l1Ttl(Duration.ofMinutes(30))
                 .l2Ttl(Duration.ofHours(6))
+                .l1Enabled(false)
+                .l2Enabled(false)
+                .strongConsistency(false)
                 .nullValueCache(false)
                 .nullValueTtl(Duration.ofMinutes(3))
                 .redisKeyPrefix("myapp:")
@@ -99,9 +105,27 @@ class CacheConfigTest {
         assertEquals(1000, config.getL1MaxSize());
         assertEquals(Duration.ofMinutes(30), config.getL1Ttl());
         assertEquals(Duration.ofHours(6), config.getL2Ttl());
+        assertFalse(config.isL1Enabled());
+        assertFalse(config.isL2Enabled());
+        assertFalse(config.isStrongConsistency());
         assertFalse(config.isNullValueCache());
         assertEquals(Duration.ofMinutes(3), config.getNullValueTtl());
         assertEquals("myapp:", config.getRedisKeyPrefix());
+    }
+
+    @Test
+    @DisplayName("build 校验必填项和 TTL 合法性")
+    void testValidation() {
+        assertThrows(IllegalArgumentException.class, () -> CacheConfig.builder(" ").build());
+        assertThrows(IllegalArgumentException.class, () -> CacheConfig.builder("bad").l1MaxSize(0).build());
+        assertThrows(IllegalArgumentException.class, () -> CacheConfig.builder("bad").l1Ttl(Duration.ZERO).build());
+        assertThrows(IllegalArgumentException.class, () -> CacheConfig.builder("bad").l2Ttl(Duration.ZERO).build());
+        assertThrows(IllegalArgumentException.class, () -> CacheConfig.builder("bad")
+                .l1Ttl(Duration.ofMinutes(10))
+                .l2Ttl(Duration.ofMinutes(1))
+                .build());
+        assertThrows(IllegalArgumentException.class, () -> CacheConfig.builder("bad").redisKeyPrefix(" ").build());
+        assertThrows(IllegalArgumentException.class, () -> CacheConfig.builder("bad").nullValueTtl(Duration.ZERO).build());
     }
 
     @Test

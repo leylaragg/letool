@@ -36,13 +36,17 @@ public class CacheAspect {
         Object key = resolveKey(keyExpression, joinPoint);
         MultiLevelCache<Object, Object> cache = cacheManager.get(cacheName);
 
-        return cache.getOrLoad(key, k -> {
+        java.util.function.Function<Object, Object> loader = k -> {
             try {
                 return joinPoint.proceed();
             } catch (Throwable e) {
                 throw new RuntimeException(e);
             }
-        });
+        };
+        if (ttl > 0) {
+            return cache.getOrLoad(key, loader, Duration.ofSeconds(ttl));
+        }
+        return cache.getOrLoad(key, loader);
     }
 
     @Around("@annotation(annotation)")

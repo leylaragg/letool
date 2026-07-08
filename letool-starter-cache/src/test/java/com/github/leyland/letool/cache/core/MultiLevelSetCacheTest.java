@@ -1,0 +1,112 @@
+package com.github.leyland.letool.cache.core;
+
+import com.github.leyland.letool.cache.serializer.CacheSerializer;
+import com.github.leyland.letool.tool.redis.RedisUtil;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.time.Duration;
+import java.util.List;
+import java.util.Set;
+import java.util.function.Function;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
+
+@DisplayName("MultiLevelSetCache 测试")
+@ExtendWith(MockitoExtension.class)
+class MultiLevelSetCacheTest {
+
+    @Mock
+    private RedisUtil redisUtil;
+
+    @Mock
+    private CacheSerializer serializer;
+
+    private CacheConfig<String, String> config;
+
+    @BeforeEach
+    void setUp() {
+        config = CacheConfig.<String, String>builder("rule:index")
+                .l1Ttl(Duration.ofMinutes(10))
+                .l2Ttl(Duration.ofHours(1))
+                .redisKeyPrefix("test:rule:index:")
+                .strongConsistency(false)
+                .build();
+    }
+
+    @Test
+    @DisplayName("add 写入 L1 和 Redis Set")
+    void addWritesLocalAndRedisSet() {
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateSetCache(config, Function.identity(), String.class);
+
+        cache.add("project:1", "rule-a");
+
+        assertTrue(cache.contains("project:1", "rule-a"));
+        verify(redisUtil).sadd("test:rule:index:project:1", "rule-a");
+        verify(redisUtil).expire("test:rule:index:project:1", Duration.ofHours(1).toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+    }
+
+    @Test
+    @DisplayName("getMembers 返回快照，调用方修改不会污染 L1")
+    void getMembersReturnsSnapshot() {
+        MultiLevelSetCache<String, String> cache = new CacheManager(null, serializer)
+                .getOrCreateSetCache(config, Function.identity(), String.class);
+
+        cache.addAll("project:1", Set.of("rule-a", "rule-b"));
+        Set<String> members = cache.getMembers("project:1");
+        members.add("external");
+
+        assertEquals(Set.of("rule-a", "rule-b"), cache.getMembers("project:1"));
+    }
+
+    @Test
+    @DisplayName("remove 删除成员并广播为本地失效语义")
+    void removeDeletesMember() {
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateSetCache(config, Function.identity(), String.class);
+
+        cache.addAll("project:1", Set.of("rule-a", "rule-b"));
+        cache.remove("project:1", "rule-a");
+
+        assertFalse(cache.contains("project:1", "rule-a"));
+        assertTrue(cache.contains("project:1", "rule-b"));
+        verify(redisUtil).sadd(eq("test:rule:index:project:1"), anyString(), anyString());
+        verify(redisUtil).executeScript(
+                eq("return redis.call('SREM', KEYS[1], ARGV[1])"),
+                eq(List.of("test:rule:index:project:1")),
+                eq("rule-a"));
+    }
+
+    @Test
+    @DisplayName("L1 miss 时从 Redis Set 读取并回填")
+    void l1MissReadsRedisSetAndRefillsLocal() {
+        when(redisUtil.smembers("test:rule:index:project:2")).thenReturn(Set.of("rule-c", "rule-d"));
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateSetCache(config, Function.identity(), String.class);
+
+        assertEquals(Set.of("rule-c", "rule-d"), cache.getMembers("project:2"));
+        assertEquals(Set.of("rule-c", "rule-d"), cache.getMembers("project:2"));
+
+        verify(redisUtil, times(1)).smembers("test:rule:index:project:2");
+    }
+
+    @Test
+    @DisplayName("Redis 异常后 Set 缓存进入 L2 降级")
+    void redisFailureMarksSetCacheDegraded() {
+        when(redisUtil.smembers("test:rule:index:project:3")).thenThrow(new RuntimeException("redis down"));
+        CacheManager manager = new CacheManager(redisUtil, serializer);
+        MultiLevelSetCache<String, String> cache = manager.getOrCreateSetCache(config, Function.identity(), String.class);
+
+        assertTrue(cache.getMembers("project:3").isEmpty());
+
+        assertTrue(cache.stats().l2Degraded());
+        assertEquals(1, manager.degradedCacheCount());
+    }
+}

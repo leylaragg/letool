@@ -16,7 +16,14 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
@@ -548,6 +555,42 @@ class MultiLevelCacheTest {
         }
 
         @Test
+        @DisplayName("同一 JVM 内相同 key 并发回源只调用一次 loader")
+        void sameKeyConcurrentLoadOnlyCallsLoaderOnce() throws Exception {
+            int threadCount = 8;
+            ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+            CountDownLatch ready = new CountDownLatch(threadCount);
+            CountDownLatch start = new CountDownLatch(1);
+            AtomicInteger loads = new AtomicInteger();
+            List<Future<String>> futures = new ArrayList<>();
+
+            for (int i = 0; i < threadCount; i++) {
+                futures.add(executor.submit(() -> {
+                    ready.countDown();
+                    assertTrue(start.await(2, TimeUnit.SECONDS));
+                    return cache.getOrLoad("hot", key -> {
+                        loads.incrementAndGet();
+                        try {
+                            Thread.sleep(50);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                        return "loaded";
+                    });
+                }));
+            }
+
+            assertTrue(ready.await(2, TimeUnit.SECONDS));
+            start.countDown();
+            for (Future<String> future : futures) {
+                assertEquals("loaded", future.get(2, TimeUnit.SECONDS));
+            }
+            executor.shutdownNow();
+
+            assertEquals(1, loads.get());
+        }
+
+        @Test
         @DisplayName("put 直接写入，随后查询命中")
         void putThenGet() {
             cache.put("k2", "direct-value");
@@ -684,6 +727,7 @@ class MultiLevelCacheTest {
                     .l1Ttl(Duration.ofSeconds(10))
                     .l2Ttl(Duration.ofMinutes(30))
                     .redisKeyPrefix("test:")
+                    .strongConsistency(false)
                     .nullValueCache(true);
             cache = new DefaultMultiLevelCache<>(config, redisUtil, serializer);
         }
@@ -763,7 +807,19 @@ class MultiLevelCacheTest {
             assertEquals("put-value", cache.getOrLoad(500, k -> "fallback"));
 
             // L2 写入
-            verify(redisUtil).set(eq(redisKey), anyString(), eq(Duration.ofSeconds(10)));
+            verify(redisUtil).set(eq(redisKey), anyString(), eq(Duration.ofMinutes(30)));
+        }
+
+        @Test
+        @DisplayName("L2 命中回填 L1 时读取 Redis 剩余 TTL")
+        void l2HitReadsRedisRemainingTtlBeforeRefillL1() {
+            String redisKey = "test:l2-cache:250";
+            when(redisUtil.get(redisKey)).thenReturn("{\"data\":\"redis-ttl-value\"}");
+            when(redisUtil.getExpire(redisKey, TimeUnit.MILLISECONDS)).thenReturn(1_000L);
+
+            assertEquals("redis-ttl-value", cache.getOrLoad(250, k -> "fallback"));
+
+            verify(redisUtil).getExpire(redisKey, TimeUnit.MILLISECONDS);
         }
 
         @Test

@@ -2,8 +2,12 @@ package com.github.leyland.letool.cache.config;
 
 import com.github.leyland.letool.cache.aspect.CacheAspect;
 import com.github.leyland.letool.cache.core.CacheConfig;
+import com.github.leyland.letool.cache.core.CacheInvalidationPublisher;
 import com.github.leyland.letool.cache.core.CacheManager;
+import com.github.leyland.letool.cache.core.CacheRecoveryScheduler;
 import com.github.leyland.letool.cache.core.MultiLevelCache;
+import com.github.leyland.letool.cache.core.RedisCacheInvalidationListener;
+import com.github.leyland.letool.cache.core.RedisCacheInvalidationPublisher;
 import com.github.leyland.letool.cache.serializer.CacheSerializer;
 import com.github.leyland.letool.cache.serializer.JacksonCacheSerializer;
 import com.github.leyland.letool.cache.support.CacheMonitor;
@@ -17,6 +21,11 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.listener.ChannelTopic;
+import org.springframework.data.redis.listener.RedisMessageListenerContainer;
+
+import java.nio.charset.StandardCharsets;
 
 /**
  * 缓存自动配置 —— 注册 {@link CacheManager}、{@link CacheSerializer}、{@link CacheAspect} 等 Bean.
@@ -46,10 +55,57 @@ public class CacheAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(CacheManager.class)
     public CacheManager cacheManager(CacheSerializer serializer,
-                                     @org.springframework.beans.factory.annotation.Autowired(required = false) RedisUtil redisUtil) {
-        CacheManager manager = new CacheManager(redisUtil, serializer);
+                                     CacheProperties properties,
+                                     @org.springframework.beans.factory.annotation.Autowired(required = false) RedisUtil redisUtil,
+                                     @org.springframework.beans.factory.annotation.Autowired(required = false) CacheInvalidationPublisher invalidationPublisher) {
+        CacheManager manager = new CacheManager(
+                redisUtil,
+                serializer,
+                properties.isL1Enabled(),
+                properties.isL2Enabled(),
+                properties.getRedisPrefix(),
+                invalidationPublisher);
         log.info("CacheManager initialized, L2 Redis: {}", redisUtil != null ? "enabled" : "disabled (Redis not available)");
         return manager;
+    }
+
+    @Bean
+    @ConditionalOnBean(RedisUtil.class)
+    @ConditionalOnMissingBean(CacheInvalidationPublisher.class)
+    @ConditionalOnProperty(prefix = "letool.cache.invalidation", name = "enabled", havingValue = "true", matchIfMissing = true)
+    public CacheInvalidationPublisher cacheInvalidationPublisher(RedisUtil redisUtil, CacheProperties properties) {
+        return new RedisCacheInvalidationPublisher(redisUtil, properties.getInvalidation().getChannel());
+    }
+
+    @Bean
+    @ConditionalOnBean(CacheManager.class)
+    @ConditionalOnMissingBean(RedisCacheInvalidationListener.class)
+    @ConditionalOnProperty(prefix = "letool.cache.invalidation", name = "enabled", havingValue = "true", matchIfMissing = true)
+    public RedisCacheInvalidationListener redisCacheInvalidationListener(CacheManager cacheManager) {
+        return new RedisCacheInvalidationListener(cacheManager);
+    }
+
+    @Bean
+    @ConditionalOnClass(RedisMessageListenerContainer.class)
+    @ConditionalOnBean({RedisCacheInvalidationListener.class, RedisConnectionFactory.class})
+    @ConditionalOnMissingBean(name = "cacheInvalidationListenerContainer")
+    public RedisMessageListenerContainer cacheInvalidationListenerContainer(RedisConnectionFactory connectionFactory,
+                                                                            RedisCacheInvalidationListener listener,
+                                                                            CacheProperties properties) {
+        RedisMessageListenerContainer container = new RedisMessageListenerContainer();
+        container.setConnectionFactory(connectionFactory);
+        container.addMessageListener((message, pattern) ->
+                listener.onMessage(new String(message.getBody(), StandardCharsets.UTF_8)),
+                new ChannelTopic(properties.getInvalidation().getChannel()));
+        return container;
+    }
+
+    @Bean
+    @ConditionalOnBean(CacheManager.class)
+    @ConditionalOnMissingBean(CacheRecoveryScheduler.class)
+    @ConditionalOnProperty(prefix = "letool.cache.degradation", name = "recovery-enabled", havingValue = "true", matchIfMissing = true)
+    public CacheRecoveryScheduler cacheRecoveryScheduler(CacheManager cacheManager, CacheProperties properties) {
+        return new CacheRecoveryScheduler(cacheManager, properties.getDegradation().getRecoveryInterval());
     }
 
     /**
@@ -83,9 +139,12 @@ public class CacheAutoConfiguration {
     public Object cacheInstancesInitializer(CacheManager cacheManager, CacheProperties properties) {
         for (CacheProperties.InstanceConfig ic : properties.getInstances()) {
             CacheConfig<Object, Object> config = CacheConfig.builder(ic.getName())
+                    .l1Enabled(ic.isL1Enabled())
                     .l1MaxSize(ic.getL1MaxSize())
                     .l1Ttl(ic.getL1Ttl())
                     .l2Ttl(ic.getL2Ttl())
+                    .l2Enabled(ic.isL2Enabled())
+                    .strongConsistency(ic.isStrongConsistency())
                     .nullValueCache(ic.isNullValueCache())
                     .nullValueTtl(ic.getNullValueTtl())
                     .redisKeyPrefix(properties.getRedisPrefix());
