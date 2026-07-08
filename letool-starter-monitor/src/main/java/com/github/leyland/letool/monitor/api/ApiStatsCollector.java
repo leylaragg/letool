@@ -107,15 +107,15 @@ public class ApiStatsCollector {
         }
 
         // 将所有匹配路径的桶按分钟合并
-        Map<Integer, StatsBucket> mergedBuckets = new TreeMap<>();
-        LocalDateTime now = LocalDateTime.now();
-        int currentMinute = (int) (now.toLocalTime().toSecondOfDay() / 60);
+        Map<Long, StatsBucket> mergedBuckets = new TreeMap<>();
+        long currentMinute = System.currentTimeMillis() / 60_000;
 
         for (ApiPathStats stats : matchedStats) {
-            for (Map.Entry<Integer, StatsBucket> entry : stats.getBuckets().entrySet()) {
-                int minuteKey = entry.getKey();
-                // 只取在窗口范围内的桶
-                if ((currentMinute - minuteKey) >= 0 && (currentMinute - minuteKey) <= windowMinutes) {
+            for (Map.Entry<Long, StatsBucket> entry : stats.getBuckets().entrySet()) {
+                long minuteKey = entry.getKey();
+                // 只取在窗口范围内的桶（epoch 分钟永远递增，差值始终有效）
+                long age = currentMinute - minuteKey;
+                if (age >= 0 && age <= windowMinutes) {
                     mergedBuckets.merge(minuteKey, entry.getValue(), (existing, incoming) -> {
                         existing.merge(incoming);
                         return existing;
@@ -128,12 +128,14 @@ public class ApiStatsCollector {
         List<ApiStatsSummary> timeSeries = new ArrayList<>();
         if (mergedBuckets.isEmpty()) return timeSeries;
 
-        for (int subStart = currentMinute - windowMinutes; subStart < currentMinute; subStart += granularityMinutes) {
-            int subEnd = Math.min(subStart + granularityMinutes, currentMinute);
+        long subStart = currentMinute - windowMinutes;
+        for (int i = 0; i < windowMinutes; i += granularityMinutes) {
+            long subWinStart = subStart + i;
+            long subWinEnd = Math.min(subWinStart + granularityMinutes, currentMinute);
 
             StatsBucket subAgg = new StatsBucket();
-            for (Map.Entry<Integer, StatsBucket> entry : mergedBuckets.entrySet()) {
-                if (entry.getKey() >= subStart && entry.getKey() < subEnd) {
+            for (Map.Entry<Long, StatsBucket> entry : mergedBuckets.entrySet()) {
+                if (entry.getKey() >= subWinStart && entry.getKey() < subWinEnd) {
                     subAgg.merge(entry.getValue());
                 }
             }
@@ -141,8 +143,8 @@ public class ApiStatsCollector {
             if (subAgg.getCount() == 0) continue;
 
             ApiStatsSummary summary = aggregator.buildSummary(pathPattern, "ALL", subAgg,
-                    minuteToLocalDateTime(Math.max(subStart, 0)),
-                    minuteToLocalDateTime(Math.max(subEnd, 0)));
+                    minuteToLocalDateTime(subWinStart),
+                    minuteToLocalDateTime(subWinEnd));
             timeSeries.add(summary);
         }
 
@@ -199,13 +201,15 @@ public class ApiStatsCollector {
     }
 
     /**
-     * 将分钟编号转为 LocalDateTime.
+     * 将绝对 epoch 分钟转为 LocalDateTime.
      *
-     * @param minuteOfDay 当天分钟编号
+     * @param epochMinute 绝对 epoch 分钟（自 1970-01-01 以来的分钟数）
      * @return 对应的 LocalDateTime
      */
-    private LocalDateTime minuteToLocalDateTime(int minuteOfDay) {
-        return LocalDateTime.now().withHour(minuteOfDay / 60).withMinute(minuteOfDay % 60).withSecond(0).withNano(0);
+    private LocalDateTime minuteToLocalDateTime(long epochMinute) {
+        return LocalDateTime.ofInstant(
+                java.time.Instant.ofEpochMilli(epochMinute * 60_000),
+                java.time.ZoneId.systemDefault());
     }
 
     // ======================== 内部类：ApiPathStats ========================
@@ -224,8 +228,8 @@ public class ApiStatsCollector {
         /** HTTP 方法 */
         private final String method;
 
-        /** 分钟编号 -> 统计桶 */
-        private final ConcurrentHashMap<Integer, StatsBucket> buckets = new ConcurrentHashMap<>();
+        /** 绝对分钟编号（epochMinute） -> 统计桶，使用绝对时间戳避免午夜回绕泄漏 */
+        private final ConcurrentHashMap<Long, StatsBucket> buckets = new ConcurrentHashMap<>();
 
         /** 最大窗口大小，用于回收过期桶 */
         private final int maxWindowMinutes;
@@ -250,7 +254,8 @@ public class ApiStatsCollector {
          * @param durationMs 请求耗时（毫秒）
          */
         public void record(int statusCode, long durationMs) {
-            int currentMinute = (int) (LocalDateTime.now().toLocalTime().toSecondOfDay() / 60);
+            // 使用绝对 epoch 分钟作为 key，避免午夜时分钟编号回绕导致旧桶无法清理
+            long currentMinute = System.currentTimeMillis() / 60_000;
             StatsBucket bucket = buckets.computeIfAbsent(currentMinute, k -> new StatsBucket());
             bucket.record(statusCode, durationMs);
 
@@ -265,7 +270,8 @@ public class ApiStatsCollector {
          *
          * @param currentMinute 当前分钟编号
          */
-        private void cleanup(int currentMinute) {
+        private void cleanup(long currentMinute) {
+            // epoch 分钟永远递增，差值比较不受午夜回绕影响
             buckets.entrySet().removeIf(entry ->
                     (currentMinute - entry.getKey()) > maxWindowMinutes);
         }
@@ -274,7 +280,7 @@ public class ApiStatsCollector {
 
         public String getPath() { return path; }
         public String getMethod() { return method; }
-        public ConcurrentHashMap<Integer, StatsBucket> getBuckets() { return buckets; }
+        public ConcurrentHashMap<Long, StatsBucket> getBuckets() { return buckets; }
     }
 
     // ======================== 内部类：StatsBucket ========================

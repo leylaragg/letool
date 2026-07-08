@@ -19,6 +19,16 @@ import java.util.concurrent.ConcurrentHashMap;
  *       兼容性更好但性能略低</li>
  * </ul>
  *
+ * <h3>安全警告 ⚠️</h3>
+ * <p>Groovy 脚本拥有完整的 JVM 访问权限，包括文件 I/O、网络、反射和系统调用。
+ * <b>切勿执行来自不可信来源的脚本内容。</b></p>
+ * <ul>
+ *   <li>脚本内容应从受控的文件系统或配置管理系统中加载</li>
+ *   <li>RuleController 等管理端点应配置认证和授权</li>
+ *   <li>生产环境建议通过 Groovy {@code SecureASTCustomizer} 限制可用的导入和操作</li>
+ *   <li>可通过设置 {@code letool.rule.script-execution-enabled=false} 完全禁用脚本执行</li>
+ * </ul>
+ *
  * <h3>脚本缓存</h3>
  * <p>通过 {@code cacheScripts} 控制是否缓存编译后的脚本。缓存可大幅提升性能，
  * 但在开发调试时可关闭以支持脚本热更新.</p>
@@ -101,6 +111,8 @@ public class GroovyScriptEngine {
             if (engine != null) {
                 groovyAvailable = true;
                 log.info("Groovy 脚本引擎已就绪（通过 javax.script 方式）");
+                log.warn("⚠️ Groovy 脚本引擎拥有完整的 JVM 访问权限，请确保脚本来源可信。"
+                        + "可通过系统属性 letool.rule.script-execution-enabled=false 禁用脚本执行。");
             } else {
                 log.warn("Groovy 脚本引擎未找到（请添加 groovy-all 依赖），规则脚本功能将不可用");
             }

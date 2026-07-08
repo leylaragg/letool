@@ -267,10 +267,15 @@ public class FtpFileStorage implements FileStorageProvider {
      */
     private void createDirectories(FTPClient ftp, String path) throws IOException {
         for (String dir : path.split("/")) {
-            if (dir.isEmpty()) continue;
-            if (!ftp.changeWorkingDirectory(dir)) {
-                ftp.makeDirectory(dir);
-                ftp.changeWorkingDirectory(dir);
+            String trimmed = dir.trim();
+            if (trimmed.isEmpty()) continue;
+            // 拒绝路径遍历攻击：不允许 ".." 或 "." 作为路径段
+            if ("..".equals(trimmed) || ".".equals(trimmed)) {
+                throw new IllegalArgumentException("Invalid path segment: '" + trimmed + "' in path: " + path);
+            }
+            if (!ftp.changeWorkingDirectory(trimmed)) {
+                ftp.makeDirectory(trimmed);
+                ftp.changeWorkingDirectory(trimmed);
             }
         }
         ftp.changeWorkingDirectory("/");

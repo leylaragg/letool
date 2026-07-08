@@ -238,6 +238,14 @@ public class SmsTemplate {
             log.warn("短信频率超限（天级） | phone={} | dayCount={} | maxPerDay={}", phone, dayCount, rateLimit.getMaxPerDay());
             throw new SmsException("短信发送频率超限，每天最多发送 " + rateLimit.getMaxPerDay() + " 条");
         }
+
+        // ---- 清理过期的时间窗口计数器，防止内存泄漏 ----
+        phoneCounters.keySet().removeIf(key -> {
+            if (!key.startsWith("minute:") && !key.startsWith("day:")) {
+                return false;
+            }
+            return !key.equals(minuteKey) && !key.equals(dayKey);
+        });
     }
 
     /**

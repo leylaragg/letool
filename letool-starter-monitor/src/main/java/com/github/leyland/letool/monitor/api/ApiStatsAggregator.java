@@ -26,18 +26,19 @@ public class ApiStatsAggregator {
      * @return 聚合后的 API 统计摘要；无数据时返回空摘要
      */
     public ApiStatsSummary aggregate(ApiStatsCollector.ApiPathStats stats, int minutes) {
-        LocalDateTime now = LocalDateTime.now();
-        int currentMinute = (int) (now.toLocalTime().toSecondOfDay() / 60);
+        long currentMinute = System.currentTimeMillis() / 60_000;
 
-        // 合并窗口内的所有桶
+        // 合并窗口内的所有桶（使用 epoch 分钟，避免午夜回绕问题）
         ApiStatsCollector.StatsBucket mergedBucket = new ApiStatsCollector.StatsBucket();
-        for (Map.Entry<Integer, ApiStatsCollector.StatsBucket> entry : stats.getBuckets().entrySet()) {
-            int minuteKey = entry.getKey();
-            if ((currentMinute - minuteKey) >= 0 && (currentMinute - minuteKey) <= minutes) {
+        for (Map.Entry<Long, ApiStatsCollector.StatsBucket> entry : stats.getBuckets().entrySet()) {
+            long minuteKey = entry.getKey();
+            long age = currentMinute - minuteKey;
+            if (age >= 0 && age <= minutes) {
                 mergedBucket.merge(entry.getValue());
             }
         }
 
+        LocalDateTime now = LocalDateTime.now();
         return buildSummary(stats.getPath(), stats.getMethod(), mergedBucket,
                 now.minusMinutes(minutes), now);
     }
@@ -83,9 +84,6 @@ public class ApiStatsAggregator {
         LocalDateTime windowEnd = null;
         Map<String, Long> mergedErrors = new LinkedHashMap<>();
 
-        // 收集所有耗时用于重算百分位数
-        List<Long> allDurations = new ArrayList<>();
-
         for (ApiStatsSummary s : summaries) {
             totalRequests += s.getTotalRequests();
             successCount += s.getSuccessCount();
@@ -111,16 +109,17 @@ public class ApiStatsAggregator {
         if (maxMs == Long.MIN_VALUE) maxMs = 0;
         double successRate = totalRequests > 0 ? (double) successCount / totalRequests : 0;
 
-        // 对合并后的耗时样本排序用于百分位数计算
-        Collections.sort(allDurations);
+        // 合并百分位数：使用各子窗口的加权平均值作为近似值
+        // （原始耗时数据已丢失，无法精确重算，加权平均是标准近似方法）
+        long mergedP50 = weightedPercentile(summaries, totalRequests, ApiStatsSummary::getP50Ms);
+        long mergedP90 = weightedPercentile(summaries, totalRequests, ApiStatsSummary::getP90Ms);
+        long mergedP95 = weightedPercentile(summaries, totalRequests, ApiStatsSummary::getP95Ms);
+        long mergedP99 = weightedPercentile(summaries, totalRequests, ApiStatsSummary::getP99Ms);
 
         return new ApiStatsSummary(
                 "MERGED", "ALL", totalRequests, successCount, successRate, avgMs,
                 minMs, maxMs,
-                percentile(allDurations, 50),
-                percentile(allDurations, 90),
-                percentile(allDurations, 95),
-                percentile(allDurations, 99),
+                mergedP50, mergedP90, mergedP95, mergedP99,
                 mergedErrors,
                 windowStart, windowEnd
         );
@@ -174,5 +173,26 @@ public class ApiStatsAggregator {
         int index = (int) Math.ceil(percentile / 100.0 * sorted.size()) - 1;
         index = Math.max(0, Math.min(index, sorted.size() - 1));
         return sorted.get(index);
+    }
+
+    /**
+     * 合并多个摘要的百分位数（加权平均近似）.
+     *
+     * <p>由于原始耗时样本在聚合为摘要后已丢失，无法精确重算百分位数。
+     * 使用以请求量为权重的加权平均值，是合并百分位数的标准近似方法。</p>
+     *
+     * @param summaries  各子窗口摘要列表
+     * @param totalRequests 总请求数（权重之和）
+     * @param getter     百分位字段的 getter 方法引用
+     * @return 合并后的百分位值（毫秒）
+     */
+    private long weightedPercentile(List<ApiStatsSummary> summaries, long totalRequests,
+                                     java.util.function.ToLongFunction<ApiStatsSummary> getter) {
+        if (totalRequests == 0) return 0;
+        double weightedSum = 0;
+        for (ApiStatsSummary s : summaries) {
+            weightedSum += getter.applyAsLong(s) * (double) s.getTotalRequests();
+        }
+        return (long) (weightedSum / totalRequests);
     }
 }

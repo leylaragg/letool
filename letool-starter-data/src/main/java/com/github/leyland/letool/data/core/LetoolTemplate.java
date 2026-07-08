@@ -81,8 +81,8 @@ public class LetoolTemplate {
      * @return 匹配的方言实例，检测失败时默认返回 MySqlDialect
      */
     private SqlDialect detectDialect(JdbcTemplate jt) {
-        try {
-            String url = jt.getDataSource().getConnection().getMetaData().getURL();
+        try (java.sql.Connection conn = jt.getDataSource().getConnection()) {
+            String url = conn.getMetaData().getURL();
             String normalizedUrl = url.toLowerCase(Locale.ROOT);
             if (normalizedUrl.contains(":h2:")) return new H2Dialect();
             if (normalizedUrl.contains("mysql")) return new MySqlDialect();

@@ -134,14 +134,20 @@ public class DefaultMailSender implements MailSender {
             }
 
             // ---- 设置收件人 / 抄送 / 密送 ----
-            for (String addr : request.getTo()) {
-                message.addRecipient(Message.RecipientType.TO, new InternetAddress(addr));
+            if (request.getTo() != null) {
+                for (String addr : request.getTo()) {
+                    message.addRecipient(Message.RecipientType.TO, new InternetAddress(addr));
+                }
             }
-            for (String addr : request.getCc()) {
-                message.addRecipient(Message.RecipientType.CC, new InternetAddress(addr));
+            if (request.getCc() != null) {
+                for (String addr : request.getCc()) {
+                    message.addRecipient(Message.RecipientType.CC, new InternetAddress(addr));
+                }
             }
-            for (String addr : request.getBcc()) {
-                message.addRecipient(Message.RecipientType.BCC, new InternetAddress(addr));
+            if (request.getBcc() != null) {
+                for (String addr : request.getBcc()) {
+                    message.addRecipient(Message.RecipientType.BCC, new InternetAddress(addr));
+                }
             }
 
             // ---- 设置主题与发送时间 ----
@@ -161,12 +167,14 @@ public class DefaultMailSender implements MailSender {
             multipart.addBodyPart(contentPart);
 
             // 附件部分
-            for (MailRequest.Attachment att : request.getAttachments()) {
-                MimeBodyPart attPart = new MimeBodyPart();
-                FileDataSource fds = new FileDataSource(att.getFile());
-                attPart.setDataHandler(new DataHandler(fds));
-                attPart.setFileName(MimeUtility.encodeText(att.getName(), "UTF-8", "B"));
-                multipart.addBodyPart(attPart);
+            if (request.getAttachments() != null) {
+                for (MailRequest.Attachment att : request.getAttachments()) {
+                    MimeBodyPart attPart = new MimeBodyPart();
+                    FileDataSource fds = new FileDataSource(att.getFile());
+                    attPart.setDataHandler(new DataHandler(fds));
+                    attPart.setFileName(MimeUtility.encodeText(att.getName(), "UTF-8", "B"));
+                    multipart.addBodyPart(attPart);
+                }
             }
 
             message.setContent(multipart);
@@ -176,9 +184,12 @@ public class DefaultMailSender implements MailSender {
             String username = account.getUsername() != null ? account.getUsername() : account.getFrom();
             String password = account.getPassword();
             Transport transport = session.getTransport(account.getProtocol());
-            transport.connect(account.getHost(), account.getPort(), username, password);
-            transport.sendMessage(message, message.getAllRecipients());
-            transport.close();
+            try {
+                transport.connect(account.getHost(), account.getPort(), username, password);
+                transport.sendMessage(message, message.getAllRecipients());
+            } finally {
+                transport.close();
+            }
 
             // ---- 记录日志并返回成功响应 ----
             String messageId = message.getMessageID();

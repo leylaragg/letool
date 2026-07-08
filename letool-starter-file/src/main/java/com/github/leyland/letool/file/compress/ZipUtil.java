@@ -76,7 +76,9 @@ public final class ZipUtil {
                     public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
                         String entryName;
                         if (includeRoot) {
-                            entryName = sourcePath.getParent().getFileName() + "/"
+                            Path parent = sourcePath.getParent();
+                            String rootDirName = parent != null ? parent.getFileName().toString() : sourcePath.getFileName().toString();
+                            entryName = rootDirName + "/"
                                     + sourcePath.relativize(file).toString().replace("\\", "/");
                         } else {
                             entryName = sourcePath.relativize(file).toString().replace("\\", "/");
