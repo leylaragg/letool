@@ -6,6 +6,8 @@ import org.springframework.data.redis.core.RedisOperations;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.data.redis.serializer.RedisSerializer;
+import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 import java.time.Duration;
 import java.util.Collection;
@@ -482,6 +484,59 @@ public class RedisUtil {
         redisScript.setScriptText(script);
         redisScript.setResultType((Class<T>) Object.class);
         return redisTemplate.execute(redisScript, keys, args);
+    }
+
+    /**
+     * 执行 Lua 脚本，所有 ARGV 参数使用 {@link StringRedisSerializer} 序列化为纯 UTF-8 字符串。
+     *
+     * <p>与 {@link #executeScript(String, List, Object...)} 的区别在于，本方法不会经过 value serializer，
+     * 因此 args 不会被 JSON 序列化器（如 Fastjson2 的 WriteClassName）包装为 JSON 对象。
+     * 适用于 TTL、计数器等必须直接传给 Redis 的元数据参数。</p>
+     *
+     * <p>对于需要保留 {@code @type} 元数据的业务对象值，调用方应先通过
+     * {@link #serializeValue(Object)} 预序列化，再将结果作为 args 传入。</p>
+     *
+     * @param script Lua 脚本内容
+     * @param keys   KEY 列表
+     * @param args   ARGV 参数列表，每个参数通过 {@code toString()} 转换为字符串
+     * @param <T>    脚本返回值类型
+     * @return 脚本执行结果
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public <T> T executeScriptRaw(String script, List<String> keys, Object... args) {
+        DefaultRedisScript redisScript = new DefaultRedisScript<>();
+        redisScript.setScriptText(script);
+        redisScript.setResultType(Object.class);
+        // 将所有 args 转为纯字符串，绕过 value serializer 避免 JSON 包装
+        String[] rawArgs = new String[args.length];
+        for (int i = 0; i < args.length; i++) {
+            if (args[i] instanceof byte[] bytes) {
+                rawArgs[i] = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+            } else {
+                rawArgs[i] = args[i].toString();
+            }
+        }
+        RedisSerializer stringSerializer = RedisSerializer.string();
+        return (T) redisTemplate.execute(
+                redisScript,
+                stringSerializer,
+                stringSerializer,
+                keys,
+                (Object[]) rawArgs);
+    }
+
+    /**
+     * 使用当前 RedisTemplate 配置的 value serializer 序列化值。
+     *
+     * <p>序列化结果可用于 {@link #executeScriptRaw(String, List, Object...)}
+     * 的 args 参数，确保值经过正常的序列化流程但不会在脚本参数中被二次包装。</p>
+     *
+     * @param value 待序列化的值
+     * @return 序列化后的字节数组
+     */
+    @SuppressWarnings("unchecked")
+    public byte[] serializeValue(Object value) {
+        return ((RedisSerializer<Object>) redisTemplate.getValueSerializer()).serialize(value);
     }
 
     // ======================== Pipeline ========================

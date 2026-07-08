@@ -473,11 +473,16 @@ public class DefaultMultiLevelCache<K, V> implements MultiLevelCache<K, V> {
         try {
             if (config.isStrongConsistency()) {
                 // 使用 Lua 保证业务值写入和版本推进在 Redis 单线程内原子完成。
-                return toLong(redisUtil.executeScript(
+                // 预序列化 value：保留 @type 元数据，确保后续 get 时能正确反序列化。
+                // 使用 executeScriptRaw：TTL 作为纯数字字符串传递，避免被 Fastjson2
+                // 的 WriteClassName 包装成 {"@type":"java.lang.Long","value":259200000}，
+                // 导致 Redis PSETEX 无法解析 TTL。
+                byte[] rawValue = redisUtil.serializeValue(value);
+                return toLong(redisUtil.executeScriptRaw(
                         ATOMIC_PUT_SCRIPT,
                         List.of(redisKey(key), versionKey()),
-                        value,
-                        ttl.toMillis()));
+                        rawValue,
+                        String.valueOf(ttl.toMillis())));
             }
             redisUtil.set(redisKey(key), value, ttl);
             return LOCAL_ONLY_VERSION;
