@@ -1,14 +1,17 @@
 package com.github.leyland.letool.tool.config;
 
 import com.github.leyland.letool.tool.redis.RedisUtil;
+import com.github.leyland.letool.tool.redis.FastJson2JsonRedisSerializer;
 import com.github.leyland.letool.tool.spring.SpringUtil;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -51,6 +54,40 @@ class LetoolToolAutoConfigurationTest {
                     assertThat(context).hasSingleBean(RedisUtil.class);
                     assertThat(context.getBean(RedisUtil.class).getTemplate())
                             .isSameAs(context.getBean(RedisTemplate.class));
+                });
+    }
+
+    /**
+     * When Redis connection infrastructure exists but the application does not
+     * define redisTemplate, the starter should provide a JSON object template.
+     */
+    @Test
+    void shouldCreateDefaultRedisTemplateWhenConnectionFactoryExists() {
+        contextRunner
+                .withUserConfiguration(RedisConnectionFactoryConfiguration.class)
+                .withPropertyValues("letool.tool.redis.auto-type-accept-prefixes[0]=com.github.leyland.letool.tool.config")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(RedisConnectionFactory.class);
+                    assertThat(context).hasSingleBean(RedisTemplate.class);
+                    assertThat(context).hasSingleBean(RedisUtil.class);
+
+                    RedisTemplate<?, ?> redisTemplate = context.getBean(RedisTemplate.class);
+                    assertThat(redisTemplate.getConnectionFactory())
+                            .isSameAs(context.getBean(RedisConnectionFactory.class));
+                    assertThat(redisTemplate.getKeySerializer()).isInstanceOf(StringRedisSerializer.class);
+                    assertThat(redisTemplate.getHashKeySerializer()).isInstanceOf(StringRedisSerializer.class);
+                    assertThat(redisTemplate.getValueSerializer()).isInstanceOf(FastJson2JsonRedisSerializer.class);
+                    assertThat(redisTemplate.getHashValueSerializer()).isInstanceOf(FastJson2JsonRedisSerializer.class);
+                    assertThat(context.getBean(RedisUtil.class).getTemplate()).isSameAs(redisTemplate);
+
+                    FastJson2JsonRedisSerializer<Object> serializer =
+                            (FastJson2JsonRedisSerializer<Object>) redisTemplate.getValueSerializer();
+                    RedisValue value = new RedisValue();
+                    value.setName("configured");
+                    Object actual = serializer.deserialize(serializer.serialize(value));
+                    assertThat(actual).isInstanceOf(RedisValue.class);
+                    assertThat(((RedisValue) actual).getName()).isEqualTo("configured");
                 });
     }
 
@@ -100,6 +137,18 @@ class LetoolToolAutoConfigurationTest {
     }
 
     /**
+     * Minimal Redis connection infrastructure used to activate the default template.
+     */
+    @Configuration(proxyBeanMethods = false)
+    static class RedisConnectionFactoryConfiguration {
+
+        @Bean
+        RedisConnectionFactory redisConnectionFactory() {
+            return mock(RedisConnectionFactory.class);
+        }
+    }
+
+    /**
      * Simulates applications that only define StringRedisTemplate.
      */
     @Configuration(proxyBeanMethods = false)
@@ -130,6 +179,18 @@ class LetoolToolAutoConfigurationTest {
         @Bean({"redisUtil", "userRedisUtil"})
         RedisUtil redisUtil(RedisTemplate<String, Object> redisTemplate) {
             return new RedisUtil(redisTemplate);
+        }
+    }
+
+    public static class RedisValue {
+        private String name;
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
         }
     }
 }

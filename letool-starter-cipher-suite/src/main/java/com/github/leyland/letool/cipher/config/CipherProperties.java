@@ -17,7 +17,7 @@ public class CipherProperties {
     /** RSA 默认密钥大小（位） */
     private int rsaDefaultKeySize = 2048;
 
-    /** 是否启���国密算法（SM2/SM3/SM4） */
+    /** 是否启用国密算法（SM2/SM3/SM4） */
     private boolean smEnabled = true;
 
     public boolean isEnabled() { return enabled; }

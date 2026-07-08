@@ -3,10 +3,14 @@ package com.github.leyland.letool.net.http;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("HttpCircuitBreaker 熔断器测试")
+@ExtendWith(OutputCaptureExtension.class)
 class HttpCircuitBreakerTest {
 
     @Nested
@@ -63,6 +67,19 @@ class HttpCircuitBreakerTest {
             }
             assertEquals(HttpCircuitBreaker.State.OPEN, cb.getState());
             assertFalse(cb.allowRequest());
+        }
+
+        @Test
+        @DisplayName("熔断日志应输出可读百分比")
+        void openLogShouldRenderReadablePercentages(CapturedOutput output) {
+            HttpCircuitBreaker cb = new HttpCircuitBreaker(0.5, 60, 30);
+
+            cb.recordFailure();
+
+            assertTrue(output.getOut().contains("Circuit breaker OPEN"));
+            assertTrue(output.getOut().contains("error rate=100.00%"));
+            assertTrue(output.getOut().contains("threshold=50.00%"));
+            assertFalse(output.getOut().contains("{:.2%}"));
         }
     }
 

@@ -1,25 +1,39 @@
 package com.github.leyland.letool.tool.redis;
 
-import com.github.leyland.letool.tool.util.CollUtil;
 import com.github.leyland.letool.tool.util.JsonUtil;
-import org.springframework.data.redis.core.*;
+import org.jetbrains.annotations.NotNull;
+import org.springframework.data.redis.core.RedisOperations;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 
 import java.time.Duration;
-import java.util.*;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
- * Redis operation helper backed by {@link StringRedisTemplate}.
+ * Redis 操作工具类，底层基于 {@link RedisTemplate}。
  *
- * <h3>Activation</h3>
- * <p>The tool starter registers this helper only when a {@link StringRedisTemplate}
- * bean exists. Applications can also instantiate it directly for plain utility usage.</p>
+ * <h3>设计说明</h3>
+ * <p>本工具类不内置 JSON 序列化器，也不强制创建默认 {@code RedisTemplate}。
+ * 应用侧通常会配置自己的 key/value/hash 序列化方案，例如 Fastjson2、Jackson 或 JDK 序列化。
+ * {@code RedisUtil} 只负责把值交给 {@code RedisTemplate}，从而复用应用已有的序列化配置。</p>
+ *
+ * <h3>自动装配</h3>
+ * <p>starter 只在应用上下文中存在名为 {@code redisTemplate} 的对象模板时创建本工具类。
+ * 只有 {@code StringRedisTemplate} 时不会自动创建，避免误以为对象序列化可用。</p>
  *
  * <h3>支持的操作类型</h3>
  * <ul>
- *   <li><b>Key</b>：存在判断、删除、过期设置</li>
- *   <li><b>String</b>：get/set/increment + 对象 JSON 序列化存取</li>
+ *   <li><b>Key</b>：存在判断、删除、过期时间设置与查询</li>
+ *   <li><b>Value</b>：set/get/increment，支持应用 RedisTemplate 序列化后的任意对象</li>
  *   <li><b>Hash</b>：hset/hget/hgetAll/hdel</li>
  *   <li><b>List</b>：lpush/rpush/lpop/rpop/lrange</li>
  *   <li><b>Set</b>：sadd/smembers/sismember</li>
@@ -30,13 +44,17 @@ import java.util.concurrent.TimeUnit;
  *
  * <h3>使用示例</h3>
  * <pre>{@code
- * // 字符串
- * redisUtil.set("user:1", "张三", Duration.ofHours(1));
- * String name = redisUtil.get("user:1");
+ * // 字符串：RedisTemplate 反序列化后按调用方声明类型返回
+ * redisUtil.set("user:name", "张三", Duration.ofHours(1));
+ * String name = redisUtil.get("user:name");
  *
- * // 对象存取（JSON 序列化）
- * redisUtil.setObject("user:1", user, Duration.ofHours(1));
- * User user = redisUtil.getObject("user:1", User.class);
+ * // 对象：由应用配置的 RedisTemplate 序列化器负责序列化和反序列化
+ * redisUtil.set("user:1", user, Duration.ofHours(1));
+ * User cachedUser = redisUtil.get("user:1", User.class);
+ *
+ * // 兼容旧对象方法名
+ * redisUtil.setObject("user:2", user, Duration.ofHours(1));
+ * User user2 = redisUtil.getObject("user:2", User.class);
  *
  * // Hash
  * redisUtil.hset("user:1", "name", "张三");
@@ -49,250 +67,368 @@ import java.util.concurrent.TimeUnit;
  */
 public class RedisUtil {
 
-    private final StringRedisTemplate redisTemplate;
+    /** 应用侧配置好的 RedisTemplate，value/hashValue 序列化方案由应用决定。 */
+    private final RedisTemplate<String, Object> redisTemplate;
 
-    public RedisUtil(StringRedisTemplate redisTemplate) {
+    /**
+     * 创建 Redis 工具类。
+     *
+     * @param redisTemplate 应用侧对象 RedisTemplate
+     */
+    public RedisUtil(RedisTemplate<String, Object> redisTemplate) {
         this.redisTemplate = redisTemplate;
     }
 
     /**
-     * 获取底层 StringRedisTemplate，用于自定义操作.
+     * 获取底层 RedisTemplate，用于调用工具类未封装的原生 Redis 操作。
      *
-     * @return StringRedisTemplate 实例
+     * @return RedisTemplate 实例
      */
-    public StringRedisTemplate getTemplate() {
+    public RedisTemplate<String, Object> getTemplate() {
         return redisTemplate;
     }
 
     // ======================== Key 操作 ========================
 
     /**
-     * 判断 key 是否存在.
+     * 判断 key 是否存在。
      *
-     * @param key 键
-     * @return {@code true} 如果存在
+     * @param key Redis key
+     * @return {@code true} 表示存在
      */
     public boolean hasKey(String key) {
-        return Boolean.TRUE.equals(redisTemplate.hasKey(key));
+        return redisTemplate.hasKey(key);
     }
 
     /**
-     * 删除 key.
+     * 删除单个 key。
      *
-     * @param key 键
-     * @return {@code true} 如果成功删除
+     * @param key Redis key
+     * @return {@code true} 表示删除成功
      */
     public boolean delete(String key) {
-        return Boolean.TRUE.equals(redisTemplate.delete(key));
+        return redisTemplate.delete(key);
     }
 
     /**
-     * 批量删除 key.
+     * 批量删除 key。
      *
-     * @param keys 键集合
+     * @param keys Redis key 集合
      * @return 实际删除的 key 数量
      */
     public long delete(Collection<String> keys) {
         Long count = redisTemplate.delete(keys);
-        return count == null ? 0 : count;
+        return count;
     }
 
     /**
-     * 设置 key 的过期时间.
+     * 设置 key 的过期时间。
      *
-     * @param key     键
-     * @param timeout 时长
+     * @param key     Redis key
+     * @param timeout 过期时长
      * @param unit    时间单位
-     * @return {@code true} 如果设置成功
+     * @return {@code true} 表示设置成功
      */
     public boolean expire(String key, long timeout, TimeUnit unit) {
-        return Boolean.TRUE.equals(redisTemplate.expire(key, timeout, unit));
+        return redisTemplate.expire(key, timeout, unit);
     }
 
     /**
-     * 获取 key 的剩余有效时间.
+     * 获取 key 的剩余过期时间。
      *
-     * @param key  键
+     * @param key  Redis key
      * @param unit 时间单位
-     * @return 剩余秒数（毫秒等），key 不存在返回 -1
+     * @return 剩余时间；Redis 返回 {@code null} 时统一返回 -1
      */
     public long getExpire(String key, TimeUnit unit) {
         Long ttl = redisTemplate.getExpire(key, unit);
-        return ttl == null ? -1 : ttl;
+        return ttl;
     }
 
-    // ======================== String 操作 ========================
+    // ======================== Value 操作 ========================
 
-    /** 设置字符串值（永不过期） */
-    public void set(String key, String value) {
+    /**
+     * 写入任意对象值，永不过期。
+     *
+     * @param key   Redis key
+     * @param value 任意对象值，序列化由 RedisTemplate 决定
+     */
+    public void set(String key, Object value) {
         redisTemplate.opsForValue().set(key, value);
     }
 
     /**
-     * 设置字符串值（带过期时间）.
+     * 写入字符串值，永不过期。保留该重载用于兼容旧版本调用。
      *
-     * @param key      键
-     * @param value    值
+     * @param key   Redis key
+     * @param value 字符串值
+     */
+    public void set(String key, String value) {
+        set(key, (Object) value);
+    }
+
+    /**
+     * 写入任意对象值，并设置过期时间。
+     *
+     * @param key      Redis key
+     * @param value    任意对象值，序列化由 RedisTemplate 决定
      * @param duration 过期时长
      */
-    public void set(String key, String value, Duration duration) {
+    public void set(String key, Object value, Duration duration) {
         redisTemplate.opsForValue().set(key, value, duration);
     }
 
     /**
-     * 设置字符串值（带过期时间）.
+     * 写入字符串值，并设置过期时间。保留该重载用于兼容旧版本调用。
      *
-     * @param key     键
-     * @param value   值
+     * @param key      Redis key
+     * @param value    字符串值
+     * @param duration 过期时长
+     */
+    public void set(String key, String value, Duration duration) {
+        set(key, (Object) value, duration);
+    }
+
+    /**
+     * 写入任意对象值，并设置过期时间。
+     *
+     * @param key     Redis key
+     * @param value   任意对象值，序列化由 RedisTemplate 决定
      * @param timeout 过期时长
      * @param unit    时间单位
      */
-    public void set(String key, String value, long timeout, TimeUnit unit) {
+    public void set(String key, Object value, long timeout, TimeUnit unit) {
         redisTemplate.opsForValue().set(key, value, timeout, unit);
     }
 
     /**
-     * 获取字符串值.
+     * 写入字符串值，并设置过期时间。保留该重载用于兼容旧版本调用。
      *
-     * @param key 键
-     * @return 值，key 不存在返回 {@code null}
+     * @param key     Redis key
+     * @param value   字符串值
+     * @param timeout 过期时长
+     * @param unit    时间单位
      */
-    public String get(String key) {
-        return redisTemplate.opsForValue().get(key);
+    public void set(String key, String value, long timeout, TimeUnit unit) {
+        set(key, (Object) value, timeout, unit);
     }
 
     /**
-     * 自增（或自减）.
+     * 读取 RedisTemplate 反序列化后的值。
      *
-     * @param key   键
-     * @param delta 增量（可为负数）
+     * <p>该方法不做字符串转换。RedisTemplate 会先通过 value serializer 反序列化，
+     * 本方法再按调用方声明的泛型返回该 Java 对象。需要显式类型转换时可使用
+     * {@link #get(String, Class)}。</p>
+     *
+     * @param key Redis key
+     * @param <T> 调用方期望的返回类型
+     * @return 反序列化后的值；key 不存在时返回 {@code null}
+     */
+    @SuppressWarnings("unchecked")
+    public <T> T get(String key) {
+        return (T) redisTemplate.opsForValue().get(key);
+    }
+
+    /**
+     * 读取指定类型的对象值。
+     *
+     * <p>正常情况下，RedisTemplate 会通过配置好的 value serializer 直接反序列化出目标对象。
+     * 如果历史数据是 JSON 字符串，本方法也会按目标类型做一次 JSON 转换。</p>
+     *
+     * @param key   Redis key
+     * @param clazz 目标类型
+     * @param <T>   目标泛型
+     * @return 目标类型对象；key 不存在时返回 {@code null}
+     */
+    public <T> T get(String key, Class<T> clazz) {
+        Object value = redisTemplate.opsForValue().get(key);
+        return convertValue(value, clazz);
+    }
+
+    /**
+     * 对数值执行自增或自减。
+     *
+     * @param key   Redis key
+     * @param delta 增量，可为负数
      * @return 自增后的值
      */
     public Long increment(String key, long delta) {
         return redisTemplate.opsForValue().increment(key, delta);
     }
 
-    // ======================== 对象存取（JSON 序列化） ========================
-
     /**
-     * 将对象以 JSON 格式存入 Redis.
+     * 写入对象值的兼容方法。
      *
-     * @param key      键
-     * @param obj      任意 Java 对象
+     * <p>旧版本方法名保留为 {@code setObject}，但不再在工具类内部强制 JSON 序列化，
+     * 而是直接交给 RedisTemplate 的序列化器处理。</p>
+     *
+     * @param key      Redis key
+     * @param obj      对象值
      * @param duration 过期时长
      * @param <T>      对象类型
      */
     public <T> void setObject(String key, T obj, Duration duration) {
-        redisTemplate.opsForValue().set(key, JsonUtil.toJsonString(obj), duration);
+        set(key, obj, duration);
     }
 
     /**
-     * 从 Redis 读取 JSON 并反序列化为对象.
+     * 读取对象值的兼容方法。
      *
-     * @param key   键
+     * @param key   Redis key
      * @param clazz 目标类型
-     * @param <T>   对象类型
-     * @return 反序列化后的对象，key 不存在返回 {@code null}
+     * @param <T>   目标泛型
+     * @return 目标类型对象；key 不存在时返回 {@code null}
      */
     public <T> T getObject(String key, Class<T> clazz) {
-        String json = get(key);
-        return JsonUtil.parseObject(json, clazz);
+        return get(key, clazz);
     }
 
     // ======================== Hash 操作 ========================
 
-    /** 设置 Hash 字段 */
+    /**
+     * 设置 Hash 字段值。
+     *
+     * @param key   Redis key
+     * @param field Hash 字段
+     * @param value 字段值
+     */
     public void hset(String key, String field, String value) {
         redisTemplate.opsForHash().put(key, field, value);
     }
 
     /**
-     * 获取 Hash 字段值.
+     * 获取 Hash 字段值。
      *
-     * @param key   键
-     * @param field 字段名
-     * @return 字段值，不存在返回 {@code null}
+     * @param key   Redis key
+     * @param field Hash 字段
+     * @return 字段值；字段不存在时返回 {@code null}
      */
     public String hget(String key, String field) {
         Object val = redisTemplate.opsForHash().get(key, field);
-        return val == null ? null : val.toString();
+        return toStringValue(val);
     }
 
     /**
-     * 获取 Hash 中所有字段和值.
+     * 获取 Hash 中全部字段和值。
      *
-     * @param key 键
-     * @return field → value 的 LinkedHashMap
+     * @param key Redis key
+     * @return field 到 value 的映射
      */
     public Map<String, String> hgetAll(String key) {
         Map<Object, Object> entries = redisTemplate.opsForHash().entries(key);
         Map<String, String> result = new LinkedHashMap<>();
-        entries.forEach((k, v) -> result.put(k.toString(), v == null ? null : v.toString()));
+        entries.forEach((k, v) -> result.put(k.toString(), toStringValue(v)));
         return result;
     }
 
     /**
-     * 删除 Hash 中的指定字段.
+     * 删除 Hash 中的指定字段。
      *
-     * @param key    键
+     * @param key    Redis key
      * @param fields 字段名列表
-     * @return 实际删除的字段数
+     * @return 实际删除的字段数量
      */
     public long hdel(String key, String... fields) {
-        Long count = redisTemplate.opsForHash().delete(key, (Object[]) fields);
-        return count == null ? 0 : count;
+        return redisTemplate.opsForHash().delete(key, (Object[]) fields);
     }
 
     // ======================== List 操作 ========================
 
-    /** 从左侧推入（返回列表长度） */
+    /**
+     * 从左侧推入列表。
+     *
+     * @param key   Redis key
+     * @param value 元素值
+     * @return 推入后的列表长度
+     */
     public long lpush(String key, String value) {
         Long size = redisTemplate.opsForList().leftPush(key, value);
         return size == null ? 0 : size;
     }
 
-    /** 从右侧推入（返回列表长度） */
+    /**
+     * 从右侧推入列表。
+     *
+     * @param key   Redis key
+     * @param value 元素值
+     * @return 推入后的列表长度
+     */
     public long rpush(String key, String value) {
         Long size = redisTemplate.opsForList().rightPush(key, value);
         return size == null ? 0 : size;
     }
 
-    /** 从左侧弹出 */
+    /**
+     * 从左侧弹出列表元素。
+     *
+     * @param key Redis key
+     * @return 弹出的元素；列表为空时返回 {@code null}
+     */
     public String lpop(String key) {
-        return redisTemplate.opsForList().leftPop(key);
-    }
-
-    /** 从右侧弹出 */
-    public String rpop(String key) {
-        return redisTemplate.opsForList().rightPop(key);
+        return toStringValue(redisTemplate.opsForList().leftPop(key));
     }
 
     /**
-     * 获取列表指定范围的元素.
+     * 从右侧弹出列表元素。
      *
-     * @param key   键
-     * @param start 起始索引（包含，0 为第一个）
-     * @param end   结束索引（包含，-1 表示最后一个）
-     * @return 元素列表
+     * @param key Redis key
+     * @return 弹出的元素；列表为空时返回 {@code null}
+     */
+    public String rpop(String key) {
+        return toStringValue(redisTemplate.opsForList().rightPop(key));
+    }
+
+    /**
+     * 获取列表指定范围内的元素。
+     *
+     * @param key   Redis key
+     * @param start 起始索引，包含
+     * @param end   结束索引，包含；-1 表示最后一个元素
+     * @return 元素列表；Redis 返回 {@code null} 时返回空列表
      */
     public List<String> lrange(String key, long start, long end) {
-        return redisTemplate.opsForList().range(key, start, end);
+        List<Object> values = redisTemplate.opsForList().range(key, start, end);
+        if (values == null) {
+            return Collections.emptyList();
+        }
+        return values.stream().map(this::toStringValue).collect(Collectors.toList());
     }
 
     // ======================== Set 操作 ========================
 
-    /** 添加元素到 Set（返回成功添加的数量） */
+    /**
+     * 添加元素到 Set。
+     *
+     * @param key    Redis key
+     * @param values 元素值
+     * @return 成功添加的元素数量
+     */
     public long sadd(String key, String... values) {
-        Long count = redisTemplate.opsForSet().add(key, values);
+        Long count = redisTemplate.opsForSet().add(key, (Object[]) values);
         return count == null ? 0 : count;
     }
 
-    /** 获取 Set 所有成员 */
+    /**
+     * 获取 Set 全部成员。
+     *
+     * @param key Redis key
+     * @return Set 成员；Redis 返回 {@code null} 时返回空集合
+     */
     public Set<String> smembers(String key) {
-        return redisTemplate.opsForSet().members(key);
+        Set<Object> values = redisTemplate.opsForSet().members(key);
+        if (values == null) {
+            return Collections.emptySet();
+        }
+        return values.stream().map(this::toStringValue).collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
-    /** 判断元素是否在 Set 中 */
+    /**
+     * 判断元素是否为 Set 成员。
+     *
+     * @param key   Redis key
+     * @param value 元素值
+     * @return {@code true} 表示存在
+     */
     public boolean sismember(String key, String value) {
         return Boolean.TRUE.equals(redisTemplate.opsForSet().isMember(key, value));
     }
@@ -300,35 +436,39 @@ public class RedisUtil {
     // ======================== ZSet 操作 ========================
 
     /**
-     * 添加元素到有序集合.
+     * 添加元素到有序集合。
      *
-     * @param key   键
-     * @param value 值
+     * @param key   Redis key
+     * @param value 元素值
      * @param score 分数
-     * @return {@code true} 如果成功添加
+     * @return {@code true} 表示添加成功
      */
     public boolean zadd(String key, String value, double score) {
         return Boolean.TRUE.equals(redisTemplate.opsForZSet().add(key, value, score));
     }
 
     /**
-     * 获取有序集合指定排名范围的元素（按分数升序）.
+     * 获取有序集合指定排名范围内的元素。
      *
-     * @param key   键
-     * @param start 起始排名
-     * @param end   结束排名（-1 表示最后一个）
-     * @return 元素集合
+     * @param key   Redis key
+     * @param start 起始排名，包含
+     * @param end   结束排名，包含；-1 表示最后一个元素
+     * @return 元素集合；Redis 返回 {@code null} 时返回空集合
      */
     public Set<String> zrange(String key, long start, long end) {
-        return redisTemplate.opsForZSet().range(key, start, end);
+        Set<Object> values = redisTemplate.opsForZSet().range(key, start, end);
+        if (values == null) {
+            return Collections.emptySet();
+        }
+        return values.stream().map(this::toStringValue).collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     // ======================== Lua 脚本 ========================
 
     /**
-     * 执行 Lua 脚本.
+     * 执行 Lua 脚本。
      *
-     * <p>脚本中通过 {@code KEYS[1]} 访问 keys 参数，通过 {@code ARGV[1]} 访问 args 参数.</p>
+     * <p>脚本中通过 {@code KEYS[n]} 访问 keys 参数，通过 {@code ARGV[n]} 访问 args 参数。</p>
      *
      * @param script Lua 脚本内容
      * @param keys   KEY 列表
@@ -347,20 +487,49 @@ public class RedisUtil {
     // ======================== Pipeline ========================
 
     /**
-     * 执行管道批量操作——减少网络往返，适合批量写入场景.
+     * 执行管道批量操作，减少网络往返。
      *
-     * @param consumer 管道操作回调（接收 RedisOperations 执行批量命令）
+     * @param consumer 管道操作回调，接收 RedisOperations 执行批量命令
      * @return 每条命令的返回值列表
      */
-    public List<Object> pipeline(java.util.function.Consumer<RedisOperations<String, String>> consumer) {
+    public List<Object> pipeline(java.util.function.Consumer<RedisOperations<String, Object>> consumer) {
         return redisTemplate.executePipelined(new SessionCallback<>() {
             @Override
-            public <K, V> Object execute(RedisOperations<K, V> operations) {
+            public <K, V> Object execute(@NotNull RedisOperations<K, V> operations) {
                 @SuppressWarnings("unchecked")
-                RedisOperations<String, String> stringOperations = (RedisOperations<String, String>) operations;
-                consumer.accept(stringOperations);
+                RedisOperations<String, Object> redisOperations = (RedisOperations<String, Object>) operations;
+                consumer.accept(redisOperations);
                 return null;
             }
         });
+    }
+
+    /**
+     * 将 RedisTemplate 反序列化出的值转换为字符串，用于兼容旧的 String 返回 API。
+     */
+    private String toStringValue(Object value) {
+        return value == null ? null : value.toString();
+    }
+
+    /**
+     * 将 RedisTemplate 反序列化出的值转换为调用方需要的类型。
+     */
+    private <T> T convertValue(Object value, Class<T> clazz) {
+        if (value == null) {
+            return null;
+        }
+        if (clazz.isInstance(value)) {
+            return clazz.cast(value);
+        }
+        if (value instanceof String stringValue) {
+            if (String.class.equals(clazz)) {
+                return clazz.cast(stringValue);
+            }
+            return JsonUtil.parseObject(stringValue, clazz);
+        }
+        if (String.class.equals(clazz)) {
+            return clazz.cast(value.toString());
+        }
+        return JsonUtil.convert(value, clazz);
     }
 }

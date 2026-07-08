@@ -727,6 +727,7 @@ class MultiLevelCacheTest {
                     .l1Ttl(Duration.ofSeconds(10))
                     .l2Ttl(Duration.ofMinutes(30))
                     .redisKeyPrefix("test:")
+                    .valueType(String.class)
                     .strongConsistency(false)
                     .nullValueCache(true);
             cache = new DefaultMultiLevelCache<>(config, redisUtil, serializer);
@@ -751,7 +752,7 @@ class MultiLevelCacheTest {
         @DisplayName("L1 未命中但 L2 命中时从 Redis 获取并回填 L1")
         void l1MissL2Hit() {
             String redisKey = "test:l2-cache:" + 200;
-            when(redisUtil.get(redisKey)).thenReturn("{\"data\":\"redis-value\"}");
+            when(redisUtil.<String>get(redisKey)).thenReturn("redis-value");
 
             String result = cache.getOrLoad(200, k -> {
                 throw new AssertionError("loader should not be called when L2 hits");
@@ -776,7 +777,7 @@ class MultiLevelCacheTest {
             assertEquals(1, cache.stats().getLoadSuccessCount());
 
             // 验证写回了 L2
-            verify(redisUtil).set(eq(redisKey), anyString(), eq(Duration.ofMinutes(30)));
+            verify(redisUtil).set(eq(redisKey), eq((Object) "loaded-300"), eq(Duration.ofMinutes(30)));
         }
 
         @Test
@@ -784,9 +785,7 @@ class MultiLevelCacheTest {
         void l2ReturnsNullSentinel() {
             String redisKey = "test:l2-cache:400";
             // getFromL2 首次读取返回 null → 进入 isL2NullSentinel 二次读取，命中哨兵
-            when(redisUtil.get(redisKey))
-                    .thenReturn(null)
-                    .thenReturn("NULL_SENTINEL");
+            when(redisUtil.<String>get(redisKey)).thenReturn("NULL_SENTINEL");
 
             String result = cache.getOrLoad(400, k -> {
                 throw new AssertionError("loader should not be called");
@@ -807,19 +806,56 @@ class MultiLevelCacheTest {
             assertEquals("put-value", cache.getOrLoad(500, k -> "fallback"));
 
             // L2 写入
-            verify(redisUtil).set(eq(redisKey), anyString(), eq(Duration.ofMinutes(30)));
+            verify(redisUtil).set(eq(redisKey), eq((Object) "put-value"), eq(Duration.ofMinutes(30)));
         }
 
         @Test
         @DisplayName("L2 命中回填 L1 时读取 Redis 剩余 TTL")
         void l2HitReadsRedisRemainingTtlBeforeRefillL1() {
             String redisKey = "test:l2-cache:250";
-            when(redisUtil.get(redisKey)).thenReturn("{\"data\":\"redis-ttl-value\"}");
+            when(redisUtil.<String>get(redisKey)).thenReturn("redis-ttl-value");
             when(redisUtil.getExpire(redisKey, TimeUnit.MILLISECONDS)).thenReturn(1_000L);
 
             assertEquals("redis-ttl-value", cache.getOrLoad(250, k -> "fallback"));
 
             verify(redisUtil).getExpire(redisKey, TimeUnit.MILLISECONDS);
+        }
+
+        @Test
+        @DisplayName("L2 值类型不匹配时忽略缓存并回源")
+        void l2TypeMismatchFallsBackToLoader() {
+            String redisKey = "test:l2-cache:260";
+            when(redisUtil.get(redisKey)).thenReturn(123);
+
+            String result = cache.getOrLoad(260, k -> "loaded-after-type-mismatch");
+
+            assertEquals("loaded-after-type-mismatch", result);
+            assertEquals(1, cache.stats().getMissCount());
+            verify(redisUtil).set(eq(redisKey), eq((Object) "loaded-after-type-mismatch"), eq(Duration.ofMinutes(30)));
+        }
+
+        @Test
+        @DisplayName("L2 泛型集合元素反序列化为 Map 时忽略缓存并回源")
+        void l2CollectionWithRawJsonElementsFallsBackToLoader() {
+            @SuppressWarnings("unchecked")
+            RedisUtil redisUtil = mock(RedisUtil.class);
+            CacheConfig<Integer, List<String>> config = CacheConfig.<Integer, List<String>>builder("list-cache")
+                    .l1MaxSize(100)
+                    .l1Ttl(Duration.ofSeconds(10))
+                    .l2Ttl(Duration.ofMinutes(30))
+                    .redisKeyPrefix("test:")
+                    .valueType(List.class)
+                    .strongConsistency(false)
+                    .nullValueCache(true);
+            DefaultMultiLevelCache<Integer, List<String>> listCache =
+                    new DefaultMultiLevelCache<>(config, redisUtil, serializer);
+            String redisKey = "test:list-cache:270";
+            when(redisUtil.get(redisKey)).thenReturn(List.of(Map.of("name", "raw")));
+
+            List<String> result = listCache.getOrLoad(270, key -> List.of("loaded"));
+
+            assertEquals(List.of("loaded"), result);
+            verify(redisUtil).set(eq(redisKey), eq((Object) List.of("loaded")), eq(Duration.ofMinutes(30)));
         }
 
         @Test
@@ -830,7 +866,7 @@ class MultiLevelCacheTest {
 
             cache.put(600, "custom", customTtl);
 
-            verify(redisUtil).set(eq(redisKey), anyString(), eq(customTtl));
+            verify(redisUtil).set(eq(redisKey), eq((Object) "custom"), eq(customTtl));
         }
 
         @Test
@@ -856,7 +892,7 @@ class MultiLevelCacheTest {
             assertNull(result);
 
             // 验证写入了 NULL_SENTINEL 到 L2
-            verify(redisUtil).set(eq(redisKey), eq("NULL_SENTINEL"), eq(Duration.ofMinutes(5)));
+            verify(redisUtil).set(eq(redisKey), eq((Object) "NULL_SENTINEL"), eq(Duration.ofMinutes(5)));
         }
 
         @Test

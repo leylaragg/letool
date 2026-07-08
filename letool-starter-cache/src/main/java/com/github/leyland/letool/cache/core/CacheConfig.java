@@ -40,6 +40,8 @@ public class CacheConfig<K, V> {
     private Duration nullValueTtl = Duration.ofMinutes(5);
     /** Redis key 前缀；最终 KV Redis key 还会拼接缓存名称和业务 key。 */
     private String redisKeyPrefix = "letool:cache:";
+    /** L2 读取时用于校验 RedisTemplate 反序列化结果的 value 类型；为 null 时跳过严格类型校验。 */
+    private Class<?> valueType;
 
     private CacheConfig(String name) {
         this.name = name;
@@ -117,6 +119,16 @@ public class CacheConfig<K, V> {
     }
 
     /**
+     * 设置缓存 value 类型，用于 L2 命中时校验 Redis 反序列化结果。
+     *
+     * <p>不设置时保持兼容行为；设置后，如果 Redis 中的值不是该类型，L2 会按 miss 处理并回源。</p>
+     */
+    public CacheConfig<K, V> valueType(Class<?> valueType) {
+        this.valueType = valueType;
+        return this;
+    }
+
+    /**
      * 完成配置构建并执行基础校验。
      */
     public CacheConfig<K, V> build() {
@@ -154,4 +166,5 @@ public class CacheConfig<K, V> {
     public boolean isNullValueCache() { return nullValueCache; }
     public Duration getNullValueTtl() { return nullValueTtl; }
     public String getRedisKeyPrefix() { return redisKeyPrefix; }
+    public Class<?> getValueType() { return valueType; }
 }

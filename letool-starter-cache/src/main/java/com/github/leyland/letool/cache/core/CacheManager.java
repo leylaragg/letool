@@ -182,6 +182,7 @@ public class CacheManager {
                 .strongConsistency(config.isStrongConsistency())
                 .nullValueCache(config.isNullValueCache())
                 .nullValueTtl(config.getNullValueTtl())
+                .valueType(config.getValueType())
                 .redisKeyPrefix(prefix)
                 .build();
     }

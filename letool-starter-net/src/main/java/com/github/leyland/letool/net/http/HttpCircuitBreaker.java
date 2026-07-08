@@ -3,6 +3,7 @@ package com.github.leyland.letool.net.http;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Locale;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -154,8 +155,8 @@ public class HttpCircuitBreaker {
             if (errorRate >= errorThreshold) {
                 if (state.compareAndSet(currentState, State.OPEN)) {
                     lastOpenTime.set(System.currentTimeMillis());
-                    log.warn("Circuit breaker OPEN, error rate={:.2%}, threshold={:.2%}",
-                            errorRate, errorThreshold);
+                    log.warn("Circuit breaker OPEN, error rate={}, threshold={}",
+                            formatPercent(errorRate), formatPercent(errorThreshold));
                 }
             }
         }
@@ -216,6 +217,13 @@ public class HttpCircuitBreaker {
             }
         }
         return (double) failures / total;
+    }
+
+    /**
+     * 将 0.0-1.0 的比例格式化为两位小数百分比，避免在 SLF4J 日志中使用不支持的 printf 占位符。
+     */
+    private String formatPercent(double rate) {
+        return String.format(Locale.ROOT, "%.2f%%", rate * 100.0D);
     }
 
     // ======================== 内部类：EventRecord ========================

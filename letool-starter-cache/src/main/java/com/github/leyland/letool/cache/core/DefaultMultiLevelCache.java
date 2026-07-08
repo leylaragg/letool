@@ -10,9 +10,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -80,6 +80,8 @@ public class DefaultMultiLevelCache<K, V> implements MultiLevelCache<K, V> {
     private final CacheSerializer serializer;
     /** 当前缓存区域的最终配置，已经由 CacheManager 合并全局开关后传入。 */
     private final CacheConfig<K, V> config;
+    /** L2 命中时用于校验 RedisTemplate 反序列化结果的 value 类型；为 null 时跳过严格类型校验。 */
+    private final Class<?> valueType;
     /** 当前缓存实例的运行统计。 */
     private final CacheStats stats = new CacheStats();
     /** key 级单飞锁，避免热点 key 在并发未命中时同时回源数据库。 */
@@ -109,6 +111,7 @@ public class DefaultMultiLevelCache<K, V> implements MultiLevelCache<K, V> {
         this.redisUtil = redisUtil;
         this.serializer = serializer;
         this.config = config;
+        this.valueType = config.getValueType();
         this.invalidationPublisher = invalidationPublisher == null ? CacheInvalidationPublisher.noop() : invalidationPublisher;
         this.instanceId = instanceId == null ? "local" : instanceId;
         this.degradationListener = degradationListener == null ? () -> { } : degradationListener;
@@ -377,7 +380,7 @@ public class DefaultMultiLevelCache<K, V> implements MultiLevelCache<K, V> {
 
     private void putLoadedValue(K key, V value, Duration ttl) {
         Duration l2Ttl = effectiveTtl(ttl, config.getL2Ttl());
-        Long version = writeToRedisAndAdvanceVersion(key, serializer.serialize(value), l2Ttl);
+        Long version = writeToRedisAndAdvanceVersion(key, value, l2Ttl);
         putToL1(key, value, min(config.getL1Ttl(), l2Ttl), version);
     }
 
@@ -416,8 +419,8 @@ public class DefaultMultiLevelCache<K, V> implements MultiLevelCache<K, V> {
             return CacheLookup.miss();
         }
         try {
-            String json = redisUtil.get(redisKey(key));
-            if (json == null || json.isEmpty()) {
+            Object cachedValue = redisUtil.get(redisKey(key));
+            if (cachedValue == null) {
                 return CacheLookup.miss();
             }
             Long versionAfter = config.isStrongConsistency() ? readConsistencyVersion() : LOCAL_ONLY_VERSION;
@@ -425,12 +428,22 @@ public class DefaultMultiLevelCache<K, V> implements MultiLevelCache<K, V> {
                 return CacheLookup.miss();
             }
             long stableVersion = versionAfter == null ? LOCAL_ONLY_VERSION : versionAfter;
-            if (REDIS_NULL_SENTINEL.equals(json)) {
+            if (REDIS_NULL_SENTINEL.equals(cachedValue)) {
                 return CacheLookup.nullHit(stableVersion);
             }
-            @SuppressWarnings("unchecked")
-            V value = (V) serializer.deserialize(json, Object.class);
-            return CacheLookup.hit(value, stableVersion);
+            if (isExpectedValueType(cachedValue)) {
+                if (isCollectionOfRawJson(cachedValue)) {
+                    log.warn("L2 cache [{}] collection element type was not deserialized safely, fallback to loader: key={}",
+                            name, redisKey(key));
+                    return CacheLookup.miss();
+                }
+                @SuppressWarnings("unchecked")
+                V value = (V) cachedValue;
+                return CacheLookup.hit(value, stableVersion);
+            }
+            log.warn("L2 cache [{}] type mismatch, ignore cached value: key={}, expected={}, actual={}",
+                    name, redisKey(key), valueType.getName(), cachedValue.getClass().getName());
+            return CacheLookup.miss();
         } catch (Exception e) {
             markL2Degraded(e);
             return CacheLookup.miss();
@@ -453,7 +466,7 @@ public class DefaultMultiLevelCache<K, V> implements MultiLevelCache<K, V> {
         }
     }
 
-    private Long writeToRedisAndAdvanceVersion(K key, String value, Duration ttl) {
+    private Long writeToRedisAndAdvanceVersion(K key, Object value, Duration ttl) {
         if (!isL2Enabled()) {
             return LOCAL_ONLY_VERSION;
         }
@@ -496,8 +509,11 @@ public class DefaultMultiLevelCache<K, V> implements MultiLevelCache<K, V> {
             return LOCAL_ONLY_VERSION;
         }
         try {
-            String raw = redisUtil.get(versionKey());
-            return raw == null || raw.isBlank() ? 0L : Long.parseLong(raw);
+            Object raw = redisUtil.get(versionKey());
+            if (raw == null || raw instanceof String stringValue && stringValue.isBlank()) {
+                return 0L;
+            }
+            return toLong(raw);
         } catch (Exception e) {
             markL2Degraded(e);
             return null;
@@ -539,6 +555,17 @@ public class DefaultMultiLevelCache<K, V> implements MultiLevelCache<K, V> {
 
     private boolean isL2Enabled() {
         return redisUtil != null && config.isL2Enabled() && !l2Degraded;
+    }
+
+    private boolean isExpectedValueType(Object value) {
+        return valueType == null || valueType.isInstance(value);
+    }
+
+    private boolean isCollectionOfRawJson(Object value) {
+        if (!(value instanceof Collection<?> collection)) {
+            return false;
+        }
+        return collection.stream().anyMatch(Map.class::isInstance);
     }
 
     private String redisKey(K key) {
