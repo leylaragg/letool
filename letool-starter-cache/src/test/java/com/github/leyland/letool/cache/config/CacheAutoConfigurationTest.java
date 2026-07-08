@@ -1,7 +1,9 @@
 package com.github.leyland.letool.cache.config;
 
 import com.github.leyland.letool.cache.aspect.CacheAspect;
+import com.github.leyland.letool.cache.core.CacheConfig;
 import com.github.leyland.letool.cache.core.CacheManager;
+import com.github.leyland.letool.cache.core.MultiLevelCache;
 import com.github.leyland.letool.cache.serializer.CacheSerializer;
 import com.github.leyland.letool.cache.serializer.JacksonCacheSerializer;
 import com.github.leyland.letool.cache.support.CacheMonitor;
@@ -11,6 +13,8 @@ import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.lang.reflect.Field;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -133,6 +137,37 @@ class CacheAutoConfigurationTest {
                     assertThat(context).hasSingleBean(CacheSerializer.class);
                     assertThat(context).doesNotHaveBean(CacheAspect.class);
                 });
+    }
+
+    /**
+     * 全局强一致开关关闭时，YAML 预注册的缓存实例也必须被约束为非强一致。
+     *
+     * <p>否则业务项目会以为配置了 {@code letool.cache.strong-consistency=false} 就能统一关闭
+     * Redis 版本校验，但启动时预注册的实例仍然保持默认 true，造成配置语义和实际行为不一致。</p>
+     */
+    @Test
+    void shouldApplyGlobalStrongConsistencySwitchToConfiguredInstances() {
+        contextRunner
+                .withPropertyValues(
+                        "letool.cache.strong-consistency=false",
+                        "letool.cache.instances[0].name=weak-consistency-cache")
+                .run(context -> {
+                    CacheManager cacheManager = context.getBean(CacheManager.class);
+                    MultiLevelCache<Object, Object> cache = cacheManager.get("weak-consistency-cache");
+                    CacheConfig<?, ?> config = extractConfig(cache);
+
+                    assertThat(config.isStrongConsistency()).isFalse();
+                });
+    }
+
+    private CacheConfig<?, ?> extractConfig(MultiLevelCache<?, ?> cache) {
+        try {
+            Field field = cache.getClass().getDeclaredField("config");
+            field.setAccessible(true);
+            return (CacheConfig<?, ?>) field.get(cache);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("Failed to inspect cache config", e);
+        }
     }
 
     @Configuration(proxyBeanMethods = false)

@@ -7,6 +7,7 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -26,7 +27,7 @@ class LetoolToolAutoConfigurationTest {
             .withPropertyValues("spring.main.allow-bean-definition-overriding=false");
 
     /**
-     * Redis helper should stay absent when no {@link StringRedisTemplate} bean exists.
+     * Redis helper should stay absent when no {@link RedisTemplate} bean exists.
      */
     @Test
     void shouldStartWithoutRedisTemplateAndNotCreateRedisUtil() {
@@ -38,18 +39,33 @@ class LetoolToolAutoConfigurationTest {
     }
 
     /**
-     * Redis helper should be created only when Redis infrastructure is present.
+     * Redis helper should be created only when object Redis infrastructure is present.
      */
     @Test
-    void shouldCreateRedisUtilWhenStringRedisTemplateExists() {
+    void shouldCreateRedisUtilWhenRedisTemplateExists() {
         contextRunner
                 .withUserConfiguration(RedisTemplateConfiguration.class)
                 .run(context -> {
                     assertThat(context).hasNotFailed();
-                    assertThat(context).hasSingleBean(StringRedisTemplate.class);
+                    assertThat(context).hasSingleBean(RedisTemplate.class);
                     assertThat(context).hasSingleBean(RedisUtil.class);
                     assertThat(context.getBean(RedisUtil.class).getTemplate())
-                            .isSameAs(context.getBean(StringRedisTemplate.class));
+                            .isSameAs(context.getBean(RedisTemplate.class));
+                });
+    }
+
+    /**
+     * StringRedisTemplate alone should not activate RedisUtil because RedisUtil is
+     * intended to use the application's object RedisTemplate and its serializers.
+     */
+    @Test
+    void shouldNotCreateRedisUtilWhenOnlyStringRedisTemplateExists() {
+        contextRunner
+                .withUserConfiguration(StringRedisTemplateConfiguration.class)
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(StringRedisTemplate.class);
+                    assertThat(context).doesNotHaveBean(RedisUtil.class);
                 });
     }
 
@@ -78,6 +94,18 @@ class LetoolToolAutoConfigurationTest {
     static class RedisTemplateConfiguration {
 
         @Bean
+        RedisTemplate<String, Object> redisTemplate() {
+            return mock(RedisTemplate.class);
+        }
+    }
+
+    /**
+     * Simulates applications that only define StringRedisTemplate.
+     */
+    @Configuration(proxyBeanMethods = false)
+    static class StringRedisTemplateConfiguration {
+
+        @Bean
         StringRedisTemplate stringRedisTemplate() {
             return mock(StringRedisTemplate.class);
         }
@@ -95,13 +123,13 @@ class LetoolToolAutoConfigurationTest {
         }
 
         @Bean
-        StringRedisTemplate stringRedisTemplate() {
-            return mock(StringRedisTemplate.class);
+        RedisTemplate<String, Object> redisTemplate() {
+            return mock(RedisTemplate.class);
         }
 
         @Bean({"redisUtil", "userRedisUtil"})
-        RedisUtil redisUtil(StringRedisTemplate stringRedisTemplate) {
-            return new RedisUtil(stringRedisTemplate);
+        RedisUtil redisUtil(RedisTemplate<String, Object> redisTemplate) {
+            return new RedisUtil(redisTemplate);
         }
     }
 }

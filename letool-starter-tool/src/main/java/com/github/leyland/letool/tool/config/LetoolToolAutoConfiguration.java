@@ -8,7 +8,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.RedisTemplate;
 
 /**
  * Auto-configuration for the base tool starter.
@@ -35,20 +35,20 @@ public class LetoolToolAutoConfiguration {
      * Redis-specific adapter configuration.
      */
     @Configuration(proxyBeanMethods = false)
-    @ConditionalOnClass(StringRedisTemplate.class)
+    @ConditionalOnClass(RedisTemplate.class)
     static class RedisToolConfiguration {
 
         /**
          * Registers Redis helper only when application Redis infrastructure exists.
          *
-         * @param stringRedisTemplate Spring Redis string template.
+         * @param redisTemplate Spring Redis object template.
          * @return Redis helper wrapper.
          */
         @Bean
-        @ConditionalOnBean(StringRedisTemplate.class)
+        @ConditionalOnBean(name = "redisTemplate")
         @ConditionalOnMissingBean(RedisUtil.class)
-        public RedisUtil redisUtil(StringRedisTemplate stringRedisTemplate) {
-            return new RedisUtil(stringRedisTemplate);
+        public RedisUtil redisUtil(RedisTemplate<String, Object> redisTemplate) {
+            return new RedisUtil(redisTemplate);
         }
     }
 }
