@@ -35,7 +35,7 @@ import static org.mockito.Mockito.*;
 /**
  * 二级缓存模块综合测试.
  *
- * <p>覆盖 CacheConfig / CacheStats / NullSentinel / CacheManager / DefaultMultiLevelCache / CacheTemplate / CacheMonitor</p>
+ * <p>覆盖 CacheConfig / CacheStats / NullSentinel / CacheManager / MultiLevelCache / CacheTemplate / CacheMonitor</p>
  */
 @DisplayName("二级缓存模块测试")
 class MultiLevelCacheTest {
@@ -503,12 +503,12 @@ class MultiLevelCacheTest {
     }
 
     // ================================================================
-    // DefaultMultiLevelCache L1-only 测试（无 Redis）
+    // MultiLevelCache L1-only 测试（无 Redis）
     // ================================================================
 
     @Nested
-    @DisplayName("DefaultMultiLevelCache L1 本地缓存（无 Redis）")
-    class DefaultMultiLevelCacheL1OnlyTests {
+    @DisplayName("MultiLevelCache L1 本地缓存（无 Redis）")
+    class MultiLevelCacheL1OnlyTests {
 
         private MultiLevelCache<String, String> cache;
         private AtomicInteger loadCount;
@@ -521,7 +521,7 @@ class MultiLevelCacheTest {
                     .l1Ttl(Duration.ofSeconds(10))
                     .nullValueCache(true);
             // redisUtil = null 表示仅 L1
-            cache = new DefaultMultiLevelCache<>(config, null, new SimpleCacheSerializer());
+            cache = new MultiLevelCache<>(config, null, new SimpleCacheSerializer());
         }
 
         @Test
@@ -646,7 +646,7 @@ class MultiLevelCacheTest {
         void nullValueCacheDisabled() {
             CacheConfig<String, String> config = CacheConfig.<String, String>builder("nc-off")
                     .nullValueCache(false);
-            MultiLevelCache<String, String> ncOffCache = new DefaultMultiLevelCache<>(config, null, new SimpleCacheSerializer());
+            MultiLevelCache<String, String> ncOffCache = new MultiLevelCache<>(config, null, new SimpleCacheSerializer());
             AtomicInteger loads = new AtomicInteger(0);
 
             String r1 = ncOffCache.getOrLoad("nil", k -> { loads.incrementAndGet(); return null; });
@@ -706,13 +706,13 @@ class MultiLevelCacheTest {
     }
 
     // ================================================================
-    // DefaultMultiLevelCache L2 集成测试（Mock Redis）
+    // MultiLevelCache L2 集成测试（Mock Redis）
     // ================================================================
 
     @Nested
-    @DisplayName("DefaultMultiLevelCache L2 Redis 集成（Mock）")
+    @DisplayName("MultiLevelCache L2 Redis 集成（Mock）")
     @ExtendWith(MockitoExtension.class)
-    class DefaultMultiLevelCacheL2Tests {
+    class MultiLevelCacheL2Tests {
 
         @Mock
         private RedisUtil redisUtil;
@@ -734,7 +734,7 @@ class MultiLevelCacheTest {
                     .valueType(String.class)
                     .strongConsistency(false)
                     .nullValueCache(true);
-            cache = new DefaultMultiLevelCache<>(config, redisUtil, serializer);
+            cache = new MultiLevelCache<>(config, redisUtil, serializer);
             lenient().when(redisUtil.boundValueOps(anyString())).thenReturn(boundValueOperations);
         }
 
@@ -852,8 +852,8 @@ class MultiLevelCacheTest {
                     .valueType(List.class)
                     .strongConsistency(false)
                     .nullValueCache(true);
-            DefaultMultiLevelCache<Integer, List<String>> listCache =
-                    new DefaultMultiLevelCache<>(config, redisUtil, serializer);
+            MultiLevelCache<Integer, List<String>> listCache =
+                    new MultiLevelCache<>(config, redisUtil, serializer);
             String redisKey = "test:list-cache:270";
             when(redisUtil.boundValueOps(redisKey)).thenReturn(boundValueOperations);
             when(boundValueOperations.get()).thenReturn(List.of(Map.of("name", "raw")));
@@ -951,7 +951,7 @@ class MultiLevelCacheTest {
         @BeforeEach
         void setUp() {
             CacheConfig<String, String> config = CacheConfig.<String, String>builder("template");
-            cache = new DefaultMultiLevelCache<>(config, null, new SimpleCacheSerializer());
+            cache = new MultiLevelCache<>(config, null, new SimpleCacheSerializer());
         }
 
         @Test
@@ -1073,7 +1073,7 @@ class MultiLevelCacheTest {
         @Test
         @DisplayName("场景：模拟数据库回源——读穿模式")
         void scenarioReadThrough() {
-            MultiLevelCache<String, TestValue> cache = new DefaultMultiLevelCache<>(
+            MultiLevelCache<String, TestValue> cache = new MultiLevelCache<>(
                     CacheConfig.<String, TestValue>builder("readthrough"),
                     null, serializer);
 
@@ -1101,7 +1101,7 @@ class MultiLevelCacheTest {
         @Test
         @DisplayName("场景：缓存穿透防护——不存在的 key 缓存哨兵")
         void scenarioPenetrationProtection() {
-            MultiLevelCache<String, TestValue> cache = new DefaultMultiLevelCache<>(
+            MultiLevelCache<String, TestValue> cache = new MultiLevelCache<>(
                     CacheConfig.<String, TestValue>builder("penetration")
                             .nullValueCache(true)
                             .nullValueTtl(Duration.ofSeconds(5)),

@@ -117,7 +117,7 @@ public class CacheManager {
      */
     private <K, V> MultiLevelCache<K, V> createCache(CacheConfig<K, V> config) {
         CacheConfig<K, V> effectiveConfig = effectiveConfig(config);
-        return new DefaultMultiLevelCache<>(
+        return new MultiLevelCache<>(
                 effectiveConfig,
                 redisUtil,
                 serializer,

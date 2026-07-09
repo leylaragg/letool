@@ -146,6 +146,7 @@ public class MultiLevelListCache<K, V> {
         return l2Degraded;
     }
 
+    /** 尝试恢复 Redis L2；该方法只做轻量探测，不预热数据。 */
     public boolean tryRecoverL2() {
         if (!l2Degraded) {
             return true;
@@ -159,6 +160,7 @@ public class MultiLevelListCache<K, V> {
         }
     }
 
+    /** 返回运行统计快照。 */
     public Stats stats() {
         return new Stats(name, l1HitCount.get(), l2HitCount.get(), missCount.get(),
                 pushCount.get(), popCount.get(), l1Enabled ? l1Cache.estimatedSize() : 0, l2Degraded);

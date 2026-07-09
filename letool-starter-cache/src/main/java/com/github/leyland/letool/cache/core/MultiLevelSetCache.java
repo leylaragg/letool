@@ -19,7 +19,7 @@ import java.util.function.Function;
 /**
  * 面向“一个 key 对应多个成员”的二级 Set 缓存。
  *
- * <p>普通 {@link DefaultMultiLevelCache} 适合 key -> value 的对象缓存；本类适合 key -> Set(member)
+ * <p>普通 {@link MultiLevelCache} 适合 key -> value 的对象缓存；本类适合 key -> Set(member)
  * 的索引类缓存，例如：</p>
  * <ul>
  *     <li>项目版本 -> 规则 ID 集合</li>
