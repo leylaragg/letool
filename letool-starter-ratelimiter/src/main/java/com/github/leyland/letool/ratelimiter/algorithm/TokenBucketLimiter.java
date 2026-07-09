@@ -122,6 +122,9 @@ public class TokenBucketLimiter implements RateLimiter {
                 return RateLimitResult.allow((long) bucket.tokens);
             } else {
                 // 计算预估等待时间（毫秒）
+                if (bucket.refillRate <= 0) {
+                    return RateLimitResult.deny(Long.MAX_VALUE);
+                }
                 double deficit = permits - bucket.tokens;
                 long waitTimeMs = (long) ((deficit / bucket.refillRate) * 1000);
                 bucket.lastAccessTime = System.currentTimeMillis();

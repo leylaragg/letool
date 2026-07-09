@@ -48,7 +48,7 @@ public class DecisionChain<T, R> {
                 return rule.execute(context);
             }
         }
-        return null;
+        throw new IllegalStateException("No matching rule found in decision chain for context: " + context);
     }
 
     /** 创建构建器. */

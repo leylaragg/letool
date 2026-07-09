@@ -4,8 +4,10 @@ import com.github.leyland.letool.log.store.LogRecordStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import jakarta.annotation.PreDestroy;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 默认审计日志处理器 —— 异步写入存储，不阻塞主业务流程.
@@ -31,10 +33,24 @@ public class DefaultAuditLogProcessor implements AuditLogService {
         // 单线程执行器：保证日志写入的顺序性
         this.executor = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "audit-log-writer");
-            // Daemon 线程：不阻止 JVM 退出
             t.setDaemon(true);
             return t;
         });
+    }
+
+    /** Spring 容器关闭时优雅停止，确保待写入的审计日志不丢失 */
+    @PreDestroy
+    public void shutdown() {
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+                executor.shutdownNow();
+                log.warn("Audit log writer did not terminate in time, forced shutdown");
+            }
+        } catch (InterruptedException e) {
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     @Override

@@ -239,7 +239,10 @@ public class OpenAiProvider implements AiProvider {
      */
     protected String getBaseUrl() {
         String url = config.getBaseUrl();
-        if (url != null && url.endsWith("/")) {
+        if (url == null || url.isEmpty()) {
+            throw new AiException("OpenAI base URL 未配置，请在 letool.ai.openai.base-url 中设置", getProviderName());
+        }
+        if (url.endsWith("/")) {
             url = url.substring(0, url.length() - 1);
         }
         return url;
@@ -306,7 +309,7 @@ public class OpenAiProvider implements AiProvider {
         body.put("messages", messages);
 
         // 温度
-        if (request.getTemperature() > 0) {
+        if (request.getTemperature() >= 0) {
             body.put("temperature", request.getTemperature());
         }
 

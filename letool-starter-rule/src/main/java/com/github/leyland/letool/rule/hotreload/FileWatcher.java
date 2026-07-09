@@ -217,6 +217,15 @@ public class FileWatcher {
         }
     }
 
+    /** 清理已删除文件的跟踪记录，防止 lastModifiedMap 内存泄漏 */
+    private void pruneDeletedFiles(java.util.Set<Path> existingFiles) {
+        java.util.Set<String> existingPaths = new java.util.HashSet<>();
+        for (Path p : existingFiles) {
+            existingPaths.add(p.toAbsolutePath().toString());
+        }
+        lastModifiedMap.keySet().removeIf(path -> !existingPaths.contains(path));
+    }
+
     // ======================== 路径解析 ========================
 
     /**

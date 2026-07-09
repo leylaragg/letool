@@ -3,6 +3,8 @@ package com.github.leyland.letool.excel.validation;
 import com.github.leyland.letool.excel.annotation.ExcelValidation;
 
 import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.regex.Pattern;
 
 /**
@@ -50,7 +52,7 @@ public class DataValidator {
      */
     public static <T> ValidationResult validate(T entity, int rowNum) {
         ValidationResult result = new ValidationResult();
-        for (Field field : entity.getClass().getDeclaredFields()) {
+        for (Field field : getAllFields(entity.getClass())) {
             ExcelValidation ann = field.getAnnotation(ExcelValidation.class);
             if (ann == null) continue;
             field.setAccessible(true);
@@ -82,5 +84,19 @@ public class DataValidator {
             }
         }
         return result;
+    }
+
+    /**
+     * 获取类及其所有父类的字段（走类层次结构）.
+     */
+    private static List<Field> getAllFields(Class<?> clazz) {
+        List<Field> fields = new ArrayList<>();
+        while (clazz != null && clazz != Object.class) {
+            for (Field field : clazz.getDeclaredFields()) {
+                fields.add(field);
+            }
+            clazz = clazz.getSuperclass();
+        }
+        return fields;
     }
 }

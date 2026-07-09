@@ -141,10 +141,10 @@ public class ApiErrorCollector {
         private final String path;
 
         /** 发生次数 */
-        private long count;
+        private final AtomicLong count;
 
         /** 最近一次发生时间 */
-        private LocalDateTime lastOccurrence;
+        private volatile LocalDateTime lastOccurrence;
 
         /**
          * 创建错误详情.
@@ -160,13 +160,13 @@ public class ApiErrorCollector {
             this.exceptionClass = exceptionClass;
             this.message = message;
             this.path = path;
-            this.count = count;
+            this.count = new AtomicLong(count);
             this.lastOccurrence = lastOccurrence;
         }
 
         /** 次数递增 1，同时更新最近发生时间为当前时间. */
         public void increment() {
-            this.count++;
+            this.count.incrementAndGet();
             this.lastOccurrence = LocalDateTime.now();
         }
 
@@ -179,7 +179,7 @@ public class ApiErrorCollector {
         /** @return 触发错误的 API 路径 */
         public String getPath() { return path; }
         /** @return 发生次数 */
-        public long getCount() { return count; }
+        public long getCount() { return count.get(); }
         /** @return 最近一次发生时间 */
         public LocalDateTime getLastOccurrence() { return lastOccurrence; }
 

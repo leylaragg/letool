@@ -88,6 +88,8 @@ public final class MimeTypeUtil {
      */
     public static String getMimeTypeByExt(String extension) {
         if (extension == null) return "application/octet-stream";
-        return EXT_TO_MIME.getOrDefault(extension.toLowerCase(), "application/octet-stream");
+        // 去除前导点号，支持 ".jpg" 和 "jpg" 两种输入格式
+        String normalized = extension.startsWith(".") ? extension.substring(1) : extension;
+        return EXT_TO_MIME.getOrDefault(normalized.toLowerCase(), "application/octet-stream");
     }
 }

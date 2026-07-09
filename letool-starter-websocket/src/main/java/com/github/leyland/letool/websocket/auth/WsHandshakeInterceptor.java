@@ -148,8 +148,8 @@ public class WsHandshakeInterceptor implements HandshakeInterceptor {
         String[] pairs = query.split("&");
         for (String pair : pairs) {
             String[] kv = pair.split("=", 2);
-            if (kv.length == 2 && paramName.equals(kv[0])) {
-                return kv[1];
+            if (kv.length == 2 && paramName.equals(java.net.URLDecoder.decode(kv[0], java.nio.charset.StandardCharsets.UTF_8))) {
+                return java.net.URLDecoder.decode(kv[1], java.nio.charset.StandardCharsets.UTF_8);
             }
         }
         return null;
@@ -166,10 +166,10 @@ public class WsHandshakeInterceptor implements HandshakeInterceptor {
      */
     private WsPrincipal parseToken(String token) {
         if (StrUtil.isBlank(token)) return null;
-        // 简化实现：将 Token 作为用户标识
-        // 实际项目应解析 JWT 获取真实的 userId、username、roles
+        // 框架默认实现：使用 Token 的完整 hashCode 作为用户标识
+        // 生产环境应解析 JWT 获取真实的 userId、username、roles
         try {
-            String userId = "user_" + Math.abs(token.hashCode() % 100000);
+            String userId = "user_" + Integer.toHexString(token.hashCode());
             return new WsPrincipal(userId, userId, Collections.emptyList());
         } catch (Exception e) {
             log.error("Failed to parse token: {}", e.getMessage());

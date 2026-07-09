@@ -37,7 +37,7 @@ public class TraceIdFilter implements Filter {
         String traceId = httpReq.getHeader(properties.getTrace().getHeaderName());
 
         // ==== 2. 无 TraceId 且配置允许生成 → 自动生成短 UUID ====
-        if (traceId == null || traceId.isEmpty()) {
+        if (traceId == null || traceId.isBlank()) {
             if (properties.getTrace().isGenerateIfAbsent()) {
                 traceId = TraceIdGenerator.uuidShort();
             }

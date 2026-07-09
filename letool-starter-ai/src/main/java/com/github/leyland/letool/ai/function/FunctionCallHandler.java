@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -59,8 +60,8 @@ public class FunctionCallHandler {
      * 创建函数调用处理器.
      */
     public FunctionCallHandler() {
-        this.executorMap = new LinkedHashMap<>();
-        this.descriptionMap = new HashMap<>();
+        this.executorMap = new ConcurrentHashMap<>();
+        this.descriptionMap = new ConcurrentHashMap<>();
     }
 
     // ======================== 注册方法 ========================

@@ -27,10 +27,16 @@ public class RepeatableRequestFilter implements Filter {
      * 可重复读的 HttpServletRequestWrapper —— 缓存请求体字节数组.
      */
     private static class RepeatableRequestWrapper extends jakarta.servlet.http.HttpServletRequestWrapper {
+        /** 最大请求体大小（10 MB），防止恶意大请求导致 OOM */
+        private static final long MAX_BODY_SIZE = 10 * 1024 * 1024;
         private final byte[] body;
 
         public RepeatableRequestWrapper(HttpServletRequest request) throws IOException {
             super(request);
+            long contentLength = request.getContentLengthLong();
+            if (contentLength > MAX_BODY_SIZE) {
+                throw new IOException("Request body too large: " + contentLength + " bytes (max: " + MAX_BODY_SIZE + ")");
+            }
             this.body = request.getInputStream().readAllBytes();
         }
 

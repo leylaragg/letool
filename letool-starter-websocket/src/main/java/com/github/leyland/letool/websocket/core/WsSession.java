@@ -8,7 +8,6 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
 import java.io.IOException;
-import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -47,11 +46,11 @@ public class WsSession {
     /** Spring 原生 WebSocket 会话 */
     private final WebSocketSession nativeSession;
 
-    /** 连接建立时间 */
-    private final LocalDateTime connectedAt;
+    /** 连接建立时间（epoch millis） */
+    private final long connectedAt;
 
-    /** 最近一次心跳时间 */
-    private LocalDateTime lastHeartbeat;
+    /** 最近一次心跳时间（epoch millis） */
+    private long lastHeartbeat;
 
     /** 扩展属性（可存放 WsPrincipal、租户信息等） */
     private final Map<String, Object> attributes;
@@ -72,8 +71,8 @@ public class WsSession {
     public WsSession(WebSocketSession nativeSession) {
         this.sessionId = UUID.randomUUID().toString().replace("-", "");
         this.nativeSession = Objects.requireNonNull(nativeSession, "nativeSession must not be null");
-        this.connectedAt = LocalDateTime.now();
-        this.lastHeartbeat = LocalDateTime.now();
+        this.connectedAt = System.currentTimeMillis();
+        this.lastHeartbeat = System.currentTimeMillis();
         this.attributes = new ConcurrentHashMap<>();
     }
 
@@ -145,7 +144,7 @@ public class WsSession {
         if (disconnected) return false;
         if (nativeSession == null || !nativeSession.isOpen()) return false;
         // 心跳超时检查：lastHeartbeat + timeout > now
-        return lastHeartbeat.plusSeconds(heartbeatTimeoutSeconds).isAfter(LocalDateTime.now());
+        return System.currentTimeMillis() - lastHeartbeat < heartbeatTimeoutSeconds * 1000L;
     }
 
     /**
@@ -175,7 +174,7 @@ public class WsSession {
      * 刷新心跳时间（记录当前时间为最近心跳时间）。
      */
     public void refreshHeartbeat() {
-        this.lastHeartbeat = LocalDateTime.now();
+        this.lastHeartbeat = System.currentTimeMillis();
     }
 
     // ======================== Getter / Setter ========================
@@ -188,11 +187,11 @@ public class WsSession {
 
     public WebSocketSession getNativeSession() { return nativeSession; }
 
-    public LocalDateTime getConnectedAt() { return connectedAt; }
+    public long getConnectedAt() { return connectedAt; }
 
-    public LocalDateTime getLastHeartbeat() { return lastHeartbeat; }
+    public long getLastHeartbeat() { return lastHeartbeat; }
 
-    public void setLastHeartbeat(LocalDateTime lastHeartbeat) { this.lastHeartbeat = lastHeartbeat; }
+    public void setLastHeartbeat(long lastHeartbeat) { this.lastHeartbeat = lastHeartbeat; }
 
     public int getHeartbeatTimeoutSeconds() { return heartbeatTimeoutSeconds; }
 

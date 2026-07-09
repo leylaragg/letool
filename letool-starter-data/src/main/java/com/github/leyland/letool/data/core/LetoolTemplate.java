@@ -200,6 +200,12 @@ public class LetoolTemplate {
      * @return 分页结果，包含数据列表和分页元信息
      */
     public <T> PaginationResult<T> selectPage(LambdaQuery<T> query, int page, int pageSize) {
+        if (page < 1) {
+            throw new DataException("DATA_005", "page must be >= 1, got: " + page);
+        }
+        if (pageSize <= 0) {
+            throw new DataException("DATA_006", "pageSize must be > 0, got: " + pageSize);
+        }
         int maxPageSize = properties.getPagination().getMaxPageSize();
         if (pageSize > maxPageSize) {
             pageSize = maxPageSize;

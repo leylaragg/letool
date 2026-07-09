@@ -7,7 +7,6 @@ import com.github.leyland.letool.websocket.core.WsSessionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -193,10 +192,15 @@ public class HeartbeatDetector {
      */
     public List<WsSession> getInactiveSessions() {
         int timeout = properties.getHeartbeat().getTimeout();
-        LocalDateTime threshold = LocalDateTime.now().minusSeconds(timeout);
+        long threshold = System.currentTimeMillis() - timeout * 1000L;
         List<WsSession> inactive = new ArrayList<>();
         for (WsSession session : sessionManager.getAllSessions()) {
-            if (session.getLastHeartbeat() != null && session.getLastHeartbeat().isBefore(threshold)) {
+            long lastHb = session.getLastHeartbeat();
+            // treat 0 (never set) as inactive, fallback to connectedAt
+            if (lastHb == 0) {
+                lastHb = session.getConnectedAt();
+            }
+            if (lastHb < threshold) {
                 inactive.add(session);
             }
         }

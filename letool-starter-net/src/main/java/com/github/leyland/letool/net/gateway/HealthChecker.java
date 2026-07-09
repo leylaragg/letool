@@ -81,7 +81,9 @@ public class HealthChecker {
 
         int sec = Math.max(1, intervalSeconds);
         scheduler.scheduleAtFixedRate(() -> {
-            for (BackendServer server : servers) {
+            // 防御性拷贝，避免外部修改 servers 列表导致 ConcurrentModificationException
+            List<BackendServer> snapshot = List.copyOf(servers);
+            for (BackendServer server : snapshot) {
                 try {
                     boolean healthy;
                     if ("http".equalsIgnoreCase(server.getScheme())) {

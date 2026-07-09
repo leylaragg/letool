@@ -14,6 +14,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 规则引擎核心 —— 负责按规则链定义编排执行各个节点组件.
@@ -82,11 +85,15 @@ public class RuleEngine {
         this.chainManager = chainManager;
         this.groovyScriptEngine = groovyScriptEngine;
         this.componentRegistry = componentRegistry != null ? componentRegistry : new ConcurrentHashMap<>();
-        this.parallelExecutor = Executors.newCachedThreadPool(r -> {
-            Thread t = new Thread(r, "rule-pool-" + r.hashCode());
-            t.setDaemon(true);
-            return t;
-        });
+        this.parallelExecutor = new ThreadPoolExecutor(
+                0, 50,
+                60L, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(200),
+                r -> {
+                    Thread t = new Thread(r, "rule-pool-" + r.hashCode());
+                    t.setDaemon(true);
+                    return t;
+                });
     }
 
     /**
@@ -454,6 +461,14 @@ public class RuleEngine {
             }
         }
         parallelExecutor.shutdown();
+        try {
+            if (!parallelExecutor.awaitTermination(30, TimeUnit.SECONDS)) {
+                parallelExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            parallelExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
         log.info("规则引擎已关闭");
     }
 }

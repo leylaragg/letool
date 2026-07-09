@@ -26,8 +26,11 @@ public class SqlInjectionFilter implements Filter {
     @Override
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
             throws IOException, ServletException {
-        HttpServletRequest httpRequest = (HttpServletRequest) request;
-        HttpServletResponse httpResponse = (HttpServletResponse) response;
+        if (!(request instanceof HttpServletRequest httpRequest)
+                || !(response instanceof HttpServletResponse httpResponse)) {
+            chain.doFilter(request, response);
+            return;
+        }
 
         // 检查 URL 参数
         Map<String, String[]> params = httpRequest.getParameterMap();

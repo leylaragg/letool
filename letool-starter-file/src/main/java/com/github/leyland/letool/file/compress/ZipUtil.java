@@ -114,6 +114,10 @@ public final class ZipUtil {
      */
     public static void decompress(String inputZip, String targetDir) {
         Path targetPath = Paths.get(targetDir).toAbsolutePath().normalize();
+        // 防止 zip bomb：单条目最大解压 100 MB，总计最大 1 GB
+        final long MAX_ENTRY_SIZE = 100 * 1024 * 1024;
+        final long MAX_TOTAL_SIZE = 1024 * 1024 * 1024;
+        long totalWritten = 0;
         try (ZipInputStream zis = new ZipInputStream(Files.newInputStream(Paths.get(inputZip)))) {
             Files.createDirectories(targetPath);
             ZipEntry entry;
@@ -125,7 +129,13 @@ public final class ZipUtil {
                 } else {
                     // 文件条目 — 确保父目录存在后写入文件内容
                     Files.createDirectories(filePath.getParent());
+                    // zip bomb 防护：检查条目和总量大小
+                    long entrySize = entry.getSize();
+                    if (entrySize > MAX_ENTRY_SIZE || totalWritten + Math.max(entrySize, 0) > MAX_TOTAL_SIZE) {
+                        throw new IOException("Zip entry exceeds size limit: " + entry.getName());
+                    }
                     Files.copy(zis, filePath, StandardCopyOption.REPLACE_EXISTING);
+                    totalWritten += Files.size(filePath);
                 }
                 zis.closeEntry();
             }

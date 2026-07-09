@@ -191,7 +191,7 @@ public class LengthFieldCodec implements ProtocolCodec {
     private void writeLength(byte[] dest, int offset, int length, int value) {
         for (int i = length - 1; i >= 0; i--) {
             dest[offset + i] = (byte) (value & 0xFF);
-            value >>= 8;
+            value >>>= 8;  // 无符号右移，避免负数时符号扩展导致字节错误
         }
     }
 }

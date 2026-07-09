@@ -51,6 +51,15 @@ public class XssRequestWrapper extends HttpServletRequestWrapper {
 
     @Override
     public String getHeader(String name) {
-        return XssCleaner.clean(super.getHeader(name));
+        String value = super.getHeader(name);
+        if (value == null) return null;
+        // 不对认证和内容协商类 Header 做 XSS 清理，避免破坏 JWT Token 等
+        String lower = name.toLowerCase(java.util.Locale.ROOT);
+        if ("authorization".equals(lower) || "content-type".equals(lower)
+                || "accept".equals(lower) || "cookie".equals(lower)
+                || "set-cookie".equals(lower) || "location".equals(lower)) {
+            return value;
+        }
+        return XssCleaner.clean(value);
     }
 }

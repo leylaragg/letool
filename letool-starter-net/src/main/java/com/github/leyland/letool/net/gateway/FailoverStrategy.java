@@ -159,7 +159,7 @@ public class FailoverStrategy {
                 return server;
             }
         }
-        // 如果没有其他健康节点，尝试返回失败节点（最后一次机会）
+        // 如果没有其他健康节点，返回 null（调用方应处理无可用节点的情况）
         return null;
     }
 
