@@ -10,7 +10,6 @@ import java.time.Duration;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -36,15 +35,12 @@ import java.util.function.Function;
  *     <li>强一致模式下读取优先走 Redis，不直接相信 L1，避免集合成员变更后读到旧快照。</li>
  * </ul>
  *
- * <p>注意：Set 成员在 Redis 中统一按字符串保存，读取时再根据 {@code memberType} 转成业务类型。
- * 如果业务成员不是 Long，建议显式传入成员类型，避免默认 Long 转换不符合预期。</p>
+ * <p>注意：Set 成员直接交给 RedisTemplate 的 value serializer 处理。
+ * 如果业务成员类型不是默认类型，建议显式传入 {@code memberType}，便于读取后做类型校验和转换。</p>
  */
 public class MultiLevelSetCache<K, V> {
 
     private static final Logger log = LoggerFactory.getLogger(MultiLevelSetCache.class);
-    /** RedisUtil 没有暴露 SREM 专用方法时，使用 Lua 保持本 starter 对 RedisUtil 的旧 API 兼容。 */
-    private static final String SREM_SCRIPT = "return redis.call('SREM', KEYS[1], ARGV[1])";
-
     /** 缓存区域名称，用于管理器注册、统计、日志和失效消息路由。 */
     private final String name;
     /** L1 本地 Set 缓存，key -> 并发安全的成员集合。 */
@@ -332,7 +328,7 @@ public class MultiLevelSetCache<K, V> {
             return;
         }
         try {
-            redisUtil.sadd(redisKey(key), serializeMember(member));
+            redisUtil.boundSetOps(redisKey(key)).add(member);
             setTtl(key);
         } catch (Exception e) {
             markL2Degraded(e);
@@ -344,12 +340,11 @@ public class MultiLevelSetCache<K, V> {
             return;
         }
         try {
-            String[] values = members.stream()
+            Object[] values = members.stream()
                     .filter(member -> member != null)
-                    .map(this::serializeMember)
-                    .toArray(String[]::new);
+                    .toArray();
             if (values.length > 0) {
-                redisUtil.sadd(redisKey(key), values);
+                redisUtil.boundSetOps(redisKey(key)).add(values);
                 setTtl(key);
             }
         } catch (Exception e) {
@@ -362,7 +357,7 @@ public class MultiLevelSetCache<K, V> {
             return;
         }
         try {
-            redisUtil.executeScript(SREM_SCRIPT, List.of(redisKey(key)), serializeMember(member));
+            redisUtil.boundSetOps(redisKey(key)).remove(member);
         } catch (Exception e) {
             markL2Degraded(e);
         }
@@ -370,12 +365,12 @@ public class MultiLevelSetCache<K, V> {
 
     private Set<V> smembersFromRedis(K key) {
         try {
-            Set<String> raw = redisUtil.smembers(redisKey(key));
+            Set<Object> raw = redisUtil.boundSetOps(redisKey(key)).members();
             if (raw == null || raw.isEmpty()) {
                 return Collections.emptySet();
             }
             Set<V> result = ConcurrentHashMap.newKeySet(raw.size());
-            for (String item : raw) {
+            for (Object item : raw) {
                 V member = deserializeMember(item);
                 if (member != null) {
                     result.add(member);
@@ -390,7 +385,7 @@ public class MultiLevelSetCache<K, V> {
 
     private boolean sismemberInRedis(K key, V member) {
         try {
-            return redisUtil.sismember(redisKey(key), serializeMember(member));
+            return Boolean.TRUE.equals(redisUtil.boundSetOps(redisKey(key)).isMember(member));
         } catch (Exception e) {
             markL2Degraded(e);
             return false;
@@ -415,10 +410,6 @@ public class MultiLevelSetCache<K, V> {
         } catch (Exception e) {
             log.debug("Failed to set Redis Set TTL for cache [{}], key [{}]", name, key, e);
         }
-    }
-
-    private String serializeMember(V member) {
-        return String.valueOf(member);
     }
 
     @SuppressWarnings("unchecked")

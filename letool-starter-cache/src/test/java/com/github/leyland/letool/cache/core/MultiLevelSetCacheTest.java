@@ -8,14 +8,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.BoundSetOperations;
 
 import java.time.Duration;
-import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @DisplayName("MultiLevelSetCache 测试")
@@ -27,6 +27,9 @@ class MultiLevelSetCacheTest {
 
     @Mock
     private CacheSerializer serializer;
+
+    @Mock
+    private BoundSetOperations<String, Object> boundSetOperations;
 
     private CacheConfig<String, String> config;
 
@@ -43,13 +46,14 @@ class MultiLevelSetCacheTest {
     @Test
     @DisplayName("add 写入 L1 和 Redis Set")
     void addWritesLocalAndRedisSet() {
+        when(redisUtil.boundSetOps("test:rule:index:project:1")).thenReturn(boundSetOperations);
         MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
                 .getOrCreateSetCache(config, Function.identity(), String.class);
 
         cache.add("project:1", "rule-a");
 
         assertTrue(cache.contains("project:1", "rule-a"));
-        verify(redisUtil).sadd("test:rule:index:project:1", "rule-a");
+        verify(boundSetOperations).add("rule-a");
         verify(redisUtil).expire("test:rule:index:project:1", Duration.ofHours(1).toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
     }
 
@@ -69,6 +73,7 @@ class MultiLevelSetCacheTest {
     @Test
     @DisplayName("remove 删除成员并广播为本地失效语义")
     void removeDeletesMember() {
+        when(redisUtil.boundSetOps("test:rule:index:project:1")).thenReturn(boundSetOperations);
         MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
                 .getOrCreateSetCache(config, Function.identity(), String.class);
 
@@ -77,30 +82,29 @@ class MultiLevelSetCacheTest {
 
         assertFalse(cache.contains("project:1", "rule-a"));
         assertTrue(cache.contains("project:1", "rule-b"));
-        verify(redisUtil).sadd(eq("test:rule:index:project:1"), anyString(), anyString());
-        verify(redisUtil).executeScript(
-                eq("return redis.call('SREM', KEYS[1], ARGV[1])"),
-                eq(List.of("test:rule:index:project:1")),
-                eq("rule-a"));
+        verify(boundSetOperations).add(any(), any());
+        verify(boundSetOperations).remove("rule-a");
     }
 
     @Test
     @DisplayName("L1 miss 时从 Redis Set 读取并回填")
     void l1MissReadsRedisSetAndRefillsLocal() {
-        when(redisUtil.smembers("test:rule:index:project:2")).thenReturn(Set.of("rule-c", "rule-d"));
+        when(redisUtil.boundSetOps("test:rule:index:project:2")).thenReturn(boundSetOperations);
+        when(boundSetOperations.members()).thenReturn(Set.of("rule-c", "rule-d"));
         MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
                 .getOrCreateSetCache(config, Function.identity(), String.class);
 
         assertEquals(Set.of("rule-c", "rule-d"), cache.getMembers("project:2"));
         assertEquals(Set.of("rule-c", "rule-d"), cache.getMembers("project:2"));
 
-        verify(redisUtil, times(1)).smembers("test:rule:index:project:2");
+        verify(boundSetOperations, times(1)).members();
     }
 
     @Test
     @DisplayName("Redis 异常后 Set 缓存进入 L2 降级")
     void redisFailureMarksSetCacheDegraded() {
-        when(redisUtil.smembers("test:rule:index:project:3")).thenThrow(new RuntimeException("redis down"));
+        when(redisUtil.boundSetOps("test:rule:index:project:3")).thenReturn(boundSetOperations);
+        when(boundSetOperations.members()).thenThrow(new RuntimeException("redis down"));
         CacheManager manager = new CacheManager(redisUtil, serializer);
         MultiLevelSetCache<String, String> cache = manager.getOrCreateSetCache(config, Function.identity(), String.class);
 

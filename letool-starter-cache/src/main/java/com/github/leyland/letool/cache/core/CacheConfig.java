@@ -82,12 +82,9 @@ public class CacheConfig<K, V> {
         return this;
     }
 
-    /** 设置 L2 TTL，如果 L1 TTL 已设置但比 L2 长，则自动拉齐 L2。 */
+    /** 设置 L2 TTL。 */
     public CacheConfig<K, V> l2Ttl(Duration l2Ttl) {
         this.l2Ttl = l2Ttl;
-        if (this.l1Ttl != null && l2Ttl != null && l2Ttl.compareTo(this.l1Ttl) < 0) {
-            this.l2Ttl = this.l1Ttl;
-        }
         return this;
     }
 

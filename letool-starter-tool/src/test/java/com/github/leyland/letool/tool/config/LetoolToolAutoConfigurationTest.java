@@ -1,6 +1,7 @@
 package com.github.leyland.letool.tool.config;
 
 import com.github.leyland.letool.tool.redis.RedisUtil;
+import com.github.leyland.letool.tool.redis.RedisMessageQueueUtil;
 import com.github.leyland.letool.tool.redis.FastJson2JsonRedisSerializer;
 import com.github.leyland.letool.tool.spring.SpringUtil;
 import org.junit.jupiter.api.Test;
@@ -38,6 +39,7 @@ class LetoolToolAutoConfigurationTest {
             assertThat(context).hasNotFailed();
             assertThat(context).hasSingleBean(SpringUtil.class);
             assertThat(context).doesNotHaveBean(RedisUtil.class);
+            assertThat(context).doesNotHaveBean(RedisMessageQueueUtil.class);
         });
     }
 
@@ -52,7 +54,10 @@ class LetoolToolAutoConfigurationTest {
                     assertThat(context).hasNotFailed();
                     assertThat(context).hasSingleBean(RedisTemplate.class);
                     assertThat(context).hasSingleBean(RedisUtil.class);
+                    assertThat(context).hasSingleBean(RedisMessageQueueUtil.class);
                     assertThat(context.getBean(RedisUtil.class).getTemplate())
+                            .isSameAs(context.getBean(RedisTemplate.class));
+                    assertThat(context.getBean(RedisMessageQueueUtil.class).getTemplate())
                             .isSameAs(context.getBean(RedisTemplate.class));
                 });
     }
@@ -71,6 +76,7 @@ class LetoolToolAutoConfigurationTest {
                     assertThat(context).hasSingleBean(RedisConnectionFactory.class);
                     assertThat(context).hasSingleBean(RedisTemplate.class);
                     assertThat(context).hasSingleBean(RedisUtil.class);
+                    assertThat(context).hasSingleBean(RedisMessageQueueUtil.class);
 
                     RedisTemplate<?, ?> redisTemplate = context.getBean(RedisTemplate.class);
                     assertThat(redisTemplate.getConnectionFactory())
@@ -80,6 +86,7 @@ class LetoolToolAutoConfigurationTest {
                     assertThat(redisTemplate.getValueSerializer()).isInstanceOf(FastJson2JsonRedisSerializer.class);
                     assertThat(redisTemplate.getHashValueSerializer()).isInstanceOf(FastJson2JsonRedisSerializer.class);
                     assertThat(context.getBean(RedisUtil.class).getTemplate()).isSameAs(redisTemplate);
+                    assertThat(context.getBean(RedisMessageQueueUtil.class).getTemplate()).isSameAs(redisTemplate);
 
                     FastJson2JsonRedisSerializer<Object> serializer =
                             (FastJson2JsonRedisSerializer<Object>) redisTemplate.getValueSerializer();
@@ -103,6 +110,7 @@ class LetoolToolAutoConfigurationTest {
                     assertThat(context).hasNotFailed();
                     assertThat(context).hasSingleBean(StringRedisTemplate.class);
                     assertThat(context).doesNotHaveBean(RedisUtil.class);
+                    assertThat(context).doesNotHaveBean(RedisMessageQueueUtil.class);
                 });
     }
 

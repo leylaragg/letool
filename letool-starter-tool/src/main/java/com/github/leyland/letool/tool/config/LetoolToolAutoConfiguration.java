@@ -1,6 +1,7 @@
 package com.github.leyland.letool.tool.config;
 
 import com.github.leyland.letool.tool.redis.FastJson2JsonRedisSerializer;
+import com.github.leyland.letool.tool.redis.RedisMessageQueueUtil;
 import com.github.leyland.letool.tool.redis.RedisUtil;
 import com.github.leyland.letool.tool.spring.SpringUtil;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -87,6 +88,19 @@ public class LetoolToolAutoConfiguration {
         @ConditionalOnMissingBean(RedisUtil.class)
         public RedisUtil redisUtil(RedisTemplate<String, Object> redisTemplate) {
             return new RedisUtil(redisTemplate);
+        }
+
+        /**
+         * Registers Redis message queue helper only when application Redis infrastructure exists.
+         *
+         * @param redisTemplate Spring Redis object template.
+         * @return Redis message queue helper wrapper.
+         */
+        @Bean
+        @ConditionalOnBean(name = "redisTemplate")
+        @ConditionalOnMissingBean(RedisMessageQueueUtil.class)
+        public RedisMessageQueueUtil redisMessageQueueUtil(RedisTemplate<String, Object> redisTemplate) {
+            return new RedisMessageQueueUtil(redisTemplate);
         }
     }
 }

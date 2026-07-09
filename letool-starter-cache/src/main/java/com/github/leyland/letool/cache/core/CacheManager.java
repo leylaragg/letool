@@ -33,6 +33,12 @@ public class CacheManager {
     private final Map<String, MultiLevelCache<?, ?>> caches = new ConcurrentHashMap<>();
     /** Set 缓存注册表：缓存名称 -> 缓存实例。 */
     private final Map<String, MultiLevelSetCache<?, ?>> setCaches = new ConcurrentHashMap<>();
+    /** List 缓存注册表：缓存名称 -> 缓存实例。 */
+    private final Map<String, MultiLevelListCache<?, ?>> listCaches = new ConcurrentHashMap<>();
+    /** Hash 缓存注册表：缓存名称 -> 缓存实例。 */
+    private final Map<String, MultiLevelHashCache<?, ?, ?>> hashCaches = new ConcurrentHashMap<>();
+    /** ZSet 缓存注册表：缓存名称 -> 缓存实例。 */
+    private final Map<String, MultiLevelZSetCache<?, ?>> zSetCaches = new ConcurrentHashMap<>();
     /** Redis 操作入口。为 null 时所有缓存都会退化为本地缓存。 */
     private final RedisUtil redisUtil;
     /** KV 缓存使用的序列化器。 */
@@ -51,6 +57,12 @@ public class CacheManager {
     private final Set<String> degradedCaches = ConcurrentHashMap.newKeySet();
     /** 已经进入 L2 降级状态的 Set 缓存名称。 */
     private final Set<String> degradedSetCaches = ConcurrentHashMap.newKeySet();
+    /** 已经进入 L2 降级状态的 List 缓存名称。 */
+    private final Set<String> degradedListCaches = ConcurrentHashMap.newKeySet();
+    /** 已经进入 L2 降级状态的 Hash 缓存名称。 */
+    private final Set<String> degradedHashCaches = ConcurrentHashMap.newKeySet();
+    /** 已经进入 L2 降级状态的 ZSet 缓存名称。 */
+    private final Set<String> degradedZSetCaches = ConcurrentHashMap.newKeySet();
 
     /**
      * 兼容旧版本的构造器。只要传入 RedisUtil，就默认启用 L2；否则为 L1-only。
@@ -164,6 +176,135 @@ public class CacheManager {
     }
 
     /**
+     * 获取或创建 String key 的 List 缓存，元素类型由 RedisTemplate 反序列化结果决定。
+     */
+    @SuppressWarnings("unchecked")
+    public <V> MultiLevelListCache<String, V> getOrCreateListCache(CacheConfig<String, V> config) {
+        return (MultiLevelListCache<String, V>) getOrCreateListCache(config, Function.identity(), null);
+    }
+
+    /**
+     * 获取或创建自定义 key 类型的 List 缓存。
+     *
+     * @param keySerializer 负责把业务 key 转成 Redis key 后缀，也用于失效广播中的 key 表示
+     */
+    @SuppressWarnings("unchecked")
+    public <K, V> MultiLevelListCache<K, V> getOrCreateListCache(CacheConfig<K, V> config,
+                                                                  Function<K, String> keySerializer) {
+        return (MultiLevelListCache<K, V>) getOrCreateListCache(config, keySerializer, null);
+    }
+
+    /**
+     * 获取或创建 List 缓存，并显式指定元素类型。
+     */
+    @SuppressWarnings("unchecked")
+    public <K, V> MultiLevelListCache<K, V> getOrCreateListCache(CacheConfig<K, V> config,
+                                                                  Function<K, String> keySerializer,
+                                                                  Class<V> elementType) {
+        return (MultiLevelListCache<K, V>) listCaches.computeIfAbsent(config.getName(),
+                name -> createListCache(config, keySerializer, elementType));
+    }
+
+    /**
+     * 创建 List 缓存实例，并把首次降级回调接入管理器的待恢复集合。
+     */
+    private <K, V> MultiLevelListCache<K, V> createListCache(CacheConfig<K, V> config,
+                                                              Function<K, String> keySerializer,
+                                                              Class<V> elementType) {
+        CacheConfig<K, V> effectiveConfig = effectiveConfig(config);
+        return new MultiLevelListCache<>(
+                effectiveConfig,
+                redisUtil,
+                keySerializer,
+                elementType,
+                invalidationPublisher,
+                instanceId,
+                () -> degradedListCaches.add(effectiveConfig.getName()));
+    }
+
+    /**
+     * 获取或创建 Hash 缓存。
+     *
+     * @param keySerializer 负责把业务 key 转成 Redis key 后缀，也用于失效广播中的 key 表示
+     * @param hashKeyType Hash field 的目标类型；传 null 时按 RedisTemplate 返回值直接强转
+     * @param hashValueType Hash value 的目标类型；传 null 时按 RedisTemplate 返回值直接强转
+     */
+    @SuppressWarnings("unchecked")
+    public <K, HK, HV> MultiLevelHashCache<K, HK, HV> getOrCreateHashCache(CacheConfig<K, HV> config,
+                                                                            Function<K, String> keySerializer,
+                                                                            Class<HK> hashKeyType,
+                                                                            Class<HV> hashValueType) {
+        return (MultiLevelHashCache<K, HK, HV>) hashCaches.computeIfAbsent(config.getName(),
+                name -> createHashCache(config, keySerializer, hashKeyType, hashValueType));
+    }
+
+    /**
+     * 创建 Hash 缓存实例，并把首次降级回调接入管理器的待恢复集合。
+     */
+    private <K, HK, HV> MultiLevelHashCache<K, HK, HV> createHashCache(CacheConfig<K, HV> config,
+                                                                        Function<K, String> keySerializer,
+                                                                        Class<HK> hashKeyType,
+                                                                        Class<HV> hashValueType) {
+        CacheConfig<K, HV> effectiveConfig = effectiveConfig(config);
+        return new MultiLevelHashCache<>(
+                effectiveConfig,
+                redisUtil,
+                keySerializer,
+                hashKeyType,
+                hashValueType,
+                invalidationPublisher,
+                instanceId,
+                () -> degradedHashCaches.add(effectiveConfig.getName()));
+    }
+
+    /**
+     * 获取或创建 String key 的 ZSet 缓存，成员类型由 RedisTemplate 反序列化结果决定。
+     */
+    @SuppressWarnings("unchecked")
+    public <V> MultiLevelZSetCache<String, V> getOrCreateZSetCache(CacheConfig<String, V> config) {
+        return (MultiLevelZSetCache<String, V>) getOrCreateZSetCache(config, Function.identity(), null);
+    }
+
+    /**
+     * 获取或创建自定义 key 类型的 ZSet 缓存。
+     *
+     * @param keySerializer 负责把业务 key 转成 Redis key 后缀，也用于失效广播中的 key 表示
+     */
+    @SuppressWarnings("unchecked")
+    public <K, V> MultiLevelZSetCache<K, V> getOrCreateZSetCache(CacheConfig<K, V> config,
+                                                                  Function<K, String> keySerializer) {
+        return (MultiLevelZSetCache<K, V>) getOrCreateZSetCache(config, keySerializer, null);
+    }
+
+    /**
+     * 获取或创建 ZSet 缓存，并显式指定成员类型。
+     */
+    @SuppressWarnings("unchecked")
+    public <K, V> MultiLevelZSetCache<K, V> getOrCreateZSetCache(CacheConfig<K, V> config,
+                                                                  Function<K, String> keySerializer,
+                                                                  Class<V> memberType) {
+        return (MultiLevelZSetCache<K, V>) zSetCaches.computeIfAbsent(config.getName(),
+                name -> createZSetCache(config, keySerializer, memberType));
+    }
+
+    /**
+     * 创建 ZSet 缓存实例，并把首次降级回调接入管理器的待恢复集合。
+     */
+    private <K, V> MultiLevelZSetCache<K, V> createZSetCache(CacheConfig<K, V> config,
+                                                              Function<K, String> keySerializer,
+                                                              Class<V> memberType) {
+        CacheConfig<K, V> effectiveConfig = effectiveConfig(config);
+        return new MultiLevelZSetCache<>(
+                effectiveConfig,
+                redisUtil,
+                keySerializer,
+                memberType,
+                invalidationPublisher,
+                instanceId,
+                () -> degradedZSetCaches.add(effectiveConfig.getName()));
+    }
+
+    /**
      * 合并全局配置和单缓存配置。
      *
      * <p>全局开关优先级更高：如果全局关闭 L1/L2，单个缓存不能重新打开。
@@ -207,8 +348,14 @@ public class CacheManager {
     public void remove(String name) {
         caches.remove(name);
         setCaches.remove(name);
+        listCaches.remove(name);
+        hashCaches.remove(name);
+        zSetCaches.remove(name);
         degradedCaches.remove(name);
         degradedSetCaches.remove(name);
+        degradedListCaches.remove(name);
+        degradedHashCaches.remove(name);
+        degradedZSetCaches.remove(name);
     }
 
     /**
@@ -239,6 +386,21 @@ public class CacheManager {
         MultiLevelSetCache<String, ?> setCache = getSetCache(cacheName);
         if (setCache != null) {
             setCache.evictLocal(key);
+            return;
+        }
+        MultiLevelListCache<String, ?> listCache = getListCache(cacheName);
+        if (listCache != null) {
+            listCache.evictLocal(key);
+            return;
+        }
+        MultiLevelHashCache<String, ?, ?> hashCache = getHashCache(cacheName);
+        if (hashCache != null) {
+            hashCache.evictLocal(key);
+            return;
+        }
+        MultiLevelZSetCache<String, ?> zSetCache = getZSetCache(cacheName);
+        if (zSetCache != null) {
+            zSetCache.evictLocal(key);
         }
     }
 
@@ -254,6 +416,21 @@ public class CacheManager {
         MultiLevelSetCache<?, ?> setCache = setCaches.get(cacheName);
         if (setCache != null) {
             setCache.evictLocalAll();
+            return;
+        }
+        MultiLevelListCache<?, ?> listCache = listCaches.get(cacheName);
+        if (listCache != null) {
+            listCache.evictLocalAll();
+            return;
+        }
+        MultiLevelHashCache<?, ?, ?> hashCache = hashCaches.get(cacheName);
+        if (hashCache != null) {
+            hashCache.evictLocalAll();
+            return;
+        }
+        MultiLevelZSetCache<?, ?> zSetCache = zSetCaches.get(cacheName);
+        if (zSetCache != null) {
+            zSetCache.evictLocalAll();
         }
     }
 
@@ -265,6 +442,21 @@ public class CacheManager {
     @SuppressWarnings("unchecked")
     private <K, V> MultiLevelSetCache<K, V> getSetCache(String name) {
         return (MultiLevelSetCache<K, V>) setCaches.get(name);
+    }
+
+    @SuppressWarnings("unchecked")
+    private <K, V> MultiLevelListCache<K, V> getListCache(String name) {
+        return (MultiLevelListCache<K, V>) listCaches.get(name);
+    }
+
+    @SuppressWarnings("unchecked")
+    private <K, HK, HV> MultiLevelHashCache<K, HK, HV> getHashCache(String name) {
+        return (MultiLevelHashCache<K, HK, HV>) hashCaches.get(name);
+    }
+
+    @SuppressWarnings("unchecked")
+    private <K, V> MultiLevelZSetCache<K, V> getZSetCache(String name) {
+        return (MultiLevelZSetCache<K, V>) zSetCaches.get(name);
     }
 
     /**
@@ -294,6 +486,33 @@ public class CacheManager {
                 recovered++;
             }
         }
+        for (String cacheName : Set.copyOf(degradedListCaches)) {
+            MultiLevelListCache<?, ?> cache = listCaches.get(cacheName);
+            if (cache == null || !cache.isL2Degraded()) {
+                degradedListCaches.remove(cacheName);
+            } else if (cache.tryRecoverL2()) {
+                degradedListCaches.remove(cacheName);
+                recovered++;
+            }
+        }
+        for (String cacheName : Set.copyOf(degradedHashCaches)) {
+            MultiLevelHashCache<?, ?, ?> cache = hashCaches.get(cacheName);
+            if (cache == null || !cache.isL2Degraded()) {
+                degradedHashCaches.remove(cacheName);
+            } else if (cache.tryRecoverL2()) {
+                degradedHashCaches.remove(cacheName);
+                recovered++;
+            }
+        }
+        for (String cacheName : Set.copyOf(degradedZSetCaches)) {
+            MultiLevelZSetCache<?, ?> cache = zSetCaches.get(cacheName);
+            if (cache == null || !cache.isL2Degraded()) {
+                degradedZSetCaches.remove(cacheName);
+            } else if (cache.tryRecoverL2()) {
+                degradedZSetCaches.remove(cacheName);
+                recovered++;
+            }
+        }
         return recovered;
     }
 
@@ -301,6 +520,10 @@ public class CacheManager {
      * 当前等待恢复的降级缓存数量，主要用于监控和测试。
      */
     public int degradedCacheCount() {
-        return degradedCaches.size() + degradedSetCaches.size();
+        return degradedCaches.size()
+                + degradedSetCaches.size()
+                + degradedListCaches.size()
+                + degradedHashCaches.size()
+                + degradedZSetCaches.size();
     }
 }

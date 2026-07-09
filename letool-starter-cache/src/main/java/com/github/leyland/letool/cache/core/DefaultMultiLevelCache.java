@@ -419,7 +419,7 @@ public class DefaultMultiLevelCache<K, V> implements MultiLevelCache<K, V> {
             return CacheLookup.miss();
         }
         try {
-            Object cachedValue = redisUtil.get(redisKey(key));
+            Object cachedValue = redisUtil.boundValueOps(redisKey(key)).get();
             if (cachedValue == null) {
                 return CacheLookup.miss();
             }
@@ -484,7 +484,7 @@ public class DefaultMultiLevelCache<K, V> implements MultiLevelCache<K, V> {
                         rawValue,
                         String.valueOf(ttl.toMillis())));
             }
-            redisUtil.set(redisKey(key), value, ttl);
+            redisUtil.boundValueOps(redisKey(key)).set(value, ttl);
             return LOCAL_ONLY_VERSION;
         } catch (Exception e) {
             markL2Degraded(e);
@@ -514,7 +514,7 @@ public class DefaultMultiLevelCache<K, V> implements MultiLevelCache<K, V> {
             return LOCAL_ONLY_VERSION;
         }
         try {
-            Object raw = redisUtil.get(versionKey());
+            Object raw = redisUtil.boundValueOps(versionKey()).get();
             if (raw == null || raw instanceof String stringValue && stringValue.isBlank()) {
                 return 0L;
             }

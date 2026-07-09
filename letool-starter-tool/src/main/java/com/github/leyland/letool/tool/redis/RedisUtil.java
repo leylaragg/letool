@@ -2,9 +2,19 @@ package com.github.leyland.letool.tool.redis;
 
 import com.github.leyland.letool.tool.util.JsonUtil;
 import org.jetbrains.annotations.NotNull;
+import org.springframework.data.redis.core.BoundHashOperations;
+import org.springframework.data.redis.core.BoundListOperations;
+import org.springframework.data.redis.core.BoundSetOperations;
+import org.springframework.data.redis.core.BoundValueOperations;
+import org.springframework.data.redis.core.BoundZSetOperations;
+import org.springframework.data.redis.core.HashOperations;
+import org.springframework.data.redis.core.ListOperations;
 import org.springframework.data.redis.core.RedisOperations;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.SessionCallback;
+import org.springframework.data.redis.core.SetOperations;
+import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
@@ -13,12 +23,10 @@ import java.time.Duration;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 /**
  * Redis 操作工具类，底层基于 {@link RedisTemplate}。
@@ -88,6 +96,88 @@ public class RedisUtil {
      */
     public RedisTemplate<String, Object> getTemplate() {
         return redisTemplate;
+    }
+
+    /**
+     * 获取 Redis Value 原生操作视图。
+     *
+     * <p>读写值都会直接使用应用配置的 RedisTemplate value serializer，不做二次 JSON 处理或字符串转换。</p>
+     */
+    public ValueOperations<String, Object> opsForValue() {
+        return redisTemplate.opsForValue();
+    }
+
+    /**
+     * 获取绑定到指定 key 的 Redis Value 原生操作视图。
+     *
+     * <p>适合缓存层在已拼好 Redis key 后直接调用 get/set/increment 等操作。</p>
+     */
+    public BoundValueOperations<String, Object> boundValueOps(String key) {
+        return redisTemplate.boundValueOps(key);
+    }
+
+    /**
+     * 获取 Redis List 原生操作视图。
+     *
+     * <p>List 元素会逐条使用 RedisTemplate value serializer 序列化，适合真实 Redis List 结构。</p>
+     */
+    public ListOperations<String, Object> opsForList() {
+        return redisTemplate.opsForList();
+    }
+
+    /**
+     * 获取绑定到指定 key 的 Redis List 原生操作视图。
+     */
+    public BoundListOperations<String, Object> boundListOps(String key) {
+        return redisTemplate.boundListOps(key);
+    }
+
+    /**
+     * 获取 Redis Set 原生操作视图。
+     *
+     * <p>Set 成员保持对象形态交给 RedisTemplate serializer 处理，不会先转成 String。</p>
+     */
+    public SetOperations<String, Object> opsForSet() {
+        return redisTemplate.opsForSet();
+    }
+
+    /**
+     * 获取绑定到指定 key 的 Redis Set 原生操作视图。
+     */
+    public BoundSetOperations<String, Object> boundSetOps(String key) {
+        return redisTemplate.boundSetOps(key);
+    }
+
+    /**
+     * 获取 Redis ZSet 原生操作视图。
+     *
+     * <p>member 使用 RedisTemplate serializer，score 使用 Redis 原生 double 分数。</p>
+     */
+    public ZSetOperations<String, Object> opsForZSet() {
+        return redisTemplate.opsForZSet();
+    }
+
+    /**
+     * 获取绑定到指定 key 的 Redis ZSet 原生操作视图。
+     */
+    public BoundZSetOperations<String, Object> boundZSetOps(String key) {
+        return redisTemplate.boundZSetOps(key);
+    }
+
+    /**
+     * 获取 Redis Hash 原生操作视图。
+     *
+     * <p>Hash field/value 分别使用 RedisTemplate 的 hashKey/hashValue serializer。</p>
+     */
+    public HashOperations<String, Object, Object> opsForHash() {
+        return redisTemplate.opsForHash();
+    }
+
+    /**
+     * 获取绑定到指定 key 的 Redis Hash 原生操作视图。
+     */
+    public BoundHashOperations<String, Object, Object> boundHashOps(String key) {
+        return redisTemplate.boundHashOps(key);
     }
 
     // ======================== Key 操作 ========================
@@ -294,7 +384,7 @@ public class RedisUtil {
      * @param field Hash 字段
      * @param value 字段值
      */
-    public void hset(String key, String field, String value) {
+    public void hset(String key, Object field, Object value) {
         redisTemplate.opsForHash().put(key, field, value);
     }
 
@@ -305,9 +395,9 @@ public class RedisUtil {
      * @param field Hash 字段
      * @return 字段值；字段不存在时返回 {@code null}
      */
-    public String hget(String key, String field) {
-        Object val = redisTemplate.opsForHash().get(key, field);
-        return toStringValue(val);
+    @SuppressWarnings("unchecked")
+    public <T> T hget(String key, Object field) {
+        return (T) redisTemplate.opsForHash().get(key, field);
     }
 
     /**
@@ -316,10 +406,11 @@ public class RedisUtil {
      * @param key Redis key
      * @return field 到 value 的映射
      */
-    public Map<String, String> hgetAll(String key) {
+    @SuppressWarnings("unchecked")
+    public <HK, HV> Map<HK, HV> hgetAll(String key) {
         Map<Object, Object> entries = redisTemplate.opsForHash().entries(key);
-        Map<String, String> result = new LinkedHashMap<>();
-        entries.forEach((k, v) -> result.put(k.toString(), toStringValue(v)));
+        Map<HK, HV> result = new LinkedHashMap<>();
+        entries.forEach((k, v) -> result.put((HK) k, (HV) v));
         return result;
     }
 
@@ -343,7 +434,7 @@ public class RedisUtil {
      * @param value 元素值
      * @return 推入后的列表长度
      */
-    public long lpush(String key, String value) {
+    public long lpush(String key, Object value) {
         Long size = redisTemplate.opsForList().leftPush(key, value);
         return size == null ? 0 : size;
     }
@@ -355,7 +446,7 @@ public class RedisUtil {
      * @param value 元素值
      * @return 推入后的列表长度
      */
-    public long rpush(String key, String value) {
+    public long rpush(String key, Object value) {
         Long size = redisTemplate.opsForList().rightPush(key, value);
         return size == null ? 0 : size;
     }
@@ -366,8 +457,9 @@ public class RedisUtil {
      * @param key Redis key
      * @return 弹出的元素；列表为空时返回 {@code null}
      */
-    public String lpop(String key) {
-        return toStringValue(redisTemplate.opsForList().leftPop(key));
+    @SuppressWarnings("unchecked")
+    public <T> T lpop(String key) {
+        return (T) redisTemplate.opsForList().leftPop(key);
     }
 
     /**
@@ -376,8 +468,9 @@ public class RedisUtil {
      * @param key Redis key
      * @return 弹出的元素；列表为空时返回 {@code null}
      */
-    public String rpop(String key) {
-        return toStringValue(redisTemplate.opsForList().rightPop(key));
+    @SuppressWarnings("unchecked")
+    public <T> T rpop(String key) {
+        return (T) redisTemplate.opsForList().rightPop(key);
     }
 
     /**
@@ -388,12 +481,13 @@ public class RedisUtil {
      * @param end   结束索引，包含；-1 表示最后一个元素
      * @return 元素列表；Redis 返回 {@code null} 时返回空列表
      */
-    public List<String> lrange(String key, long start, long end) {
+    @SuppressWarnings("unchecked")
+    public <T> List<T> lrange(String key, long start, long end) {
         List<Object> values = redisTemplate.opsForList().range(key, start, end);
         if (values == null) {
             return Collections.emptyList();
         }
-        return values.stream().map(this::toStringValue).collect(Collectors.toList());
+        return (List<T>) values;
     }
 
     // ======================== Set 操作 ========================
@@ -405,8 +499,8 @@ public class RedisUtil {
      * @param values 元素值
      * @return 成功添加的元素数量
      */
-    public long sadd(String key, String... values) {
-        Long count = redisTemplate.opsForSet().add(key, (Object[]) values);
+    public long sadd(String key, Object... values) {
+        Long count = redisTemplate.opsForSet().add(key, values);
         return count == null ? 0 : count;
     }
 
@@ -416,12 +510,13 @@ public class RedisUtil {
      * @param key Redis key
      * @return Set 成员；Redis 返回 {@code null} 时返回空集合
      */
-    public Set<String> smembers(String key) {
+    @SuppressWarnings("unchecked")
+    public <T> Set<T> smembers(String key) {
         Set<Object> values = redisTemplate.opsForSet().members(key);
         if (values == null) {
             return Collections.emptySet();
         }
-        return values.stream().map(this::toStringValue).collect(Collectors.toCollection(LinkedHashSet::new));
+        return (Set<T>) values;
     }
 
     /**
@@ -431,7 +526,7 @@ public class RedisUtil {
      * @param value 元素值
      * @return {@code true} 表示存在
      */
-    public boolean sismember(String key, String value) {
+    public boolean sismember(String key, Object value) {
         return Boolean.TRUE.equals(redisTemplate.opsForSet().isMember(key, value));
     }
 
@@ -445,7 +540,7 @@ public class RedisUtil {
      * @param score 分数
      * @return {@code true} 表示添加成功
      */
-    public boolean zadd(String key, String value, double score) {
+    public boolean zadd(String key, Object value, double score) {
         return Boolean.TRUE.equals(redisTemplate.opsForZSet().add(key, value, score));
     }
 
@@ -457,12 +552,13 @@ public class RedisUtil {
      * @param end   结束排名，包含；-1 表示最后一个元素
      * @return 元素集合；Redis 返回 {@code null} 时返回空集合
      */
-    public Set<String> zrange(String key, long start, long end) {
+    @SuppressWarnings("unchecked")
+    public <T> Set<T> zrange(String key, long start, long end) {
         Set<Object> values = redisTemplate.opsForZSet().range(key, start, end);
         if (values == null) {
             return Collections.emptySet();
         }
-        return values.stream().map(this::toStringValue).collect(Collectors.toCollection(LinkedHashSet::new));
+        return (Set<T>) values;
     }
 
     // ======================== Lua 脚本 ========================
@@ -557,13 +653,6 @@ public class RedisUtil {
                 return null;
             }
         });
-    }
-
-    /**
-     * 将 RedisTemplate 反序列化出的值转换为字符串，用于兼容旧的 String 返回 API。
-     */
-    private String toStringValue(Object value) {
-        return value == null ? null : value.toString();
     }
 
     /**
