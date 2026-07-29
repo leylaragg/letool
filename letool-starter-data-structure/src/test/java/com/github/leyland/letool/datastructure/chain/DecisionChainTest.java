@@ -49,13 +49,18 @@ class DecisionChainTest {
         }
 
         @Test
-        @DisplayName("未设置 otherwise 时返回 null")
-        void noOtherwiseReturnsNull() {
+        @DisplayName("未设置 otherwise 时抛出包含上下文的异常")
+        void noOtherwiseThrowsWithContext() {
             DecisionChain<Integer, String> chain = DecisionChain.<Integer, String>builder()
                     .when(n -> n > 10, n -> "大于10")
                     .build();
 
-            assertNull(chain.execute(5));
+            IllegalStateException exception = assertThrows(
+                    IllegalStateException.class,
+                    () -> chain.execute(5));
+            assertEquals(
+                    "No matching rule found in decision chain for context: 5",
+                    exception.getMessage());
         }
     }
 

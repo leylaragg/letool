@@ -1,5 +1,7 @@
 package com.github.leyland.letool.web.config;
 
+import com.github.leyland.letool.exception.config.ExceptionAutoConfiguration;
+import com.github.leyland.letool.exception.message.MessageResolver;
 import com.github.leyland.letool.web.advice.GlobalExceptionHandler;
 import com.github.leyland.letool.web.advice.ResponseWrapperAdvice;
 import com.github.leyland.letool.web.filter.RepeatableRequestFilter;
@@ -9,6 +11,7 @@ import com.github.leyland.letool.web.version.ApiVersionRequestMappingHandlerMapp
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -20,11 +23,14 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
 /**
- * Web 增强自动配置 —— 注册全局异常处理器、响应包装、安全过滤器等.
+ * 配置 Servlet Web 基础设施，包括响应包装、过滤器、API 版本路由和带错误码异常处理。
  *
- * <p>仅在 Web 环境下激活（{@code @ConditionalOnWebApplication}）.</p>
+ * <p>带码 {@link GlobalExceptionHandler} 依赖异常框架的 {@link MessageResolver}；
+ * 异常框架关闭或解析器不存在时，该处理器会自动退让。此依赖只作用于异常处理器 Bean，
+ * 响应增强、过滤器及其他 Web 基础设施仍会独立配置。每个 Bean 同时保留缺失 Bean 条件，
+ * 方便应用接管单个组件。</p>
  */
-@AutoConfiguration
+@AutoConfiguration(after = ExceptionAutoConfiguration.class)
 @EnableConfigurationProperties(WebProperties.class)
 @ConditionalOnClass(name = {
         "org.springframework.web.servlet.DispatcherServlet",
@@ -38,12 +44,16 @@ public class WebAutoConfiguration {
     private static final Logger log = LoggerFactory.getLogger(WebAutoConfiguration.class);
 
     /**
-     * 全局异常处理器.
+     * 仅在国际化消息解析器存在时创建带错误码的 HTTP 异常适配器。
+     *
+     * @param messageResolver 响应边界使用的异常框架消息解析器
+     * @return 默认全局带码异常处理器
      */
     @Bean
+    @ConditionalOnBean(MessageResolver.class)
     @ConditionalOnMissingBean(GlobalExceptionHandler.class)
-    public GlobalExceptionHandler globalExceptionHandler() {
-        return new GlobalExceptionHandler();
+    public GlobalExceptionHandler globalExceptionHandler(MessageResolver messageResolver) {
+        return new GlobalExceptionHandler(messageResolver);
     }
 
     /**
@@ -60,7 +70,7 @@ public class WebAutoConfiguration {
      *
      * <p>Spring MVC 默认只根据请求路径、HTTP 方法等条件判断路由是否冲突；
      * 如果多个接口使用相同路径但通过 {@link com.github.leyland.letool.web.version.ApiVersion}
-     * 区分版本，默认映射会在启动阶段被判定为 ambiguous mapping。这里通过
+     * 区分版本，默认映射会在启动阶段被判定为映射冲突。这里通过
      * {@link WebMvcRegistrations} 替换默认的 {@link RequestMappingHandlerMapping}，
      * 让版本号成为请求匹配条件的一部分。</p>
      *
@@ -106,7 +116,7 @@ public class WebAutoConfiguration {
         FilterRegistrationBean<SqlInjectionFilter> registration = new FilterRegistrationBean<>();
         registration.setFilter(new SqlInjectionFilter());
         registration.addUrlPatterns("/*");
-        // Run before XSS escaping so generated HTML entities such as "&lt;" are not treated as SQL separators.
+        // 在 XSS 转义前执行，避免生成的 HTML 实体（如 “&lt;”）被误判为 SQL 分隔符。
         registration.setOrder(-103);
         registration.setName("sqlInjectionFilter");
         log.info("SQL injection filter registered");

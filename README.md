@@ -31,14 +31,15 @@
 
 | 模块 | 说明 | 依赖 |
 |------|------|------|
-| **letool-starter-tool** | 核心工具 —— JSON、HTTP、ID 生成、字符串、集合、树工具；Spring/Redis helper 为可选适配器 | 无 |
+| **letool-starter-exception** | 统一异常 —— 错误码、业务/系统异常、MessageSource 国际化解析 | 无 letool 内部依赖 |
+| **letool-starter-tool** | 核心工具 —— JSON、HTTP、ID 生成、字符串、集合、树工具；Spring/Redis helper 为可选适配器 | exception |
 | **letool-starter-sensitive** | 数据脱敏 —— 注解驱动，Jackson 序列化 + 日志输出自动脱敏 | tool |
 | **letool-starter-log** | 日志封装 —— 链路追踪、审计日志、方法日志、动态日志级别 | tool, sensitive |
 | **letool-starter-cache** | 二级缓存 —— L1 Caffeine + L2 Redis，读穿/写穿、自动降级 | tool |
 | **letool-starter-cipher-suite** | 加密套件 —— AES/RSA/SM2/SM3/SM4、数字签名 | tool |
-| **letool-starter-web** | Web 增强 —— 全局异常处理、响应包装、XSS/SQL 注入防御 | tool, log |
+| **letool-starter-web** | Web 增强 —— 全局异常处理、响应包装、XSS/SQL 注入防御 | tool, exception |
 | **letool-starter-security** | 安全认证 —— JWT、注解权限、多种认证模式 | tool |
-| **letool-starter-data** | 数据库封装 —— Lambda 查询、分页、注解映射；JDBC Template 为按需适配器 | tool |
+| **letool-starter-data** | 数据库封装 —— Lambda 查询、分页、注解映射；JDBC Template 为按需适配器 | tool, exception |
 | **letool-starter-thread** | 线程管理 —— 动态线程池、上下文传递、虚拟线程 | tool |
 | **letool-starter-swagger** | API 文档 —— Knife4j + SpringDoc，自动配置、离线导出 | web |
 | **letool-starter-file** | 文件操作 —— 上传下载、FTP/SFTP/MinIO/OSS、魔数检测 | tool |
@@ -182,10 +183,12 @@ String result = chain.execute(amount);
 
 ```yaml
 letool:
-  tool:
+  exception:
+    enabled: true
     i18n:
       enabled: true
       default-locale: zh_CN
+      fallback-to-system-locale: false
   sensitive:
     enabled: true
     jackson:

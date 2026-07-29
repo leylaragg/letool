@@ -1,5 +1,8 @@
 package com.github.leyland.letool.tool.util;
 
+import com.github.leyland.letool.exception.code.ErrorCode;
+import com.github.leyland.letool.exception.core.BusinessException;
+
 import java.util.Collection;
 import java.util.regex.Pattern;
 
@@ -16,10 +19,10 @@ import java.util.regex.Pattern;
  * <h3>使用示例</h3>
  * <pre>{@code
  * if (!ValidatorUtil.isPhone(phone)) {
- *     throw new BusinessException("PARAM_001", "手机号格式不正确");
+ *     throw BusinessException.of(ErrorCode.of("PARAM_001", "手机号格式不正确"));
  * }
- * if (ValidatorUtil.isNullOrBlank(username)) {
- *     throw new BusinessException("PARAM_002", "用户名不能为空");
+ * if (ValidatorUtil.isBlank(username)) {
+ *     throw BusinessException.of(ErrorCode.of("PARAM_002", "用户名不能为空"));
  * }
  * }</pre>
  */

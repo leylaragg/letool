@@ -1,6 +1,7 @@
 package com.github.leyland.letool.sample.controller;
 
-import com.github.leyland.letool.tool.exception.BusinessException;
+import com.github.leyland.letool.exception.code.ErrorCode;
+import com.github.leyland.letool.exception.core.BusinessException;
 import com.github.leyland.letool.tool.model.R;
 import com.github.leyland.letool.web.annotation.ExcludeWrapper;
 import com.github.leyland.letool.web.version.ApiVersion;
@@ -21,7 +22,7 @@ public class WebController {
 
     /**
      * 自动包装为 R 格式 —— 方法实际返回 String，ResponseWrapperAdvice 自动包装成 R 结构.
-     * 返回: {"code":"S001","message":"操作成功","data":"Hello Web!","timestamp":...,"traceId":"..."}
+     * 返回: {"code":"00000","message":"ok","data":"Hello Web!","timestamp":...}
      */
     @GetMapping("/hello")
     public String hello() {
@@ -47,12 +48,13 @@ public class WebController {
     }
 
     /**
-     * 业务异常演示 —— 抛出 BusinessException 会被 GlobalExceptionHandler 捕获并转为 R.fail().
+     * 业务异常演示 —— 抛出由 {@code letool-starter-exception} 提供的
+     * {@link BusinessException}，由 GlobalExceptionHandler 捕获并转为 R.fail().
      * 返回: {"code":"BIZ_001","message":"演示业务异常：订单不存在","data":null,...}
      */
     @GetMapping("/error")
     public R<Void> triggerError(@RequestParam(defaultValue = "BIZ_001") String code) {
-        throw new BusinessException(code, "演示业务异常：订单不存在");
+        throw BusinessException.of(ErrorCode.of(code, "演示业务异常：订单不存在"));
     }
 
     /**

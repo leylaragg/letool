@@ -15,6 +15,11 @@
     <packaging>jar</packaging>
 
     <dependencies>
+        <!-- DataException 的公开父类来自统一异常模块，因此使用直接依赖 -->
+        <dependency>
+            <groupId>com.github.leyland</groupId>
+            <artifactId>letool-starter-exception</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.github.leyland</groupId>
             <artifactId>letool-starter-tool</artifactId>

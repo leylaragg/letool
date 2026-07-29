@@ -1,0 +1,28 @@
+{
+  "properties": [
+    {
+      "name": "letool.exception.enabled",
+      "type": "java.lang.Boolean",
+      "defaultValue": true,
+      "description": "是否启用 letool 异常自动配置。"
+    },
+    {
+      "name": "letool.exception.i18n.enabled",
+      "type": "java.lang.Boolean",
+      "defaultValue": true,
+      "description": "是否从应用和 Starter 资源包中解析异常消息。"
+    },
+    {
+      "name": "letool.exception.i18n.default-locale",
+      "type": "java.util.Locale",
+      "defaultValue": "zh_CN",
+      "description": "未显式指定且请求上下文也没有语言环境时使用的默认语言环境。"
+    },
+    {
+      "name": "letool.exception.i18n.fallback-to-system-locale",
+      "type": "java.lang.Boolean",
+      "defaultValue": false,
+      "description": "Starter 资源未命中时是否允许回退到 JVM 默认语言环境。"
+    }
+  ]
+}

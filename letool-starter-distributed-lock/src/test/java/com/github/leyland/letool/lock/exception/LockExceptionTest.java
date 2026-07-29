@@ -83,7 +83,7 @@ class LockExceptionTest {
         @DisplayName("LockException 与 DataException 是独立类型（均为 RuntimeException 子类）")
         void lockExceptionAndDataExceptionAreIndependentTypes() {
             LockException lockEx = new LockException("锁异常");
-            // DataException 继承自 LetoolException（非本模块），这里仅验证 LockException 本身
+            // DataException 属于独立的数据异常体系，这里仅验证 LockException 本身
             assertTrue(lockEx instanceof LockException);
             assertTrue(lockEx instanceof RuntimeException);
         }

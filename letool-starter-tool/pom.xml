@@ -15,6 +15,12 @@
     <packaging>jar</packaging>
 
     <dependencies>
+        <!-- 统一异常模型：工具模块只依赖基础异常模块，避免反向依赖和循环引用 -->
+        <dependency>
+            <groupId>com.github.leyland</groupId>
+            <artifactId>letool-starter-exception</artifactId>
+        </dependency>
+
         <!-- Spring Boot 核心（提供 SpringContextHolder、自动配置等基础能力） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

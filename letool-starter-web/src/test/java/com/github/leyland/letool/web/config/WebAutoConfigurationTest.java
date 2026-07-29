@@ -1,5 +1,7 @@
 package com.github.leyland.letool.web.config;
 
+import com.github.leyland.letool.exception.config.ExceptionAutoConfiguration;
+import com.github.leyland.letool.exception.message.MessageResolver;
 import com.github.leyland.letool.web.advice.GlobalExceptionHandler;
 import com.github.leyland.letool.web.advice.ResponseWrapperAdvice;
 import com.github.leyland.letool.web.filter.RepeatableRequestFilter;
@@ -18,25 +20,42 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * {@link WebAutoConfiguration} 的自动装配契约测试。
- *
- * <p>重点覆盖业务项目自定义 Web 基础设施 Bean 时，web starter 是否正确退让，
- * 以及 Servlet MVC 依赖缺失时是否避免加载 Servlet 专用配置。</p>
+ * 验证 Web 基础设施的自动退让行为，包括异常消息解析器边界。
  */
 class WebAutoConfigurationTest {
 
     private final WebApplicationContextRunner contextRunner = new WebApplicationContextRunner()
-            .withConfiguration(AutoConfigurations.of(WebAutoConfiguration.class))
+            .withConfiguration(AutoConfigurations.of(
+                    ExceptionAutoConfiguration.class,
+                    WebAutoConfiguration.class))
             .withPropertyValues("spring.main.allow-bean-definition-overriding=false");
 
-    /**
-     * 验证用户提供异常处理、响应包装和过滤器注册 Bean 时，自动配置不会创建重复 Bean。
-     */
+    @Test
+    void defaultConfigurationShouldProvideResolverAndGlobalExceptionHandler() {
+        contextRunner.run(context -> {
+            assertThat(context).hasSingleBean(MessageResolver.class);
+            assertThat(context).hasSingleBean(GlobalExceptionHandler.class);
+            assertThat(context).hasSingleBean(ResponseWrapperAdvice.class);
+        });
+    }
+
+    @Test
+    void disabledExceptionFrameworkShouldBackOffCodedHandlerOnly() {
+        contextRunner
+                .withPropertyValues("letool.exception.enabled=false")
+                .run(context -> {
+                    assertThat(context).doesNotHaveBean(MessageResolver.class);
+                    assertThat(context).doesNotHaveBean(GlobalExceptionHandler.class);
+                    assertThat(context).hasSingleBean(ResponseWrapperAdvice.class);
+                });
+    }
+
     @Test
     void shouldBackOffWhenUserProvidesWebInfrastructureBeans() {
         contextRunner
                 .withUserConfiguration(UserWebConfiguration.class)
                 .run(context -> {
+                    assertThat(context).hasSingleBean(MessageResolver.class);
                     assertThat(context).hasSingleBean(GlobalExceptionHandler.class);
                     assertThat(context).hasSingleBean(ResponseWrapperAdvice.class);
                     assertThat(context.getBean(GlobalExceptionHandler.class))
@@ -52,9 +71,6 @@ class WebAutoConfigurationTest {
                 });
     }
 
-    /**
-     * 验证 Servlet MVC 核心类不存在时，web starter 不参与自动装配。
-     */
     @Test
     void shouldBackOffWhenServletMvcClassesAreMissing() {
         new WebApplicationContextRunner()
@@ -63,19 +79,22 @@ class WebAutoConfigurationTest {
                         RequestMappingHandlerMapping.class,
                         FilterRegistrationBean.class
                 ))
-                .withConfiguration(AutoConfigurations.of(WebAutoConfiguration.class))
-                .run(context -> assertThat(context).doesNotHaveBean(GlobalExceptionHandler.class));
+                .withConfiguration(AutoConfigurations.of(
+                        ExceptionAutoConfiguration.class,
+                        WebAutoConfiguration.class))
+                .run(context -> assertThat(context)
+                        .doesNotHaveBean(GlobalExceptionHandler.class));
     }
 
     /**
-     * 模拟业务项目自行接管 Web 基础设施 Bean 的配置。
+     * 模拟应用自行接管 Web 基础设施 Bean。
      */
     @Configuration(proxyBeanMethods = false)
     static class UserWebConfiguration {
 
         @Bean
-        GlobalExceptionHandler globalExceptionHandler() {
-            return new GlobalExceptionHandler();
+        GlobalExceptionHandler globalExceptionHandler(MessageResolver messageResolver) {
+            return new GlobalExceptionHandler(messageResolver);
         }
 
         @Bean

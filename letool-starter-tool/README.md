@@ -2,7 +2,11 @@
 
 ## 模块简介
 
-`letool-starter-tool` 是 letool 工具包的核心基石模块，**零内部依赖**，为其他所有模块提供基础能力支撑。涵盖 JSON 序列化、HTTP 请求、Redis 操作、分布式 ID 生成、树形结构构建、字符串处理、集合操作、日期时间、Bean 拷贝、统一响应体、分页模型、异常体系、国际化及 Spring 容器工具等开箱即用的工具集。
+`letool-starter-tool` 是 letool 的通用工具模块，为其他模块提供 JSON 序列化、HTTP 请求、
+Redis 操作、分布式 ID、树形结构、字符串、集合、日期时间、Bean 拷贝、统一响应体、
+分页模型及 Spring 容器辅助能力。统一异常和国际化由独立的
+[`letool-starter-exception`](../letool-starter-exception/README.md) 模块提供；tool 模块依赖该基础模块，
+但不再自行维护异常体系。
 
 ## Maven 坐标
 
@@ -48,13 +52,12 @@ public R<User> getUser(@PathVariable Long id) {
 }
 ```
 
-### 4. 抛出业务异常
+### 4. 使用统一异常
 
-```java
-if (userMapper.existsByUsername(username)) {
-    throw new BusinessException("USER_001", "用户名已存在");
-}
-```
+业务异常、系统异常、错误码和国际化消息解析请参阅
+[`letool-starter-exception`](../letool-starter-exception/README.md)。异常模块使用
+`BusinessException.of(...)`、`BusinessException.custom(...)` 和
+`SystemException.causedBy(...)` 等工厂方法，不再提供旧的字符串构造器。
 
 ## 核心 API 示例
 
@@ -86,19 +89,11 @@ public User getUser() {
 }
 ```
 
-### 2. 异常体系
+### 2. 异常能力边界
 
-```java
-// 业务异常（调用方问题，映射 HTTP 400）
-throw new BusinessException("USER_001", "用户名已存在");
-throw new BusinessException("ORDER_001", "订单已支付", cause);
-
-// 系统异常（服务端问题，映射 HTTP 500）
-throw new SystemException("SYS_REDIS", "缓存服务暂不可用", e);
-
-// 自定义异常（继承 LetoolException）
-throw new LetoolException("E001", "配置文件加载失败", ioException);
-```
+`R<T>` 仍由 tool 模块提供；错误码、异常类型、国际化解析以及日志/HTTP 消息边界由
+[`letool-starter-exception`](../letool-starter-exception/README.md) 提供。这样工具类不会持有
+`MessageSource` 等全局状态，非 Web 任务也可以稳定记录异常。
 
 ### 3. JSON 工具 JsonUtil
 
@@ -296,4 +291,5 @@ int totalPages = page.getTotalPages();
 
 ## 配置属性
 
-`letool-starter-tool` 为纯工具集模块，无 YAML 配置项。所有工具类可直接调用，无需配置。
+`letool-starter-tool` 自身没有 YAML 配置项，所有工具类可直接调用。其传递依赖的异常模块配置
+参阅 [`letool-starter-exception`](../letool-starter-exception/README.md)。

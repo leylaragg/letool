@@ -39,7 +39,7 @@ public class DecisionChain<T, R> {
      * 执行决策链，按注册顺序依次评估条件，首个匹配即执行对应动作并返回结果.
      *
      * @param context 上下文对象
-     * @return 匹配规则的动作返回值，若无匹配且未设置 otherwise 则返回 {@code null}
+     * @return 首个匹配规则的动作返回值
      * @throws IllegalStateException 如果没有匹配的规则且未设置 {@code otherwise}
      */
     public R execute(T context) {

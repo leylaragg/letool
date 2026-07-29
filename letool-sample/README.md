@@ -88,7 +88,7 @@ spring:
     name: letool-sample
   autoconfigure:
     exclude:
-      - RedisAutoConfiguration      # 示例未依赖 Redis
+      - RedisAutoConfiguration       # Redis 类型在类路径中，但示例仍排除其自动配置
       - DataSourceAutoConfiguration  # 示例未依赖数据库
 
 letool:
@@ -127,6 +127,6 @@ letool:
 
 ## 注意事项
 
-- 示例项目排除了 `RedisAutoConfiguration` 和 `DataSourceAutoConfiguration`，因此缓存模块仅使用 Caffeine L1 缓存（无法演示 L2 Redis 层）
+- 示例 `pom.xml` 显式引入 Redis starter，仅为 cache starter 的可选 Redis 类型提供类路径；`application.yml` 仍排除了 `RedisAutoConfiguration`（同时排除 `DataSourceAutoConfiguration`），因此默认仅使用 Caffeine L1 缓存，不连接 Redis、也不演示 L2 Redis 层
 - 安全模块使用固定用户名密码（admin / admin123），仅供演示
 - JWT 密钥为示例用途，生产环境请务必更换为安全的随机密钥

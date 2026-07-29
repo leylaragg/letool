@@ -29,6 +29,7 @@
 
     <modules>
         <!-- 阶段 1：基石模块 -->
+        <module>letool-starter-exception</module>
         <module>letool-starter-tool</module>
 
         <!-- 阶段 2：核心能力模块 -->
@@ -159,6 +160,11 @@
             <dependency>
                 <groupId>com.github.leyland</groupId>
                 <artifactId>letool-starter-sensitive</artifactId>
+                <version>${letool.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.leyland</groupId>
+                <artifactId>letool-starter-exception</artifactId>
                 <version>${letool.version}</version>
             </dependency>
             <dependency>

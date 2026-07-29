@@ -106,6 +106,9 @@ public void deductStock(Long skuId, int quantity) {
 基于 Redis Lua 脚本（SET NX EX）原子标记，首次请求执行，TTL 内重复请求直接返回 null：
 
 ```java
+import com.github.leyland.letool.exception.code.ErrorCode;
+import com.github.leyland.letool.exception.core.BusinessException;
+
 @Idempotent(key = "pay:#{#orderId}", ttl = 3600)
 public PaymentResult pay(Long orderId) {
     // 一小时内同一 orderId 的支付请求仅执行一次
@@ -113,14 +116,20 @@ public PaymentResult pay(Long orderId) {
     return paymentGateway.pay(orderId);
 }
 
+private static final ErrorCode DUPLICATE_PAYMENT =
+        ErrorCode.of("PAY_409", "订单已支付，请勿重复操作");
+
 // 调用方判空处理
 public void handlePay(Long orderId) {
     PaymentResult result = pay(orderId);
     if (result == null) {
-        throw new BusinessException("订单已支付，请勿重复操作");
+        throw BusinessException.of(DUPLICATE_PAYMENT);
     }
 }
 ```
+
+示例中的 `ErrorCode` 和 `BusinessException` 来自 `letool-starter-exception`；实际项目也可以改用
+自己的领域异常。
 
 ### 3. 编程式：LockTemplate 函数式锁
 

@@ -1,131 +1,90 @@
 package com.github.leyland.letool.data.exception;
 
-import com.github.leyland.letool.tool.exception.LetoolException;
+import com.github.leyland.letool.exception.core.BaseException;
+import com.github.leyland.letool.exception.core.SystemException;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
- * {@link DataException} 的单元测试 —— 验证异常类的构造、继承链和信息传递。
+ * 验证 {@link DataException} 与统一异常模型之间的契约。
  */
-@DisplayName("DataException 异常测试")
+@DisplayName("DataException 异常契约")
 class DataExceptionTest {
 
-    // ======================== 基础构造测试 ========================
+    @Test
+    @DisplayName("应保留原有错误码和消息构造语义，并生成稳定的日志消息")
+    void shouldPreserveCodeAndFallbackMessage() {
+        DataException exception = new DataException("DATA_001", "查询结果数量异常");
 
-    @Nested
-    @DisplayName("基础构造测试")
-    class BasicConstructionTests {
-
-        @Test
-        @DisplayName("应正确记录错误码和消息")
-        void shouldRecordErrorCodeAndMessage() {
-            DataException ex = new DataException("DATA_001", "查询结果数量异常");
-            assertEquals("DATA_001", ex.getErrorCode());
-            assertEquals("查询结果数量异常", ex.getMessage());
-        }
-
-        @Test
-        @DisplayName("应正确记录错误码、消息和原始异常")
-        void shouldRecordErrorCodeMessageAndCause() {
-            IllegalArgumentException cause = new IllegalArgumentException("非法参数");
-            DataException ex = new DataException("DATA_002", "无可用字段进行插入", cause);
-
-            assertEquals("DATA_002", ex.getErrorCode());
-            assertEquals("无可用字段进行插入", ex.getMessage());
-            assertSame(cause, ex.getCause());
-        }
-
-        @Test
-        @DisplayName("插入异常应使用 DATA_002 错误码")
-        void insertExceptionShouldUseCorrectErrorCode() {
-            DataException ex = new DataException("DATA_002", "No fields to insert");
-            assertEquals("DATA_002", ex.getErrorCode());
-        }
-
-        @Test
-        @DisplayName("更新异常应使用 DATA_003 错误码")
-        void updateExceptionShouldUseCorrectErrorCode() {
-            DataException ex = new DataException("DATA_003", "Cannot update entity with null ID");
-            assertEquals("DATA_003", ex.getErrorCode());
-        }
+        assertEquals("DATA_001", exception.getCode());
+        assertEquals("DATA_001", exception.getErrorCode().getCode());
+        assertEquals("查询结果数量异常", exception.getFallbackMessage());
+        assertEquals("[DATA_001] 查询结果数量异常", exception.getMessage());
+        assertNull(exception.getCause());
     }
 
-    // ======================== 继承链测试 ========================
+    @Test
+    @DisplayName("应属于系统异常与基础异常体系")
+    void shouldExtendUnifiedSystemExceptionHierarchy() {
+        DataException exception = new DataException("DATA_002", "无可用字段进行插入");
 
-    @Nested
-    @DisplayName("继承链测试")
-    class InheritanceTests {
-
-        @Test
-        @DisplayName("DataException 应继承自 LetoolException")
-        void shouldExtendLetoolException() {
-            DataException ex = new DataException("E001", "测试");
-            assertTrue(ex instanceof LetoolException, "DataException 应是 LetoolException 的子类");
-        }
-
-        @Test
-        @DisplayName("LetoolException 应继承自 RuntimeException")
-        void letoolExceptionShouldExtendRuntimeException() {
-            DataException ex = new DataException("E001", "测试");
-            assertTrue(ex instanceof RuntimeException, "DataException 应是 RuntimeException 的子类");
-        }
-
-        @Test
-        @DisplayName("errorCode 通过父类 getErrorCode() 获取")
-        void errorCodeShouldBeAccessibleViaParentGetter() {
-            DataException ex = new DataException("DATA_004", "字段值提取失败");
-            assertNotNull(ex.getErrorCode());
-            assertEquals("DATA_004", ex.getErrorCode());
-        }
+        assertInstanceOf(SystemException.class, exception);
+        assertInstanceOf(BaseException.class, exception);
+        assertInstanceOf(RuntimeException.class, exception);
     }
 
-    // ======================== 异常链测试 ========================
+    @Test
+    @DisplayName("应完整保留下层异常链")
+    void shouldPreserveCause() {
+        IllegalStateException cause = new IllegalStateException("数据库连接中断");
 
-    @Nested
-    @DisplayName("异常链测试")
-    class ExceptionChainTests {
+        DataException exception =
+                new DataException("DATA_500", "数据操作失败", cause);
 
-        @Test
-        @DisplayName("getCause 应返回传入的原始异常")
-        void getCauseShouldReturnOriginalException() {
-            SQLException simulatedCause = new SQLException("模拟数据库错误");
-            DataException ex = new DataException("DATA_999", "数据操作失败", simulatedCause);
-            assertSame(simulatedCause, ex.getCause());
-        }
-
-        @Test
-        @DisplayName("原始异常的 message 应可追溯")
-        void originalExceptionMessageShouldBeTraceable() {
-            IllegalArgumentException cause = new IllegalArgumentException("具体原因");
-            DataException ex = new DataException("E500", "包装异常", cause);
-            assertEquals("具体原因", ex.getCause().getMessage());
-        }
-
-        @Test
-        @DisplayName("多层异常嵌套应保持完整的异常链")
-        void multiLevelExceptionChainShouldBePreserved() {
-            NullPointerException root = new NullPointerException("最底层原因");
-            DataException ex = new DataException("DATA_500", "服务异常", root);
-            assertNotNull(ex.getCause());
-            assertEquals(root, ex.getCause());
-        }
-
-        @Test
-        @DisplayName("无 cause 构造时 getCause 应为 null")
-        void getCauseShouldBeNullWhenConstructedWithoutCause() {
-            DataException ex = new DataException("DATA_006", "无原因异常");
-            assertNull(ex.getCause());
-        }
+        assertSame(cause, exception.getCause());
+        assertEquals("[DATA_500] 数据操作失败", exception.getMessage());
     }
 
-    // ======================== 工具类（模拟 SQLException 用于测试） ========================
+    @ParameterizedTest(name = "[{index}] 空错误码={0}")
+    @NullAndEmptySource
+    @ValueSource(strings = " ")
+    @DisplayName("应拒绝 null、空串和空白错误码")
+    void shouldRejectBlankErrorCode(String errorCode) {
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> new DataException(errorCode, "数据操作失败"));
 
-    private static class SQLException extends Exception {
-        public SQLException(String message) {
-            super(message);
-        }
+        assertEquals("code must not be blank", exception.getMessage());
+    }
+
+    @ParameterizedTest(name = "[{index}] 空默认消息={0}")
+    @NullAndEmptySource
+    @ValueSource(strings = " ")
+    @DisplayName("应拒绝 null、空串和空白默认消息")
+    void shouldRejectBlankMessage(String message) {
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> new DataException("DATA_001", message));
+
+        assertEquals("defaultMessage must not be blank", exception.getMessage());
+    }
+
+    @Test
+    @DisplayName("三参构造器应允许 null cause 以保持原有构造语义")
+    void shouldAllowNullCauseInThreeArgumentConstructor() {
+        DataException exception =
+                new DataException("DATA_001", "数据操作失败", null);
+
+        assertNull(exception.getCause());
+        assertEquals("[DATA_001] 数据操作失败", exception.getMessage());
     }
 }

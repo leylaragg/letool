@@ -20,7 +20,7 @@ import java.util.Map;
 public class ToolController {
 
     /**
-     * 统一响应体 R -> {"code":"S001","message":"操作成功","data":"hello","timestamp":...,"traceId":"..."}
+     * 统一响应体 R -> {"code":"00000","message":"ok","data":"hello","timestamp":...}
      */
     @GetMapping("/response")
     public R<String> response() {
