@@ -40,14 +40,13 @@
 | **letool-starter-cipher-suite** | 加密套件 —— AES/RSA/SM2/SM3/SM4、数字签名 | tool |
 | **letool-starter-web** | Web 增强 —— 全局异常处理、响应包装、XSS/SQL 注入防御 | tool, exception |
 | **letool-starter-security** | 安全认证 —— Resource Server、JWT 签发、角色与权限映射 | tool, exception |
-| **letool-starter-data** | 数据库封装 —— Lambda 查询、分页、注解映射；JDBC Template 为按需适配器 | tool, exception |
 | **letool-starter-thread** | 线程管理 —— 动态线程池、上下文传递、虚拟线程 | tool |
 | **letool-starter-swagger** | API 文档 —— Knife4j + SpringDoc，自动配置、离线导出 | web |
 | **letool-starter-file** | 文件操作 —— 上传下载、FTP/SFTP/MinIO/OSS、魔数检测 | tool |
 | **letool-starter-excel** | Excel 操作 —— EasyExcel 原生能力薄封装、批量读取与轻量校验 | exception |
 | **letool-starter-mail** | 邮件发送 —— 显式启用的 Jakarta Mail、多账户、附件与同步/异步投递 | exception |
 | **letool-starter-distributed-lock** | 分布式锁 —— Redis 后端、`LockTemplate`、`@Lock`/`@Idempotent`；可替换 `DistributedLock` | tool |
-| **letool-starter-rule** | 规则引擎 —— LiteFlow 封装、规则链编排、Groovy 脚本 | tool, data |
+| **letool-starter-rule** | 规则引擎 —— LiteFlow 封装、规则链编排、Groovy 脚本 | tool |
 | **letool-starter-net** | 网络通信 —— 默认不启用运行时 Bean，显式开启 TCP/HTTP/网关适配器 | tool |
 | **letool-starter-pay** | 支付抽象 —— 默认不启用，内置支付宝/微信支付仅显式 stub 或自定义 provider | tool, web |
 | **letool-starter-mq** | 消息队列 —— 当前内置内存队列，RabbitMQ/RocketMQ/Kafka 需自定义 provider 或后续真实扩展 | tool |
@@ -59,6 +58,13 @@
 | **letool-starter-websocket** | WebSocket —— 消息路由、房间管理、分布式会话 | tool, web |
 | **letool-starter-job** | 任务调度 —— 分布式定时任务、分片、重试 | tool |
 | **letool-starter-monitor** | 监控指标 —— 轻量指标采集可用，Webhook 告警真实发送，清理调度默认关闭且仍为占位实现 | tool |
+
+### 数据访问技术选择
+
+Letool 不再提供 `letool-starter-data`。数据库访问请根据项目模型直接选择
+MyBatis-Plus、Spring Data JDBC/JPA，或 Spring Framework 原生
+`JdbcClient` / `JdbcTemplate`。Letool 不在这些成熟方案之上维护额外的实体注解、
+Lambda 查询 DSL、分页模型和数据库方言。
 
 ## 快速开始
 

@@ -41,7 +41,6 @@
 
         <!-- 阶段 3：企业应用核心 -->
         <module>letool-starter-security</module>
-        <module>letool-starter-data</module>
         <module>letool-starter-thread</module>
 
         <!-- 阶段 4：扩展服务 -->
@@ -195,11 +194,6 @@
             <dependency>
                 <groupId>com.github.leyland</groupId>
                 <artifactId>letool-starter-security</artifactId>
-                <version>${letool.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.github.leyland</groupId>
-                <artifactId>letool-starter-data</artifactId>
                 <version>${letool.version}</version>
             </dependency>
             <dependency>
