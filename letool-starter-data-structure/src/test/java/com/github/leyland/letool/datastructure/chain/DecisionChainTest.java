@@ -83,6 +83,31 @@ class DecisionChainTest {
                             .otherwise(n -> "a")
                             .otherwise(n -> "b"));
         }
+
+        @Test
+        @DisplayName("otherwise 之后继续添加 when 时抛异常")
+        void whenAfterOtherwiseThrows() {
+            DecisionChainBuilder<Integer, String> builder =
+                    DecisionChain.<Integer, String>builder()
+                            .otherwise(n -> "默认");
+
+            IllegalStateException exception = assertThrows(
+                    IllegalStateException.class,
+                    () -> builder.when(n -> n > 0, n -> "正数"));
+
+            assertEquals("when cannot be added after otherwise", exception.getMessage());
+        }
+
+        @Test
+        @DisplayName("when 条件为空时立即抛异常")
+        void nullConditionThrows() {
+            NullPointerException exception = assertThrows(
+                    NullPointerException.class,
+                    () -> DecisionChain.<Integer, String>builder()
+                            .when(null, n -> "结果"));
+
+            assertEquals("condition must not be null", exception.getMessage());
+        }
     }
 
     @Nested

@@ -24,6 +24,7 @@ List<Dept> tree = TreeBuilder.build(deptList);
 String result = DecisionChain.<Order, String>builder()
     .when(o -> o.getAmount() > 10000, o -> "大额订单")
     .otherwise(o -> "普通订单")
+    .build()
     .execute(order);
 
 // 3. 链式构建链表并遍历
@@ -99,6 +100,10 @@ DecisionChain<Order, String> chain = DecisionChain.<Order, String>builder()
 
 String result = chain.execute(order);
 ```
+
+`DecisionChain` 按注册顺序执行首个命中的规则。业务决策链建议显式配置
+`otherwise`；如果所有 `when` 都未命中且没有配置 `otherwise`，`execute`
+会抛出 `IllegalStateException`，避免用 `null` 掩盖规则漏配。
 
 **快捷单规则模式：**
 

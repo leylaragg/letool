@@ -26,6 +26,7 @@
 | [External Provider Boundaries](docs/external-provider-boundaries.md) | 外部服务 provider 的真实、mock、stub 边界 |
 | [Starter Auto-Configuration Rules](docs/starter-auto-configuration-rules.md) | starter 自动装配治理规则 |
 | [Starter Dependency Scope Audit](docs/starter-dependency-scope-audit.md) | starter 依赖作用域审计计划 |
+| [Verification Guide](docs/verification-guide.md) | 定向测试、模块测试、全仓验证和交付检查规范 |
 
 ## 模块总览
 
@@ -178,6 +179,9 @@ DecisionChain<Integer, String> chain = DecisionChain.<Integer, String>builder()
 
 String result = chain.execute(amount);
 ```
+
+决策链按注册顺序执行首个命中的规则。建议业务链显式配置 `otherwise`；如果没有任何规则
+命中且未配置 `otherwise`，`execute` 会抛出 `IllegalStateException`。
 
 ## 全局配置
 
