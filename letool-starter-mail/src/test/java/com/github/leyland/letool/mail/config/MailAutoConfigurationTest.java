@@ -2,8 +2,9 @@ package com.github.leyland.letool.mail.config;
 
 import com.github.leyland.letool.mail.core.MailSender;
 import com.github.leyland.letool.mail.core.MailTemplate;
-import com.github.leyland.letool.mail.model.MailRequest;
+import com.github.leyland.letool.mail.exception.MailException;
 import com.github.leyland.letool.mail.model.MailResponse;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -13,20 +14,23 @@ import org.springframework.context.annotation.Configuration;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * {@link MailAutoConfiguration} 的自动装配契约测试。
- *
- * <p>重点覆盖 mail starter 的默认轻量化、显式启用和业务项目自定义 Bean 退让行为。</p>
+ * {@link MailAutoConfiguration} 启用、校验和用户扩展退让测试。
  */
+@DisplayName("MailAutoConfiguration 自动配置测试")
 class MailAutoConfigurationTest {
 
-    private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-            .withConfiguration(AutoConfigurations.of(MailAutoConfiguration.class))
-            .withPropertyValues("spring.main.allow-bean-definition-overriding=false");
+    /** 基础自动配置运行器。 */
+    private final ApplicationContextRunner contextRunner =
+            new ApplicationContextRunner()
+                    .withConfiguration(
+                            AutoConfigurations.of(MailAutoConfiguration.class)
+                    )
+                    .withPropertyValues(
+                            "spring.main.allow-bean-definition-overriding=false"
+                    );
 
-    /**
-     * 验证默认配置下只绑定属性，不主动创建邮件基础设施 Bean。
-     */
     @Test
+    @DisplayName("默认只绑定属性而不创建发送基础设施")
     void shouldOnlyBindPropertiesByDefault() {
         contextRunner.run(context -> {
             assertThat(context).doesNotHaveBean(MailSender.class);
@@ -36,24 +40,78 @@ class MailAutoConfigurationTest {
         });
     }
 
-    /**
-     * 验证显式开启邮件模块时会注册邮件发送器、邮件模板和配置属性 Bean。
-     */
     @Test
-    void shouldCreateMailBeansWhenExplicitlyEnabled() {
+    @DisplayName("显式启用且账户有效时应创建邮件基础设施")
+    void shouldCreateMailBeansWithValidAccount() {
+        enabledRunner().run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context).hasSingleBean(MailSender.class);
+            assertThat(context).hasSingleBean(MailTemplate.class);
+            assertThat(context).hasSingleBean(MailProperties.class);
+        });
+    }
+
+    @Test
+    @DisplayName("显式启用但默认账户缺失时应启动失败")
+    void shouldFailFastWhenDefaultAccountIsMissing() {
         contextRunner
                 .withPropertyValues("letool.mail.enabled=true")
                 .run(context -> {
-                    assertThat(context).hasSingleBean(MailSender.class);
-                    assertThat(context).hasSingleBean(MailTemplate.class);
-                    assertThat(context).hasSingleBean(MailProperties.class);
+                    assertThat(context).hasFailed();
+                    Throwable rootCause = rootCause(context.getStartupFailure());
+                    assertThat(rootCause)
+                            .isInstanceOfSatisfying(
+                                    MailException.class,
+                                    exception -> assertThat(exception.getCode())
+                                            .isEqualTo("MAIL_001")
+                            );
                 });
     }
 
-    /**
-     * 验证显式关闭邮件模块时不会创建邮件基础设施 Bean。
-     */
     @Test
+    @DisplayName("异步线程数不合法时应以配置错误启动失败")
+    void shouldFailFastWhenAsyncPoolSizeIsInvalid() {
+        enabledRunner()
+                .withPropertyValues("letool.mail.async-pool-size=0")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    Throwable rootCause = rootCause(context.getStartupFailure());
+                    assertThat(rootCause)
+                            .isInstanceOfSatisfying(
+                                    MailException.class,
+                                    exception -> {
+                                        assertThat(exception.getCode())
+                                                .isEqualTo("MAIL_001");
+                                        assertThat(exception.getMessage())
+                                                .contains("async-pool-size");
+                                    }
+                            );
+                });
+    }
+
+    @Test
+    @DisplayName("异步队列容量不合法时应以配置错误启动失败")
+    void shouldFailFastWhenAsyncQueueCapacityIsInvalid() {
+        enabledRunner()
+                .withPropertyValues("letool.mail.async-queue-capacity=0")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    Throwable rootCause = rootCause(context.getStartupFailure());
+                    assertThat(rootCause)
+                            .isInstanceOfSatisfying(
+                                    MailException.class,
+                                    exception -> {
+                                        assertThat(exception.getCode())
+                                                .isEqualTo("MAIL_001");
+                                        assertThat(exception.getMessage())
+                                                .contains("async-queue-capacity");
+                                    }
+                            );
+                });
+    }
+
+    @Test
+    @DisplayName("显式关闭时不应创建邮件基础设施")
     void shouldNotCreateMailBeansWhenDisabled() {
         contextRunner
                 .withPropertyValues("letool.mail.enabled=false")
@@ -64,11 +122,28 @@ class MailAutoConfigurationTest {
     }
 
     @Test
-    void shouldBackOffWhenUserProvidesMailInfrastructureBeans() {
+    @DisplayName("用户只提供 MailSender 时不应强制要求 SMTP 账户")
+    void shouldUseCustomSenderWithoutSmtpAccount() {
         contextRunner
                 .withPropertyValues("letool.mail.enabled=true")
-                .withUserConfiguration(UserMailConfiguration.class)
+                .withUserConfiguration(UserMailSenderConfiguration.class)
                 .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(MailSender.class);
+                    assertThat(context).hasSingleBean(MailTemplate.class);
+                    assertThat(context.getBean(MailSender.class))
+                            .isSameAs(context.getBean("mailSender"));
+                });
+    }
+
+    @Test
+    @DisplayName("用户同时提供发送器和门面时自动配置应完全退让")
+    void shouldBackOffForCompleteUserInfrastructure() {
+        contextRunner
+                .withPropertyValues("letool.mail.enabled=true")
+                .withUserConfiguration(UserMailInfrastructureConfiguration.class)
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
                     assertThat(context).hasSingleBean(MailSender.class);
                     assertThat(context).hasSingleBean(MailTemplate.class);
                     assertThat(context.getBean(MailSender.class))
@@ -79,30 +154,81 @@ class MailAutoConfigurationTest {
     }
 
     /**
-     * 模拟业务项目自行接管 mail 基础设施的配置。
+     * 创建显式启用且包含有效默认账户的运行器。
+     *
+     * @return 邮件模块运行器
+     */
+    private ApplicationContextRunner enabledRunner() {
+        return contextRunner.withPropertyValues(
+                "letool.mail.enabled=true",
+                "letool.mail.default-account=primary",
+                "letool.mail.accounts.primary.host=smtp.example.com",
+                "letool.mail.accounts.primary.port=587",
+                "letool.mail.accounts.primary.username=mailer@example.com",
+                "letool.mail.accounts.primary.password=secret",
+                "letool.mail.accounts.primary.protocol=smtp",
+                "letool.mail.accounts.primary.auth=true",
+                "letool.mail.accounts.primary.starttls=true",
+                "letool.mail.accounts.primary.from=mailer@example.com"
+        );
+    }
+
+    /**
+     * 获取异常链最底层原因。
+     *
+     * @param throwable 异常链入口
+     * @return 最底层异常
+     */
+    private static Throwable rootCause(Throwable throwable) {
+        Throwable current = throwable;
+        while (current.getCause() != null && current.getCause() != current) {
+            current = current.getCause();
+        }
+        return current;
+    }
+
+    /**
+     * 只提供用户自定义发送器的配置。
      */
     @Configuration(proxyBeanMethods = false)
-    static class UserMailConfiguration {
+    static class UserMailSenderConfiguration {
 
+        /**
+         * 创建不依赖 SMTP 账户的自定义发送器。
+         *
+         * @return 自定义发送器
+         */
         @Bean
         MailSender mailSender() {
-            return new TestMailSender();
-        }
-
-        @Bean
-        MailTemplate mailTemplate(MailSender mailSender) {
-            return new MailTemplate(mailSender, 1);
+            return request -> MailResponse.success("custom-message");
         }
     }
 
     /**
-     * 用于自动装配测试的邮件发送器，不访问真实 SMTP 服务。
+     * 同时提供用户自定义发送器和门面的配置。
      */
-    static class TestMailSender implements MailSender {
+    @Configuration(proxyBeanMethods = false)
+    static class UserMailInfrastructureConfiguration {
 
-        @Override
-        public MailResponse send(MailRequest request) {
-            return MailResponse.success("test-message");
+        /**
+         * 创建自定义发送器。
+         *
+         * @return 自定义发送器
+         */
+        @Bean
+        MailSender mailSender() {
+            return request -> MailResponse.success("custom-message");
+        }
+
+        /**
+         * 创建自定义邮件门面。
+         *
+         * @param mailSender 自定义发送器
+         * @return 自定义门面
+         */
+        @Bean
+        MailTemplate mailTemplate(MailSender mailSender) {
+            return new MailTemplate(mailSender, 1);
         }
     }
 }

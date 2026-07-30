@@ -3,8 +3,7 @@ package com.github.leyland.letool.mail.config;
 import com.github.leyland.letool.mail.core.DefaultMailSender;
 import com.github.leyland.letool.mail.core.MailSender;
 import com.github.leyland.letool.mail.core.MailTemplate;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.github.leyland.letool.mail.exception.MailException;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -12,78 +11,70 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-// ======================== 类级别说明 ========================
-
 /**
- * <p>邮件模块的 Spring Boot 自动配置类。</p>
+ * 邮件模块 Spring Boot 自动配置。
  *
- * <h3>核心职责</h3>
- * <ul>
- *   <li>注册 {@link MailSender} Bean — 邮件发送的核心执行器 ({@link DefaultMailSender})。</li>
- *   <li>注册 {@link MailTemplate} Bean — 面向用户的链式调用模板，提供 Builder 风格的邮件发送 API。</li>
- * </ul>
- *
- * <h3>启用条件</h3>
- * <ul>
- *   <li>当 {@code letool.mail.enabled=true} 时生效。</li>
- *   <li>邮件发送基础设施默认关闭，避免引入工具包后意外创建 SMTP adapter。</li>
- * </ul>
- *
- * <h3>Bean 覆盖机制</h3>
- * <ul>
- *   <li>{@link MailSender} 标注了 {@code @ConditionalOnMissingBean}，用户可自行提供自定义实现来覆盖默认行为。</li>
- *   <li>{@link MailTemplate} 同样标注了 {@code @ConditionalOnMissingBean}，用户可自行接管邮件操作门面。</li>
- * </ul>
- *
- * @author leyland
- * @since 1.0.0
+ * <p>配置属性始终可以绑定，只有显式设置 {@code letool.mail.enabled=true}
+ * 才创建运行时基础设施。用户提供 {@link MailSender} 或 {@link MailTemplate}
+ * 时对应默认 Bean 会退让；自定义发送器不依赖 Letool SMTP 账户配置。</p>
  */
 @AutoConfiguration
 @EnableConfigurationProperties(MailProperties.class)
 public class MailAutoConfiguration {
 
-    // ======================== 日志记录器 ========================
-
-    private static final Logger log = LoggerFactory.getLogger(MailAutoConfiguration.class);
-
     /**
-     * Mail runtime infrastructure beans.
+     * 显式启用后创建邮件运行时基础设施。
      */
     @Configuration(proxyBeanMethods = false)
-    @ConditionalOnProperty(prefix = "letool.mail", name = "enabled", havingValue = "true")
+    @ConditionalOnProperty(
+            prefix = "letool.mail",
+            name = "enabled",
+            havingValue = "true"
+    )
     static class MailInfrastructureConfiguration {
 
         /**
-         * 创建邮件发送器 Bean。
+         * 创建 Jakarta Mail 默认发送器。
          *
-         * <p>基于 {@code properties} 中的活跃账户配置构建 {@link DefaultMailSender} 实例。
-         * 日志会记录当前使用的 SMTP 主机和协议信息，便于启动时排查配置问题。</p>
+         * <p>创建前解析默认账户，使缺失或不合法配置在启动阶段失败。
+         * 用户提供自定义 {@link MailSender} 时本方法不会执行。</p>
          *
-         * @param properties 邮件配置属性（由 Spring Boot 自动绑定）
-         * @return 邮件发送器实例
+         * @param properties 邮件配置
+         * @return 默认邮件发送器
          */
         @Bean
         @ConditionalOnMissingBean
         public MailSender mailSender(MailProperties properties) {
-            log.info("Initializing mail sender: host={}, protocol={}",
-                    properties.getActiveAccount().getHost(), properties.getActiveAccount().getProtocol());
+            properties.getActiveAccount();
             return new DefaultMailSender(properties);
         }
 
         /**
-         * 创建邮件模板 Bean — 用户操作邮件的核心入口。
+         * 创建邮件构建和发送门面。
          *
-         * <p>{@link MailTemplate} 封装了 {@link MailSender} 与异步线程池，
-         * 提供 Builder 模式的链式调用 API，简化邮件构建与发送流程。</p>
-         *
-         * @param mailSender 邮件发送器
-         * @param properties 邮件配置属性（用于读取异步线程池大小）
-         * @return 邮件模板实例
+         * @param mailSender 实际邮件发送器
+         * @param properties 邮件配置
+         * @return 邮件门面
+         * @throws MailException 当异步线程数不合法时抛出
          */
         @Bean
         @ConditionalOnMissingBean(MailTemplate.class)
-        public MailTemplate mailTemplate(MailSender mailSender, MailProperties properties) {
-            return new MailTemplate(mailSender, properties.getAsyncPoolSize());
+        public MailTemplate mailTemplate(
+                MailSender mailSender,
+                MailProperties properties) {
+            if (properties.getAsyncPoolSize() <= 0) {
+                throw MailException.configurationInvalid("async-pool-size");
+            }
+            if (properties.getAsyncQueueCapacity() <= 0) {
+                throw MailException.configurationInvalid(
+                        "async-queue-capacity"
+                );
+            }
+            return new MailTemplate(
+                    mailSender,
+                    properties.getAsyncPoolSize(),
+                    properties.getAsyncQueueCapacity()
+            );
         }
     }
 }

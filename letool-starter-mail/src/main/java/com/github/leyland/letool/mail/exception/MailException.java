@@ -1,56 +1,117 @@
 package com.github.leyland.letool.mail.exception;
 
-// ======================== 类级别说明 ========================
+import com.github.leyland.letool.exception.core.SystemException;
+
+import java.io.Serial;
 
 /**
- * <p>邮件异常 — 邮件模块所有异常的根类型。</p>
+ * 邮件配置、请求和投递发生故障时抛出的统一异常。
  *
- * <h3>职责</h3>
- * <p>继承自 {@link RuntimeException}（非受检异常），用于在邮件发送失败时向上抛出，
- * 调用方可根据需要决定是否捕获处理。</p>
- *
- * <h3>抛出场景</h3>
- * <ul>
- *   <li>SMTP 服务器连接失败。</li>
- *   <li>身份认证失败。</li>
- *   <li>邮件内容构建失败。</li>
- *   <li>附件文件读取失败。</li>
- *   <li>异步发送过程异常。</li>
- * </ul>
- *
- * <h3>典型用法</h3>
- * <pre>{@code
- * try {
- *     mailTemplate.builder().to("user@example.com").subject("Test").text("内容").send();
- * } catch (MailException e) {
- *     log.error("邮件发送失败: {}", e.getMessage());
- *     // 执行补偿逻辑
- * }
- * }</pre>
- *
- * @author leyland
- * @since 1.0.0
+ * <p>异常仅保留稳定错误码、安全字段名和底层原因链，不会把邮件主题、
+ * 收件人、SMTP 地址、凭据或底层实现消息拼接到对外消息中。</p>
  */
-public class MailException extends RuntimeException {
+public final class MailException extends SystemException {
 
-    // ======================== 构造方法 ========================
+    @Serial
+    private static final long serialVersionUID = 1L;
 
     /**
-     * 使用消息文本构造邮件异常。
+     * 创建邮件模块统一异常。
      *
-     * @param message 错误消息
+     * @param errorCode 邮件稳定错误码
+     * @param messageArgs 安全的消息模板参数
+     * @param cause 底层异常；没有底层异常时允许为 {@code null}
      */
-    public MailException(String message) {
-        super(message);
+    private MailException(
+            MailErrorCode errorCode,
+            Object[] messageArgs,
+            Throwable cause) {
+        super(errorCode, messageArgs, null, cause);
     }
 
     /**
-     * 使用消息文本和原因异常构造邮件异常。
+     * 创建邮件配置错误。
      *
-     * @param message 错误消息
-     * @param cause   导致此异常的根本原因
+     * @param field 不合法的安全配置字段名
+     * @return 带配置错误码的异常
+     * @throws IllegalArgumentException 当字段名为空白时抛出
      */
-    public MailException(String message, Throwable cause) {
-        super(message, cause);
+    public static MailException configurationInvalid(String field) {
+        return new MailException(
+                MailErrorCode.CONFIGURATION_INVALID,
+                new Object[]{requireField(field)},
+                null
+        );
+    }
+
+    /**
+     * 创建邮件请求错误。
+     *
+     * @param field 不合法的安全请求字段名
+     * @return 带请求错误码的异常
+     * @throws IllegalArgumentException 当字段名为空白时抛出
+     */
+    public static MailException requestInvalid(String field) {
+        return new MailException(
+                MailErrorCode.REQUEST_INVALID,
+                new Object[]{requireField(field)},
+                null
+        );
+    }
+
+    /**
+     * 创建邮件投递失败异常。
+     *
+     * @param cause 底层构造、连接或投递异常
+     * @return 带投递错误码和原始原因链的异常
+     * @throws IllegalArgumentException 当原因为 {@code null} 时抛出
+     */
+    public static MailException deliveryFailed(Throwable cause) {
+        return new MailException(
+                MailErrorCode.DELIVERY_FAILED,
+                null,
+                requireCause(cause)
+        );
+    }
+
+    /**
+     * 创建异步执行器不可用异常。
+     *
+     * @param cause 底层任务拒绝异常
+     * @return 带异步错误码和原始原因链的异常
+     * @throws IllegalArgumentException 当原因为 {@code null} 时抛出
+     */
+    public static MailException asyncUnavailable(Throwable cause) {
+        return new MailException(
+                MailErrorCode.ASYNC_UNAVAILABLE,
+                null,
+                requireCause(cause)
+        );
+    }
+
+    /**
+     * 校验可以安全公开的字段名。
+     *
+     * @param field 待校验字段名
+     * @return 已校验字段名
+     */
+    private static String requireField(String field) {
+        if (field == null || field.isBlank()) {
+            throw new IllegalArgumentException("field must not be blank");
+        }
+        return field;
+    }
+
+    /**
+     * 校验需要保留的底层异常。
+     *
+     * @param cause 底层异常
+     * @return 已校验异常
+     */
+    private static Throwable requireCause(Throwable cause) {
+        if (cause == null) {
+            throw new IllegalArgumentException("cause must not be null");
+        }
+        return cause;
     }
 }

@@ -7,10 +7,10 @@ import java.time.LocalDateTime;
 /**
  * <p>邮件响应模型 — 封装一次邮件发送操作的结果。</p>
  *
- * <h3>职责</h3>
+ * <h2>职责</h2>
  * <p>{@code MailResponse} 作为邮件发送操作的返回值，提供对发送结果的统一访问接口。</p>
  *
- * <h3>字段说明</h3>
+ * <h2>字段说明</h2>
  * <ul>
  *   <li><b>success</b> — 发送是否成功。</li>
  *   <li><b>messageId</b> — 成功时返回的邮件消息 ID（由 SMTP 服务器分配）。</li>
@@ -18,14 +18,14 @@ import java.time.LocalDateTime;
  *   <li><b>sendTime</b> — 响应对象的创建时间（近似于发送完成时间）。</li>
  * </ul>
  *
- * <h3>使用方式</h3>
+ * <h2>使用方式</h2>
  * <p>本类不提供公开构造方法，只能通过静态工厂方法创建：</p>
  * <ul>
  *   <li>{@link #success(String)} — 发送成功时使用。</li>
  *   <li>{@link #fail(String)} — 发送失败时使用。</li>
  * </ul>
  *
- * <h3>典型用法</h3>
+ * <h2>典型用法</h2>
  * <pre>{@code
  * MailResponse response = mailTemplate.builder()
  *     .to("user@example.com")

@@ -13,16 +13,16 @@
       "defaultValue": "primary"
     },
     {
-      "name": "letool.mail.async",
-      "type": "java.lang.Boolean",
-      "description": "是否启用异步发送。",
-      "defaultValue": false
-    },
-    {
       "name": "letool.mail.async-pool-size",
       "type": "java.lang.Integer",
       "description": "异步发送线程池大小。",
       "defaultValue": 4
+    },
+    {
+      "name": "letool.mail.async-queue-capacity",
+      "type": "java.lang.Integer",
+      "description": "等待执行的最大异步邮件任务数，队列满时拒绝新任务。",
+      "defaultValue": 1000
     },
     {
       "name": "letool.mail.accounts.*.host",
@@ -79,6 +79,24 @@
       "name": "letool.mail.accounts.*.personal",
       "type": "java.lang.String",
       "description": "发件人显示名称。"
+    },
+    {
+      "name": "letool.mail.accounts.*.connection-timeout-millis",
+      "type": "java.lang.Integer",
+      "description": "建立 SMTP 连接的超时时间，单位毫秒。",
+      "defaultValue": 10000
+    },
+    {
+      "name": "letool.mail.accounts.*.read-timeout-millis",
+      "type": "java.lang.Integer",
+      "description": "等待 SMTP 响应的超时时间，单位毫秒。",
+      "defaultValue": 10000
+    },
+    {
+      "name": "letool.mail.accounts.*.write-timeout-millis",
+      "type": "java.lang.Integer",
+      "description": "写入 SMTP 数据的超时时间，单位毫秒。",
+      "defaultValue": 10000
     }
   ],
   "hints": [

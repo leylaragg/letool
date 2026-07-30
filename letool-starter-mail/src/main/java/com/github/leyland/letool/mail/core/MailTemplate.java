@@ -3,346 +3,342 @@ package com.github.leyland.letool.mail.core;
 import com.github.leyland.letool.mail.exception.MailException;
 import com.github.leyland.letool.mail.model.MailRequest;
 import com.github.leyland.letool.mail.model.MailResponse;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-
-// ======================== 类级别说明 ========================
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * <p>邮件模板 — 用户操作邮件模块的<strong>核心入口类</strong>，提供 Builder 模式的链式调用 API。</p>
+ * 面向调用方的邮件构建和发送门面。
  *
- * <h3>设计理念</h3>
- * <p>{@code MailTemplate} 封装了底层 {@link MailSender} 和异步线程池，
- * 将复杂的邮件构建过程抽象为直观的链式调用，同时支持同步和异步两种发送方式。</p>
+ * <p>门面保留简单的链式构建、同步发送和异步发送能力。每次提交都会先调用
+ * {@link MailRequest#snapshot()} 创建已校验的不可变快照，再交给可替换的
+ * {@link MailSender}，因此 Builder 和直接传入的请求可以在提交后继续安全复用。</p>
  *
- * <h3>核心能力</h3>
- * <ul>
- *   <li><b>链式构建</b>：通过内部类 {@link MailRequestBuilder} 逐步设置邮件各项属性。</li>
- *   <li><b>同步发送</b>：调用 {@link MailRequestBuilder#send()} 阻塞等待发送结果。</li>
- *   <li><b>异步发送</b>：调用 {@link MailRequestBuilder#sendAsync()} 立即返回 {@link CompletableFuture}。</li>
- *   <li><b>直接发送</b>：对于已构建好的 {@link MailRequest}，可直接调用 {@link #send(MailRequest)}。</li>
- *   <li><b>附件支持</b>：通过 {@link MailRequestBuilder#attachment(String, File)} 添加文件附件。</li>
- *   <li><b>模板变量</b>：支持向邮件模板注入变量，配合模板引擎使用。</li>
- * </ul>
- *
- * <h3>典型用法 — 同步发送纯文本邮件</h3>
- * <pre>{@code
- * @Autowired
- * private MailTemplate mailTemplate;
- *
- * public void notifyUser() {
- *     MailResponse response = mailTemplate.builder()
- *         .to("user@example.com")
- *         .subject("密码重置通知")
- *         .text("您的密码已成功重置。")
- *         .send();
- *
- *     if (response.isSuccess()) {
- *         log.info("邮件发送成功, messageId={}", response.getMessageId());
- *     }
- * }
- * }</pre>
- *
- * <h3>典型用法 — 异步发送 HTML 邮件</h3>
- * <pre>{@code
- * public void broadcastNewsletter() {
- *     List<String> recipients = List.of("user1@example.com", "user2@example.com");
- *     for (String recipient : recipients) {
- *         mailTemplate.builder()
- *             .to(recipient)
- *             .cc("archive@example.com")
- *             .subject("本周资讯")
- *             .html("<h1>本周要闻</h1><p>欢迎阅读本周资讯。</p>")
- *             .sendAsync()
- *             .thenAccept(response -> {
- *                 if (response.isSuccess()) {
- *                     log.info("已发送至: {}", recipient);
- *                 }
- *             });
- *     }
- * }
- * }</pre>
- *
- * <h3>典型用法 — 带附件与模板变量</h3>
- * <pre>{@code
- * mailTemplate.builder()
- *     .to("report@example.com")
- *     .subject("月度报告")
- *     .template("monthly-report")
- *     .variable("userName", "张三")
- *     .variable("reportDate", "2026-06")
- *     .attachment("report.pdf", new File("/path/to/report.pdf"))
- *     .send();
- * }</pre>
- *
- * <h3>典型用法 — 自定义发件人</h3>
- * <pre>{@code
- * mailTemplate.builder()
- *     .from("support@example.com", "技术支持")
- *     .to("customer@example.com")
- *     .subject("工单处理通知")
- *     .text("您的工单 #1234 已被受理。")
- *     .send();
- * }</pre>
- *
- * <h3>线程安全</h3>
- * <p>本类本身是线程安全的。内部异步执行器为固定大小线程池，
- * 多个线程共享同一个 Builder 实例可能产生竞态条件 —
- * 建议每次调用时创建新的 Builder：{@code mailTemplate.builder()...}。</p>
- *
- * <h3>异常处理</h3>
- * <ul>
- *   <li>同步发送：异常直接向上抛出（{@link MailException}）。</li>
- *   <li>异步发送：异常封装在 {@link CompletableFuture} 中，调用方需自行处理。</li>
- * </ul>
- *
- * @author leyland
- * @since 1.0.0
+ * <p>实例持有独立固定线程池。Spring 会在 Bean 销毁时调用 {@link #close()}；
+ * 独立创建实例的调用方也必须主动关闭。</p>
  */
 public class MailTemplate implements AutoCloseable {
 
-    // ======================== 日志与成员变量 ========================
+    /** 两参数构造器使用的默认异步队列容量。 */
+    private static final int DEFAULT_ASYNC_QUEUE_CAPACITY = 1000;
 
-    private static final Logger log = LoggerFactory.getLogger(MailTemplate.class);
-
-    /** 底层邮件发送器 */
+    /** 底层可替换邮件发送器。 */
     private final MailSender mailSender;
 
-    /** 异步发送专用线程池 */
+    /** 异步投递专用执行器。 */
     private final ExecutorService asyncExecutor;
 
-    // ======================== 构造方法 ========================
-
     /**
-     * 构造邮件模板实例。
+     * 创建邮件门面。
      *
-     * @param mailSender    邮件发送器
-     * @param asyncPoolSize 异步发送线程池大小
+     * @param mailSender 底层发送器，不允许为 {@code null}
+     * @param asyncPoolSize 异步线程数，必须大于 0
+     * @throws IllegalArgumentException 当参数不合法时抛出
      */
     public MailTemplate(MailSender mailSender, int asyncPoolSize) {
-        this.mailSender = mailSender;
-        this.asyncExecutor = Executors.newFixedThreadPool(asyncPoolSize);
+        this(mailSender, asyncPoolSize, DEFAULT_ASYNC_QUEUE_CAPACITY);
     }
 
-    // ======================== 公有 API ========================
+    /**
+     * 创建使用有界异步队列的邮件门面。
+     *
+     * @param mailSender 底层发送器，不允许为 {@code null}
+     * @param asyncPoolSize 异步线程数，必须大于 0
+     * @param asyncQueueCapacity 等待执行的最大异步任务数，必须大于 0
+     * @throws IllegalArgumentException 当参数不合法时抛出
+     */
+    public MailTemplate(
+            MailSender mailSender,
+            int asyncPoolSize,
+            int asyncQueueCapacity) {
+        if (mailSender == null) {
+            throw new IllegalArgumentException("mailSender must not be null");
+        }
+        if (asyncPoolSize <= 0) {
+            throw new IllegalArgumentException(
+                    "asyncPoolSize must be greater than zero"
+            );
+        }
+        if (asyncQueueCapacity <= 0) {
+            throw new IllegalArgumentException(
+                    "asyncQueueCapacity must be greater than zero"
+            );
+        }
+        this.mailSender = mailSender;
+        this.asyncExecutor = new ThreadPoolExecutor(
+                asyncPoolSize,
+                asyncPoolSize,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(asyncQueueCapacity),
+                mailThreadFactory(),
+                new ThreadPoolExecutor.AbortPolicy()
+        );
+    }
 
     /**
-     * 创建邮件请求构建器 — 使用 Builder 链式 API 的入口。
+     * 创建新的邮件请求构建器。
      *
-     * <pre>{@code
-     * mailTemplate.builder()
-     *     .to("user@example.com")
-     *     .subject("Hello")
-     *     .text("Content")
-     *     .send();
-     * }</pre>
-     *
-     * @return 新的 {@link MailRequestBuilder} 实例
+     * @return 与当前门面关联的独立构建器
      */
     public MailRequestBuilder builder() {
         return new MailRequestBuilder(this);
     }
 
     /**
-     * 直接发送已构建好的邮件请求（同步阻塞）。
+     * 同步发送邮件请求。
      *
-     * <p>适用于需要手动组装 {@link MailRequest} 再发送的场景。</p>
-     *
-     * @param request 邮件请求
-     * @return 邮件响应
+     * @param request 待发送请求，不允许为 {@code null}
+     * @return 底层发送器返回的非空响应
+     * @throws MailException 当请求不合法或底层投递失败时抛出
      */
     public MailResponse send(MailRequest request) {
-        return mailSender.send(request);
+        return sendSnapshot(requireRequest(request).snapshot());
     }
 
     /**
-     * 异步发送已构建好的邮件请求，立即返回 {@link CompletableFuture}。
+     * 异步发送邮件请求。
      *
-     * <p>发送过程在异步线程池中执行，不阻塞调用线程。</p>
+     * <p>请求会在当前调用线程中完成校验和快照。任务提交被拒绝时返回一个失败的
+     * {@link CompletableFuture}，不会泄露执行器实现异常。</p>
      *
-     * @param request 邮件请求
-     * @return 包含 {@link MailResponse} 的异步结果
+     * @param request 待发送请求，不允许为 {@code null}
+     * @return 邮件投递异步结果
+     * @throws MailException 当请求本身不合法时同步抛出
      */
     public CompletableFuture<MailResponse> sendAsync(MailRequest request) {
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                return mailSender.send(request);
-            } catch (Exception e) {
-                log.error("Async mail send failed: {}", e.getMessage(), e);
-                throw new MailException("Async mail send failed", e);
-            }
-        }, asyncExecutor);
+        MailRequest snapshot = requireRequest(request).snapshot();
+        try {
+            return CompletableFuture.supplyAsync(
+                    () -> sendSnapshot(snapshot),
+                    asyncExecutor
+            );
+        } catch (RejectedExecutionException exception) {
+            return CompletableFuture.failedFuture(
+                    MailException.asyncUnavailable(exception)
+            );
+        }
     }
 
     /**
-     * Shuts down the internal async mail executor.
-     *
-     * <p>Spring can infer this method as a bean destroy callback, and standalone users may call it
-     * directly when a manually created {@code MailTemplate} is no longer needed.</p>
+     * 停止接收新的异步任务，已提交任务仍会继续执行。
      */
     @Override
     public void close() {
         asyncExecutor.shutdown();
     }
 
-    // ======================== 内部类：邮件请求构建器 ========================
+    /**
+     * 将已冻结请求交给底层发送器并统一异常。
+     *
+     * @param snapshot 已校验请求快照
+     * @return 非空邮件响应
+     */
+    private MailResponse sendSnapshot(MailRequest snapshot) {
+        try {
+            MailResponse response = mailSender.send(snapshot);
+            if (response == null) {
+                throw new IllegalStateException("mailSender returned null");
+            }
+            return response;
+        } catch (MailException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw MailException.deliveryFailed(exception);
+        }
+    }
 
     /**
-     * <p>邮件请求的 Builder 模式构建器 — 用于以链式调用的方式逐步构建并发送邮件。</p>
+     * 校验直接传入的请求。
      *
-     * <h3>设计说明</h3>
-     * <p>构建器通过 {@link MailTemplate#builder()} 创建，持有对 Template 的引用，
-     * 因此构建完成后可直接调用 {@link #send()} 或 {@link #sendAsync()} 触达底层发送器。</p>
-     *
-     * <h3>方法链约定</h3>
-     * <p>除 {@link #send()} 和 {@link #sendAsync()} 外，所有设置方法均返回 {@code this}，
-     * 实现流畅的链式调用风格。</p>
-     *
-     * @see MailTemplate#builder()
+     * @param request 待校验请求
+     * @return 非空请求
      */
-    public static class MailRequestBuilder {
+    private static MailRequest requireRequest(MailRequest request) {
+        if (request == null) {
+            throw MailException.requestInvalid("request");
+        }
+        return request;
+    }
 
-        /** 关联的邮件模板实例，用于最终触发发送 */
+    /**
+     * 创建带稳定名称的邮件异步线程工厂。
+     *
+     * @return 邮件线程工厂
+     */
+    private static ThreadFactory mailThreadFactory() {
+        AtomicInteger sequence = new AtomicInteger();
+        return task -> {
+            Thread thread = new Thread(
+                    task,
+                    "letool-mail-async-" + sequence.incrementAndGet()
+            );
+            thread.setDaemon(false);
+            return thread;
+        };
+    }
+
+    /**
+     * 邮件请求链式构建器。
+     *
+     * <p>构建器本身不是线程安全对象。每个发送流程应通过
+     * {@link MailTemplate#builder()} 获取独立实例。</p>
+     */
+    public static final class MailRequestBuilder {
+
+        /** 最终执行发送的邮件门面。 */
         private final MailTemplate template;
 
-        /** 正在构建的邮件请求对象 */
+        /** 当前正在构建的可变请求。 */
         private final MailRequest request = new MailRequest();
 
         /**
-         * 私有构造方法，仅由外部类调用。
+         * 创建与指定门面关联的构建器。
          *
-         * @param template 邮件模板实例
+         * @param template 邮件门面
          */
         private MailRequestBuilder(MailTemplate template) {
             this.template = template;
         }
 
-        // ---- 发件人设置 ----
-
         /**
-         * 设置发件人邮箱地址。
+         * 选择本次投递使用的 SMTP 账户。
          *
-         * @param from 发件人邮箱地址
-         * @return 当前构建器实例（链式调用）
+         * @param accountName 账户配置名称
+         * @return 当前构建器
          */
-        public MailRequestBuilder from(String from) { request.setFrom(from); return this; }
-
-        /**
-         * 设置发件人邮箱地址及显示名称。
-         *
-         * @param from     发件人邮箱地址
-         * @param personal 发件人显示名称（如"系统通知"）
-         * @return 当前构建器实例（链式调用）
-         */
-        public MailRequestBuilder from(String from, String personal) {
-            request.setFrom(from); request.setPersonal(personal); return this;
+        public MailRequestBuilder account(String accountName) {
+            request.setAccountName(accountName);
+            return this;
         }
 
-        // ---- 收件人设置 ----
+        /**
+         * 设置请求级发件人地址。
+         *
+         * @param from 发件人地址
+         * @return 当前构建器
+         */
+        public MailRequestBuilder from(String from) {
+            request.setFrom(from);
+            return this;
+        }
 
         /**
-         * 添加收件人地址（可一次添加多个）。
+         * 设置请求级发件人地址和显示名称。
          *
-         * @param addresses 收件人邮箱地址数组
-         * @return 当前构建器实例（链式调用）
+         * @param from 发件人地址
+         * @param personal 显示名称
+         * @return 当前构建器
          */
-        public MailRequestBuilder to(String... addresses) { request.addTo(addresses); return this; }
+        public MailRequestBuilder from(String from, String personal) {
+            request.setFrom(from);
+            request.setPersonal(personal);
+            return this;
+        }
 
         /**
-         * 添加抄送地址（可一次添加多个）。
+         * 添加主收件人。
          *
-         * @param addresses 抄送邮箱地址数组
-         * @return 当前构建器实例（链式调用）
+         * @param addresses 收件人地址
+         * @return 当前构建器
          */
-        public MailRequestBuilder cc(String... addresses) { request.addCc(addresses); return this; }
+        public MailRequestBuilder to(String... addresses) {
+            request.addTo(addresses);
+            return this;
+        }
 
         /**
-         * 添加密送地址（可一次添加多个）。
+         * 添加抄送地址。
          *
-         * @param addresses 密送邮箱地址数组
-         * @return 当前构建器实例（链式调用）
+         * @param addresses 抄送地址
+         * @return 当前构建器
          */
-        public MailRequestBuilder bcc(String... addresses) { request.addBcc(addresses); return this; }
+        public MailRequestBuilder cc(String... addresses) {
+            request.addCc(addresses);
+            return this;
+        }
 
-        // ---- 主题与内容 ----
+        /**
+         * 添加密送地址。
+         *
+         * @param addresses 密送地址
+         * @return 当前构建器
+         */
+        public MailRequestBuilder bcc(String... addresses) {
+            request.addBcc(addresses);
+            return this;
+        }
 
         /**
          * 设置邮件主题。
          *
          * @param subject 邮件主题
-         * @return 当前构建器实例（链式调用）
+         * @return 当前构建器
          */
-        public MailRequestBuilder subject(String subject) { request.setSubject(subject); return this; }
+        public MailRequestBuilder subject(String subject) {
+            request.setSubject(subject);
+            return this;
+        }
 
         /**
-         * 设置纯文本正文内容。
+         * 设置纯文本正文。
          *
-         * <p>调用此方法后，邮件内容类型将被设为 {@code text/plain}。</p>
-         *
-         * @param content 纯文本内容
-         * @return 当前构建器实例（链式调用）
+         * @param content 纯文本正文
+         * @return 当前构建器
          */
-        public MailRequestBuilder text(String content) { request.setContent(content); request.setHtml(false); return this; }
+        public MailRequestBuilder text(String content) {
+            request.setContent(content);
+            request.setHtml(false);
+            return this;
+        }
 
         /**
-         * 设置 HTML 格式正文内容。
+         * 设置 HTML 正文。
          *
-         * <p>调用此方法后，邮件内容类型将被设为 {@code text/html}。</p>
-         *
-         * @param content HTML 格式内容
-         * @return 当前构建器实例（链式调用）
+         * @param content HTML 正文
+         * @return 当前构建器
          */
-        public MailRequestBuilder html(String content) { request.setContent(content); request.setHtml(true); return this; }
-
-        // ---- 模板与变量 ----
-
-        /**
-         * 添加模板变量，用于与模板引擎配合实现动态邮件内容。
-         *
-         * @param key   变量名
-         * @param value 变量值
-         * @return 当前构建器实例（链式调用）
-         */
-        public MailRequestBuilder variable(String key, Object value) { request.addVariable(key, value); return this; }
-
-        /**
-         * 设置邮件模板名称，用于与模板引擎配合渲染邮件内容。
-         *
-         * @param templateName 模板名称
-         * @return 当前构建器实例（链式调用）
-         */
-        public MailRequestBuilder template(String templateName) { request.setTemplateName(templateName); return this; }
-
-        // ---- 附件 ----
+        public MailRequestBuilder html(String content) {
+            request.setContent(content);
+            request.setHtml(true);
+            return this;
+        }
 
         /**
          * 添加文件附件。
          *
-         * @param name 附件显示名称（如 {@code "report.pdf"}）
+         * @param name 附件显示名称
          * @param file 附件文件
-         * @return 当前构建器实例（链式调用）
+         * @return 当前构建器
          */
-        public MailRequestBuilder attachment(String name, File file) { request.addAttachment(name, file); return this; }
-
-        // ---- 发送方法 ----
-
-        /**
-         * 构建邮件请求并同步发送，阻塞等待发送结果。
-         *
-         * @return 邮件响应，包含成功状态及消息 ID
-         */
-        public MailResponse send() { return template.send(request); }
+        public MailRequestBuilder attachment(String name, File file) {
+            request.addAttachment(name, file);
+            return this;
+        }
 
         /**
-         * 构建邮件请求并异步发送，不阻塞调用线程。
+         * 构建快照并同步发送。
          *
-         * @return 包含 {@link MailResponse} 的异步结果，可通过 {@code thenAccept} 等方式处理结果
+         * @return 邮件发送响应
          */
-        public CompletableFuture<MailResponse> sendAsync() { return template.sendAsync(request); }
+        public MailResponse send() {
+            return template.send(request);
+        }
+
+        /**
+         * 构建快照并异步发送。
+         *
+         * @return 邮件发送异步结果
+         */
+        public CompletableFuture<MailResponse> sendAsync() {
+            return template.sendAsync(request);
+        }
     }
 }

@@ -45,7 +45,7 @@
 | **letool-starter-swagger** | API 文档 —— Knife4j + SpringDoc，自动配置、离线导出 | web |
 | **letool-starter-file** | 文件操作 —— 上传下载、FTP/SFTP/MinIO/OSS、魔数检测 | tool |
 | **letool-starter-excel** | Excel 操作 —— EasyExcel 原生能力薄封装、批量读取与轻量校验 | exception |
-| **letool-starter-mail** | 邮件发送 —— 默认不启用，显式开启后提供模板邮件、异步发送、多账户 | tool |
+| **letool-starter-mail** | 邮件发送 —— 显式启用的 Jakarta Mail、多账户、附件与同步/异步投递 | exception |
 | **letool-starter-distributed-lock** | 分布式锁 —— Redis 后端、`LockTemplate`、`@Lock`/`@Idempotent`；可替换 `DistributedLock` | tool |
 | **letool-starter-rule** | 规则引擎 —— LiteFlow 封装、规则链编排、Groovy 脚本 | tool, data |
 | **letool-starter-net** | 网络通信 —— 默认不启用运行时 Bean，显式开启 TCP/HTTP/网关适配器 | tool |

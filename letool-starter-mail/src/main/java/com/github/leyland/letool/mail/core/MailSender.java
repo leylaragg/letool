@@ -3,38 +3,24 @@ package com.github.leyland.letool.mail.core;
 import com.github.leyland.letool.mail.model.MailRequest;
 import com.github.leyland.letool.mail.model.MailResponse;
 
-// ======================== 类级别说明 ========================
-
 /**
- * <p>邮件发送器接口 — 定义邮件发送的核心契约。</p>
+ * 邮件投递实现的用户扩展接口。
  *
- * <h3>职责</h3>
- * <ul>
- *   <li>接收一个 {@link MailRequest} 对象，执行邮件发送并返回 {@link MailResponse}。</li>
- *   <li>所有邮件发送实现（如同步、异步、Mock 等）均应实现此接口。</li>
- * </ul>
+ * <p>默认实现使用 Jakarta Mail 和 SMTP。业务项目可以注册自己的
+ * {@code MailSender} Bean 接管投递，例如接入内部邮件网关、审计代理或测试替身。
+ * 自动配置会对用户实现退让，不要求自定义发送器同时配置 Letool SMTP 账户。</p>
  *
- * <h3>典型实现</h3>
- * <ul>
- *   <li>{@link DefaultMailSender} — 基于 Jakarta Mail 的默认实现。</li>
- * </ul>
- *
- * <h3>扩展方式</h3>
- * <p>用户可通过实现此接口并注册为 Spring Bean（配合 {@code @Primary}）来完全接管邮件发送逻辑，
- * 例如对接企业微信、钉钉等非 SMTP 通道。</p>
- *
- * @author leyland
- * @since 1.0.0
+ * <p>通过 {@link MailTemplate} 调用时，传入实现的是已经校验且不可修改的
+ * {@link MailRequest} 快照。实现类不应尝试修改请求，也不应返回 {@code null}。</p>
  */
+@FunctionalInterface
 public interface MailSender {
 
-    // ======================== 方法定义 ========================
-
     /**
-     * 发送邮件。
+     * 投递一封邮件。
      *
-     * @param request 邮件请求，包含收件人、主题、内容、附件等完整信息
-     * @return 邮件响应，包含成功状态、消息 ID、错误信息等
+     * @param request 已校验的不可变邮件请求
+     * @return 非空邮件响应
      */
     MailResponse send(MailRequest request);
 }

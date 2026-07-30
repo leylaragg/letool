@@ -1,259 +1,169 @@
 package com.github.leyland.letool.mail.model;
 
+import com.github.leyland.letool.mail.exception.MailException;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
-import java.io.File;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * MailRequest 模型单元测试。
- *
- * @author leyland
+ * {@link MailRequest} 构建、校验和快照测试。
  */
-@DisplayName("MailRequest 邮件请求模型测试")
+@DisplayName("MailRequest 请求模型测试")
 class MailRequestTest {
 
-    // ======================== 基本字段 Getter / Setter ========================
+    @TempDir
+    Path tempDir;
 
-    @Nested
-    @DisplayName("基本字段 Getter / Setter 测试")
-    class BasicFieldTests {
+    @Test
+    @DisplayName("应保存账户、收件人、正文和附件")
+    void shouldStoreMailFields() throws Exception {
+        Path attachment = Files.writeString(tempDir.resolve("报告.txt"), "content");
+        MailRequest request = validRequest();
+        request.setAccountName("marketing");
+        request.setFrom("support@example.com");
+        request.setPersonal("技术支持");
+        request.addCc("audit@example.com");
+        request.addBcc("archive@example.com");
+        request.setHtml(true);
+        request.addAttachment("报告.txt", attachment.toFile());
 
-        @Test
-        @DisplayName("应正确设置和获取 from 字段")
-        void shouldSetAndGetFrom() {
-            MailRequest request = new MailRequest();
-            request.setFrom("sender@example.com");
-            assertEquals("sender@example.com", request.getFrom());
-        }
-
-        @Test
-        @DisplayName("应正确设置和获取 personal 字段")
-        void shouldSetAndGetPersonal() {
-            MailRequest request = new MailRequest();
-            request.setPersonal("系统通知");
-            assertEquals("系统通知", request.getPersonal());
-        }
-
-        @Test
-        @DisplayName("应正确设置和获取 subject 字段")
-        void shouldSetAndGetSubject() {
-            MailRequest request = new MailRequest();
-            request.setSubject("会议提醒");
-            assertEquals("会议提醒", request.getSubject());
-        }
-
-        @Test
-        @DisplayName("应正确设置和获取 content 字段")
-        void shouldSetAndGetContent() {
-            MailRequest request = new MailRequest();
-            request.setContent("这是一封测试邮件");
-            assertEquals("这是一封测试邮件", request.getContent());
-        }
-
-        @Test
-        @DisplayName("应正确设置和获取 html 标志")
-        void shouldSetAndGetHtmlFlag() {
-            MailRequest request = new MailRequest();
-            assertFalse(request.isHtml(), "默认应为纯文本模式");
-
-            request.setHtml(true);
-            assertTrue(request.isHtml(), "设置为 HTML 后应返回 true");
-        }
-
-        @Test
-        @DisplayName("应正确设置和获取 templateName 字段")
-        void shouldSetAndGetTemplateName() {
-            MailRequest request = new MailRequest();
-            request.setTemplateName("welcome-email");
-            assertEquals("welcome-email", request.getTemplateName());
-        }
-
-        @Test
-        @DisplayName("新创建的 MailRequest 各字段应有合理默认值")
-        void shouldHaveReasonableDefaults() {
-            MailRequest request = new MailRequest();
-            assertNull(request.getFrom());
-            assertNull(request.getPersonal());
-            assertNull(request.getSubject());
-            assertNull(request.getContent());
-            assertNull(request.getTemplateName());
-            assertFalse(request.isHtml());
-            assertNotNull(request.getTo());
-            assertNotNull(request.getCc());
-            assertNotNull(request.getBcc());
-            assertNotNull(request.getVariables());
-            assertNotNull(request.getAttachments());
-            assertTrue(request.getTo().isEmpty());
-            assertTrue(request.getCc().isEmpty());
-            assertTrue(request.getBcc().isEmpty());
-            assertTrue(request.getVariables().isEmpty());
-            assertTrue(request.getAttachments().isEmpty());
-        }
+        assertThat(request.getAccountName()).isEqualTo("marketing");
+        assertThat(request.getFrom()).isEqualTo("support@example.com");
+        assertThat(request.getPersonal()).isEqualTo("技术支持");
+        assertThat(request.getTo()).containsExactly("user@example.com");
+        assertThat(request.getCc()).containsExactly("audit@example.com");
+        assertThat(request.getBcc()).containsExactly("archive@example.com");
+        assertThat(request.isHtml()).isTrue();
+        assertThat(request.getAttachments()).singleElement().satisfies(value -> {
+            assertThat(value.getName()).isEqualTo("报告.txt");
+            assertThat(value.getFile()).isEqualTo(attachment.toFile());
+        });
     }
 
-    // ======================== 收件人地址管理 ========================
+    @Test
+    @DisplayName("收件人应去重并保持插入顺序")
+    void shouldDeduplicateRecipientsInInsertionOrder() {
+        MailRequest request = validRequest();
 
-    @Nested
-    @DisplayName("收件人地址管理测试")
-    class RecipientManagementTests {
+        request.addTo(
+                "second@example.com",
+                "user@example.com",
+                "third@example.com"
+        );
 
-        @Test
-        @DisplayName("addTo 应正确添加收件人地址")
-        void shouldAddToRecipients() {
-            MailRequest request = new MailRequest();
-            request.addTo("user1@example.com", "user2@example.com");
-            Set<String> to = request.getTo();
-            assertEquals(2, to.size());
-            assertTrue(to.contains("user1@example.com"));
-            assertTrue(to.contains("user2@example.com"));
-        }
-
-        @Test
-        @DisplayName("addCc 应正确添加抄送地址")
-        void shouldAddCcRecipients() {
-            MailRequest request = new MailRequest();
-            request.addCc("cc1@example.com", "cc2@example.com");
-            Set<String> cc = request.getCc();
-            assertEquals(2, cc.size());
-            assertTrue(cc.contains("cc1@example.com"));
-            assertTrue(cc.contains("cc2@example.com"));
-        }
-
-        @Test
-        @DisplayName("addBcc 应正确添加密送地址")
-        void shouldAddBccRecipients() {
-            MailRequest request = new MailRequest();
-            request.addBcc("bcc1@example.com", "bcc2@example.com");
-            Set<String> bcc = request.getBcc();
-            assertEquals(2, bcc.size());
-            assertTrue(bcc.contains("bcc1@example.com"));
-            assertTrue(bcc.contains("bcc2@example.com"));
-        }
-
-        @Test
-        @DisplayName("重复添加同一地址应自动去重")
-        void shouldDeduplicateAddresses() {
-            MailRequest request = new MailRequest();
-            request.addTo("user@example.com");
-            request.addTo("user@example.com");
-            assertEquals(1, request.getTo().size());
-        }
-
-        @Test
-        @DisplayName("收件人地址应保持插入顺序")
-        void shouldPreserveInsertionOrder() {
-            MailRequest request = new MailRequest();
-            request.addTo("c@example.com", "a@example.com", "b@example.com");
-
-            String[] addresses = request.getTo().toArray(new String[0]);
-            assertEquals("c@example.com", addresses[0]);
-            assertEquals("a@example.com", addresses[1]);
-            assertEquals("b@example.com", addresses[2]);
-        }
+        assertThat(request.getTo()).containsExactly(
+                "user@example.com",
+                "second@example.com",
+                "third@example.com"
+        );
     }
 
-    // ======================== 模板变量 ========================
+    @Test
+    @DisplayName("集合访问器不应允许绕过添加方法修改内部状态")
+    void shouldExposeUnmodifiableCollections() {
+        MailRequest request = validRequest();
 
-    @Nested
-    @DisplayName("模板变量管理测试")
-    class VariableManagementTests {
-
-        @Test
-        @DisplayName("addVariable 应正确添加模板变量")
-        void shouldAddVariables() {
-            MailRequest request = new MailRequest();
-            request.addVariable("username", "张三");
-            request.addVariable("code", 123456);
-
-            Map<String, Object> vars = request.getVariables();
-            assertEquals(2, vars.size());
-            assertEquals("张三", vars.get("username"));
-            assertEquals(123456, vars.get("code"));
-        }
-
-        @Test
-        @DisplayName("同名变量重复添加应覆盖旧值")
-        void shouldOverwriteDuplicateVariable() {
-            MailRequest request = new MailRequest();
-            request.addVariable("key", "value1");
-            request.addVariable("key", "value2");
-            assertEquals(1, request.getVariables().size());
-            assertEquals("value2", request.getVariables().get("key"));
-        }
+        assertThatThrownBy(() -> request.getTo().add("other@example.com"))
+                .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> request.getAttachments().clear())
+                .isInstanceOf(UnsupportedOperationException.class);
     }
 
-    // ======================== 附件管理 ========================
+    @Test
+    @DisplayName("快照应与原请求后续修改隔离且自身不可修改")
+    void shouldCreateImmutableSnapshot() {
+        MailRequest request = validRequest();
 
-    @Nested
-    @DisplayName("附件管理测试")
-    class AttachmentManagementTests {
+        MailRequest snapshot = request.snapshot();
+        request.addTo("other@example.com");
+        request.setSubject("修改后的主题");
 
-        @Test
-        @DisplayName("addAttachment 应正确添加附件")
-        void shouldAddAttachments() {
-            MailRequest request = new MailRequest();
-            File file1 = new File("/path/to/report.pdf");
-            File file2 = new File("/path/to/image.png");
-            request.addAttachment("月报.pdf", file1);
-            request.addAttachment("截图.png", file2);
-
-            List<MailRequest.Attachment> attachments = request.getAttachments();
-            assertEquals(2, attachments.size());
-            assertEquals("月报.pdf", attachments.get(0).getName());
-            assertEquals(file1, attachments.get(0).getFile());
-            assertEquals("截图.png", attachments.get(1).getName());
-            assertEquals(file2, attachments.get(1).getFile());
-        }
-
-        @Test
-        @DisplayName("附件内部类 Attachment 应正确存储名称和文件")
-        void attachmentShouldStoreNameAndFile() {
-            File file = new File("/tmp/test.txt");
-            MailRequest.Attachment attachment = new MailRequest.Attachment("测试文件.txt", file);
-            assertEquals("测试文件.txt", attachment.getName());
-            assertEquals(file, attachment.getFile());
-        }
+        assertThat(snapshot.getTo()).containsExactly("user@example.com");
+        assertThat(snapshot.getSubject()).isEqualTo("主题");
+        assertThatThrownBy(() -> snapshot.setSubject("不允许修改"))
+                .isInstanceOf(UnsupportedOperationException.class);
+        assertThat(snapshot.snapshot()).isSameAs(snapshot);
     }
 
-    // ======================== 综合场景 ========================
+    @Test
+    @DisplayName("无效邮箱地址应转换为请求错误")
+    void shouldRejectInvalidRecipientAddress() {
+        MailRequest request = new MailRequest();
 
-    @Nested
-    @DisplayName("综合场景测试")
-    class IntegrationScenarioTests {
+        assertThatThrownBy(() -> request.addTo("not-an-email"))
+                .isInstanceOfSatisfying(MailException.class, exception -> {
+                    assertThat(exception.getCode()).isEqualTo("MAIL_002");
+                    assertThat(exception.getMessage()).contains("to");
+                    assertThat(exception.getMessage()).doesNotContain("not-an-email");
+                });
+    }
 
-        @Test
-        @DisplayName("完整构建一封邮件应包含所有字段")
-        void shouldBuildCompleteEmail() {
-            MailRequest request = new MailRequest();
-            request.setFrom("noreply@company.com");
-            request.setPersonal("系统通知");
-            request.addTo("user@example.com");
-            request.addCc("admin@example.com");
-            request.setSubject("您的订单已发货");
-            request.setContent("<h1>订单状态</h1><p>您的订单 #12345 已发货。</p>");
-            request.setHtml(true);
-            request.addVariable("orderId", "12345");
-            request.addVariable("userName", "李四");
-            request.addAttachment("invoice.pdf", new File("/tmp/invoice.pdf"));
+    @Test
+    @DisplayName("快照必须至少包含一个收件人")
+    void shouldRequireAtLeastOneRecipient() {
+        MailRequest request = new MailRequest();
+        request.setSubject("主题");
+        request.setContent("正文");
 
-            assertEquals("noreply@company.com", request.getFrom());
-            assertEquals("系统通知", request.getPersonal());
-            assertEquals(1, request.getTo().size());
-            assertTrue(request.getTo().contains("user@example.com"));
-            assertEquals(1, request.getCc().size());
-            assertTrue(request.getCc().contains("admin@example.com"));
-            assertEquals("您的订单已发货", request.getSubject());
-            assertTrue(request.getContent().contains("订单状态"));
-            assertTrue(request.isHtml());
-            assertEquals(2, request.getVariables().size());
-            assertEquals(1, request.getAttachments().size());
-        }
+        assertRequestInvalid(request, "recipients");
+    }
+
+    @Test
+    @DisplayName("快照必须包含主题和正文")
+    void shouldRequireSubjectAndContent() {
+        MailRequest missingSubject = new MailRequest();
+        missingSubject.addTo("user@example.com");
+        missingSubject.setContent("正文");
+        assertRequestInvalid(missingSubject, "subject");
+
+        MailRequest missingContent = new MailRequest();
+        missingContent.addTo("user@example.com");
+        missingContent.setSubject("主题");
+        assertRequestInvalid(missingContent, "content");
+    }
+
+    @Test
+    @DisplayName("快照应拒绝不存在或不可读的附件")
+    void shouldRejectUnreadableAttachment() {
+        MailRequest request = validRequest();
+        request.addAttachment(
+                "missing.txt",
+                tempDir.resolve("missing.txt").toFile()
+        );
+
+        assertRequestInvalid(request, "attachments");
+    }
+
+    /**
+     * 创建满足最小发送要求的请求。
+     *
+     * @return 有效邮件请求
+     */
+    private static MailRequest validRequest() {
+        MailRequest request = new MailRequest();
+        request.addTo("user@example.com");
+        request.setSubject("主题");
+        request.setContent("正文");
+        return request;
+    }
+
+    /**
+     * 断言请求快照会产生稳定请求错误。
+     *
+     * @param request 待校验请求
+     * @param field 预期安全字段名
+     */
+    private static void assertRequestInvalid(MailRequest request, String field) {
+        assertThatThrownBy(request::snapshot)
+                .isInstanceOfSatisfying(MailException.class, exception -> {
+                    assertThat(exception.getCode()).isEqualTo("MAIL_002");
+                    assertThat(exception.getMessage()).contains(field);
+                });
     }
 }
