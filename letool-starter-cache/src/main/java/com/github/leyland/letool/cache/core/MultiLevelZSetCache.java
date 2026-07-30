@@ -5,6 +5,7 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.leyland.letool.tool.redis.RedisUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.redis.core.ZSetOperations;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -24,6 +25,9 @@ import java.util.function.Function;
  *
  * <p>适合排行榜、权重排序、优先级队列等“一个业务 key 对应多个带分数成员”的场景。
  * L2 使用 Redis ZSet 原生结构，member 由 RedisTemplate 序列化器处理，score 使用 Redis 原生 double。</p>
+ *
+ * @param <K> 业务 key 类型
+ * @param <V> ZSet 成员类型
  */
 public class MultiLevelZSetCache<K, V> {
 
@@ -56,14 +60,31 @@ public class MultiLevelZSetCache<K, V> {
     /** 首次 Redis 异常进入降级时，通知 CacheManager 记录待恢复缓存。 */
     private final Runnable degradationListener;
 
+    /** L1 命中次数。 */
     private final AtomicLong l1HitCount = new AtomicLong();
+    /** L2 命中次数。 */
     private final AtomicLong l2HitCount = new AtomicLong();
+    /** L1/L2 未命中次数。 */
     private final AtomicLong missCount = new AtomicLong();
+    /** 新增或更新成员计数。 */
     private final AtomicLong addCount = new AtomicLong();
+    /** 删除成员计数。 */
     private final AtomicLong removeCount = new AtomicLong();
 
+    /** Redis L2 当前是否处于降级状态。 */
     private volatile boolean l2Degraded = false;
 
+    /**
+     * 创建 ZSet 二级缓存实例。
+     *
+     * @param config 缓存区域配置
+     * @param redisUtil Redis 操作入口
+     * @param keySerializer 业务 key 序列化函数
+     * @param memberType Redis 成员预期类型
+     * @param invalidationPublisher L1 失效广播发布器
+     * @param instanceId 当前 JVM 实例标识
+     * @param degradationListener 首次降级回调
+     */
     MultiLevelZSetCache(CacheConfig<K, V> config,
                         RedisUtil redisUtil,
                         Function<K, String> keySerializer,
@@ -79,7 +100,10 @@ public class MultiLevelZSetCache<K, V> {
         this.l2Enabled = redisUtil != null && config.isL2Enabled();
         this.strongConsistency = config.isStrongConsistency();
         this.keySerializer = keySerializer == null ? String::valueOf : keySerializer;
-        this.memberType = memberType;
+        this.memberType = resolveMemberType(
+                memberType,
+                config.getValueType()
+        );
         this.invalidationPublisher = invalidationPublisher == null ? CacheInvalidationPublisher.noop() : invalidationPublisher;
         this.instanceId = instanceId == null ? "local" : instanceId;
         this.degradationListener = degradationListener == null ? () -> { } : degradationListener;
@@ -89,20 +113,53 @@ public class MultiLevelZSetCache<K, V> {
                 .build();
     }
 
-    /** 添加或更新一个 ZSet 成员的分数。 */
+    /**
+     * 解析 Redis ZSet 成员的目标类型。
+     *
+     * @param explicitType 调用方显式指定的成员类型
+     * @param configuredType 缓存配置声明的 value 类型
+     * @param <T> 成员类型
+     * @return 目标类型；均未指定时返回 {@code null}
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> Class<T> resolveMemberType(
+            Class<T> explicitType,
+            Class<?> configuredType) {
+        return explicitType != null
+                ? explicitType
+                : (Class<T>) configuredType;
+    }
+
+    /**
+     * 添加或更新一个 ZSet 成员的分数。
+     *
+     * @param key 业务 key；为 {@code null} 时忽略
+     * @param member ZSet 成员；为 {@code null} 时忽略
+     * @param score 成员分数
+     */
     public void add(K key, V member, double score) {
         if (key == null || member == null) {
             return;
         }
-        if (l1Enabled) {
+        addCount.incrementAndGet();
+        Map<V, Double> local =
+                l1Enabled ? l1Cache.getIfPresent(key) : null;
+        // Redis 健康时，局部 add 只更新已有完整快照，不能凭单个成员创建伪完整 L1。
+        boolean storedInL2 = addToRedis(key, member, score);
+        if (local != null) {
+            local.put(member, score);
+        } else if (l1Enabled && !storedInL2) {
             getOrCreateLocalScores(key).put(member, score);
         }
-        addCount.incrementAndGet();
-        addToRedis(key, member, score);
         publishInvalidation(key);
     }
 
-    /** 删除指定 ZSet 成员，并清理当前 JVM 的 L1 快照。 */
+    /**
+     * 删除指定 ZSet 成员，并清理当前 JVM 的 L1 快照。
+     *
+     * @param key 业务 key；为 {@code null} 时忽略
+     * @param member 待删除成员；为 {@code null} 时忽略
+     */
     public void remove(K key, V member) {
         if (key == null || member == null) {
             return;
@@ -118,7 +175,13 @@ public class MultiLevelZSetCache<K, V> {
         publishInvalidation(key);
     }
 
-    /** 获取指定成员的分数；强一致模式下优先读取 Redis。 */
+    /**
+     * 获取指定成员的分数；强一致模式下优先读取 Redis。
+     *
+     * @param key 业务 key
+     * @param member ZSet 成员
+     * @return 成员分数；参数无效或成员不存在时返回 {@code null}
+     */
     public Double score(K key, V member) {
         if (key == null || member == null) {
             return null;
@@ -130,10 +193,18 @@ public class MultiLevelZSetCache<K, V> {
         }
         if (l2Enabled && !l2Degraded) {
             Double score = scoreFromRedis(key, member);
-            if (score != null) {
-                l2HitCount.incrementAndGet();
-                if (l1Enabled) {
-                    getOrCreateLocalScores(key).put(member, score);
+            if (!l2Degraded) {
+                if (score == null) {
+                    missCount.incrementAndGet();
+                } else {
+                    l2HitCount.incrementAndGet();
+                }
+                if (local != null) {
+                    if (score == null) {
+                        local.remove(member);
+                    } else {
+                        local.put(member, score);
+                    }
                 }
                 return score;
             }
@@ -146,7 +217,16 @@ public class MultiLevelZSetCache<K, V> {
         return null;
     }
 
-    /** 获取排名范围内的成员快照；索引语义与 Redis ZRANGE 一致。 */
+    /**
+     * 获取排名范围内的成员快照；索引语义与 Redis ZRANGE 一致。
+     *
+     * <p>Redis 读取使用带分数的批量结果，避免逐成员执行 ZSCORE。</p>
+     *
+     * @param key 业务 key
+     * @param start 起始排名索引，支持负数
+     * @param end 结束排名索引，支持负数且包含该位置
+     * @return 排名范围内的有序成员快照
+     */
     public Set<V> range(K key, long start, long end) {
         if (key == null) {
             return Set.of();
@@ -158,8 +238,13 @@ public class MultiLevelZSetCache<K, V> {
         }
         if (l2Enabled && !l2Degraded) {
             Map<V, Double> scores = rangeFromRedis(key, start, end);
-            if (!scores.isEmpty()) {
-                l2HitCount.incrementAndGet();
+            if (!l2Degraded) {
+                // Redis 成功返回的空 ZSet 同样是权威结果，不能回退到旧 L1。
+                if (scores.isEmpty()) {
+                    missCount.incrementAndGet();
+                } else {
+                    l2HitCount.incrementAndGet();
+                }
                 if (l1Enabled && start == 0 && end == -1) {
                     l1Cache.put(key, new ConcurrentHashMap<>(scores));
                 }
@@ -174,7 +259,11 @@ public class MultiLevelZSetCache<K, V> {
         return Set.of();
     }
 
-    /** 删除整个业务 key 对应的 ZSet。 */
+    /**
+     * 删除整个业务 key 对应的 ZSet。
+     *
+     * @param key 业务 key；为 {@code null} 时忽略
+     */
     public void removeKey(K key) {
         if (key == null) {
             return;
@@ -191,6 +280,22 @@ public class MultiLevelZSetCache<K, V> {
         }
     }
 
+    /**
+     * 按广播中的序列化表示匹配并清理真实 L1 key。
+     *
+     * @param serializedKey 广播中的业务 key 字符串
+     */
+    void evictLocalSerializedKey(String serializedKey) {
+        if (!l1Enabled || serializedKey == null) {
+            return;
+        }
+        for (K candidate : l1Cache.asMap().keySet()) {
+            if (serializedKey.equals(keySerializer.apply(candidate))) {
+                l1Cache.invalidate(candidate);
+            }
+        }
+    }
+
     /** 仅清空当前 JVM 的 L1 区域，供失效监听器调用。 */
     void evictLocalAll() {
         if (l1Enabled) {
@@ -202,13 +307,20 @@ public class MultiLevelZSetCache<K, V> {
         return l2Degraded;
     }
 
-    /** 尝试恢复 Redis L2；该方法只做轻量探测，不预热数据。 */
+    /**
+     * 尝试恢复 Redis L2；该方法只做轻量探测，不预热数据。
+     *
+     * <p>探测成功后会清空降级期间形成的本地快照。</p>
+     *
+     * @return 已处于健康状态或本次恢复成功时返回 {@code true}
+     */
     public boolean tryRecoverL2() {
         if (!l2Degraded) {
             return true;
         }
         try {
             redisUtil.hasKey(redisKeyPrefix + "__health_check");
+            evictLocalAll();
             l2Degraded = false;
             return true;
         } catch (Exception e) {
@@ -216,7 +328,7 @@ public class MultiLevelZSetCache<K, V> {
         }
     }
 
-    /** 返回运行统计快照。 */
+    /** @return 当前 ZSet 缓存运行统计快照 */
     public Stats stats() {
         return new Stats(name, l1HitCount.get(), l2HitCount.get(), missCount.get(),
                 addCount.get(), removeCount.get(), l1Enabled ? l1Cache.estimatedSize() : 0, l2Degraded);
@@ -226,15 +338,16 @@ public class MultiLevelZSetCache<K, V> {
         return l1Cache.get(key, ignored -> new ConcurrentHashMap<>());
     }
 
-    private void addToRedis(K key, V member, double score) {
+    private boolean addToRedis(K key, V member, double score) {
         if (!l2Enabled || l2Degraded) {
-            return;
+            return false;
         }
         try {
             redisUtil.boundZSetOps(redisKey(key)).add(member, score);
-            setTtl(key);
+            return setTtl(key);
         } catch (Exception e) {
             markL2Degraded(e);
+            return false;
         }
     }
 
@@ -260,16 +373,18 @@ public class MultiLevelZSetCache<K, V> {
 
     private Map<V, Double> rangeFromRedis(K key, long start, long end) {
         try {
-            Set<Object> rawMembers = redisUtil.boundZSetOps(redisKey(key)).range(start, end);
-            if (rawMembers == null || rawMembers.isEmpty()) {
+            Set<ZSetOperations.TypedTuple<Object>> tuples =
+                    redisUtil.boundZSetOps(redisKey(key))
+                            .rangeWithScores(start, end);
+            if (tuples == null || tuples.isEmpty()) {
                 return Map.of();
             }
             Map<V, Double> result = new LinkedHashMap<>();
-            for (Object raw : rawMembers) {
-                V member = convertMember(raw);
-                if (member != null) {
-                    Double score = redisUtil.boundZSetOps(redisKey(key)).score(member);
-                    result.put(member, score == null ? 0D : score);
+            for (ZSetOperations.TypedTuple<Object> tuple : tuples) {
+                V member = convertMember(tuple.getValue());
+                Double score = tuple.getScore();
+                if (member != null && score != null) {
+                    result.put(member, score);
                 }
             }
             return result;
@@ -290,11 +405,13 @@ public class MultiLevelZSetCache<K, V> {
         }
     }
 
-    private void setTtl(K key) {
+    private boolean setTtl(K key) {
         try {
             redisUtil.expire(redisKey(key), l2Ttl.toMillis(), TimeUnit.MILLISECONDS);
+            return true;
         } catch (Exception e) {
-            log.debug("Failed to set Redis ZSet TTL for cache [{}], key [{}]", name, key, e);
+            markL2Degraded(e);
+            return false;
         }
     }
 
@@ -304,27 +421,33 @@ public class MultiLevelZSetCache<K, V> {
         }
         List<Map.Entry<V, Double>> ordered = new ArrayList<>(scores.entrySet());
         ordered.sort(Comparator.comparing(Map.Entry<V, Double>::getValue).thenComparing(entry -> String.valueOf(entry.getKey())));
-        int from = (int) Math.max(0, start);
-        int to = end < 0 ? ordered.size() - 1 : (int) Math.min(end, ordered.size() - 1);
-        if (from > to || from >= ordered.size()) {
+        int size = ordered.size();
+        long from = start < 0 ? size + start : start;
+        long to = end < 0 ? size + end : end;
+        from = Math.max(0, from);
+        to = Math.min(size - 1L, to);
+        if (from > to || from >= size || to < 0) {
             return Set.of();
         }
         Set<V> result = new LinkedHashSet<>();
-        for (int i = from; i <= to; i++) {
+        for (int i = (int) from; i <= (int) to; i++) {
             result.add(ordered.get(i).getKey());
         }
         return result;
     }
 
-    @SuppressWarnings("unchecked")
     private V convertMember(Object raw) {
         if (raw == null) {
             return null;
         }
-        if (memberType == null || memberType.isInstance(raw)) {
-            return (V) raw;
+        if (memberType == null) {
+            @SuppressWarnings("unchecked")
+            V member = (V) raw;
+            return member;
         }
-        return (V) raw;
+        return memberType.isInstance(raw)
+                ? memberType.cast(raw)
+                : null;
     }
 
     private String redisKey(K key) {
@@ -340,11 +463,27 @@ public class MultiLevelZSetCache<K, V> {
         if (!l2Degraded) {
             l2Degraded = true;
             degradationListener.run();
-            log.warn("ZSet cache [{}] L2 degraded: {}", name, e.getMessage());
+            log.warn(
+                    "ZSet cache [{}] L2 degraded, causeType={}",
+                    name,
+                    e.getClass().getSimpleName()
+            );
+            log.debug("ZSet cache L2 degradation detail", e);
         }
     }
 
-    /** ZSet 缓存运行统计快照。 */
+    /**
+     * ZSet 缓存运行统计快照。
+     *
+     * @param name 缓存区域名称
+     * @param l1HitCount L1 命中次数
+     * @param l2HitCount L2 命中次数
+     * @param missCount 未命中次数
+     * @param addCount 新增或更新成员计数
+     * @param removeCount 删除成员计数
+     * @param l1Size L1 业务 key 估算数量
+     * @param l2Degraded L2 是否处于降级状态
+     */
     public record Stats(String name,
                         long l1HitCount,
                         long l2HitCount,

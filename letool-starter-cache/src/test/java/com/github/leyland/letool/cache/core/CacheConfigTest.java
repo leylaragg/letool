@@ -1,5 +1,6 @@
 package com.github.leyland.letool.cache.core;
 
+import com.github.leyland.letool.cache.exception.CacheException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -114,18 +115,43 @@ class CacheConfigTest {
     }
 
     @Test
-    @DisplayName("build 校验必填项和 TTL 合法性")
+    @DisplayName("build 应使用统一配置异常校验必填项和 TTL")
     void testValidation() {
-        assertThrows(IllegalArgumentException.class, () -> CacheConfig.builder(" ").build());
-        assertThrows(IllegalArgumentException.class, () -> CacheConfig.builder("bad").l1MaxSize(0).build());
-        assertThrows(IllegalArgumentException.class, () -> CacheConfig.builder("bad").l1Ttl(Duration.ZERO).build());
-        assertThrows(IllegalArgumentException.class, () -> CacheConfig.builder("bad").l2Ttl(Duration.ZERO).build());
-        assertThrows(IllegalArgumentException.class, () -> CacheConfig.builder("bad")
-                .l1Ttl(Duration.ofMinutes(10))
-                .l2Ttl(Duration.ofMinutes(1))
-                .build());
-        assertThrows(IllegalArgumentException.class, () -> CacheConfig.builder("bad").redisKeyPrefix(" ").build());
-        assertThrows(IllegalArgumentException.class, () -> CacheConfig.builder("bad").nullValueTtl(Duration.ZERO).build());
+        assertConfigurationInvalid(
+                () -> CacheConfig.builder(" ").build(),
+                "name"
+        );
+        assertConfigurationInvalid(
+                () -> CacheConfig.builder("bad").l1MaxSize(0).build(),
+                "l1-max-size"
+        );
+        assertConfigurationInvalid(
+                () -> CacheConfig.builder("bad").l1Ttl(Duration.ZERO).build(),
+                "l1-ttl"
+        );
+        assertConfigurationInvalid(
+                () -> CacheConfig.builder("bad").l2Ttl(Duration.ZERO).build(),
+                "l2-ttl"
+        );
+        assertConfigurationInvalid(
+                () -> CacheConfig.builder("bad")
+                        .l1Ttl(Duration.ofMinutes(10))
+                        .l2Ttl(Duration.ofMinutes(1))
+                        .build(),
+                "l2-ttl"
+        );
+        assertConfigurationInvalid(
+                () -> CacheConfig.builder("bad")
+                        .redisKeyPrefix(" ")
+                        .build(),
+                "redis-key-prefix"
+        );
+        assertConfigurationInvalid(
+                () -> CacheConfig.builder("bad")
+                        .nullValueTtl(Duration.ZERO)
+                        .build(),
+                "null-value-ttl"
+        );
     }
 
     @Test
@@ -133,5 +159,20 @@ class CacheConfigTest {
     void testGenericTypeSupport() {
         CacheConfig<Integer, Boolean> config = CacheConfig.<Integer, Boolean>builder("boolCache").build();
         assertEquals("boolCache", config.getName());
+    }
+
+    /**
+     * 断言配置构建失败并返回预期安全字段名。
+     *
+     * @param action 待执行构建动作
+     * @param field 预期配置字段名
+     */
+    private static void assertConfigurationInvalid(
+            org.junit.jupiter.api.function.Executable action,
+            String field) {
+        CacheException exception =
+                assertThrows(CacheException.class, action);
+        assertEquals("CACHE_001", exception.getCode());
+        assertTrue(exception.getMessage().contains(field));
     }
 }

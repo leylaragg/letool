@@ -19,6 +19,11 @@ public class RedisCacheInvalidationListener {
     /** 缓存管理器负责找到对应缓存实例并执行本地 L1 清理。 */
     private final CacheManager cacheManager;
 
+    /**
+     * 创建 Redis 缓存失效消息监听器。
+     *
+     * @param cacheManager 缓存注册中心
+     */
     public RedisCacheInvalidationListener(CacheManager cacheManager) {
         this.cacheManager = cacheManager;
     }
@@ -43,7 +48,11 @@ public class RedisCacheInvalidationListener {
                 }
             }
         } catch (Exception e) {
-            log.warn("Failed to handle cache invalidation payload [{}]", payload, e);
+            log.warn(
+                    "Failed to handle cache invalidation message, causeType={}",
+                    e.getClass().getSimpleName()
+            );
+            log.debug("Cache invalidation message handling detail", e);
         }
     }
 }

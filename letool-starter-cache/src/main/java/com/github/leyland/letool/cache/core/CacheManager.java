@@ -17,7 +17,7 @@ import java.util.function.Function;
  * <p>核心职责：</p>
  * <ul>
  *     <li>按缓存名称创建并复用 {@link MultiLevelCache} KV 缓存实例。</li>
- *     <li>按缓存名称创建并复用 {@link MultiLevelSetCache} Set 缓存实例。</li>
+ *     <li>按缓存名称创建并复用 Set、List、Hash、ZSet 原生结构缓存实例。</li>
  *     <li>合并全局 L1/L2 开关和单个缓存区域配置，生成最终生效配置。</li>
  *     <li>保存当前 JVM 的 instanceId，用于跨节点失效广播去重。</li>
  *     <li>记录已经进入 L2 降级的缓存，供恢复调度器定时探测。</li>
@@ -39,6 +39,8 @@ public class CacheManager {
     private final Map<String, MultiLevelHashCache<?, ?, ?>> hashCaches = new ConcurrentHashMap<>();
     /** ZSet 缓存注册表：缓存名称 -> 缓存实例。 */
     private final Map<String, MultiLevelZSetCache<?, ?>> zSetCaches = new ConcurrentHashMap<>();
+    /** 缓存名称 -> 数据结构类型；同时作为注册和移除操作的互斥锁。 */
+    private final Map<String, CacheKind> cacheKinds = new ConcurrentHashMap<>();
     /** Redis 操作入口。为 null 时所有缓存都会退化为本地缓存。 */
     private final RedisUtil redisUtil;
     /** KV 缓存使用的序列化器。 */
@@ -66,6 +68,9 @@ public class CacheManager {
 
     /**
      * 兼容旧版本的构造器。只要传入 RedisUtil，就默认启用 L2；否则为 L1-only。
+     *
+     * @param redisUtil Redis 操作入口；为 {@code null} 时仅启用 L1
+     * @param serializer KV 缓存值序列化器
      */
     public CacheManager(RedisUtil redisUtil, CacheSerializer serializer) {
         this(redisUtil, serializer, true, redisUtil != null, "letool:cache:", CacheInvalidationPublisher.noop());
@@ -108,8 +113,13 @@ public class CacheManager {
      */
     @SuppressWarnings("unchecked")
     public <K, V> MultiLevelCache<K, V> getOrCreate(CacheConfig<K, V> config) {
-        return (MultiLevelCache<K, V>) caches.computeIfAbsent(config.getName(),
-                name -> createCache(config));
+        synchronized (cacheKinds) {
+            registerCacheKind(config.getName(), CacheKind.KV);
+            return (MultiLevelCache<K, V>) caches.computeIfAbsent(
+                    config.getName(),
+                    name -> createCache(config)
+            );
+        }
     }
 
     /**
@@ -127,7 +137,14 @@ public class CacheManager {
     }
 
     /**
-     * 获取或创建 String key 的 Set 缓存，成员类型使用默认 Long。
+     * 获取或创建 String key 的 Set 缓存。
+     *
+     * <p>成员类型优先使用 {@link CacheConfig#getValueType()}，未配置时保留
+     * RedisTemplate 的实际反序列化类型，不再假设业务成员一定是 Long。</p>
+     *
+     * @param config Set 缓存配置
+     * @param <V> Set 成员类型
+     * @return 已存在或新创建的 Set 缓存
      */
     @SuppressWarnings("unchecked")
     public <V> MultiLevelSetCache<String, V> getOrCreateSetCache(CacheConfig<String, V> config) {
@@ -137,7 +154,11 @@ public class CacheManager {
     /**
      * 获取或创建自定义 key 类型的 Set 缓存。
      *
+     * @param config Set 缓存配置
      * @param keySerializer 负责把业务 key 转成 Redis key 后缀，也用于失效广播中的 key 表示
+     * @param <K> 业务 key 类型
+     * @param <V> Set 成员类型
+     * @return 已存在或新创建的 Set 缓存
      */
     @SuppressWarnings("unchecked")
     public <K, V> MultiLevelSetCache<K, V> getOrCreateSetCache(CacheConfig<K, V> config,
@@ -148,14 +169,31 @@ public class CacheManager {
     /**
      * 获取或创建 Set 缓存，并显式指定成员类型。
      *
-     * <p>如果成员是 String、Integer 等非 Long 类型，建议使用该重载，避免 Redis 读取后按默认 Long 转换。</p>
+     * <p>显式类型优先级高于 {@link CacheConfig#getValueType()}；两者均未配置时保留
+     * RedisTemplate 的实际反序列化类型。</p>
+     *
+     * @param config Set 缓存配置
+     * @param keySerializer 业务 key 序列化函数
+     * @param memberType Redis 成员的预期类型；可为 {@code null}
+     * @param <K> 业务 key 类型
+     * @param <V> Set 成员类型
+     * @return 已存在或新创建的 Set 缓存
      */
     @SuppressWarnings("unchecked")
     public <K, V> MultiLevelSetCache<K, V> getOrCreateSetCache(CacheConfig<K, V> config,
                                                                 Function<K, String> keySerializer,
                                                                 Class<V> memberType) {
-        return (MultiLevelSetCache<K, V>) setCaches.computeIfAbsent(config.getName(),
-                name -> createSetCache(config, keySerializer, memberType));
+        synchronized (cacheKinds) {
+            registerCacheKind(config.getName(), CacheKind.SET);
+            return (MultiLevelSetCache<K, V>) setCaches.computeIfAbsent(
+                    config.getName(),
+                    name -> createSetCache(
+                            config,
+                            keySerializer,
+                            memberType
+                    )
+            );
+        }
     }
 
     /**
@@ -176,7 +214,14 @@ public class CacheManager {
     }
 
     /**
-     * 获取或创建 String key 的 List 缓存，元素类型由 RedisTemplate 反序列化结果决定。
+     * 获取或创建 String key 的 List 缓存。
+     *
+     * <p>元素类型优先使用 {@link CacheConfig#getValueType()}；未配置时保留 RedisTemplate
+     * 的实际反序列化类型。</p>
+     *
+     * @param config List 缓存配置
+     * @param <V> List 元素类型
+     * @return 已存在或新创建的 List 缓存
      */
     @SuppressWarnings("unchecked")
     public <V> MultiLevelListCache<String, V> getOrCreateListCache(CacheConfig<String, V> config) {
@@ -186,7 +231,11 @@ public class CacheManager {
     /**
      * 获取或创建自定义 key 类型的 List 缓存。
      *
+     * @param config List 缓存配置
      * @param keySerializer 负责把业务 key 转成 Redis key 后缀，也用于失效广播中的 key 表示
+     * @param <K> 业务 key 类型
+     * @param <V> List 元素类型
+     * @return 已存在或新创建的 List 缓存
      */
     @SuppressWarnings("unchecked")
     public <K, V> MultiLevelListCache<K, V> getOrCreateListCache(CacheConfig<K, V> config,
@@ -196,13 +245,29 @@ public class CacheManager {
 
     /**
      * 获取或创建 List 缓存，并显式指定元素类型。
+     *
+     * @param config List 缓存配置
+     * @param keySerializer 业务 key 序列化函数
+     * @param elementType Redis 元素的预期类型；可为 {@code null}
+     * @param <K> 业务 key 类型
+     * @param <V> List 元素类型
+     * @return 已存在或新创建的 List 缓存
      */
     @SuppressWarnings("unchecked")
     public <K, V> MultiLevelListCache<K, V> getOrCreateListCache(CacheConfig<K, V> config,
                                                                   Function<K, String> keySerializer,
                                                                   Class<V> elementType) {
-        return (MultiLevelListCache<K, V>) listCaches.computeIfAbsent(config.getName(),
-                name -> createListCache(config, keySerializer, elementType));
+        synchronized (cacheKinds) {
+            registerCacheKind(config.getName(), CacheKind.LIST);
+            return (MultiLevelListCache<K, V>) listCaches.computeIfAbsent(
+                    config.getName(),
+                    name -> createListCache(
+                            config,
+                            keySerializer,
+                            elementType
+                    )
+            );
+        }
     }
 
     /**
@@ -225,17 +290,33 @@ public class CacheManager {
     /**
      * 获取或创建 Hash 缓存。
      *
+     * @param config Hash 缓存配置
      * @param keySerializer 负责把业务 key 转成 Redis key 后缀，也用于失效广播中的 key 表示
      * @param hashKeyType Hash field 的目标类型；传 null 时按 RedisTemplate 返回值直接强转
-     * @param hashValueType Hash value 的目标类型；传 null 时按 RedisTemplate 返回值直接强转
+     * @param hashValueType Hash value 的目标类型；传 null 时回退到配置的 value 类型
+     * @param <K> 业务 key 类型
+     * @param <HK> Hash field 类型
+     * @param <HV> Hash value 类型
+     * @return 已存在或新创建的 Hash 缓存
      */
     @SuppressWarnings("unchecked")
     public <K, HK, HV> MultiLevelHashCache<K, HK, HV> getOrCreateHashCache(CacheConfig<K, HV> config,
                                                                             Function<K, String> keySerializer,
                                                                             Class<HK> hashKeyType,
                                                                             Class<HV> hashValueType) {
-        return (MultiLevelHashCache<K, HK, HV>) hashCaches.computeIfAbsent(config.getName(),
-                name -> createHashCache(config, keySerializer, hashKeyType, hashValueType));
+        synchronized (cacheKinds) {
+            registerCacheKind(config.getName(), CacheKind.HASH);
+            return (MultiLevelHashCache<K, HK, HV>)
+                    hashCaches.computeIfAbsent(
+                            config.getName(),
+                            name -> createHashCache(
+                                    config,
+                                    keySerializer,
+                                    hashKeyType,
+                                    hashValueType
+                            )
+                    );
+        }
     }
 
     /**
@@ -258,7 +339,14 @@ public class CacheManager {
     }
 
     /**
-     * 获取或创建 String key 的 ZSet 缓存，成员类型由 RedisTemplate 反序列化结果决定。
+     * 获取或创建 String key 的 ZSet 缓存。
+     *
+     * <p>成员类型优先使用 {@link CacheConfig#getValueType()}；未配置时保留 RedisTemplate
+     * 的实际反序列化类型。</p>
+     *
+     * @param config ZSet 缓存配置
+     * @param <V> ZSet 成员类型
+     * @return 已存在或新创建的 ZSet 缓存
      */
     @SuppressWarnings("unchecked")
     public <V> MultiLevelZSetCache<String, V> getOrCreateZSetCache(CacheConfig<String, V> config) {
@@ -268,7 +356,11 @@ public class CacheManager {
     /**
      * 获取或创建自定义 key 类型的 ZSet 缓存。
      *
+     * @param config ZSet 缓存配置
      * @param keySerializer 负责把业务 key 转成 Redis key 后缀，也用于失效广播中的 key 表示
+     * @param <K> 业务 key 类型
+     * @param <V> ZSet 成员类型
+     * @return 已存在或新创建的 ZSet 缓存
      */
     @SuppressWarnings("unchecked")
     public <K, V> MultiLevelZSetCache<K, V> getOrCreateZSetCache(CacheConfig<K, V> config,
@@ -278,13 +370,30 @@ public class CacheManager {
 
     /**
      * 获取或创建 ZSet 缓存，并显式指定成员类型。
+     *
+     * @param config ZSet 缓存配置
+     * @param keySerializer 业务 key 序列化函数
+     * @param memberType Redis 成员的预期类型；可为 {@code null}
+     * @param <K> 业务 key 类型
+     * @param <V> ZSet 成员类型
+     * @return 已存在或新创建的 ZSet 缓存
      */
     @SuppressWarnings("unchecked")
     public <K, V> MultiLevelZSetCache<K, V> getOrCreateZSetCache(CacheConfig<K, V> config,
                                                                   Function<K, String> keySerializer,
                                                                   Class<V> memberType) {
-        return (MultiLevelZSetCache<K, V>) zSetCaches.computeIfAbsent(config.getName(),
-                name -> createZSetCache(config, keySerializer, memberType));
+        synchronized (cacheKinds) {
+            registerCacheKind(config.getName(), CacheKind.ZSET);
+            return (MultiLevelZSetCache<K, V>)
+                    zSetCaches.computeIfAbsent(
+                            config.getName(),
+                            name -> createZSetCache(
+                                    config,
+                                    keySerializer,
+                                    memberType
+                            )
+                    );
+        }
     }
 
     /**
@@ -331,35 +440,46 @@ public class CacheManager {
     /**
      * 获取已经注册过的 KV 缓存。
      *
+     * @param name 缓存区域名称
+     * @param <K> 缓存 key 类型
+     * @param <V> 缓存 value 类型
+     * @return 已注册的 KV 缓存
      * @throws CacheException 如果缓存尚未通过 {@link #getOrCreate(CacheConfig)} 创建
      */
     @SuppressWarnings("unchecked")
     public <K, V> MultiLevelCache<K, V> get(String name) {
         MultiLevelCache<?, ?> cache = caches.get(name);
         if (cache == null) {
-            throw new CacheException("Cache not found: " + name + ". Use getOrCreate() first.");
+            throw CacheException.cacheNotFound();
         }
         return (MultiLevelCache<K, V>) cache;
     }
 
     /**
      * 从管理器中移除缓存实例，并清理降级记录。
+     *
+     * @param name 缓存区域名称
      */
     public void remove(String name) {
-        caches.remove(name);
-        setCaches.remove(name);
-        listCaches.remove(name);
-        hashCaches.remove(name);
-        zSetCaches.remove(name);
-        degradedCaches.remove(name);
-        degradedSetCaches.remove(name);
-        degradedListCaches.remove(name);
-        degradedHashCaches.remove(name);
-        degradedZSetCaches.remove(name);
+        synchronized (cacheKinds) {
+            caches.remove(name);
+            setCaches.remove(name);
+            listCaches.remove(name);
+            hashCaches.remove(name);
+            zSetCaches.remove(name);
+            degradedCaches.remove(name);
+            degradedSetCaches.remove(name);
+            degradedListCaches.remove(name);
+            degradedHashCaches.remove(name);
+            degradedZSetCaches.remove(name);
+            cacheKinds.remove(name);
+        }
     }
 
     /**
      * 返回所有已经注册的 KV 缓存实例。
+     *
+     * @return KV 缓存实例视图
      */
     public Collection<MultiLevelCache<?, ?>> getAll() {
         return caches.values();
@@ -367,6 +487,8 @@ public class CacheManager {
 
     /**
      * 当前 JVM 缓存节点 ID。
+     *
+     * @return 当前 JVM 缓存节点唯一标识
      */
     public String instanceId() {
         return instanceId;
@@ -376,36 +498,41 @@ public class CacheManager {
      * 仅清理当前 JVM 的某个 L1 条目。
      *
      * <p>该方法供失效监听器调用，不删除 Redis，也不会再次广播，避免形成广播循环。</p>
+     *
+     * @param cacheName 缓存区域名称
+     * @param key 已序列化为字符串的业务 key
      */
     public void evictLocal(String cacheName, String key) {
-        MultiLevelCache<String, ?> cache = getCache(cacheName);
+        MultiLevelCache<?, ?> cache = caches.get(cacheName);
         if (cache != null) {
-            cache.evictLocal(key);
+            cache.evictLocalSerializedKey(key);
             return;
         }
-        MultiLevelSetCache<String, ?> setCache = getSetCache(cacheName);
+        MultiLevelSetCache<?, ?> setCache = setCaches.get(cacheName);
         if (setCache != null) {
-            setCache.evictLocal(key);
+            setCache.evictLocalSerializedKey(key);
             return;
         }
-        MultiLevelListCache<String, ?> listCache = getListCache(cacheName);
+        MultiLevelListCache<?, ?> listCache = listCaches.get(cacheName);
         if (listCache != null) {
-            listCache.evictLocal(key);
+            listCache.evictLocalSerializedKey(key);
             return;
         }
-        MultiLevelHashCache<String, ?, ?> hashCache = getHashCache(cacheName);
+        MultiLevelHashCache<?, ?, ?> hashCache = hashCaches.get(cacheName);
         if (hashCache != null) {
-            hashCache.evictLocal(key);
+            hashCache.evictLocalSerializedKey(key);
             return;
         }
-        MultiLevelZSetCache<String, ?> zSetCache = getZSetCache(cacheName);
+        MultiLevelZSetCache<?, ?> zSetCache = zSetCaches.get(cacheName);
         if (zSetCache != null) {
-            zSetCache.evictLocal(key);
+            zSetCache.evictLocalSerializedKey(key);
         }
     }
 
     /**
      * 仅清空当前 JVM 的某个缓存区域 L1。
+     *
+     * @param cacheName 缓存区域名称
      */
     public void evictLocalAll(String cacheName) {
         MultiLevelCache<?, ?> cache = caches.get(cacheName);
@@ -432,31 +559,6 @@ public class CacheManager {
         if (zSetCache != null) {
             zSetCache.evictLocalAll();
         }
-    }
-
-    @SuppressWarnings("unchecked")
-    private <K, V> MultiLevelCache<K, V> getCache(String name) {
-        return (MultiLevelCache<K, V>) caches.get(name);
-    }
-
-    @SuppressWarnings("unchecked")
-    private <K, V> MultiLevelSetCache<K, V> getSetCache(String name) {
-        return (MultiLevelSetCache<K, V>) setCaches.get(name);
-    }
-
-    @SuppressWarnings("unchecked")
-    private <K, V> MultiLevelListCache<K, V> getListCache(String name) {
-        return (MultiLevelListCache<K, V>) listCaches.get(name);
-    }
-
-    @SuppressWarnings("unchecked")
-    private <K, HK, HV> MultiLevelHashCache<K, HK, HV> getHashCache(String name) {
-        return (MultiLevelHashCache<K, HK, HV>) hashCaches.get(name);
-    }
-
-    @SuppressWarnings("unchecked")
-    private <K, V> MultiLevelZSetCache<K, V> getZSetCache(String name) {
-        return (MultiLevelZSetCache<K, V>) zSetCaches.get(name);
     }
 
     /**
@@ -518,6 +620,8 @@ public class CacheManager {
 
     /**
      * 当前等待恢复的降级缓存数量，主要用于监控和测试。
+     *
+     * @return 待恢复缓存实例总数
      */
     public int degradedCacheCount() {
         return degradedCaches.size()
@@ -525,5 +629,35 @@ public class CacheManager {
                 + degradedListCaches.size()
                 + degradedHashCaches.size()
                 + degradedZSetCaches.size();
+    }
+
+    /**
+     * 为缓存名称登记唯一的数据结构类型。
+     *
+     * @param name 缓存区域名称
+     * @param kind 待登记的数据结构类型
+     * @throws CacheException 名称已经被其它数据结构占用时抛出
+     */
+    private void registerCacheKind(String name, CacheKind kind) {
+        CacheKind existing = cacheKinds.putIfAbsent(name, kind);
+        if (existing != null && existing != kind) {
+            throw CacheException.cacheTypeConflict();
+        }
+    }
+
+    /**
+     * 管理器支持的缓存数据结构类型。
+     */
+    private enum CacheKind {
+        /** 普通 key/value 缓存。 */
+        KV,
+        /** Redis Set 缓存。 */
+        SET,
+        /** Redis List 缓存。 */
+        LIST,
+        /** Redis Hash 缓存。 */
+        HASH,
+        /** Redis ZSet 缓存。 */
+        ZSET
     }
 }

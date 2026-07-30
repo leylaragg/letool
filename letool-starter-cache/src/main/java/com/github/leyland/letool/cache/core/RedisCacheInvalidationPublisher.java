@@ -25,15 +25,31 @@ public class RedisCacheInvalidationPublisher implements CacheInvalidationPublish
     /** 当前发布器使用的 Redis pub/sub 频道。 */
     private final String channel;
 
+    /**
+     * 使用默认频道创建 Redis 失效消息发布器。
+     *
+     * @param redisUtil Redis 操作入口
+     */
     public RedisCacheInvalidationPublisher(RedisUtil redisUtil) {
         this(redisUtil, DEFAULT_CHANNEL);
     }
 
+    /**
+     * 使用指定频道创建 Redis 失效消息发布器。
+     *
+     * @param redisUtil Redis 操作入口
+     * @param channel Redis Pub/Sub 频道
+     */
     public RedisCacheInvalidationPublisher(RedisUtil redisUtil, String channel) {
         this.redisUtil = redisUtil;
         this.channel = channel;
     }
 
+    /**
+     * 发布缓存失效消息；发布失败只记录安全日志，不中断业务写入。
+     *
+     * @param message 待发布的缓存失效消息
+     */
     @Override
     public void publish(CacheInvalidationMessage message) {
         if (redisUtil == null || message == null) {
@@ -43,10 +59,16 @@ public class RedisCacheInvalidationPublisher implements CacheInvalidationPublish
             // payload 由 CacheInvalidationMessage 自己负责序列化，发布器只负责投递。
             redisUtil.getTemplate().convertAndSend(channel, message.toPayload());
         } catch (Exception e) {
-            log.warn("Failed to publish cache invalidation message for cache [{}]", message.getCacheName(), e);
+            log.warn(
+                    "Failed to publish cache invalidation message for cache [{}], causeType={}",
+                    message.getCacheName(),
+                    e.getClass().getSimpleName()
+            );
+            log.debug("Cache invalidation message publishing detail", e);
         }
     }
 
+    /** @return 当前 Redis Pub/Sub 频道 */
     public String getChannel() {
         return channel;
     }

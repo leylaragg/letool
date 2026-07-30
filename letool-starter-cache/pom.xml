@@ -11,18 +11,17 @@
 
     <artifactId>letool-starter-cache</artifactId>
     <name>letool-starter-cache</name>
-    <description>letool 二级缓存框架 —— L1 Caffeine + L2 Redis，读穿/写穿、空值哨兵、自动降级、统计监控</description>
+    <description>letool 二级缓存框架 —— KV 与 Redis 原生集合缓存、空值哨兵、自动降级、统计监控</description>
     <packaging>jar</packaging>
 
     <dependencies>
         <dependency>
             <groupId>com.github.leyland</groupId>
-            <artifactId>letool-starter-tool</artifactId>
+            <artifactId>letool-starter-exception</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter</artifactId>
-            <scope>provided</scope>
+            <groupId>com.github.leyland</groupId>
+            <artifactId>letool-starter-tool</artifactId>
         </dependency>
         <dependency>
             <groupId>org.aspectj</groupId>
@@ -30,8 +29,8 @@
             <optional>true</optional>
         </dependency>
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-redis</artifactId>
+            <groupId>org.springframework.data</groupId>
+            <artifactId>spring-data-redis</artifactId>
             <optional>true</optional>
         </dependency>
         <dependency>
@@ -39,12 +38,23 @@
             <artifactId>caffeine</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.alibaba.fastjson2</groupId>
-            <artifactId>fastjson2</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-autoconfigure</artifactId>
+            <artifactId>spring-boot</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-beans</artifactId>
             <scope>provided</scope>
         </dependency>
         <dependency>
@@ -60,11 +70,6 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>testcontainers</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

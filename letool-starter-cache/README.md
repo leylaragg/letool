@@ -7,7 +7,7 @@
 - 支持注解式和编程式两种接入方式。
 - 支持强一致版本校验、跨 JVM L1 失效广播、Redis 异常降级和恢复探测。
 - 支持 null 值哨兵，减少不存在数据反复穿透数据库。
-- 支持 KV 缓存和 Set 缓存，Set 缓存适合规则索引、标签索引、ID 集合等场景。
+- 支持 KV、List、Hash、Set、ZSet；集合缓存直接使用 Redis 原生数据结构。
 
 ## 适用场景
 
@@ -161,35 +161,79 @@ getOrLoad(key)
 - 已有 L1 数据仍可命中。
 - 未命中时会继续执行 loader 回源。
 - `CacheRecoveryScheduler` 会按 `recovery-interval` 定期尝试恢复 L2。
+- List、Hash、Set、ZSet 恢复成功后会清空降级期间形成的本地快照，下一次读取重新以 Redis 为准。
 
 生产建议：
 
 - 降级期间命中率可能下降，要关注 `l2DegradedCount` 和业务回源压力。
 - 如果缓存回源会打到数据库，请确保数据库侧有保护措施，例如限流、超时和熔断。
 
-## Set 缓存
+## Redis 原生集合缓存
 
-Set 缓存适合“一个 key 对应多个成员”的索引场景，例如：
+List、Hash、Set、ZSet 缓存保留在本模块中，它们是 Redis 原生数据结构的轻量适配，不会把整个集合序列化为一个 JSON value：
 
-- 规则 code 到规则 ID 集合。
-- 标签到实体 ID 集合。
-- 分组到用户 ID 集合。
+- `MultiLevelListCache`：队列、时间线、有序事件。
+- `MultiLevelHashCache`：用户资料字段、配置字段。
+- `MultiLevelSetCache`：规则索引、标签索引、ID 集合。
+- `MultiLevelZSetCache`：排行榜、权重或优先级排序。
 
-示例：
+Set 示例：
 
 ```java
 CacheConfig<String, Long> config = CacheConfig.<String, Long>builder("ruleIndex")
         .l1Ttl(Duration.ofMinutes(10))
         .l2Ttl(Duration.ofHours(1))
+        .valueType(Long.class)
         .build();
 
 MultiLevelSetCache<String, Long> ruleIndex = cacheManager.getOrCreateSetCache(config);
 ruleIndex.add("product:loan", 1001L);
-Set<Long> ruleIds = ruleIndex.members("product:loan");
+Set<Long> ruleIds = ruleIndex.getMembers("product:loan");
 ruleIndex.remove("product:loan", 1001L);
 ```
 
-如果成员不是 `Long`，请使用显式成员类型的重载，避免 Redis 读取后按默认 Long 转换。
+其它结构的创建入口：
+
+```java
+MultiLevelListCache<String, Event> events =
+        cacheManager.getOrCreateListCache(listConfig);
+
+MultiLevelHashCache<String, String, String> profile =
+        cacheManager.getOrCreateHashCache(
+                hashConfig,
+                Function.identity(),
+                String.class,
+                String.class
+        );
+
+MultiLevelZSetCache<String, String> ranking =
+        cacheManager.getOrCreateZSetCache(zSetConfig);
+```
+
+类型解析顺序为：工厂方法显式类型、`CacheConfig.valueType(...)`、RedisTemplate 实际反序列化类型。本模块不再假设 Set 成员一定是 `Long`；生产配置建议显式声明类型。
+
+集合缓存的一致性约束：
+
+- Redis 健康时，一次 `add`、`put`、`push` 只更新已有的完整 L1 快照，不会凭局部写入创建“伪完整”快照。
+- 强一致模式下，Redis 返回空集合或不存在字段时，该结果具有权威性，不会回退到旧 L1。
+- 只有读取完整范围（List/ZSet 的 `0, -1`）时才会建立完整 L1 快照。
+- List 的范围索引与 `LRANGE` 一致，ZSet 的范围索引与 `ZRANGE` 一致，均支持负索引。
+- ZSet 范围读取使用带分数的单次批量查询，不会逐成员执行 `ZSCORE`。
+- 跨 JVM 失效会按 key 的序列化表示匹配真实 L1 key，支持 `Long` 和自定义 key 类型，不再把广播 key 强转成 `String`。
+
+## 统一异常
+
+缓存模块使用 `letool-starter-exception` 的统一异常体系：
+
+| 错误码 | 场景 |
+| --- | --- |
+| `CACHE_001` | 缓存配置字段不合法 |
+| `CACHE_002` | 请求的 KV 缓存实例尚未注册 |
+| `CACHE_003` | 缓存未命中后的 loader 回源失败 |
+| `CACHE_004` | 跨 JVM 缓存失效消息格式不合法 |
+| `CACHE_005` | 同一缓存名称被注册为不同的数据结构 |
+
+同一个 `CacheManager` 内，缓存名称在 KV/List/Hash/Set/ZSet 之间全局唯一；同名缓存可以重复获取，但不能改变数据结构类型。异常消息和警告日志不会拼接业务 key、缓存值、失效消息原始载荷或底层异常文本；底层原因仍保留在异常链或 DEBUG 日志中。`CacheException` 不再提供任意文本构造器，调用方应按错误码判断失败类型。
 
 ## 监控
 
@@ -257,3 +301,7 @@ Map<String, CacheStats> snapshot = cacheMonitor.snapshot();
 - null 缓存 TTL 不要过长，避免不存在的数据创建后仍然短期不可见。
 - Redis key 前缀按应用隔离，例如 `edc:cache:`、`crm:cache:`。
 - 生产日志或监控中关注命中率、加载失败、降级次数和回源量。
+- 集合写入和 TTL 刷新当前是两个 Redis 命令；需要事务级原子性的队列、排行榜或超高频写路径，应在业务层使用 Lua/事务或更成熟的分布式数据结构方案。
+- `MultiLevelSetCache.evictAll()` 当前使用 Redis key 模式查询，不要在超大 key 空间中高频调用。
+- 非 String key 的精确失效需要扫描当前缓存区域的本地 key 并比较序列化结果；超大 L1 区域且高频失效时，优先使用 String key 或评估业务侧反向索引。
+- 当前自动化测试以 Mock Redis 为主，生产发布前仍应在目标 Redis 版本和序列化配置下执行集成测试。

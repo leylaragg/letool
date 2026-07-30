@@ -218,7 +218,7 @@ public class MultiLevelCache<K, V> {
                     loaded = loader.apply(key);
                 } catch (Exception e) {
                     stats.recordLoadFailure();
-                    throw new CacheException("Failed to load cache value for key: " + key + " in cache: " + name, e);
+                    throw CacheException.loaderFailed(e);
                 }
 
                 stats.recordLoadSuccess();
@@ -350,6 +350,25 @@ public class MultiLevelCache<K, V> {
         if (config.isL1Enabled() && key != null) {
             l1Cache.invalidate(key);
             l1Versions.invalidate(key);
+        }
+    }
+
+    /**
+     * 按广播中的字符串表示匹配并清理真实 L1 key。
+     *
+     * <p>KV 缓存发布失效消息时使用 {@link String#valueOf(Object)}，因此接收端用相同规则
+     * 匹配 Long 等非 String key，避免把字符串直接强转为泛型 key。</p>
+     *
+     * @param serializedKey 广播中的业务 key 字符串
+     */
+    void evictLocalSerializedKey(String serializedKey) {
+        if (!config.isL1Enabled() || serializedKey == null) {
+            return;
+        }
+        for (K candidate : l1Cache.asMap().keySet()) {
+            if (serializedKey.equals(String.valueOf(candidate))) {
+                evictLocal(candidate);
+            }
         }
     }
 
@@ -537,16 +556,22 @@ public class MultiLevelCache<K, V> {
             }
             if (isExpectedValueType(cachedValue)) {
                 if (isCollectionOfRawJson(cachedValue)) {
-                    log.warn("L2 cache [{}] collection element type was not deserialized safely, fallback to loader: key={}",
-                            name, redisKey(key));
+                    log.warn(
+                            "L2 cache [{}] collection element type was not deserialized safely, fallback to loader",
+                            name
+                    );
                     return CacheLookup.miss();
                 }
                 @SuppressWarnings("unchecked")
                 V value = (V) cachedValue;
                 return CacheLookup.hit(value, stableVersion);
             }
-            log.warn("L2 cache [{}] type mismatch, ignore cached value: key={}, expected={}, actual={}",
-                    name, redisKey(key), valueType.getName(), cachedValue.getClass().getName());
+            log.warn(
+                    "L2 cache [{}] type mismatch, ignore cached value: expected={}, actual={}",
+                    name,
+                    valueType.getName(),
+                    cachedValue.getClass().getName()
+            );
             return CacheLookup.miss();
         } catch (Exception e) {
             markL2Degraded(e);
@@ -658,7 +683,12 @@ public class MultiLevelCache<K, V> {
             l2Degraded = true;
             // 只在第一次降级时登记恢复任务，避免 Redis 抖动时重复加入队列。
             degradationListener.run();
-            log.warn("L2 cache [{}] degraded due to Redis error: {}", name, cause.getMessage());
+            log.warn(
+                    "L2 cache [{}] degraded due to Redis error, causeType={}",
+                    name,
+                    cause.getClass().getSimpleName()
+            );
+            log.debug("L2 cache degradation detail", cause);
         }
     }
 

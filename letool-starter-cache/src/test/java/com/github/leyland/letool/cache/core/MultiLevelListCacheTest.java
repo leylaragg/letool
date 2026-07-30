@@ -49,6 +49,8 @@ class MultiLevelListCacheTest {
     @DisplayName("rightPush 写入 L1 和 Redis List")
     void rightPushWritesLocalAndRedisList() {
         when(redisUtil.boundListOps("test:list:user:1")).thenReturn(boundListOperations);
+        when(boundListOperations.range(0, -1))
+                .thenReturn(List.of("login"));
         MultiLevelListCache<String, String> cache = new CacheManager(redisUtil, serializer)
                 .getOrCreateListCache(config, Function.identity(), String.class);
 
@@ -115,5 +117,95 @@ class MultiLevelListCacheTest {
 
         assertTrue(cache.stats().l2Degraded());
         assertEquals(1, manager.degradedCacheCount());
+    }
+
+    @Test
+    @DisplayName("局部推入不能让 L1 冒充完整 Redis List 快照")
+    void partialPushShouldNotHideExistingRedisElements() {
+        when(redisUtil.boundListOps("test:list:user:5"))
+                .thenReturn(boundListOperations);
+        when(boundListOperations.range(0, -1))
+                .thenReturn(List.of("existing", "new"));
+        MultiLevelListCache<String, String> cache =
+                new CacheManager(redisUtil, serializer)
+                        .getOrCreateListCache(
+                                config,
+                                Function.identity(),
+                                String.class
+                        );
+
+        cache.rightPush("user:5", "new");
+
+        assertEquals(
+                List.of("existing", "new"),
+                cache.range("user:5", 0, -1)
+        );
+        verify(boundListOperations).range(0, -1);
+    }
+
+    @Test
+    @DisplayName("强一致读取应把 Redis 空列表视为权威结果")
+    void strongConsistencyShouldNotReturnStaleListWhenRedisIsEmpty() {
+        CacheConfig<String, String> strongConfig =
+                CacheConfig.<String, String>builder("events")
+                        .l1Ttl(Duration.ofMinutes(10))
+                        .l2Ttl(Duration.ofHours(1))
+                        .redisKeyPrefix("test:list:")
+                        .strongConsistency(true)
+                        .build();
+        when(redisUtil.boundListOps("test:list:user:6"))
+                .thenReturn(boundListOperations);
+        when(boundListOperations.range(0, -1))
+                .thenReturn(List.of("old"), List.of());
+        MultiLevelListCache<String, String> cache =
+                new CacheManager(redisUtil, serializer)
+                        .getOrCreateListCache(
+                                strongConfig,
+                                Function.identity(),
+                                String.class
+                        );
+
+        assertEquals(List.of("old"), cache.range("user:6", 0, -1));
+        assertTrue(cache.range("user:6", 0, -1).isEmpty());
+    }
+
+    @Test
+    @DisplayName("L1 列表负索引范围应与 Redis LRANGE 一致")
+    void localRangeShouldSupportRedisNegativeIndexes() {
+        MultiLevelListCache<String, String> cache =
+                new CacheManager(null, serializer)
+                        .getOrCreateListCache(
+                                config,
+                                Function.identity(),
+                                String.class
+                        );
+        cache.rightPush("user:7", "a");
+        cache.rightPush("user:7", "b");
+        cache.rightPush("user:7", "c");
+        cache.rightPush("user:7", "d");
+
+        assertEquals(
+                List.of("b", "c"),
+                cache.range("user:7", -3, -2)
+        );
+    }
+
+    @Test
+    @DisplayName("默认 List 工厂应使用配置的元素类型")
+    void defaultFactoryShouldUseConfiguredElementType() {
+        CacheConfig<String, String> typedConfig =
+                CacheConfig.<String, String>builder("typed-list")
+                        .redisKeyPrefix("test:typed-list:")
+                        .strongConsistency(false)
+                        .valueType(String.class)
+                        .build();
+        when(redisUtil.boundListOps("test:typed-list:key"))
+                .thenReturn(boundListOperations);
+        when(boundListOperations.range(0, -1)).thenReturn(List.of(42));
+        MultiLevelListCache<String, String> cache =
+                new CacheManager(redisUtil, serializer)
+                        .getOrCreateListCache(typedConfig);
+
+        assertTrue(cache.range("key", 0, -1).isEmpty());
     }
 }

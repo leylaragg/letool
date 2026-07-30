@@ -9,6 +9,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.BoundZSetOperations;
+import org.springframework.data.redis.core.ZSetOperations;
 
 import java.time.Duration;
 import java.util.Set;
@@ -18,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 @DisplayName("MultiLevelZSetCache 测试")
@@ -49,6 +51,8 @@ class MultiLevelZSetCacheTest {
     @DisplayName("add 写入 L1 和 Redis ZSet")
     void addWritesLocalAndRedisZSet() {
         when(redisUtil.boundZSetOps("test:zset:game:1")).thenReturn(boundZSetOperations);
+        when(boundZSetOperations.rangeWithScores(0, -1))
+                .thenReturn(Set.of(tuple("alice", 100.0)));
         MultiLevelZSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
                 .getOrCreateZSetCache(config, Function.identity(), String.class);
 
@@ -77,22 +81,26 @@ class MultiLevelZSetCacheTest {
     @DisplayName("L1 miss 时从 Redis ZSet 读取并回填")
     void l1MissReadsRedisZSetAndRefillsLocal() {
         when(redisUtil.boundZSetOps("test:zset:game:2")).thenReturn(boundZSetOperations);
-        when(boundZSetOperations.range(0, -1)).thenReturn(Set.of("alice", "bob"));
-        when(boundZSetOperations.score("alice")).thenReturn(100.0);
-        when(boundZSetOperations.score("bob")).thenReturn(200.0);
+        when(boundZSetOperations.rangeWithScores(0, -1))
+                .thenReturn(Set.of(
+                        tuple("alice", 100.0),
+                        tuple("bob", 200.0)
+                ));
         MultiLevelZSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
                 .getOrCreateZSetCache(config, Function.identity(), String.class);
 
         assertEquals(Set.of("alice", "bob"), cache.range("game:2", 0, -1));
         assertEquals(200.0, cache.score("game:2", "bob"));
 
-        verify(boundZSetOperations).range(0, -1);
+        verify(boundZSetOperations).rangeWithScores(0, -1);
+        verify(boundZSetOperations, never()).score("alice");
     }
 
     @Test
     @DisplayName("remove 删除 Redis ZSet 成员并清理本地副本")
     void removeDeletesMemberAndEvictsLocalSnapshot() {
         when(redisUtil.boundZSetOps("test:zset:game:3")).thenReturn(boundZSetOperations);
+        when(boundZSetOperations.score("alice")).thenReturn(null);
         MultiLevelZSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
                 .getOrCreateZSetCache(config, Function.identity(), String.class);
 
@@ -107,7 +115,8 @@ class MultiLevelZSetCacheTest {
     @DisplayName("Redis 异常后 ZSet 缓存进入 L2 降级")
     void redisFailureMarksZSetCacheDegraded() {
         when(redisUtil.boundZSetOps("test:zset:game:4")).thenReturn(boundZSetOperations);
-        when(boundZSetOperations.range(0, -1)).thenThrow(new RuntimeException("redis down"));
+        when(boundZSetOperations.rangeWithScores(0, -1))
+                .thenThrow(new RuntimeException("redis down"));
         CacheManager manager = new CacheManager(redisUtil, serializer);
         MultiLevelZSetCache<String, String> cache = manager.getOrCreateZSetCache(config, Function.identity(), String.class);
 
@@ -115,5 +124,116 @@ class MultiLevelZSetCacheTest {
 
         assertTrue(cache.stats().l2Degraded());
         assertEquals(1, manager.degradedCacheCount());
+    }
+
+    @Test
+    @DisplayName("局部写入不能让 L1 冒充完整 Redis ZSet 快照")
+    void partialAddShouldNotHideExistingRedisMembers() {
+        when(redisUtil.boundZSetOps("test:zset:game:5"))
+                .thenReturn(boundZSetOperations);
+        when(boundZSetOperations.rangeWithScores(0, -1))
+                .thenReturn(Set.of(
+                        tuple("alice", 100.0),
+                        tuple("bob", 200.0)
+                ));
+        MultiLevelZSetCache<String, String> cache =
+                new CacheManager(redisUtil, serializer)
+                        .getOrCreateZSetCache(
+                                config,
+                                Function.identity(),
+                                String.class
+                        );
+
+        cache.add("game:5", "alice", 100.0);
+
+        assertEquals(
+                Set.of("alice", "bob"),
+                cache.range("game:5", 0, -1)
+        );
+        verify(boundZSetOperations).rangeWithScores(0, -1);
+    }
+
+    @Test
+    @DisplayName("强一致读取应把 Redis 空 ZSet 视为权威结果")
+    void strongConsistencyShouldNotReturnStaleZSetWhenRedisIsEmpty() {
+        CacheConfig<String, String> strongConfig =
+                CacheConfig.<String, String>builder("ranking")
+                        .l1Ttl(Duration.ofMinutes(10))
+                        .l2Ttl(Duration.ofHours(1))
+                        .redisKeyPrefix("test:zset:")
+                        .strongConsistency(true)
+                        .build();
+        when(redisUtil.boundZSetOps("test:zset:game:6"))
+                .thenReturn(boundZSetOperations);
+        when(boundZSetOperations.rangeWithScores(0, -1))
+                .thenReturn(
+                        Set.of(tuple("old", 100.0)),
+                        Set.of()
+                );
+        MultiLevelZSetCache<String, String> cache =
+                new CacheManager(redisUtil, serializer)
+                        .getOrCreateZSetCache(
+                                strongConfig,
+                                Function.identity(),
+                                String.class
+                        );
+
+        assertEquals(Set.of("old"), cache.range("game:6", 0, -1));
+        assertTrue(cache.range("game:6", 0, -1).isEmpty());
+    }
+
+    @Test
+    @DisplayName("L1 ZSet 负索引范围应与 Redis ZRANGE 一致")
+    void localRangeShouldSupportRedisNegativeIndexes() {
+        MultiLevelZSetCache<String, String> cache =
+                new CacheManager(null, serializer)
+                        .getOrCreateZSetCache(
+                                config,
+                                Function.identity(),
+                                String.class
+                        );
+        cache.add("game:7", "a", 10);
+        cache.add("game:7", "b", 20);
+        cache.add("game:7", "c", 30);
+        cache.add("game:7", "d", 40);
+
+        assertEquals(
+                Set.of("b", "c"),
+                cache.range("game:7", -3, -2)
+        );
+    }
+
+    @Test
+    @DisplayName("默认 ZSet 工厂应使用配置的成员类型")
+    void defaultFactoryShouldUseConfiguredMemberType() {
+        CacheConfig<String, String> typedConfig =
+                CacheConfig.<String, String>builder("typed-zset")
+                        .redisKeyPrefix("test:typed-zset:")
+                        .strongConsistency(false)
+                        .valueType(String.class)
+                        .build();
+        when(redisUtil.boundZSetOps("test:typed-zset:key"))
+                .thenReturn(boundZSetOperations);
+        when(boundZSetOperations.rangeWithScores(0, -1))
+                .thenReturn(Set.of(tuple(42, 100.0)));
+        MultiLevelZSetCache<String, String> cache =
+                new CacheManager(redisUtil, serializer)
+                        .getOrCreateZSetCache(typedConfig);
+
+        assertTrue(cache.range("key", 0, -1).isEmpty());
+    }
+
+    /**
+     * 创建测试用 Redis ZSet 成员及分数元组。
+     *
+     * @param value 成员值
+     * @param score 成员分数
+     * @param <T> 成员类型
+     * @return Spring Data Redis 带分数元组
+     */
+    private static <T> ZSetOperations.TypedTuple<Object> tuple(
+            T value,
+            double score) {
+        return ZSetOperations.TypedTuple.of(value, score);
     }
 }

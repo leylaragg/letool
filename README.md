@@ -36,7 +36,7 @@
 | **letool-starter-tool** | 核心工具 —— 可替换 JsonCodec、HTTP、ID 生成、字符串、集合、树工具；Spring/Redis helper 为可选适配器 | exception |
 | **letool-starter-sensitive** | 数据脱敏 —— 注解驱动，Jackson 序列化 + 日志输出自动脱敏 | tool |
 | **letool-starter-log** | 日志封装 —— 链路追踪、审计日志、方法日志、动态日志级别 | tool, sensitive |
-| **letool-starter-cache** | 二级缓存 —— L1 Caffeine + L2 Redis，读穿/写穿、自动降级 | tool |
+| **letool-starter-cache** | 二级缓存 —— KV 与 Redis 原生 List/Hash/Set/ZSet，自动降级与恢复 | tool, exception |
 | **letool-starter-cipher-suite** | 加密套件 —— AES/RSA/SM2/SM3/SM4、数字签名 | tool |
 | **letool-starter-web** | Web 增强 —— 全局异常处理、响应包装、XSS/SQL 注入防御 | tool, exception |
 | **letool-starter-security** | 安全认证 —— JWT、注解权限、多种认证模式 | tool |
@@ -172,6 +172,10 @@ MultiLevelCache<String, User> cache = cacheManager.getOrCreate(
 // 读穿
 User user = cache.getOrLoad("user:123", key -> userMapper.selectById(123));
 ```
+
+集合索引、列表、字段映射和排行榜可分别使用
+`MultiLevelSetCache`、`MultiLevelListCache`、`MultiLevelHashCache`、`MultiLevelZSetCache`。
+集合缓存只在拿到完整 Redis 结果时建立 L1 快照，Redis 恢复后会清理降级期间的本地副本。
 
 ### 7. 决策链（消除 if-else）
 

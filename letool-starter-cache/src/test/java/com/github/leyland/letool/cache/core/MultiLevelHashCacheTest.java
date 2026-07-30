@@ -49,6 +49,7 @@ class MultiLevelHashCacheTest {
     @DisplayName("put 写入 L1 和 Redis Hash")
     void putWritesLocalAndRedisHash() {
         when(redisUtil.boundHashOps("test:hash:user:1")).thenReturn(boundHashOperations);
+        when(boundHashOperations.get("name")).thenReturn("Leyland");
         MultiLevelHashCache<String, String, String> cache = new CacheManager(redisUtil, serializer)
                 .getOrCreateHashCache(config, Function.identity(), String.class, String.class);
 
@@ -113,5 +114,101 @@ class MultiLevelHashCacheTest {
 
         assertTrue(cache.stats().l2Degraded());
         assertEquals(1, manager.degradedCacheCount());
+    }
+
+    @Test
+    @DisplayName("局部写入不能让 L1 冒充完整 Redis Hash 快照")
+    void partialPutShouldNotHideExistingRedisFields() {
+        when(redisUtil.boundHashOps("test:hash:user:5"))
+                .thenReturn(boundHashOperations);
+        when(boundHashOperations.entries())
+                .thenReturn(Map.of("name", "Leyland", "role", "admin"));
+        MultiLevelHashCache<String, String, String> cache =
+                new CacheManager(redisUtil, serializer)
+                        .getOrCreateHashCache(
+                                config,
+                                Function.identity(),
+                                String.class,
+                                String.class
+                        );
+
+        cache.put("user:5", "name", "Leyland");
+
+        assertEquals(
+                Map.of("name", "Leyland", "role", "admin"),
+                cache.entries("user:5")
+        );
+        verify(boundHashOperations).entries();
+    }
+
+    @Test
+    @DisplayName("强一致读取应把 Redis 空 Hash 视为权威结果")
+    void strongConsistencyShouldNotReturnStaleHashWhenRedisIsEmpty() {
+        CacheConfig<String, String> strongConfig =
+                CacheConfig.<String, String>builder("profiles")
+                        .l1Ttl(Duration.ofMinutes(10))
+                        .l2Ttl(Duration.ofHours(1))
+                        .redisKeyPrefix("test:hash:")
+                        .strongConsistency(true)
+                        .build();
+        when(redisUtil.boundHashOps("test:hash:user:6"))
+                .thenReturn(boundHashOperations);
+        when(boundHashOperations.entries())
+                .thenReturn(Map.of("name", "old"), Map.of());
+        MultiLevelHashCache<String, String, String> cache =
+                new CacheManager(redisUtil, serializer)
+                        .getOrCreateHashCache(
+                                strongConfig,
+                                Function.identity(),
+                                String.class,
+                                String.class
+                        );
+
+        assertEquals(Map.of("name", "old"), cache.entries("user:6"));
+        assertTrue(cache.entries("user:6").isEmpty());
+    }
+
+    @Test
+    @DisplayName("反序列化类型不匹配的 Hash 字段不应直接强转")
+    void typeMismatchShouldBeIgnored() {
+        when(redisUtil.boundHashOps("test:hash:user:7"))
+                .thenReturn(boundHashOperations);
+        when(boundHashOperations.entries())
+                .thenReturn(Map.of("age", 18));
+        MultiLevelHashCache<String, String, String> cache =
+                new CacheManager(redisUtil, serializer)
+                        .getOrCreateHashCache(
+                                config,
+                                Function.identity(),
+                                String.class,
+                                String.class
+                        );
+
+        assertTrue(cache.entries("user:7").isEmpty());
+        assertTrue(cache.entries("user:7").isEmpty());
+    }
+
+    @Test
+    @DisplayName("未显式指定 Hash value 类型时应使用缓存配置类型")
+    void configuredValueTypeShouldBeUsedAsHashValueType() {
+        CacheConfig<String, String> typedConfig =
+                CacheConfig.<String, String>builder("typed-hash")
+                        .redisKeyPrefix("test:typed-hash:")
+                        .strongConsistency(false)
+                        .valueType(String.class)
+                        .build();
+        when(redisUtil.boundHashOps("test:typed-hash:key"))
+                .thenReturn(boundHashOperations);
+        when(boundHashOperations.entries()).thenReturn(Map.of("age", 18));
+        MultiLevelHashCache<String, String, String> cache =
+                new CacheManager(redisUtil, serializer)
+                        .getOrCreateHashCache(
+                                typedConfig,
+                                Function.identity(),
+                                String.class,
+                                null
+                        );
+
+        assertTrue(cache.entries("key").isEmpty());
     }
 }

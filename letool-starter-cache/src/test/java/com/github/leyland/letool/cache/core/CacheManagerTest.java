@@ -11,6 +11,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Collection;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -60,11 +61,11 @@ class CacheManagerTest {
     }
 
     @Test
-    @DisplayName("get - 未注册的名称抛出 CacheException")
+    @DisplayName("get 未注册名称时应返回安全的稳定错误码")
     void testGetNotFound() {
         CacheException ex = assertThrows(CacheException.class, () -> manager.get("nonexistent"));
-        assertTrue(ex.getMessage().contains("nonexistent"));
-        assertTrue(ex.getMessage().contains("getOrCreate"));
+        assertEquals("CACHE_002", ex.getCode());
+        assertFalse(ex.getMessage().contains("nonexistent"));
     }
 
     @Test
@@ -87,5 +88,66 @@ class CacheManagerTest {
 
         Collection<MultiLevelCache<?, ?>> all = manager.getAll();
         assertEquals(3, all.size());
+    }
+
+    @Test
+    @DisplayName("同一缓存名称不能注册为不同数据结构")
+    void sameNameShouldNotBeRegisteredWithDifferentCacheKinds() {
+        CacheConfig<String, String> config =
+                CacheConfig.<String, String>builder("shared-name").build();
+        manager.getOrCreate(config);
+
+        CacheException exception = assertThrows(
+                CacheException.class,
+                () -> manager.getOrCreateSetCache(config)
+        );
+
+        assertEquals("CACHE_005", exception.getCode());
+        assertFalse(exception.getMessage().contains("shared-name"));
+    }
+
+    @Test
+    @DisplayName("移除缓存后名称可以重新用于另一种数据结构")
+    void removedNameShouldBeReusableByAnotherCacheKind() {
+        CacheConfig<String, String> config =
+                CacheConfig.<String, String>builder("reusable-name").build();
+        manager.getOrCreate(config);
+
+        manager.remove("reusable-name");
+
+        assertNotNull(manager.getOrCreateSetCache(config));
+    }
+
+    @Test
+    @DisplayName("失效广播应按序列化表示清理非 String KV key")
+    void invalidationShouldEvictNonStringKvKey() {
+        CacheManager localManager = new CacheManager(null, serializer);
+        MultiLevelCache<Long, String> cache = localManager.getOrCreate(
+                CacheConfig.<Long, String>builder("long-kv").build()
+        );
+        cache.put(7L, "cached");
+
+        localManager.evictLocal("long-kv", "7");
+
+        assertEquals("loaded", cache.getOrLoad(7L, key -> "loaded"));
+    }
+
+    @Test
+    @DisplayName("失效广播应按自定义序列化表示清理集合 key")
+    void invalidationShouldEvictCustomSerializedCollectionKey() {
+        CacheManager localManager = new CacheManager(null, serializer);
+        CacheConfig<Long, String> config =
+                CacheConfig.<Long, String>builder("long-set").build();
+        MultiLevelSetCache<Long, String> cache =
+                localManager.getOrCreateSetCache(
+                        config,
+                        key -> "id:" + key,
+                        String.class
+                );
+        cache.add(7L, "member");
+
+        localManager.evictLocal("long-set", "id:7");
+
+        assertEquals(Set.of(), cache.getMembers(7L));
     }
 }

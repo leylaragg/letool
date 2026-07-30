@@ -14,6 +14,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.data.redis.core.BoundValueOperations;
 
 import java.time.Duration;
@@ -465,7 +467,8 @@ class MultiLevelCacheTest {
         @DisplayName("get 未注册缓存名抛 CacheException")
         void getNotRegisteredThrows() {
             CacheException ex = assertThrows(CacheException.class, () -> cacheManager.get("nonexistent"));
-            assertTrue(ex.getMessage().contains("nonexistent"));
+            assertEquals("CACHE_002", ex.getCode());
+            assertFalse(ex.getMessage().contains("nonexistent"));
         }
 
         @Test
@@ -664,8 +667,9 @@ class MultiLevelCacheTest {
             CacheException ex = assertThrows(CacheException.class, () ->
                     cache.getOrLoad("err", k -> { throw new RuntimeException("DB down"); })
             );
-            assertTrue(ex.getMessage().contains("err"));
-            assertTrue(ex.getMessage().contains("l1-only"));
+            assertEquals("CACHE_003", ex.getCode());
+            assertFalse(ex.getMessage().contains("err"));
+            assertFalse(ex.getMessage().contains("l1-only"));
             assertEquals(1, cache.stats().getLoadFailureCount());
         }
 
@@ -712,6 +716,7 @@ class MultiLevelCacheTest {
     @Nested
     @DisplayName("MultiLevelCache L2 Redis 集成（Mock）")
     @ExtendWith(MockitoExtension.class)
+    @ExtendWith(OutputCaptureExtension.class)
     class MultiLevelCacheL2Tests {
 
         @Mock
@@ -828,7 +833,7 @@ class MultiLevelCacheTest {
 
         @Test
         @DisplayName("L2 值类型不匹配时忽略缓存并回源")
-        void l2TypeMismatchFallsBackToLoader() {
+        void l2TypeMismatchFallsBackToLoader(CapturedOutput output) {
             String redisKey = "test:l2-cache:260";
             when(boundValueOperations.get()).thenReturn(123);
 
@@ -837,11 +842,13 @@ class MultiLevelCacheTest {
             assertEquals("loaded-after-type-mismatch", result);
             assertEquals(1, cache.stats().getMissCount());
             verify(boundValueOperations).set("loaded-after-type-mismatch", Duration.ofMinutes(30));
+            assertFalse(output.getOut().contains(redisKey));
         }
 
         @Test
         @DisplayName("L2 泛型集合元素反序列化为 Map 时忽略缓存并回源")
-        void l2CollectionWithRawJsonElementsFallsBackToLoader() {
+        void l2CollectionWithRawJsonElementsFallsBackToLoader(
+                CapturedOutput output) {
             @SuppressWarnings("unchecked")
             RedisUtil redisUtil = mock(RedisUtil.class);
             CacheConfig<Integer, List<String>> config = CacheConfig.<Integer, List<String>>builder("list-cache")
@@ -862,6 +869,7 @@ class MultiLevelCacheTest {
 
             assertEquals(List.of("loaded"), result);
             verify(boundValueOperations).set(List.of("loaded"), Duration.ofMinutes(30));
+            assertFalse(output.getOut().contains(redisKey));
         }
 
         @Test
@@ -903,9 +911,10 @@ class MultiLevelCacheTest {
 
         @Test
         @DisplayName("L2 Redis 异常时自动降级——后续查询只走 L1")
-        void l2DegradationOnException() {
+        void l2DegradationOnException(CapturedOutput output) {
             String redisKey = "test:l2-cache:900";
-            when(boundValueOperations.get()).thenThrow(new RuntimeException("Redis connection refused"));
+            when(boundValueOperations.get())
+                    .thenThrow(new RuntimeException("secret-account-900"));
 
             // 即使 Redis 异常，loader 正常返回结果
             String result = cache.getOrLoad(900, k -> "degraded-loaded");
@@ -918,6 +927,7 @@ class MultiLevelCacheTest {
 
             // Redis get 只被调用了 1 次（第一次尝试），之后因降级不再调用
             verify(boundValueOperations, times(1)).get();
+            assertFalse(output.getOut().contains("secret-account-900"));
         }
 
         @Test

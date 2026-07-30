@@ -47,6 +47,7 @@ class MultiLevelSetCacheTest {
     @DisplayName("add 写入 L1 和 Redis Set")
     void addWritesLocalAndRedisSet() {
         when(redisUtil.boundSetOps("test:rule:index:project:1")).thenReturn(boundSetOperations);
+        when(boundSetOperations.isMember("rule-a")).thenReturn(true);
         MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
                 .getOrCreateSetCache(config, Function.identity(), String.class);
 
@@ -74,6 +75,8 @@ class MultiLevelSetCacheTest {
     @DisplayName("remove 删除成员并广播为本地失效语义")
     void removeDeletesMember() {
         when(redisUtil.boundSetOps("test:rule:index:project:1")).thenReturn(boundSetOperations);
+        when(boundSetOperations.isMember("rule-a")).thenReturn(false);
+        when(boundSetOperations.isMember("rule-b")).thenReturn(true);
         MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
                 .getOrCreateSetCache(config, Function.identity(), String.class);
 
@@ -112,5 +115,118 @@ class MultiLevelSetCacheTest {
 
         assertTrue(cache.stats().l2Degraded());
         assertEquals(1, manager.degradedCacheCount());
+    }
+
+    @Test
+    @DisplayName("局部新增不能让 L1 冒充完整 Redis Set 快照")
+    void partialAddShouldNotHideExistingRedisMembers() {
+        when(redisUtil.boundSetOps("test:rule:index:project:5"))
+                .thenReturn(boundSetOperations);
+        when(boundSetOperations.members())
+                .thenReturn(Set.of("rule-a", "rule-b"));
+        MultiLevelSetCache<String, String> cache =
+                new CacheManager(redisUtil, serializer)
+                        .getOrCreateSetCache(
+                                config,
+                                Function.identity(),
+                                String.class
+                        );
+
+        cache.add("project:5", "rule-a");
+
+        assertEquals(
+                Set.of("rule-a", "rule-b"),
+                cache.getMembers("project:5")
+        );
+        verify(boundSetOperations).members();
+    }
+
+    @Test
+    @DisplayName("本地已存在成员时仍应保证 Redis 收到幂等写入")
+    void repeatedAddShouldStillWriteRedis() {
+        when(redisUtil.boundSetOps("test:rule:index:project:6"))
+                .thenReturn(boundSetOperations);
+        MultiLevelSetCache<String, String> cache =
+                new CacheManager(redisUtil, serializer)
+                        .getOrCreateSetCache(
+                                config,
+                                Function.identity(),
+                                String.class
+                        );
+
+        cache.add("project:6", "rule-a");
+        cache.add("project:6", "rule-a");
+
+        verify(boundSetOperations, times(2)).add("rule-a");
+    }
+
+    @Test
+    @DisplayName("强一致读取应把 Redis 空集合视为权威结果")
+    void strongConsistencyShouldNotReturnStaleMembersWhenRedisIsEmpty() {
+        CacheConfig<String, String> strongConfig =
+                CacheConfig.<String, String>builder("rule:index")
+                        .l1Ttl(Duration.ofMinutes(10))
+                        .l2Ttl(Duration.ofHours(1))
+                        .redisKeyPrefix("test:rule:index:")
+                        .strongConsistency(true)
+                        .build();
+        when(redisUtil.boundSetOps("test:rule:index:project:7"))
+                .thenReturn(boundSetOperations);
+        when(boundSetOperations.members())
+                .thenReturn(Set.of("rule-a"), Set.of());
+        MultiLevelSetCache<String, String> cache =
+                new CacheManager(redisUtil, serializer)
+                        .getOrCreateSetCache(
+                                strongConfig,
+                                Function.identity(),
+                                String.class
+                        );
+
+        assertEquals(Set.of("rule-a"), cache.getMembers("project:7"));
+        assertTrue(cache.getMembers("project:7").isEmpty());
+    }
+
+    @Test
+    @DisplayName("Redis 恢复后应清理降级期间产生的本地集合")
+    void recoveryShouldDiscardLocalDegradedSnapshot() {
+        when(redisUtil.boundSetOps("test:rule:index:project:8"))
+                .thenReturn(boundSetOperations);
+        when(boundSetOperations.members())
+                .thenThrow(new RuntimeException("redis down"))
+                .thenReturn(Set.of("remote"));
+        when(redisUtil.hasKey("test:rule:index:__health_check"))
+                .thenReturn(true);
+        MultiLevelSetCache<String, String> cache =
+                new CacheManager(redisUtil, serializer)
+                        .getOrCreateSetCache(
+                                config,
+                                Function.identity(),
+                                String.class
+                        );
+
+        assertTrue(cache.getMembers("project:8").isEmpty());
+        cache.add("project:8", "local");
+        assertTrue(cache.tryRecoverL2());
+
+        assertEquals(Set.of("remote"), cache.getMembers("project:8"));
+    }
+
+    @Test
+    @DisplayName("默认 Set 工厂应使用配置的成员类型而不是固定 Long")
+    void defaultFactoryShouldUseConfiguredMemberType() {
+        CacheConfig<String, String> typedConfig =
+                CacheConfig.<String, String>builder("typed-set")
+                        .redisKeyPrefix("test:typed:")
+                        .strongConsistency(false)
+                        .valueType(String.class)
+                        .build();
+        when(redisUtil.boundSetOps("test:typed:key"))
+                .thenReturn(boundSetOperations);
+        when(boundSetOperations.members()).thenReturn(Set.of("member"));
+        MultiLevelSetCache<String, String> cache =
+                new CacheManager(redisUtil, serializer)
+                        .getOrCreateSetCache(typedConfig);
+
+        assertEquals(Set.of("member"), cache.getMembers("key"));
     }
 }

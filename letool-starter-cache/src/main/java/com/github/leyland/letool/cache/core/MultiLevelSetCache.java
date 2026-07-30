@@ -35,8 +35,12 @@ import java.util.function.Function;
  *     <li>强一致模式下读取优先走 Redis，不直接相信 L1，避免集合成员变更后读到旧快照。</li>
  * </ul>
  *
- * <p>注意：Set 成员直接交给 RedisTemplate 的 value serializer 处理。
- * 如果业务成员类型不是默认类型，建议显式传入 {@code memberType}，便于读取后做类型校验和转换。</p>
+ * <p>注意：Set 成员直接交给 RedisTemplate 的 value serializer 处理。成员类型优先使用工厂方法
+ * 显式传入的类型，其次使用 {@link CacheConfig#getValueType()}；两者都未配置时保留 RedisTemplate
+ * 的实际反序列化类型。</p>
+ *
+ * @param <K> 业务 key 类型
+ * @param <V> Set 成员类型
  */
 public class MultiLevelSetCache<K, V> {
 
@@ -82,6 +86,17 @@ public class MultiLevelSetCache<K, V> {
     /** Redis 是否处于降级状态，降级后读写不再访问 L2。 */
     private volatile boolean l2Degraded = false;
 
+    /**
+     * 创建 Set 二级缓存实例。
+     *
+     * @param config 缓存区域配置
+     * @param redisUtil Redis 操作入口
+     * @param keySerializer 业务 key 序列化函数
+     * @param memberType Redis 成员预期类型
+     * @param invalidationPublisher L1 失效广播发布器
+     * @param instanceId 当前 JVM 实例标识
+     * @param degradationListener 首次降级回调
+     */
     MultiLevelSetCache(CacheConfig<K, V> config,
                        RedisUtil redisUtil,
                        Function<K, String> keySerializer,
@@ -97,7 +112,7 @@ public class MultiLevelSetCache<K, V> {
         this.l2Enabled = redisUtil != null && config.isL2Enabled();
         this.strongConsistency = config.isStrongConsistency();
         this.keySerializer = keySerializer == null ? String::valueOf : keySerializer;
-        this.memberType = memberType == null ? defaultMemberType() : memberType;
+        this.memberType = resolveMemberType(memberType, config.getValueType());
         this.invalidationPublisher = invalidationPublisher == null ? CacheInvalidationPublisher.noop() : invalidationPublisher;
         this.instanceId = instanceId == null ? "local" : instanceId;
         this.degradationListener = degradationListener == null ? () -> { } : degradationListener;
@@ -107,54 +122,76 @@ public class MultiLevelSetCache<K, V> {
                 .build();
     }
 
+    /**
+     * 解析 Redis 成员的目标类型。
+     *
+     * @param explicitType 调用方显式指定的成员类型
+     * @param configuredType 缓存配置声明的 value 类型
+     * @param <T> 成员类型
+     * @return 目标类型；均未指定时返回 {@code null}
+     */
     @SuppressWarnings("unchecked")
-    private static <T> Class<T> defaultMemberType() {
-        // EDC 规则索引场景中成员主要是规则 ID，因此默认按 Long 转换。
-        return (Class<T>) Long.class;
+    private static <T> Class<T> resolveMemberType(
+            Class<T> explicitType,
+            Class<?> configuredType) {
+        return explicitType != null
+                ? explicitType
+                : (Class<T>) configuredType;
     }
 
     /**
      * 向指定 key 的集合中新增一个成员。
      *
-     * <p>本方法先更新当前 JVM 的 L1，再写 Redis，最后广播其它 JVM 清理本地副本。
-     * 这样当前节点能立刻读到刚写入的成员，其它节点通过失效消息或 TTL 保持一致。</p>
+     * <p>Redis 健康时不会为一次局部写入创建不完整 L1 快照；只有已有完整快照或 L2
+     * 不可用时才更新本地数据。</p>
+     *
+     * @param key 业务 key；为 {@code null} 时忽略
+     * @param member 待新增成员；为 {@code null} 时忽略
      */
     public void add(K key, V member) {
         if (key == null || member == null) {
             return;
         }
-        if (l1Enabled) {
-            Set<V> members = getOrCreateLocalSet(key);
-            if (!members.add(member)) {
-                // 本地已存在时不重复写 Redis，减少无意义网络操作。
-                return;
-            }
-        }
         addCount.incrementAndGet();
-        saddToRedis(key, member);
+        Set<V> local = l1Enabled ? l1Cache.getIfPresent(key) : null;
+        // Redis 健康时，局部 add 只更新已有完整快照，不能凭单个成员创建伪完整 L1。
+        boolean storedInL2 = saddToRedis(key, member);
+        if (local != null) {
+            local.add(member);
+        } else if (l1Enabled && !storedInL2) {
+            // L2 未启用或已经降级时，L1 成为当前节点的可用数据来源。
+            getOrCreateLocalSet(key).add(member);
+        }
         publishInvalidation(key);
     }
 
     /**
-     * 批量新增成员。Redis Set 自身负责去重，Java 侧只过滤 null。
+     * 批量新增成员。Redis Set 自身负责去重，Java 侧过滤 {@code null} 并提前去重。
+     *
+     * @param key 业务 key；为 {@code null} 时忽略
+     * @param membersToAdd 待新增成员集合
      */
     public void addAll(K key, Collection<V> membersToAdd) {
         if (key == null || membersToAdd == null || membersToAdd.isEmpty()) {
             return;
         }
-        int added = 0;
-        if (l1Enabled) {
-            Set<V> members = getOrCreateLocalSet(key);
-            for (V member : membersToAdd) {
-                if (member != null && members.add(member)) {
-                    added++;
-                }
+        Set<V> filtered = new HashSet<>();
+        for (V member : membersToAdd) {
+            if (member != null) {
+                filtered.add(member);
             }
-        } else {
-            added = (int) membersToAdd.stream().filter(member -> member != null).count();
         }
-        addCount.addAndGet(added);
-        saddAllToRedis(key, membersToAdd);
+        if (filtered.isEmpty()) {
+            return;
+        }
+        addCount.addAndGet(filtered.size());
+        Set<V> local = l1Enabled ? l1Cache.getIfPresent(key) : null;
+        boolean storedInL2 = saddAllToRedis(key, filtered);
+        if (local != null) {
+            local.addAll(filtered);
+        } else if (l1Enabled && !storedInL2) {
+            getOrCreateLocalSet(key).addAll(filtered);
+        }
         publishInvalidation(key);
     }
 
@@ -163,6 +200,9 @@ public class MultiLevelSetCache<K, V> {
      *
      * <p>删除会同步清理当前 JVM 的 L1，并通过 Redis/L1 失效广播影响其它 JVM。
      * 如果 Redis 已降级，则只清理当前进程本地副本。</p>
+     *
+     * @param key 业务 key；为 {@code null} 时忽略
+     * @param member 待删除成员；为 {@code null} 时忽略
      */
     public void remove(K key, V member) {
         if (key == null || member == null) {
@@ -181,6 +221,8 @@ public class MultiLevelSetCache<K, V> {
 
     /**
      * 删除整个 key 对应的集合。
+     *
+     * @param key 业务 key；为 {@code null} 时忽略
      */
     public void removeKey(K key) {
         if (key == null) {
@@ -196,32 +238,35 @@ public class MultiLevelSetCache<K, V> {
      *
      * <p>返回值始终是新的 {@link HashSet}，调用方修改返回集合不会污染缓存内部状态。
      * 在强一致模式下，会优先读取 Redis；Redis 不可用时才退回已有 L1 副本。</p>
+     *
+     * @param key 业务 key
+     * @return 成员快照；key 无效或不存在时返回空集合
      */
     public Set<V> getMembers(K key) {
         if (key == null) {
             return Collections.emptySet();
         }
-        Set<V> local = l1Enabled && !strongConsistency ? l1Cache.getIfPresent(key) : l1Cache.getIfPresent(key);
-        if (local != null && !local.isEmpty() && !strongConsistency) {
+        Set<V> local = l1Enabled ? l1Cache.getIfPresent(key) : null;
+        if (local != null && !strongConsistency) {
             l1HitCount.incrementAndGet();
             return new HashSet<>(local);
         }
         if (l2Enabled && !l2Degraded) {
             Set<V> l2Members = smembersFromRedis(key);
-            if (l2Members != null && !l2Members.isEmpty()) {
-                l2HitCount.incrementAndGet();
+            if (!l2Degraded) {
+                // Redis 成功返回的空 Set 同样是权威结果，不能回退到旧 L1。
+                if (l2Members.isEmpty()) {
+                    missCount.incrementAndGet();
+                } else {
+                    l2HitCount.incrementAndGet();
+                }
                 if (l1Enabled) {
-                    // Redis 命中后回填本地 Set，后续最终一致读取可以直接命中 L1。
-                    l1Cache.put(key, ConcurrentHashMap.newKeySet(l2Members.size()));
-                    Set<V> refill = l1Cache.getIfPresent(key);
-                    if (refill != null) {
-                        refill.addAll(l2Members);
-                    }
+                    l1Cache.put(key, concurrentSnapshot(l2Members));
                 }
                 return new HashSet<>(l2Members);
             }
         }
-        if (local != null && !local.isEmpty()) {
+        if (local != null) {
             l1HitCount.incrementAndGet();
             return new HashSet<>(local);
         }
@@ -231,6 +276,10 @@ public class MultiLevelSetCache<K, V> {
 
     /**
      * 判断指定 key 的集合中是否包含某个成员。
+     *
+     * @param key 业务 key
+     * @param member 待判断成员
+     * @return 存在返回 {@code true}，参数无效或不存在返回 {@code false}
      */
     public boolean contains(K key, V member) {
         if (key == null || member == null) {
@@ -243,7 +292,18 @@ public class MultiLevelSetCache<K, V> {
             }
         }
         if (l2Enabled && !l2Degraded) {
-            return sismemberInRedis(key, member);
+            boolean present = sismemberInRedis(key, member);
+            if (!l2Degraded) {
+                Set<V> local = l1Enabled ? l1Cache.getIfPresent(key) : null;
+                if (local != null) {
+                    if (present) {
+                        local.add(member);
+                    } else {
+                        local.remove(member);
+                    }
+                }
+                return present;
+            }
         }
         Set<V> members = l1Enabled ? l1Cache.getIfPresent(key) : null;
         return members != null && members.contains(member);
@@ -251,6 +311,8 @@ public class MultiLevelSetCache<K, V> {
 
     /**
      * 清空当前缓存区域的所有 L1/L2 数据，并广播其它 JVM 清理本地副本。
+     *
+     * <p>当前 L2 清理依赖 Redis key 模式查询，不适合超大 key 空间中的高频调用。</p>
      */
     public void evictAll() {
         evictLocalAll();
@@ -277,6 +339,22 @@ public class MultiLevelSetCache<K, V> {
     }
 
     /**
+     * 按广播中的序列化表示匹配并清理真实 L1 key。
+     *
+     * @param serializedKey 广播中的业务 key 字符串
+     */
+    void evictLocalSerializedKey(String serializedKey) {
+        if (!l1Enabled || serializedKey == null) {
+            return;
+        }
+        for (K candidate : l1Cache.asMap().keySet()) {
+            if (serializedKey.equals(keySerializer.apply(candidate))) {
+                l1Cache.invalidate(candidate);
+            }
+        }
+    }
+
+    /**
      * 仅清空当前 JVM 的 L1 区域，供失效监听器调用。
      */
     void evictLocalAll() {
@@ -291,6 +369,10 @@ public class MultiLevelSetCache<K, V> {
 
     /**
      * 尝试恢复 Redis L2。该方法只做轻量探测，不预热数据。
+     *
+     * <p>探测成功后会清空降级期间形成的本地快照，后续读取重新以 Redis 为准。</p>
+     *
+     * @return 已处于健康状态或本次恢复成功时返回 {@code true}
      */
     public boolean tryRecoverL2() {
         if (!l2Degraded) {
@@ -298,6 +380,7 @@ public class MultiLevelSetCache<K, V> {
         }
         try {
             redisUtil.hasKey(redisKeyPrefix + "__health_check");
+            evictLocalAll();
             l2Degraded = false;
             return true;
         } catch (Exception e) {
@@ -305,10 +388,12 @@ public class MultiLevelSetCache<K, V> {
         }
     }
 
+    /** @return 当前 L1 中估算的业务 key 数量 */
     public long estimatedSize() {
         return l1Enabled ? l1Cache.estimatedSize() : 0;
     }
 
+    /** @return 当前 Set 缓存运行统计快照 */
     public Stats stats() {
         return new Stats(name, l1HitCount.get(), l2HitCount.get(), missCount.get(),
                 addCount.get(), removeCount.get(), estimatedSize(), l2Degraded);
@@ -319,25 +404,40 @@ public class MultiLevelSetCache<K, V> {
         return l1Cache.get(key, ignored -> ConcurrentHashMap.newKeySet());
     }
 
+    /**
+     * 创建线程安全的完整成员快照。
+     *
+     * @param source Redis 返回的完整成员集合
+     * @return 可由本类内部安全更新的并发集合
+     */
+    private Set<V> concurrentSnapshot(Set<V> source) {
+        Set<V> snapshot = ConcurrentHashMap.newKeySet(
+                Math.max(1, source.size())
+        );
+        snapshot.addAll(source);
+        return snapshot;
+    }
+
     private String redisKey(K key) {
         return redisKeyPrefix + keySerializer.apply(key);
     }
 
-    private void saddToRedis(K key, V member) {
+    private boolean saddToRedis(K key, V member) {
         if (!l2Enabled || l2Degraded) {
-            return;
+            return false;
         }
         try {
             redisUtil.boundSetOps(redisKey(key)).add(member);
-            setTtl(key);
+            return setTtl(key);
         } catch (Exception e) {
             markL2Degraded(e);
+            return false;
         }
     }
 
-    private void saddAllToRedis(K key, Collection<V> members) {
+    private boolean saddAllToRedis(K key, Collection<V> members) {
         if (!l2Enabled || l2Degraded) {
-            return;
+            return false;
         }
         try {
             Object[] values = members.stream()
@@ -345,10 +445,12 @@ public class MultiLevelSetCache<K, V> {
                     .toArray();
             if (values.length > 0) {
                 redisUtil.boundSetOps(redisKey(key)).add(values);
-                setTtl(key);
+                return setTtl(key);
             }
+            return true;
         } catch (Exception e) {
             markL2Degraded(e);
+            return false;
         }
     }
 
@@ -403,12 +505,14 @@ public class MultiLevelSetCache<K, V> {
         }
     }
 
-    private void setTtl(K key) {
+    private boolean setTtl(K key) {
         try {
             // Redis SADD 不会自动设置过期时间，因此每次写入后补充 TTL。
             redisUtil.expire(redisKey(key), l2Ttl.toMillis(), TimeUnit.MILLISECONDS);
+            return true;
         } catch (Exception e) {
-            log.debug("Failed to set Redis Set TTL for cache [{}], key [{}]", name, key, e);
+            markL2Degraded(e);
+            return false;
         }
     }
 
@@ -417,6 +521,9 @@ public class MultiLevelSetCache<K, V> {
         if (raw == null) {
             return null;
         }
+        if (memberType == null) {
+            return (V) raw;
+        }
         if (memberType.isInstance(raw)) {
             return memberType.cast(raw);
         }
@@ -424,13 +531,21 @@ public class MultiLevelSetCache<K, V> {
         if (String.class.equals(memberType)) {
             return memberType.cast(value);
         }
-        if (Long.class.equals(memberType)) {
-            return memberType.cast(Long.valueOf(value));
-        }
         if (Integer.class.equals(memberType)) {
-            return memberType.cast(Integer.valueOf(value));
+            try {
+                return memberType.cast(Integer.valueOf(value));
+            } catch (NumberFormatException exception) {
+                return null;
+            }
         }
-        return (V) value;
+        if (Long.class.equals(memberType)) {
+            try {
+                return memberType.cast(Long.valueOf(value));
+            } catch (NumberFormatException exception) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private void publishInvalidation(K key) {
@@ -447,12 +562,26 @@ public class MultiLevelSetCache<K, V> {
             l2Degraded = true;
             // 首次降级时登记到 CacheManager，后续由恢复调度器统一探测。
             degradationListener.run();
-            log.warn("Set cache [{}] L2 degraded: {}", name, e.getMessage());
+            log.warn(
+                    "Set cache [{}] L2 degraded, causeType={}",
+                    name,
+                    e.getClass().getSimpleName()
+            );
+            log.debug("Set cache L2 degradation detail", e);
         }
     }
 
     /**
      * Set 缓存运行统计快照。
+     *
+     * @param name 缓存区域名称
+     * @param l1HitCount L1 命中次数
+     * @param l2HitCount L2 命中次数
+     * @param missCount 未命中次数
+     * @param addCount 新增成员计数
+     * @param removeCount 删除成员计数
+     * @param l1Size L1 业务 key 估算数量
+     * @param l2Degraded L2 是否处于降级状态
      */
     public record Stats(String name,
                         long l1HitCount,
@@ -462,6 +591,7 @@ public class MultiLevelSetCache<K, V> {
                         long removeCount,
                         long l1Size,
                         boolean l2Degraded) {
+        /** @return L1 命中、L2 命中和未命中的总次数 */
         public long totalRequests() {
             return l1HitCount + l2HitCount + missCount;
         }

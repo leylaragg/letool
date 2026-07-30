@@ -19,6 +19,10 @@ import java.util.function.Function;
  *
  * <p>适合“一组字段挂在同一个业务 key 下”的场景，例如用户资料字段、配置项字段、统计维度字段。
  * L2 使用 Redis Hash 原生结构，每个 field/value 都交给应用配置的 RedisTemplate 序列化器处理。</p>
+ *
+ * @param <K> 业务 key 类型
+ * @param <HK> Hash field 类型
+ * @param <HV> Hash value 类型
  */
 public class MultiLevelHashCache<K, HK, HV> {
 
@@ -53,14 +57,32 @@ public class MultiLevelHashCache<K, HK, HV> {
     /** 首次 Redis 异常进入降级时，通知 CacheManager 记录待恢复缓存。 */
     private final Runnable degradationListener;
 
+    /** L1 命中次数。 */
     private final AtomicLong l1HitCount = new AtomicLong();
+    /** L2 命中次数。 */
     private final AtomicLong l2HitCount = new AtomicLong();
+    /** L1/L2 未命中次数。 */
     private final AtomicLong missCount = new AtomicLong();
+    /** 写入字段计数。 */
     private final AtomicLong putCount = new AtomicLong();
+    /** 删除字段计数。 */
     private final AtomicLong deleteCount = new AtomicLong();
 
+    /** Redis L2 当前是否处于降级状态。 */
     private volatile boolean l2Degraded = false;
 
+    /**
+     * 创建 Hash 二级缓存实例。
+     *
+     * @param config 缓存区域配置
+     * @param redisUtil Redis 操作入口
+     * @param keySerializer 业务 key 序列化函数
+     * @param hashKeyType Redis Hash field 预期类型
+     * @param hashValueType Redis Hash value 预期类型
+     * @param invalidationPublisher L1 失效广播发布器
+     * @param instanceId 当前 JVM 实例标识
+     * @param degradationListener 首次降级回调
+     */
     MultiLevelHashCache(CacheConfig<K, HV> config,
                         RedisUtil redisUtil,
                         Function<K, String> keySerializer,
@@ -78,7 +100,10 @@ public class MultiLevelHashCache<K, HK, HV> {
         this.strongConsistency = config.isStrongConsistency();
         this.keySerializer = keySerializer == null ? String::valueOf : keySerializer;
         this.hashKeyType = hashKeyType;
-        this.hashValueType = hashValueType;
+        this.hashValueType = resolveHashValueType(
+                hashValueType,
+                config.getValueType()
+        );
         this.invalidationPublisher = invalidationPublisher == null ? CacheInvalidationPublisher.noop() : invalidationPublisher;
         this.instanceId = instanceId == null ? "local" : instanceId;
         this.degradationListener = degradationListener == null ? () -> { } : degradationListener;
@@ -89,23 +114,53 @@ public class MultiLevelHashCache<K, HK, HV> {
     }
 
     /**
+     * 解析 Redis Hash value 的目标类型。
+     *
+     * @param explicitType 调用方显式指定的 value 类型
+     * @param configuredType 缓存配置声明的 value 类型
+     * @param <T> Hash value 类型
+     * @return 目标类型；均未指定时返回 {@code null}
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> Class<T> resolveHashValueType(
+            Class<T> explicitType,
+            Class<?> configuredType) {
+        return explicitType != null
+                ? explicitType
+                : (Class<T>) configuredType;
+    }
+
+    /**
      * 写入或覆盖一个 Hash 字段。
      *
      * <p>字段和值会直接交给 RedisTemplate 的 hashKey/hashValue 序列化器处理，不做字符串化。</p>
+     *
+     * @param key 业务 key；为 {@code null} 时忽略
+     * @param field Hash field；为 {@code null} 时忽略
+     * @param value Hash value；为 {@code null} 时忽略
      */
     public void put(K key, HK field, HV value) {
         if (key == null || field == null || value == null) {
             return;
         }
-        if (l1Enabled) {
+        putCount.incrementAndGet();
+        Map<HK, HV> local = l1Enabled ? l1Cache.getIfPresent(key) : null;
+        // Redis 健康时，局部 put 只更新已有完整快照，不能凭单个字段创建伪完整 L1。
+        boolean storedInL2 = putToRedis(key, field, value);
+        if (local != null) {
+            local.put(field, value);
+        } else if (l1Enabled && !storedInL2) {
             getOrCreateLocalMap(key).put(field, value);
         }
-        putCount.incrementAndGet();
-        putToRedis(key, field, value);
         publishInvalidation(key);
     }
 
-    /** 批量写入 Hash 字段；null field/value 会被忽略。 */
+    /**
+     * 批量写入 Hash 字段；null field/value 会被忽略。
+     *
+     * @param key 业务 key；为 {@code null} 时忽略
+     * @param values 待写入的 field/value 映射
+     */
     public void putAll(K key, Map<HK, HV> values) {
         if (key == null || values == null || values.isEmpty()) {
             return;
@@ -119,15 +174,24 @@ public class MultiLevelHashCache<K, HK, HV> {
         if (filtered.isEmpty()) {
             return;
         }
-        if (l1Enabled) {
+        putCount.addAndGet(filtered.size());
+        Map<HK, HV> local = l1Enabled ? l1Cache.getIfPresent(key) : null;
+        boolean storedInL2 = putAllToRedis(key, filtered);
+        if (local != null) {
+            local.putAll(filtered);
+        } else if (l1Enabled && !storedInL2) {
             getOrCreateLocalMap(key).putAll(filtered);
         }
-        putCount.addAndGet(filtered.size());
-        putAllToRedis(key, filtered);
         publishInvalidation(key);
     }
 
-    /** 读取指定 Hash 字段；强一致模式下优先读取 Redis。 */
+    /**
+     * 读取指定 Hash 字段；强一致模式下优先读取 Redis。
+     *
+     * @param key 业务 key
+     * @param field Hash field
+     * @return 字段值；参数无效或字段不存在时返回 {@code null}
+     */
     public HV get(K key, HK field) {
         if (key == null || field == null) {
             return null;
@@ -139,10 +203,18 @@ public class MultiLevelHashCache<K, HK, HV> {
         }
         if (l2Enabled && !l2Degraded) {
             HV value = getFromRedis(key, field);
-            if (value != null) {
-                l2HitCount.incrementAndGet();
-                if (l1Enabled) {
-                    getOrCreateLocalMap(key).put(field, value);
+            if (!l2Degraded) {
+                if (value != null) {
+                    l2HitCount.incrementAndGet();
+                } else {
+                    missCount.incrementAndGet();
+                }
+                if (local != null) {
+                    if (value == null) {
+                        local.remove(field);
+                    } else {
+                        local.put(field, value);
+                    }
                 }
                 return value;
             }
@@ -155,7 +227,12 @@ public class MultiLevelHashCache<K, HK, HV> {
         return null;
     }
 
-    /** 读取整个 Hash 的字段快照；返回值是新的 Map，调用方修改不会污染缓存内部状态。 */
+    /**
+     * 读取整个 Hash 的字段快照；返回值是新的 Map，调用方修改不会污染缓存内部状态。
+     *
+     * @param key 业务 key
+     * @return 完整字段快照；参数无效或无数据时返回空 Map
+     */
     public Map<HK, HV> entries(K key) {
         if (key == null) {
             return Map.of();
@@ -167,8 +244,13 @@ public class MultiLevelHashCache<K, HK, HV> {
         }
         if (l2Enabled && !l2Degraded) {
             Map<HK, HV> values = entriesFromRedis(key);
-            if (!values.isEmpty()) {
-                l2HitCount.incrementAndGet();
+            if (!l2Degraded) {
+                // Redis 成功返回的空 Hash 同样是权威结果，不能回退到旧 L1。
+                if (values.isEmpty()) {
+                    missCount.incrementAndGet();
+                } else {
+                    l2HitCount.incrementAndGet();
+                }
                 if (l1Enabled) {
                     l1Cache.put(key, new ConcurrentHashMap<>(values));
                 }
@@ -183,7 +265,12 @@ public class MultiLevelHashCache<K, HK, HV> {
         return Map.of();
     }
 
-    /** 删除指定 Hash 字段，并清理当前 JVM 的 L1 快照。 */
+    /**
+     * 删除指定 Hash 字段，并清理当前 JVM 的 L1 快照。
+     *
+     * @param key 业务 key；为 {@code null} 时忽略
+     * @param field 待删除 field；为 {@code null} 时忽略
+     */
     public void delete(K key, HK field) {
         if (key == null || field == null) {
             return;
@@ -199,7 +286,11 @@ public class MultiLevelHashCache<K, HK, HV> {
         publishInvalidation(key);
     }
 
-    /** 删除整个业务 key 对应的 Hash。 */
+    /**
+     * 删除整个业务 key 对应的 Hash。
+     *
+     * @param key 业务 key；为 {@code null} 时忽略
+     */
     public void removeKey(K key) {
         if (key == null) {
             return;
@@ -216,6 +307,22 @@ public class MultiLevelHashCache<K, HK, HV> {
         }
     }
 
+    /**
+     * 按广播中的序列化表示匹配并清理真实 L1 key。
+     *
+     * @param serializedKey 广播中的业务 key 字符串
+     */
+    void evictLocalSerializedKey(String serializedKey) {
+        if (!l1Enabled || serializedKey == null) {
+            return;
+        }
+        for (K candidate : l1Cache.asMap().keySet()) {
+            if (serializedKey.equals(keySerializer.apply(candidate))) {
+                l1Cache.invalidate(candidate);
+            }
+        }
+    }
+
     /** 仅清空当前 JVM 的 L1 区域，供失效监听器调用。 */
     void evictLocalAll() {
         if (l1Enabled) {
@@ -227,13 +334,20 @@ public class MultiLevelHashCache<K, HK, HV> {
         return l2Degraded;
     }
 
-    /** 尝试恢复 Redis L2；该方法只做轻量探测，不预热数据。 */
+    /**
+     * 尝试恢复 Redis L2；该方法只做轻量探测，不预热数据。
+     *
+     * <p>探测成功后会清空降级期间形成的本地快照。</p>
+     *
+     * @return 已处于健康状态或本次恢复成功时返回 {@code true}
+     */
     public boolean tryRecoverL2() {
         if (!l2Degraded) {
             return true;
         }
         try {
             redisUtil.hasKey(redisKeyPrefix + "__health_check");
+            evictLocalAll();
             l2Degraded = false;
             return true;
         } catch (Exception e) {
@@ -241,7 +355,7 @@ public class MultiLevelHashCache<K, HK, HV> {
         }
     }
 
-    /** 返回运行统计快照。 */
+    /** @return 当前 Hash 缓存运行统计快照 */
     public Stats stats() {
         return new Stats(name, l1HitCount.get(), l2HitCount.get(), missCount.get(),
                 putCount.get(), deleteCount.get(), l1Enabled ? l1Cache.estimatedSize() : 0, l2Degraded);
@@ -251,27 +365,29 @@ public class MultiLevelHashCache<K, HK, HV> {
         return l1Cache.get(key, ignored -> new ConcurrentHashMap<>());
     }
 
-    private void putToRedis(K key, HK field, HV value) {
+    private boolean putToRedis(K key, HK field, HV value) {
         if (!l2Enabled || l2Degraded) {
-            return;
+            return false;
         }
         try {
             redisUtil.boundHashOps(redisKey(key)).put(field, value);
-            setTtl(key);
+            return setTtl(key);
         } catch (Exception e) {
             markL2Degraded(e);
+            return false;
         }
     }
 
-    private void putAllToRedis(K key, Map<HK, HV> values) {
+    private boolean putAllToRedis(K key, Map<HK, HV> values) {
         if (!l2Enabled || l2Degraded) {
-            return;
+            return false;
         }
         try {
             redisUtil.boundHashOps(redisKey(key)).putAll(values);
-            setTtl(key);
+            return setTtl(key);
         } catch (Exception e) {
             markL2Degraded(e);
+            return false;
         }
     }
 
@@ -328,34 +444,42 @@ public class MultiLevelHashCache<K, HK, HV> {
         }
     }
 
-    private void setTtl(K key) {
+    private boolean setTtl(K key) {
         try {
             redisUtil.expire(redisKey(key), l2Ttl.toMillis(), TimeUnit.MILLISECONDS);
+            return true;
         } catch (Exception e) {
-            log.debug("Failed to set Redis Hash TTL for cache [{}], key [{}]", name, key, e);
+            markL2Degraded(e);
+            return false;
         }
     }
 
-    @SuppressWarnings("unchecked")
     private HK convertField(Object raw) {
         if (raw == null) {
             return null;
         }
-        if (hashKeyType == null || hashKeyType.isInstance(raw)) {
-            return (HK) raw;
+        if (hashKeyType == null) {
+            @SuppressWarnings("unchecked")
+            HK field = (HK) raw;
+            return field;
         }
-        return (HK) raw;
+        return hashKeyType.isInstance(raw)
+                ? hashKeyType.cast(raw)
+                : null;
     }
 
-    @SuppressWarnings("unchecked")
     private HV convertValue(Object raw) {
         if (raw == null) {
             return null;
         }
-        if (hashValueType == null || hashValueType.isInstance(raw)) {
-            return (HV) raw;
+        if (hashValueType == null) {
+            @SuppressWarnings("unchecked")
+            HV value = (HV) raw;
+            return value;
         }
-        return (HV) raw;
+        return hashValueType.isInstance(raw)
+                ? hashValueType.cast(raw)
+                : null;
     }
 
     private String redisKey(K key) {
@@ -371,11 +495,27 @@ public class MultiLevelHashCache<K, HK, HV> {
         if (!l2Degraded) {
             l2Degraded = true;
             degradationListener.run();
-            log.warn("Hash cache [{}] L2 degraded: {}", name, e.getMessage());
+            log.warn(
+                    "Hash cache [{}] L2 degraded, causeType={}",
+                    name,
+                    e.getClass().getSimpleName()
+            );
+            log.debug("Hash cache L2 degradation detail", e);
         }
     }
 
-    /** Hash 缓存运行统计快照。 */
+    /**
+     * Hash 缓存运行统计快照。
+     *
+     * @param name 缓存区域名称
+     * @param l1HitCount L1 命中次数
+     * @param l2HitCount L2 命中次数
+     * @param missCount 未命中次数
+     * @param putCount 写入字段计数
+     * @param deleteCount 删除字段计数
+     * @param l1Size L1 业务 key 估算数量
+     * @param l2Degraded L2 是否处于降级状态
+     */
     public record Stats(String name,
                         long l1HitCount,
                         long l2HitCount,
