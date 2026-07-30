@@ -1,5 +1,7 @@
 package com.github.leyland.letool.tool.config;
 
+import com.github.leyland.letool.tool.json.Fastjson2JsonCodec;
+import com.github.leyland.letool.tool.json.JsonCodec;
 import com.github.leyland.letool.tool.redis.FastJson2JsonRedisSerializer;
 import com.github.leyland.letool.tool.redis.RedisMessageQueueUtil;
 import com.github.leyland.letool.tool.redis.RedisUtil;
@@ -18,11 +20,10 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 /**
- * Auto-configuration for the base tool starter.
+ * 基础工具 Starter 自动配置。
  *
- * <p>This module is the lightweight toolkit foundation. It registers only the
- * Spring adapter beans that are useful by default and keeps optional adapters,
- * such as Redis, behind explicit classpath and bean conditions.</p>
+ * <p>该模块是轻量级工具基础层，只注册默认有用的 Spring 适配器 Bean。
+ * Redis 等可选适配器通过明确的类路径和 Bean 条件进行隔离。</p>
  */
 @AutoConfiguration
 @AutoConfigureBefore(RedisAutoConfiguration.class)
@@ -30,9 +31,23 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
 public class LetoolToolAutoConfiguration {
 
     /**
-     * Registers the Spring application-context helper unless the application owns it.
+     * 注册与底层实现无关的 JSON 扩展接口。
      *
-     * @return Spring application-context helper.
+     * <p>应用可以声明自定义 {@link JsonCodec} Bean 替换 Fastjson2。默认编解码器
+     * 不可变，也不会修改 Fastjson2 全局状态。</p>
+     *
+     * @return 基于 Fastjson2 的默认 JSON 编解码器
+     */
+    @Bean
+    @ConditionalOnMissingBean(JsonCodec.class)
+    public JsonCodec jsonCodec() {
+        return Fastjson2JsonCodec.createDefault();
+    }
+
+    /**
+     * 在应用未自行提供时注册 Spring 应用上下文工具。
+     *
+     * @return Spring 应用上下文工具
      */
     @Bean
     @ConditionalOnMissingBean(SpringUtil.class)
@@ -41,18 +56,19 @@ public class LetoolToolAutoConfiguration {
     }
 
     /**
-     * Redis-specific adapter configuration.
+     * Redis 专用适配器配置。
      */
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnClass(RedisTemplate.class)
     static class RedisToolConfiguration {
 
         /**
-         * Provides a default object RedisTemplate when the application has Redis
-         * connection infrastructure but has not defined its own redisTemplate.
+         * 当应用具备 Redis 连接基础设施但未定义 {@code redisTemplate} 时，
+         * 提供默认的对象 RedisTemplate。
          *
-         * @param connectionFactory Redis connection factory.
-         * @return RedisTemplate with String keys and Fastjson2 JSON values.
+         * @param connectionFactory Redis 连接工厂
+         * @param properties 工具 Starter 配置，包括 Redis 自动类型包白名单
+         * @return 使用字符串键和 Fastjson2 JSON 值的 RedisTemplate
          */
         @Bean("redisTemplate")
         @ConditionalOnBean(RedisConnectionFactory.class)
@@ -78,10 +94,10 @@ public class LetoolToolAutoConfiguration {
         }
 
         /**
-         * Registers Redis helper only when application Redis infrastructure exists.
+         * 仅在应用存在 Redis 基础设施时注册 Redis 工具。
          *
-         * @param redisTemplate Spring Redis object template.
-         * @return Redis helper wrapper.
+         * @param redisTemplate Spring Redis 对象模板
+         * @return Redis 工具封装
          */
         @Bean
         @ConditionalOnBean(name = "redisTemplate")
@@ -91,10 +107,10 @@ public class LetoolToolAutoConfiguration {
         }
 
         /**
-         * Registers Redis message queue helper only when application Redis infrastructure exists.
+         * 仅在应用存在 Redis 基础设施时注册 Redis 消息队列工具。
          *
-         * @param redisTemplate Spring Redis object template.
-         * @return Redis message queue helper wrapper.
+         * @param redisTemplate Spring Redis 对象模板
+         * @return Redis 消息队列工具封装
          */
         @Bean
         @ConditionalOnBean(name = "redisTemplate")

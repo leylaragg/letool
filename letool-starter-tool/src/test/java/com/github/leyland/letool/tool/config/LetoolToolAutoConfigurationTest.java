@@ -3,6 +3,8 @@ package com.github.leyland.letool.tool.config;
 import com.github.leyland.letool.tool.redis.RedisUtil;
 import com.github.leyland.letool.tool.redis.RedisMessageQueueUtil;
 import com.github.leyland.letool.tool.redis.FastJson2JsonRedisSerializer;
+import com.github.leyland.letool.tool.json.Fastjson2JsonCodec;
+import com.github.leyland.letool.tool.json.JsonCodec;
 import com.github.leyland.letool.tool.spring.SpringUtil;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -18,11 +20,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
 /**
- * Tests the Spring Boot starter contract for {@link LetoolToolAutoConfiguration}.
+ * 验证 {@link LetoolToolAutoConfiguration} 的 Spring Boot Starter 契约。
  *
- * <p>The tool starter is the lightweight base module. Spring and Redis helpers
- * must be explicit adapter beans, not accidental results of broad component
- * scanning.</p>
+ * <p>工具 Starter 是轻量级基础模块。Spring 和 Redis 工具必须通过明确的
+ * 适配器 Bean 注册，不能依赖宽泛组件扫描偶然生效。</p>
  */
 class LetoolToolAutoConfigurationTest {
 
@@ -31,20 +32,37 @@ class LetoolToolAutoConfigurationTest {
             .withPropertyValues("spring.main.allow-bean-definition-overriding=false");
 
     /**
-     * Redis helper should stay absent when no {@link RedisTemplate} bean exists.
+     * 不存在 {@link RedisTemplate} Bean 时不应创建 Redis 工具。
      */
     @Test
     void shouldStartWithoutRedisTemplateAndNotCreateRedisUtil() {
         contextRunner.run(context -> {
             assertThat(context).hasNotFailed();
             assertThat(context).hasSingleBean(SpringUtil.class);
+            assertThat(context).hasSingleBean(JsonCodec.class);
+            assertThat(context.getBean(JsonCodec.class)).isInstanceOf(Fastjson2JsonCodec.class);
             assertThat(context).doesNotHaveBean(RedisUtil.class);
             assertThat(context).doesNotHaveBean(RedisMessageQueueUtil.class);
         });
     }
 
     /**
-     * Redis helper should be created only when object Redis infrastructure is present.
+     * 用户自定义编解码器应替换默认实现，且不引入全局可变状态。
+     */
+    @Test
+    void shouldBackOffWhenUserProvidesJsonCodec() {
+        contextRunner
+                .withUserConfiguration(UserJsonCodecConfiguration.class)
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(JsonCodec.class);
+                    assertThat(context.getBean(JsonCodec.class))
+                            .isSameAs(context.getBean("userJsonCodec"));
+                });
+    }
+
+    /**
+     * 仅在对象 Redis 基础设施存在时创建 Redis 工具。
      */
     @Test
     void shouldCreateRedisUtilWhenRedisTemplateExists() {
@@ -63,8 +81,8 @@ class LetoolToolAutoConfigurationTest {
     }
 
     /**
-     * When Redis connection infrastructure exists but the application does not
-     * define redisTemplate, the starter should provide a JSON object template.
+     * Redis 连接基础设施存在但应用未定义 {@code redisTemplate} 时，
+     * Starter 应提供 JSON 对象模板。
      */
     @Test
     void shouldCreateDefaultRedisTemplateWhenConnectionFactoryExists() {
@@ -99,8 +117,8 @@ class LetoolToolAutoConfigurationTest {
     }
 
     /**
-     * StringRedisTemplate alone should not activate RedisUtil because RedisUtil is
-     * intended to use the application's object RedisTemplate and its serializers.
+     * 仅存在 StringRedisTemplate 时不应激活 RedisUtil，因为 RedisUtil 应使用
+     * 应用的对象 RedisTemplate 及其序列化器。
      */
     @Test
     void shouldNotCreateRedisUtilWhenOnlyStringRedisTemplateExists() {
@@ -115,7 +133,7 @@ class LetoolToolAutoConfigurationTest {
     }
 
     /**
-     * User-defined adapter beans should replace starter defaults cleanly.
+     * 用户自定义适配器 Bean 应完整替换 Starter 默认实现。
      */
     @Test
     void shouldBackOffWhenUserProvidesToolAdapterBeans() {
@@ -133,7 +151,7 @@ class LetoolToolAutoConfigurationTest {
     }
 
     /**
-     * Minimal Redis infrastructure used to activate {@link RedisUtil}.
+     * 用于激活 {@link RedisUtil} 的最小 Redis 基础设施。
      */
     @Configuration(proxyBeanMethods = false)
     static class RedisTemplateConfiguration {
@@ -145,7 +163,7 @@ class LetoolToolAutoConfigurationTest {
     }
 
     /**
-     * Minimal Redis connection infrastructure used to activate the default template.
+     * 用于激活默认模板的最小 Redis 连接基础设施。
      */
     @Configuration(proxyBeanMethods = false)
     static class RedisConnectionFactoryConfiguration {
@@ -157,7 +175,7 @@ class LetoolToolAutoConfigurationTest {
     }
 
     /**
-     * Simulates applications that only define StringRedisTemplate.
+     * 模拟仅定义 StringRedisTemplate 的应用。
      */
     @Configuration(proxyBeanMethods = false)
     static class StringRedisTemplateConfiguration {
@@ -169,7 +187,19 @@ class LetoolToolAutoConfigurationTest {
     }
 
     /**
-     * Simulates applications that own the tool adapter beans themselves.
+     * 模拟使用其他 JSON 实现的应用。
+     */
+    @Configuration(proxyBeanMethods = false)
+    static class UserJsonCodecConfiguration {
+
+        @Bean
+        JsonCodec userJsonCodec() {
+            return mock(JsonCodec.class);
+        }
+    }
+
+    /**
+     * 模拟自行提供工具适配器 Bean 的应用。
      */
     @Configuration(proxyBeanMethods = false)
     static class UserToolAdapterConfiguration {

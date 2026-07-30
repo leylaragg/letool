@@ -33,13 +33,21 @@ Redis 操作、分布式 ID、树形结构、字符串、集合、日期时间�
 ### 2. 使用 JSON 序列化
 
 ```java
-// 对象转 JSON
+// 默认入口：保持现有 Fastjson2 紧凑输出策略
 String json = JsonUtil.toJsonString(user);
 String pretty = JsonUtil.toPrettyJson(user);
 
 // JSON 转对象
 User user = JsonUtil.parseObject(json, User.class);
 List<User> users = JsonUtil.parseArray(jsonArray, User.class);
+
+// 单次调用使用自定义策略，不修改全局状态
+JsonCodec codec = Fastjson2JsonCodec.builder()
+    .writerFeatures(JSONWriter.Feature.WriteNulls)
+    .readerFeatures(JSONReader.Feature.SupportSmartMatch)
+    .dateFormat("yyyy-MM-dd HH:mm:ss")
+    .build();
+String customJson = JsonUtil.toJsonString(user, codec);
 ```
 
 ### 3. 返回统一响应体
@@ -97,6 +105,10 @@ public User getUser() {
 
 ### 3. JSON 工具 JsonUtil
 
+`JsonUtil` 是静态兼容门面，原有方法继续使用内置的不可变 Fastjson2 codec。需要不同策略时，
+可以给单次调用显式传入 `JsonCodec`；Spring 应用则优先注入自动配置的 `JsonCodec` Bean。
+Letool 不提供可变的全局 `setCodec`，避免测试之间和并发请求之间互相污染。
+
 ```java
 // 序列化
 String json = JsonUtil.toJsonString(obj);
@@ -117,6 +129,43 @@ Map<String, Object> map = JsonUtil.toMap(user);
 User user = JsonUtil.toBean(map, User.class);
 UserVO vo = JsonUtil.convert(userDO, UserVO.class);
 ```
+
+**Spring 中替换默认策略**
+
+```java
+@Configuration
+class JsonConfiguration {
+
+    @Bean
+    JsonCodec jsonCodec() {
+        return Fastjson2JsonCodec.builder()
+            .writerFeatures(
+                JSONWriter.Feature.WriteNulls,
+                JSONWriter.Feature.WriteEnumsUsingName
+            )
+            .readerFeatures(JSONReader.Feature.SupportSmartMatch)
+            .dateFormat("iso8601")
+            .build();
+    }
+}
+```
+
+自动配置使用 `@ConditionalOnMissingBean(JsonCodec.class)`，因此应用 Bean 会完整替换默认 Bean。
+若使用 Jackson、Gson 或公司内部序列化组件，只需实现 provider-neutral 的 `JsonCodec` 接口。
+实现类构造完成后必须线程安全，并遵守接口定义的空值和 UTF-8 语义。
+
+通用 codec 会拒绝 Fastjson2 已废弃的 `JSONReader.Feature.SupportAutoType`。需要恢复 Redis
+多态对象时，应使用下文带 `AutoTypeBeforeHandler` allow-list 的 Redis serializer，不要在
+普通 JSON 入口全局开启 AutoType。
+
+默认实现的技术失败统一抛出 `JsonCodecException`：
+
+| 错误码 | 含义 |
+|---|---|
+| `TOOL_JSON_001` | JSON 序列化失败 |
+| `TOOL_JSON_002` | JSON 反序列化失败 |
+
+异常保留原始 cause，但不会把原始 JSON 放入消息，避免日志泄露敏感数据。
 
 ### 4. HTTP 工具 HttpUtil
 
@@ -291,5 +340,23 @@ int totalPages = page.getTotalPages();
 
 ## 配置属性
 
-`letool-starter-tool` 自身没有 YAML 配置项，所有工具类可直接调用。其传递依赖的异常模块配置
-参阅 [`letool-starter-exception`](../letool-starter-exception/README.md)。
+通用 `JsonCodec` 不依赖 YAML；通过应用 Bean 或
+`Fastjson2JsonCodec.builder()` 配置。Starter 创建默认对象 `RedisTemplate` 时，可以收紧
+Fastjson2 多态反序列化允许的包名：
+
+```yaml
+letool:
+  tool:
+    redis:
+      auto-type-accept-prefixes:
+        - org.springframework
+        - com.example.order
+```
+
+Redis value serializer 会写入类型信息，因此其 allow-list 是独立的安全边界，不会复用通用
+`JsonCodec` 的普通序列化策略。包名应尽量精确，不应配置为空字符串或过宽的公共包。
+序列化器会自动补齐包分隔符，例如 `com.example` 只允许 `com.example.*`，不会放行
+`com.exampleevil.*`；遇到未授权的类型信息会直接拒绝反序列化。
+
+传递依赖的异常模块配置参阅
+[`letool-starter-exception`](../letool-starter-exception/README.md)。

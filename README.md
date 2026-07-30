@@ -33,7 +33,7 @@
 | 模块 | 说明 | 依赖 |
 |------|------|------|
 | **letool-starter-exception** | 统一异常 —— 错误码、业务/系统异常、MessageSource 国际化解析 | 无 letool 内部依赖 |
-| **letool-starter-tool** | 核心工具 —— JSON、HTTP、ID 生成、字符串、集合、树工具；Spring/Redis helper 为可选适配器 | exception |
+| **letool-starter-tool** | 核心工具 —— 可替换 JsonCodec、HTTP、ID 生成、字符串、集合、树工具；Spring/Redis helper 为可选适配器 | exception |
 | **letool-starter-sensitive** | 数据脱敏 —— 注解驱动，Jackson 序列化 + 日志输出自动脱敏 | tool |
 | **letool-starter-log** | 日志封装 —— 链路追踪、审计日志、方法日志、动态日志级别 | tool, sensitive |
 | **letool-starter-cache** | 二级缓存 —— L1 Caffeine + L2 Redis，读穿/写穿、自动降级 | tool |
@@ -84,6 +84,12 @@ public R<User> getUser(@PathVariable Long id) {
 // JSON 工具
 String json = JsonUtil.toJsonString(user);
 User user = JsonUtil.parseObject(json, User.class);
+
+// 自定义策略可显式传入，Spring 应用也可替换 JsonCodec Bean
+JsonCodec codec = Fastjson2JsonCodec.builder()
+    .writerFeatures(JSONWriter.Feature.WriteNulls)
+    .build();
+String customJson = JsonUtil.toJsonString(user, codec);
 
 // ID 生成器
 long id = IdUtil.nextId();       // 雪花算法
@@ -187,6 +193,12 @@ String result = chain.execute(amount);
 
 ```yaml
 letool:
+  tool:
+    redis:
+        # Redis 多态 value 的反序列化白名单；填写尽可能精确的业务包名
+        auto-type-accept-prefixes:
+          - org.springframework
+          - com.example
   exception:
     enabled: true
     i18n:
