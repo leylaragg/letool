@@ -39,7 +39,7 @@
 | **letool-starter-cache** | 二级缓存 —— KV 与 Redis 原生 List/Hash/Set/ZSet，自动降级与恢复 | tool, exception |
 | **letool-starter-cipher-suite** | 加密套件 —— AES/RSA/SM2/SM3/SM4、数字签名 | tool |
 | **letool-starter-web** | Web 增强 —— 全局异常处理、响应包装、XSS/SQL 注入防御 | tool, exception |
-| **letool-starter-security** | 安全认证 —— JWT、注解权限、多种认证模式 | tool |
+| **letool-starter-security** | 安全认证 —— Resource Server、JWT 签发、角色与权限映射 | tool, exception |
 | **letool-starter-data** | 数据库封装 —— Lambda 查询、分页、注解映射；JDBC Template 为按需适配器 | tool, exception |
 | **letool-starter-thread** | 线程管理 —— 动态线程池、上下文传递、虚拟线程 | tool |
 | **letool-starter-swagger** | API 文档 —— Knife4j + SpringDoc，自动配置、离线导出 | web |
@@ -124,18 +124,21 @@ public R<User> getUser() {
 ### 4. JWT 安全认证
 
 ```java
-// 登录
-@SkipAuth
+// 登录路径通过 letool.security.exclude-paths 显式公开
 @PostMapping("/auth/login")
 public R<Map<String, String>> login(@RequestBody LoginRequest req) {
     LoginUser user = new LoginUser(1L, req.getUsername(),
-            List.of("ROLE_ADMIN"), List.of("user:read", "user:write"));
+            List.of("ADMIN"), List.of("user:read", "user:write"));
     String accessToken = jwtTokenProvider.generateAccessToken(user);
-    return R.ok(Map.of("accessToken", accessToken));
+    String refreshToken = jwtTokenProvider.generateRefreshToken(user);
+    return R.ok(Map.of(
+            "accessToken", accessToken,
+            "refreshToken", refreshToken
+    ));
 }
 
 // 权限控制
-@RequireRole("ROLE_ADMIN")
+@RequireRole("ADMIN")
 @DeleteMapping("/user/{id}")
 public R<Void> deleteUser(@PathVariable Long id) { ... }
 
@@ -247,9 +250,11 @@ letool:
     enabled: true
     auth-mode: jwt
     jwt:
+      # 必填，UTF-8 长度至少 32 字节
       secret: "${JWT_SECRET}"
-      access-token-expiration: 30m
-      refresh-token-expiration: 7d
+      access-token-expiration: 1800
+      refresh-token-expiration: 604800
+      issuer: my-application
     exclude-paths:
       - /api/public/**
       - /api/auth/**
@@ -268,7 +273,7 @@ letool:
 | `ToolController` | R 响应体、JsonUtil、StrUtil、IdUtil |
 | `SensitiveController` | @Sensitive 数据脱敏 |
 | `CipherController` | AES / SM2 加解密、哈希 |
-| `AuthController` | JWT 登录、@SkipAuth、@RequireRole |
+| `AuthController` | JWT 登录、Resource Server、@RequireRole |
 | `DataStructureController` | TreeBuilder 树构建、DecisionChain 决策链 |
 
 启动方式：

@@ -3,20 +3,13 @@ package com.github.leyland.letool.security.enums;
 /**
  * 认证模式枚举。
  *
- * <ul>
- *   <li>{@link #JWT} — 无状态 JWT 认证，Token 自包含用户信息</li>
- *   <li>{@link #JWT_REDIS} — JWT + Redis 存储，支持主动失效和分布式会话</li>
- *   <li>{@link #SESSION} — 传统 Session 会话认证</li>
- * </ul>
+ * <p>当前模块只公开已经实现并由 Spring Security Resource Server 验证的 JWT 模式。
+ * Redis 主动失效和 Session 认证应由独立实现提供，避免配置存在但运行时仍走 JWT。</p>
  *
  * @author leyland
  * @since 2.0.0
  */
 public enum AuthMode {
     /** 无状态 JWT 认证 */
-    JWT,
-    /** JWT + Redis 存储，Token 可主动失效 */
-    JWT_REDIS,
-    /** 传统 Session 认证 */
-    SESSION
+    JWT
 }

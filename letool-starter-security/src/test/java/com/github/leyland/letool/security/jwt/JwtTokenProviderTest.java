@@ -2,11 +2,15 @@ package com.github.leyland.letool.security.jwt;
 
 import com.github.leyland.letool.security.config.SecurityProperties;
 import com.github.leyland.letool.security.context.LoginUser;
+import com.github.leyland.letool.exception.core.SystemException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -217,6 +221,49 @@ class JwtTokenProviderTest {
     class TokenValidationTests {
 
         @Test
+        @DisplayName("无效令牌不应通过 validateToken 验证")
+        void invalidTokenShouldFailValidation() {
+            assertFalse(provider.validateToken("invalid-token"));
+            assertFalse(provider.validateToken(""));
+            assertFalse(provider.validateToken(null));
+        }
+
+        @Test
+        @DisplayName("刷新令牌不能作为访问令牌使用")
+        void refreshTokenShouldNotPassAccessTokenValidation() {
+            LoginUser user = new LoginUser(
+                    1L,
+                    "admin",
+                    Collections.singletonList("ADMIN"),
+                    Collections.singletonList("user:read")
+            );
+
+            String refreshToken = provider.generateRefreshToken(user);
+
+            assertFalse(provider.validateToken(refreshToken));
+            assertNull(provider.parseToken(refreshToken));
+        }
+
+        @Test
+        @DisplayName("刷新令牌只能通过刷新令牌 API 验证和解析")
+        void refreshTokenShouldOnlyPassRefreshTokenApis() {
+            LoginUser user = new LoginUser(
+                    1L,
+                    "admin",
+                    Collections.singletonList("ADMIN"),
+                    Collections.singletonList("user:read")
+            );
+
+            String accessToken = provider.generateAccessToken(user);
+            String refreshToken = provider.generateRefreshToken(user);
+
+            assertTrue(provider.validateRefreshToken(refreshToken));
+            assertNotNull(provider.parseRefreshToken(refreshToken));
+            assertFalse(provider.validateRefreshToken(accessToken));
+            assertNull(provider.parseRefreshToken(accessToken));
+        }
+
+        @Test
         @DisplayName("有效令牌应能通过 parseToken 成功解析")
         void validTokenShouldParseSuccessfully() {
             LoginUser user = new LoginUser(1L, "admin",
@@ -254,19 +301,25 @@ class JwtTokenProviderTest {
 
         @Test
         @DisplayName("已过期的令牌通过 parseToken 解析应返回 null")
-        void expiredTokenParseShouldReturnNull() throws InterruptedException {
+        void expiredTokenParseShouldReturnNull() {
             LoginUser user = new LoginUser(1L, "admin",
                     Collections.singletonList("ROLE_ADMIN"),
                     Collections.emptyList());
 
-            // 使用 1 秒过期时间生成令牌
+            // 使用可控时钟推进时间，避免依赖真实休眠导致测试波动
             properties.getJwt().setAccessTokenExpiration(1);
-            JwtTokenProvider shortLived = new JwtTokenProvider(properties);
-            String token = shortLived.generateAccessToken(user);
-            // 等待令牌过期
-            Thread.sleep(1500);
+            Instant issuedAt = Instant.parse("2026-01-01T00:00:00Z");
+            JwtTokenProvider issuer = new JwtTokenProvider(
+                    properties,
+                    Clock.fixed(issuedAt, ZoneOffset.UTC)
+            );
+            String token = issuer.generateAccessToken(user);
+            JwtTokenProvider verifier = new JwtTokenProvider(
+                    properties,
+                    Clock.fixed(issuedAt.plusSeconds(2), ZoneOffset.UTC)
+            );
 
-            LoginUser result = shortLived.parseToken(token);
+            LoginUser result = verifier.parseToken(token);
             assertNull(result, "已过期的令牌解析结果应为 null");
         }
 
@@ -347,6 +400,31 @@ class JwtTokenProviderTest {
     @Nested
     @DisplayName("边界条件测试")
     class EdgeCaseTests {
+
+        @Test
+        @DisplayName("默认密钥应在初始化阶段失败")
+        void defaultSecretShouldFailFast() {
+            SystemException exception = assertThrows(
+                    SystemException.class,
+                    () -> new JwtTokenProvider(new SecurityProperties())
+            );
+
+            assertEquals("SECURITY_001", exception.getCode());
+        }
+
+        @Test
+        @DisplayName("不足 256 位的 HMAC 密钥应在初始化阶段失败")
+        void shortSecretShouldFailFast() {
+            SecurityProperties invalidProperties = new SecurityProperties();
+            invalidProperties.getJwt().setSecret("short-secret");
+
+            SystemException exception = assertThrows(
+                    SystemException.class,
+                    () -> new JwtTokenProvider(invalidProperties)
+            );
+
+            assertEquals("SECURITY_001", exception.getCode());
+        }
 
         @Test
         @DisplayName("用户角色为空列表时生成的令牌应可正常解析")

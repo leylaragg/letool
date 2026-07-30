@@ -1,7 +1,6 @@
 package com.github.leyland.letool.sample.controller;
 
 import com.github.leyland.letool.sample.model.LoginRequest;
-import com.github.leyland.letool.security.annotation.SkipAuth;
 import com.github.leyland.letool.security.annotation.RequireRole;
 import com.github.leyland.letool.security.context.LoginUser;
 import com.github.leyland.letool.security.jwt.JwtTokenProvider;
@@ -17,7 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 演示 letool-starter-security JWT 认证与权限控制.
+ * 演示 letool-starter-security JWT 认证与权限控制。
  */
 @RestController
 public class AuthController {
@@ -29,15 +28,19 @@ public class AuthController {
     }
 
     /**
-     * 登录 —— 跳过认证，返回 JWT token.
+     * 登录并返回 JWT Token。
+     *
+     * <p>公开访问由 {@code letool.security.exclude-paths} 配置，不依赖无效的控制器标记。</p>
+     *
+     * @param request 登录请求
+     * @return AccessToken 和 RefreshToken
      */
-    @SkipAuth
     @PostMapping("/api/auth/login")
     public R<Map<String, String>> login(@RequestBody LoginRequest request) {
         // 简化演示：直接创建用户，不查数据库
         LoginUser user = new LoginUser(
                 1L, request.getUsername(),
-                List.of("ROLE_USER", "ROLE_ADMIN"),
+                List.of("USER", "ADMIN"),
                 List.of("user:read", "user:write")
         );
         String accessToken = jwtTokenProvider.generateAccessToken(user);
@@ -50,7 +53,9 @@ public class AuthController {
     }
 
     /**
-     * 获取当前用户信息 —— 需要在 Authorization Header 中传入 Bearer token.
+     * 获取当前用户信息，需要在 Authorization Header 中传入 Bearer Token。
+     *
+     * @return 当前用户身份、角色和权限
      */
     @GetMapping("/api/user/me")
     public R<Map<String, Object>> me() {
@@ -64,18 +69,24 @@ public class AuthController {
     }
 
     /**
-     * 管理员接口 —— 仅 ADMIN 角色可访问.
+     * 管理员接口，仅 ADMIN 角色可访问。
+     *
+     * @return 管理员控制台说明
      */
-    @RequireRole("ROLE_ADMIN")
+    @RequireRole("ADMIN")
     @GetMapping("/api/admin/dashboard")
     public R<String> dashboard() {
         return R.ok("管理员控制台——只有 ADMIN 角色能访问");
     }
 
     /**
-     * 公开接口 —— 无需认证.
+     * 公开健康检查接口。
+     *
+     * <p>公开访问由 {@code letool.security.exclude-paths} 中的
+     * {@code /api/public/**} 声明。</p>
+     *
+     * @return Sample 健康状态
      */
-    @SkipAuth
     @GetMapping("/api/public/health")
     public R<String> health() {
         return R.ok("letool-sample is running");

@@ -1,5 +1,6 @@
 package com.github.leyland.letool.security.handler;
 
+import com.github.leyland.letool.security.exception.SecurityErrorCode;
 import com.github.leyland.letool.tool.model.R;
 import com.github.leyland.letool.tool.util.JsonUtil;
 import jakarta.servlet.http.HttpServletRequest;
@@ -17,7 +18,7 @@ import java.nio.charset.StandardCharsets;
  * 权限拒绝处理器，当已登录用户访问无权限资源时返回 403 JSON 响应。
  *
  * <p>实现 Spring Security 的 {@link AccessDeniedHandler} 接口，
- * 响应格式为 {@link R}{@code .fail("AUTH_002", "权限不足")}。</p>
+ * 响应使用 {@link SecurityErrorCode#ACCESS_DENIED} 的稳定错误码。</p>
  *
  * @author leyland
  * @since 2.0.0
@@ -28,15 +29,28 @@ public class AccessDeniedExceptionHandler implements AccessDeniedHandler {
 
     /**
      * 处理权限拒绝请求，返回 403 状态码和 JSON 错误信息。
+     *
+     * @param request 当前 HTTP 请求
+     * @param response 当前 HTTP 响应
+     * @param accessDeniedException Spring Security 权限拒绝异常
+     * @throws IOException 当响应写入失败时抛出
      */
     @Override
-    public void handle(HttpServletRequest request, HttpServletResponse response,
-                       AccessDeniedException accessDeniedException) throws IOException {
-        log.debug("Access denied for {}: {}", request.getRequestURI(), accessDeniedException.getMessage());
+    public void handle(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            AccessDeniedException accessDeniedException) throws IOException {
+        log.debug("Access denied for {}, exception type: {}",
+                request.getRequestURI(),
+                accessDeniedException.getClass().getSimpleName());
         response.setStatus(HttpServletResponse.SC_FORBIDDEN);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-        R<Void> body = R.fail("AUTH_002", "权限不足");
+        SecurityErrorCode errorCode = SecurityErrorCode.ACCESS_DENIED;
+        R<Void> body = R.fail(
+                errorCode.getCode(),
+                errorCode.getDefaultMessage()
+        );
         response.getWriter().write(JsonUtil.toJsonString(body));
     }
 }

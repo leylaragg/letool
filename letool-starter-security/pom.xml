@@ -11,7 +11,7 @@
 
     <artifactId>letool-starter-security</artifactId>
     <name>letool-starter-security</name>
-    <description>letool 安全认证模块 —— Spring Security 6.x 封装，JWT 认证、注解权限控制、多种认证模式</description>
+    <description>letool 安全认证模块 —— 基于 Spring Security Resource Server 的 JWT 认证与权限控制</description>
     <packaging>jar</packaging>
 
     <dependencies>
@@ -20,12 +20,25 @@
             <artifactId>letool-starter-tool</artifactId>
         </dependency>
         <dependency>
+            <groupId>com.github.leyland</groupId>
+            <artifactId>letool-starter-exception</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -63,6 +76,11 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

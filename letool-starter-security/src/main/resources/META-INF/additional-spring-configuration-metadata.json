@@ -9,14 +9,13 @@
     {
       "name": "letool.security.auth-mode",
       "type": "com.github.leyland.letool.security.enums.AuthMode",
-      "description": "认证模式 —— JWT（无状态 JWT 认证）/ JWT_REDIS（JWT + Redis 存储，支持主动失效）/ SESSION（传统 Session 认证）。",
+      "description": "认证模式；当前只支持由 Spring Security Resource Server 验证的 JWT。",
       "defaultValue": "JWT"
     },
     {
       "name": "letool.security.jwt.secret",
       "type": "java.lang.String",
-      "description": "JWT 签名密钥（HMAC-SHA256），生产环境必须通过环境变量覆盖。",
-      "defaultValue": "letool-default-secret-change-in-production"
+      "description": "JWT HMAC-SHA256 签名密钥，必须显式配置且 UTF-8 长度不少于 32 字节。"
     },
     {
       "name": "letool.security.jwt.access-token-expiration",
@@ -70,6 +69,12 @@
       "type": "java.lang.Long",
       "description": "预检请求缓存时间（秒）。",
       "defaultValue": "3600"
+    },
+    {
+      "name": "letool.security.cors.allow-credentials",
+      "type": "java.lang.Boolean",
+      "description": "是否允许跨域请求携带 Cookie 等凭据；启用时 allowed-origins 不能包含通配符 *。",
+      "defaultValue": false
     }
   ],
   "hints": [
@@ -79,14 +84,6 @@
         {
           "value": "JWT",
           "description": "无状态 JWT 认证，Token 自包含用户信息。"
-        },
-        {
-          "value": "JWT_REDIS",
-          "description": "JWT + Redis 存储，支持主动失效和分布式会话。"
-        },
-        {
-          "value": "SESSION",
-          "description": "传统 Session 会话认证。"
         }
       ]
     }

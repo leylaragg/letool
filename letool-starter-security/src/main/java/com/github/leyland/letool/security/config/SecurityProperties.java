@@ -32,23 +32,104 @@ public class SecurityProperties {
     /** 跨域配置 */
     private Cors cors = new Cors();
 
-    public boolean isEnabled() { return enabled; }
-    public void setEnabled(boolean enabled) { this.enabled = enabled; }
-    public AuthMode getAuthMode() { return authMode; }
-    public void setAuthMode(AuthMode authMode) { this.authMode = authMode; }
-    public Jwt getJwt() { return jwt; }
-    public void setJwt(Jwt jwt) { this.jwt = jwt; }
-    public List<String> getExcludePaths() { return excludePaths; }
-    public void setExcludePaths(List<String> excludePaths) { this.excludePaths = excludePaths; }
-    public Cors getCors() { return cors; }
-    public void setCors(Cors cors) { this.cors = cors; }
+    /**
+     * 判断是否启用安全模块。
+     *
+     * @return 启用时返回 {@code true}
+     */
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    /**
+     * 设置是否启用安全模块。
+     *
+     * @param enabled 是否启用
+     */
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+    }
+
+    /**
+     * 获取认证模式。
+     *
+     * @return 非空认证模式
+     */
+    public AuthMode getAuthMode() {
+        return authMode;
+    }
+
+    /**
+     * 设置认证模式。
+     *
+     * @param authMode 认证模式；传入 {@code null} 时使用 JWT
+     */
+    public void setAuthMode(AuthMode authMode) {
+        this.authMode = authMode == null ? AuthMode.JWT : authMode;
+    }
+
+    /**
+     * 获取 JWT 配置。
+     *
+     * @return 非空 JWT 配置
+     */
+    public Jwt getJwt() {
+        return jwt;
+    }
+
+    /**
+     * 设置 JWT 配置。
+     *
+     * @param jwt JWT 配置；传入 {@code null} 时恢复默认对象
+     */
+    public void setJwt(Jwt jwt) {
+        this.jwt = jwt == null ? new Jwt() : jwt;
+    }
+
+    /**
+     * 获取公开路径列表。
+     *
+     * @return 当前路径列表
+     */
+    public List<String> getExcludePaths() {
+        return excludePaths;
+    }
+
+    /**
+     * 设置公开路径列表。
+     *
+     * @param excludePaths 路径列表；传入 {@code null} 时规范为空列表
+     */
+    public void setExcludePaths(List<String> excludePaths) {
+        this.excludePaths = excludePaths == null
+                ? new ArrayList<>()
+                : new ArrayList<>(excludePaths);
+    }
+
+    /**
+     * 获取跨域配置。
+     *
+     * @return 非空跨域配置
+     */
+    public Cors getCors() {
+        return cors;
+    }
+
+    /**
+     * 设置跨域配置。
+     *
+     * @param cors 跨域配置；传入 {@code null} 时恢复默认对象
+     */
+    public void setCors(Cors cors) {
+        this.cors = cors == null ? new Cors() : cors;
+    }
 
     /**
      * JWT 令牌配置。
      */
     public static class Jwt {
         /** 签名密钥（HMAC-SHA256），生产环境必须通过环境变量覆盖 */
-        private String secret = "letool-default-secret-change-in-production";
+        private String secret;
 
         /** AccessToken 有效期（秒），默认 1800（30 分钟） */
         private long accessTokenExpiration = 1800;
@@ -59,14 +140,77 @@ public class SecurityProperties {
         /** JWT 签发者标识 */
         private String issuer = "letool";
 
-        public String getSecret() { return secret; }
-        public void setSecret(String secret) { this.secret = secret; }
-        public long getAccessTokenExpiration() { return accessTokenExpiration; }
-        public void setAccessTokenExpiration(long accessTokenExpiration) { this.accessTokenExpiration = accessTokenExpiration; }
-        public long getRefreshTokenExpiration() { return refreshTokenExpiration; }
-        public void setRefreshTokenExpiration(long refreshTokenExpiration) { this.refreshTokenExpiration = refreshTokenExpiration; }
-        public String getIssuer() { return issuer; }
-        public void setIssuer(String issuer) { this.issuer = issuer; }
+        /**
+         * 获取 HMAC 签名密钥。
+         *
+         * @return 密钥文本
+         */
+        public String getSecret() {
+            return secret;
+        }
+
+        /**
+         * 设置 HMAC 签名密钥。
+         *
+         * @param secret UTF-8 长度至少 32 字节的密钥文本
+         */
+        public void setSecret(String secret) {
+            this.secret = secret;
+        }
+
+        /**
+         * 获取 AccessToken 有效期。
+         *
+         * @return 有效期秒数
+         */
+        public long getAccessTokenExpiration() {
+            return accessTokenExpiration;
+        }
+
+        /**
+         * 设置 AccessToken 有效期。
+         *
+         * @param accessTokenExpiration 有效期秒数
+         */
+        public void setAccessTokenExpiration(long accessTokenExpiration) {
+            this.accessTokenExpiration = accessTokenExpiration;
+        }
+
+        /**
+         * 获取 RefreshToken 有效期。
+         *
+         * @return 有效期秒数
+         */
+        public long getRefreshTokenExpiration() {
+            return refreshTokenExpiration;
+        }
+
+        /**
+         * 设置 RefreshToken 有效期。
+         *
+         * @param refreshTokenExpiration 有效期秒数
+         */
+        public void setRefreshTokenExpiration(long refreshTokenExpiration) {
+            this.refreshTokenExpiration = refreshTokenExpiration;
+        }
+
+        /**
+         * 获取 JWT 签发者。
+         *
+         * @return 签发者标识
+         */
+        public String getIssuer() {
+            return issuer;
+        }
+
+        /**
+         * 设置 JWT 签发者。
+         *
+         * @param issuer 签发者标识
+         */
+        public void setIssuer(String issuer) {
+            this.issuer = issuer;
+        }
     }
 
     /**
@@ -88,15 +232,113 @@ public class SecurityProperties {
         /** 预检请求缓存时间（秒），默认 3600 */
         private long maxAge = 3600;
 
-        public boolean isEnabled() { return enabled; }
-        public void setEnabled(boolean enabled) { this.enabled = enabled; }
-        public String getAllowedOrigins() { return allowedOrigins; }
-        public void setAllowedOrigins(String allowedOrigins) { this.allowedOrigins = allowedOrigins; }
-        public String getAllowedMethods() { return allowedMethods; }
-        public void setAllowedMethods(String allowedMethods) { this.allowedMethods = allowedMethods; }
-        public String getAllowedHeaders() { return allowedHeaders; }
-        public void setAllowedHeaders(String allowedHeaders) { this.allowedHeaders = allowedHeaders; }
-        public long getMaxAge() { return maxAge; }
-        public void setMaxAge(long maxAge) { this.maxAge = maxAge; }
+        /** 是否允许跨域请求携带 Cookie 等凭据，默认 {@code false} */
+        private boolean allowCredentials = false;
+
+        /**
+         * 判断是否启用跨域支持。
+         *
+         * @return 启用时返回 {@code true}
+         */
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        /**
+         * 设置是否启用跨域支持。
+         *
+         * @param enabled 是否启用
+         */
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        /**
+         * 获取允许的来源配置。
+         *
+         * @return 逗号分隔的来源
+         */
+        public String getAllowedOrigins() {
+            return allowedOrigins;
+        }
+
+        /**
+         * 设置允许的来源。
+         *
+         * @param allowedOrigins 逗号分隔的来源
+         */
+        public void setAllowedOrigins(String allowedOrigins) {
+            this.allowedOrigins = allowedOrigins;
+        }
+
+        /**
+         * 获取允许的 HTTP 方法。
+         *
+         * @return 逗号分隔的方法
+         */
+        public String getAllowedMethods() {
+            return allowedMethods;
+        }
+
+        /**
+         * 设置允许的 HTTP 方法。
+         *
+         * @param allowedMethods 逗号分隔的方法
+         */
+        public void setAllowedMethods(String allowedMethods) {
+            this.allowedMethods = allowedMethods;
+        }
+
+        /**
+         * 获取允许的请求头。
+         *
+         * @return 逗号分隔的请求头
+         */
+        public String getAllowedHeaders() {
+            return allowedHeaders;
+        }
+
+        /**
+         * 设置允许的请求头。
+         *
+         * @param allowedHeaders 逗号分隔的请求头
+         */
+        public void setAllowedHeaders(String allowedHeaders) {
+            this.allowedHeaders = allowedHeaders;
+        }
+
+        /**
+         * 获取预检请求缓存时间。
+         *
+         * @return 缓存秒数
+         */
+        public long getMaxAge() {
+            return maxAge;
+        }
+
+        /**
+         * 设置预检请求缓存时间。
+         *
+         * @param maxAge 缓存秒数
+         */
+        public void setMaxAge(long maxAge) {
+            this.maxAge = maxAge;
+        }
+
+        /**
+         * 判断跨域请求是否允许携带凭据。
+         *
+         * @return 允许携带凭据时返回 {@code true}
+         */
+        public boolean isAllowCredentials() { return allowCredentials; }
+
+        /**
+         * 设置跨域请求是否允许携带凭据。
+         *
+         * @param allowCredentials 是否允许携带凭据
+         */
+        public void setAllowCredentials(boolean allowCredentials) {
+            this.allowCredentials = allowCredentials;
+        }
     }
 }

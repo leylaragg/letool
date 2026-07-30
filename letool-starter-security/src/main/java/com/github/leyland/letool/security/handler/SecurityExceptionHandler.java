@@ -1,5 +1,6 @@
 package com.github.leyland.letool.security.handler;
 
+import com.github.leyland.letool.security.exception.SecurityErrorCode;
 import com.github.leyland.letool.tool.model.R;
 import com.github.leyland.letool.tool.util.JsonUtil;
 import jakarta.servlet.http.HttpServletRequest;
@@ -17,7 +18,7 @@ import java.nio.charset.StandardCharsets;
  * 认证失败处理器，当未登录用户访问受保护资源时返回 401 JSON 响应。
  *
  * <p>实现 Spring Security 的 {@link AuthenticationEntryPoint} 接口，
- * 响应格式为 {@link R}{@code .fail("AUTH_001", "认证失败，请重新登录")}。</p>
+ * 响应使用 {@link SecurityErrorCode#UNAUTHENTICATED} 的稳定错误码。</p>
  *
  * @author leyland
  * @since 2.0.0
@@ -28,15 +29,28 @@ public class SecurityExceptionHandler implements AuthenticationEntryPoint {
 
     /**
      * 处理未认证请求，返回 401 状态码和 JSON 错误信息。
+     *
+     * @param request 当前 HTTP 请求
+     * @param response 当前 HTTP 响应
+     * @param authException Spring Security 认证异常
+     * @throws IOException 当响应写入失败时抛出
      */
     @Override
-    public void commence(HttpServletRequest request, HttpServletResponse response,
-                         AuthenticationException authException) throws IOException {
-        log.debug("Authentication failed for {}: {}", request.getRequestURI(), authException.getMessage());
+    public void commence(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            AuthenticationException authException) throws IOException {
+        log.debug("Authentication failed for {}, exception type: {}",
+                request.getRequestURI(),
+                authException.getClass().getSimpleName());
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-        R<Void> body = R.fail("AUTH_001", "认证失败，请重新登录");
+        SecurityErrorCode errorCode = SecurityErrorCode.UNAUTHENTICATED;
+        R<Void> body = R.fail(
+                errorCode.getCode(),
+                errorCode.getDefaultMessage()
+        );
         response.getWriter().write(JsonUtil.toJsonString(body));
     }
 }

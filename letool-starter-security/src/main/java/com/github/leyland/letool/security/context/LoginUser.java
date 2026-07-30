@@ -34,7 +34,11 @@ public class LoginUser implements Serializable {
     /** 扩展数据（业务自定义） */
     private Object extra;
 
-    public LoginUser() {}
+    /**
+     * 创建空登录用户，供序列化框架使用。
+     */
+    public LoginUser() {
+    }
 
     /**
      * 构造登录用户。
@@ -47,24 +51,116 @@ public class LoginUser implements Serializable {
     public LoginUser(Long userId, String username, List<String> roles, List<String> permissions) {
         this.userId = userId;
         this.username = username;
-        this.roles = roles != null ? roles : Collections.emptyList();
-        this.permissions = permissions != null ? permissions : Collections.emptyList();
+        this.roles = immutableCopy(roles);
+        this.permissions = immutableCopy(permissions);
     }
 
-    public Long getUserId() { return userId; }
-    public void setUserId(Long userId) { this.userId = userId; }
-    public String getUsername() { return username; }
-    public void setUsername(String username) { this.username = username; }
-    public String getNickname() { return nickname; }
-    public void setNickname(String nickname) { this.nickname = nickname; }
-    /** @return 不可变的角色列表 */
-    public List<String> getRoles() { return Collections.unmodifiableList(roles); }
-    public void setRoles(List<String> roles) { this.roles = roles; }
-    /** @return 不可变的权限列表 */
-    public List<String> getPermissions() { return Collections.unmodifiableList(permissions); }
-    public void setPermissions(List<String> permissions) { this.permissions = permissions; }
-    public Object getExtra() { return extra; }
-    public void setExtra(Object extra) { this.extra = extra; }
+    /**
+     * 获取用户 ID。
+     *
+     * @return 用户 ID
+     */
+    public Long getUserId() {
+        return userId;
+    }
+
+    /**
+     * 设置用户 ID。
+     *
+     * @param userId 用户 ID
+     */
+    public void setUserId(Long userId) {
+        this.userId = userId;
+    }
+
+    /**
+     * 获取用户名。
+     *
+     * @return 用户名
+     */
+    public String getUsername() {
+        return username;
+    }
+
+    /**
+     * 设置用户名。
+     *
+     * @param username 用户名
+     */
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    /**
+     * 获取昵称。
+     *
+     * @return 昵称
+     */
+    public String getNickname() {
+        return nickname;
+    }
+
+    /**
+     * 设置昵称。
+     *
+     * @param nickname 昵称
+     */
+    public void setNickname(String nickname) {
+        this.nickname = nickname;
+    }
+
+    /**
+     * 获取角色快照。
+     *
+     * @return 不可变的角色列表
+     */
+    public List<String> getRoles() {
+        return immutableCopy(roles);
+    }
+
+    /**
+     * 设置角色快照。
+     *
+     * @param roles 角色列表；传入 {@code null} 时规范为空列表
+     */
+    public void setRoles(List<String> roles) {
+        this.roles = immutableCopy(roles);
+    }
+
+    /**
+     * 获取权限快照。
+     *
+     * @return 不可变的权限列表
+     */
+    public List<String> getPermissions() {
+        return immutableCopy(permissions);
+    }
+
+    /**
+     * 设置权限快照。
+     *
+     * @param permissions 权限列表；传入 {@code null} 时规范为空列表
+     */
+    public void setPermissions(List<String> permissions) {
+        this.permissions = immutableCopy(permissions);
+    }
+    /**
+     * 获取业务扩展数据。
+     *
+     * @return 业务扩展数据
+     */
+    public Object getExtra() {
+        return extra;
+    }
+
+    /**
+     * 设置业务扩展数据。
+     *
+     * @param extra 业务扩展数据
+     */
+    public void setExtra(Object extra) {
+        this.extra = extra;
+    }
 
     /**
      * 判断用户是否拥有指定角色。
@@ -84,5 +180,15 @@ public class LoginUser implements Serializable {
      */
     public boolean hasPermission(String permission) {
         return permissions != null && permissions.contains(permission);
+    }
+
+    /**
+     * 将外部集合规范为不可变快照。
+     *
+     * @param values 外部集合
+     * @return 非空不可变列表
+     */
+    private static List<String> immutableCopy(List<String> values) {
+        return values == null ? Collections.emptyList() : List.copyOf(values);
     }
 }
