@@ -1,26 +1,29 @@
 package com.github.leyland.letool.thread.annotation;
 
+import org.springframework.core.annotation.AliasFor;
+import org.springframework.scheduling.annotation.Async;
+
 import java.lang.annotation.*;
 
 /**
  * 带上下文传播的异步方法执行注解，用法类似 Spring 的 {@code @Async}。
  *
- * <p>标记此注解的方法将在指定线程池中异步执行，同时自动传递当前线程的
- * MDC（日志上下文）和安全上下文（SecurityContext）到子线程。返回类型
+ * <p>该注解是 Spring {@link Async} 的组合注解。标记的方法将在指定线程池中
+ * 异步执行；当目标执行器配置了任务装饰器时，可传递 MDC 日志上下文。返回类型
  * 应为 {@link java.util.concurrent.Future Future}、
  * {@link java.util.concurrent.CompletableFuture CompletableFuture} 或 {@code void}。</p>
  *
  * <p>使用示例：</p>
  * <pre>{@code
- * @AsyncWithContext("orderThreadPool")
+ * @AsyncWithContext("letoolIoExecutor")
  * public CompletableFuture<Order> processAsync(Long orderId) {
- *     // 此方法在 orderThreadPool 中执行，自动继承父线程的 TraceId 和用户信息
+ *     // 此方法在 letoolIoExecutor 中执行，并继承默认装饰器传播的 MDC
  * }
  * }</pre>
  *
- * <p>上下文传播依赖 Spring 的 {@code AnnotationAsyncExecutionInterceptor}
- * 和 {@link com.github.leyland.letool.thread.propagation.MdcTaskDecorator MdcTaskDecorator}
- * 配合工作。线程池名称需与配置中 {@code letool.thread.pools.<name>} 匹配。</p>
+ * <p>执行器名称必须匹配 Spring 容器中的 {@link java.util.concurrent.Executor Executor}
+ * 或 {@link org.springframework.core.task.TaskExecutor TaskExecutor} Bean。模块默认提供
+ * {@code letoolTaskExecutor} 和 {@code letoolIoExecutor} 两个执行器。</p>
  *
  * @author leyland
  * @since 2.0.0
@@ -28,8 +31,14 @@ import java.lang.annotation.*;
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
+@Async
 public @interface AsyncWithContext {
 
-    /** 目标线程池名称，默认 {@code "task-executor"} */
-    String value() default "task-executor";
+    /**
+     * 目标执行器 Bean 名称。
+     *
+     * @return Spring 异步执行器的 Bean 名称
+     */
+    @AliasFor(annotation = Async.class, attribute = "value")
+    String value() default "letoolTaskExecutor";
 }

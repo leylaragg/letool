@@ -9,7 +9,7 @@
     {
       "name": "letool.thread.pools",
       "type": "java.util.Map<java.lang.String, com.github.leyland.letool.thread.config.ThreadPoolProperties$PoolConfig>",
-      "description": "线程池定义映射，key 为线程池名称，value 为单个线程池的配置。"
+      "description": "内置执行器配置映射，当前消费 task-executor 和 io-executor 两个 key。"
     },
     {
       "name": "letool.thread.pools.*.core-pool-size",
@@ -42,6 +42,12 @@
       "defaultValue": 60
     },
     {
+      "name": "letool.thread.pools.*.allow-core-thread-timeout",
+      "type": "java.lang.Boolean",
+      "description": "是否允许核心线程在空闲后按保活时间超时回收。",
+      "defaultValue": true
+    },
+    {
       "name": "letool.thread.pools.*.virtual-threads",
       "type": "java.lang.Boolean",
       "description": "是否使用虚拟线程（Java 21+）。",
@@ -54,21 +60,9 @@
       "defaultValue": true
     },
     {
-      "name": "letool.thread.monitoring.metrics-export",
-      "type": "java.lang.Boolean",
-      "description": "是否将线程池指标导出到 Micrometer。",
-      "defaultValue": true
-    },
-    {
       "name": "letool.thread.context-propagation.mdc",
       "type": "java.lang.Boolean",
       "description": "是否传递 MDC 日志上下文（如 TraceId）到子线程。",
-      "defaultValue": true
-    },
-    {
-      "name": "letool.thread.context-propagation.security",
-      "type": "java.lang.Boolean",
-      "description": "是否传递安全上下文（如当前用户信息）到子线程。",
       "defaultValue": true
     }
   ],

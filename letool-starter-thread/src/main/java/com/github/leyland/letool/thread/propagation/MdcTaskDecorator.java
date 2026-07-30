@@ -14,8 +14,8 @@ import java.util.Map;
  *
  * <p>配置方式（在 ThreadPoolTaskExecutor 上设置）：</p>
  * <pre>{@code
- * @Bean("taskExecutor")
- * public Executor taskExecutor() {
+ * @Bean("letoolTaskExecutor")
+ * public Executor letoolTaskExecutor() {
  *     ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
  *     executor.setTaskDecorator(new MdcTaskDecorator());  // 关键配置
  *     executor.initialize();
@@ -54,6 +54,9 @@ public class MdcTaskDecorator implements TaskDecorator {
             try {
                 if (contextMap != null) {
                     MDC.setContextMap(contextMap);
+                } else {
+                    // 提交线程没有 MDC 时必须主动清理，避免读取到工作线程残留值。
+                    MDC.clear();
                 }
                 runnable.run();
             } finally {

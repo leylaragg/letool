@@ -26,6 +26,16 @@ class NamedThreadFactoryTest {
         }
 
         @Test
+        @DisplayName("前缀已有连接符时不重复添加")
+        void doesNotDuplicateSeparatorWhenPrefixEndsWithHyphen() {
+            NamedThreadFactory factory = new NamedThreadFactory("order-");
+
+            Thread thread = factory.newThread(() -> {});
+
+            assertEquals("order-1", thread.getName());
+        }
+
+        @Test
         @DisplayName("线程优先级为标准优先级")
         void normalPriority() {
             NamedThreadFactory factory = new NamedThreadFactory("task");

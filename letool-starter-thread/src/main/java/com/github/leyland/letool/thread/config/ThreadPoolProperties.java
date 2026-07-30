@@ -8,8 +8,8 @@ import java.util.Map;
 /**
  * 线程池模块配置属性类，映射 {@code letool.thread} 开头的配置项。
  *
- * <p>支持定义多个命名线程池，每个线程池可独立配置核心/最大线程数、
- * 队列容量、保活时间等参数。YAML 配置示例：</p>
+ * <p>支持配置内置的 {@code letoolTaskExecutor} 和 {@code letoolIoExecutor}，
+ * 两者可独立设置核心/最大线程数、队列容量、保活时间等参数。YAML 配置示例：</p>
  * <pre>{@code
  * letool:
  *   thread:
@@ -21,6 +21,7 @@ import java.util.Map;
  *         queue-capacity: 500
  *         thread-name-prefix: "task-"
  *         keep-alive-seconds: 60
+ *         allow-core-thread-timeout: true
  *       io-executor:
  *         core-pool-size: 20
  *         max-pool-size: 200
@@ -29,10 +30,8 @@ import java.util.Map;
  *         virtual-threads: true
  *     monitoring:
  *       enabled: true
- *       metrics-export: true
  *     context-propagation:
  *       mdc: true
- *       security: true
  * }</pre>
  *
  * @author leyland
@@ -44,7 +43,7 @@ public class ThreadPoolProperties {
     /** 是否启用线程池模块，默认 {@code true} */
     private boolean enabled = true;
 
-    /** 线程池定义映射，key 为线程池名称，value 为配置 */
+    /** 内置执行器配置映射，当前消费 {@code task-executor} 和 {@code io-executor} 两个 key。 */
     private Map<String, PoolConfig> pools = new HashMap<>();
 
     /** 监控配置 */
@@ -55,12 +54,56 @@ public class ThreadPoolProperties {
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
+
+    /**
+     * 获取内置执行器配置映射。
+     *
+     * @return 非空配置映射
+     */
     public Map<String, PoolConfig> getPools() { return pools; }
-    public void setPools(Map<String, PoolConfig> pools) { this.pools = pools; }
+
+    /**
+     * 设置内置执行器配置映射。
+     *
+     * @param pools 执行器配置；传入 {@code null} 时恢复为空映射
+     */
+    public void setPools(Map<String, PoolConfig> pools) {
+        this.pools = pools == null ? new HashMap<>() : new HashMap<>(pools);
+    }
+
+    /**
+     * 获取监控配置。
+     *
+     * @return 非空监控配置
+     */
     public Monitoring getMonitoring() { return monitoring; }
-    public void setMonitoring(Monitoring monitoring) { this.monitoring = monitoring; }
+
+    /**
+     * 设置监控配置。
+     *
+     * @param monitoring 监控配置；传入 {@code null} 时恢复默认配置
+     */
+    public void setMonitoring(Monitoring monitoring) {
+        this.monitoring = monitoring == null ? new Monitoring() : monitoring;
+    }
+
+    /**
+     * 获取上下文传播配置。
+     *
+     * @return 非空上下文传播配置
+     */
     public ContextPropagation getContextPropagation() { return contextPropagation; }
-    public void setContextPropagation(ContextPropagation contextPropagation) { this.contextPropagation = contextPropagation; }
+
+    /**
+     * 设置上下文传播配置。
+     *
+     * @param contextPropagation 上下文配置；传入 {@code null} 时恢复默认配置
+     */
+    public void setContextPropagation(ContextPropagation contextPropagation) {
+        this.contextPropagation = contextPropagation == null
+                ? new ContextPropagation()
+                : contextPropagation;
+    }
 
     /**
      * 单个线程池的配置项。
@@ -86,6 +129,9 @@ public class ThreadPoolProperties {
         /** 非核心线程保活时间（秒），默认 60 */
         private int keepAliveSeconds = 60;
 
+        /** 是否允许核心线程在空闲后超时回收，默认 {@code true} */
+        private boolean allowCoreThreadTimeout = true;
+
         /** 是否使用虚拟线程（Java 21+），默认 {@code false} */
         private boolean virtualThreads = false;
 
@@ -99,6 +145,21 @@ public class ThreadPoolProperties {
         public void setThreadNamePrefix(String threadNamePrefix) { this.threadNamePrefix = threadNamePrefix; }
         public int getKeepAliveSeconds() { return keepAliveSeconds; }
         public void setKeepAliveSeconds(int keepAliveSeconds) { this.keepAliveSeconds = keepAliveSeconds; }
+        /**
+         * 判断是否允许核心线程超时回收。
+         *
+         * @return 允许时返回 {@code true}
+         */
+        public boolean isAllowCoreThreadTimeout() { return allowCoreThreadTimeout; }
+
+        /**
+         * 设置是否允许核心线程超时回收。
+         *
+         * @param allowCoreThreadTimeout 是否允许核心线程超时回收
+         */
+        public void setAllowCoreThreadTimeout(boolean allowCoreThreadTimeout) {
+            this.allowCoreThreadTimeout = allowCoreThreadTimeout;
+        }
         public boolean isVirtualThreads() { return virtualThreads; }
         public void setVirtualThreads(boolean virtualThreads) { this.virtualThreads = virtualThreads; }
     }
@@ -114,13 +175,8 @@ public class ThreadPoolProperties {
         /** 是否启用监控，默认 {@code true} */
         private boolean enabled = true;
 
-        /** 是否导出指标到 Micrometer，默认 {@code true} */
-        private boolean metricsExport = true;
-
         public boolean isEnabled() { return enabled; }
         public void setEnabled(boolean enabled) { this.enabled = enabled; }
-        public boolean isMetricsExport() { return metricsExport; }
-        public void setMetricsExport(boolean metricsExport) { this.metricsExport = metricsExport; }
     }
 
     /**
@@ -135,12 +191,7 @@ public class ThreadPoolProperties {
         /** 是否传递 MDC 日志上下文（如 TraceId），默认 {@code true} */
         private boolean mdc = true;
 
-        /** 是否传递安全上下文（如当前用户信息），默认 {@code true} */
-        private boolean security = true;
-
         public boolean isMdc() { return mdc; }
         public void setMdc(boolean mdc) { this.mdc = mdc; }
-        public boolean isSecurity() { return security; }
-        public void setSecurity(boolean security) { this.security = security; }
     }
 }

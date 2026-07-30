@@ -55,6 +55,9 @@ public final class ContextPropagateExecutor {
             try {
                 if (contextMap != null) {
                     MDC.setContextMap(contextMap);
+                } else {
+                    // 提交线程没有 MDC 时必须主动清理，避免读取到工作线程残留值。
+                    MDC.clear();
                 }
                 task.run();
             } finally {

@@ -10,8 +10,8 @@ import java.util.stream.Collectors;
  * 线程池监控器，提供所有已注册线程池的运行指标快照。
  *
  * <p>通过 {@link #getAllMetrics()} 一次性获取所有线程池的指标，
- * 或 {@link #getMetrics(String)} 按名称查询单个线程池。
- * 当 {@code enabled=false} 时监控器实例仍存在但调用方应自行判断是否采集。</p>
+ * 或 {@link #getMetrics(String)} 按名称查询单个线程池。自动配置仅在
+ * {@code letool.thread.monitoring.enabled=true} 时注册该监控器。</p>
  *
  * @author leyland
  * @since 2.0.0

@@ -30,18 +30,20 @@ class StarterBeanOverrideContextTest {
             .withUserConfiguration(UserOverrideConfiguration.class);
 
     /**
-     * 验证用户自定义 {@link TaskDecorator}、{@code taskExecutor} 和 {@code ioExecutor} 时，
-     * starter 不会创建重复 Bean。
+     * 验证用户自定义 {@link TaskDecorator}、{@code letoolTaskExecutor} 和
+     * {@code letoolIoExecutor} 时，starter 不会创建重复执行器，并保留内置 MDC 装饰器。
      */
     @Test
     void startersShouldBackOffWhenUserProvidesTaskDecoratorAndExecutors() {
         contextRunner.run(context -> {
-            assertThat(context).hasSingleBean(TaskDecorator.class);
-            assertThat(context).hasBean("taskExecutor");
-            assertThat(context).hasBean("ioExecutor");
-            assertThat(context.getBean(TaskDecorator.class)).isSameAs(context.getBean("userTaskDecorator"));
-            assertThat(context.getBean("taskExecutor")).isSameAs(context.getBean("userTaskExecutor"));
-            assertThat(context.getBean("ioExecutor")).isSameAs(context.getBean("userIoExecutor"));
+            assertThat(context.getBeansOfType(TaskDecorator.class))
+                    .containsOnlyKeys("userTaskDecorator", "mdcTaskDecorator");
+            assertThat(context).hasBean("letoolTaskExecutor");
+            assertThat(context).hasBean("letoolIoExecutor");
+            assertThat(context.getBean("letoolTaskExecutor"))
+                    .isSameAs(context.getBean("userTaskExecutor"));
+            assertThat(context.getBean("letoolIoExecutor"))
+                    .isSameAs(context.getBean("userIoExecutor"));
         });
     }
 
@@ -56,12 +58,12 @@ class StarterBeanOverrideContextTest {
             return runnable -> runnable;
         }
 
-        @Bean({"taskExecutor", "userTaskExecutor"})
+        @Bean({"letoolTaskExecutor", "userTaskExecutor"})
         ExecutorService taskExecutor() {
             return Executors.newSingleThreadExecutor();
         }
 
-        @Bean({"ioExecutor", "userIoExecutor"})
+        @Bean({"letoolIoExecutor", "userIoExecutor"})
         ExecutorService ioExecutor() {
             return Executors.newSingleThreadExecutor();
         }

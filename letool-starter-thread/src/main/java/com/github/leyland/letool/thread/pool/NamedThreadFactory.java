@@ -1,5 +1,7 @@
 package com.github.leyland.letool.thread.pool;
 
+import com.github.leyland.letool.thread.exception.ThreadException;
+
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -23,7 +25,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class NamedThreadFactory implements ThreadFactory {
 
-    /** 线程名前缀 */
+    /** 已包含名称连接符的线程名前缀。 */
     private final String prefix;
 
     /** 自增序号计数器 */
@@ -48,7 +50,10 @@ public class NamedThreadFactory implements ThreadFactory {
      * @param daemon 是否创建守护线程
      */
     public NamedThreadFactory(String prefix, boolean daemon) {
-        this.prefix = prefix;
+        if (prefix == null || prefix.isBlank()) {
+            throw ThreadException.configurationInvalid("threadNamePrefix");
+        }
+        this.prefix = prefix.endsWith("-") ? prefix : prefix + "-";
         this.daemon = daemon;
     }
 
@@ -63,7 +68,7 @@ public class NamedThreadFactory implements ThreadFactory {
      */
     @Override
     public Thread newThread(Runnable r) {
-        Thread thread = new Thread(r, prefix + "-" + counter.getAndIncrement());
+        Thread thread = new Thread(r, prefix + counter.getAndIncrement());
         thread.setDaemon(daemon);
         if (thread.getPriority() != Thread.NORM_PRIORITY) {
             thread.setPriority(Thread.NORM_PRIORITY);
