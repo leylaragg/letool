@@ -4,91 +4,108 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Excel数据校验结果容器。
+ * Excel 数据校验结果。
  *
- * <p>用于在Excel导入过程中收集和查询数据校验产生的错误信息。
- * 内部维护一个 {@link ValidationError} 列表，每条错误记录
- * 包含出错行号、字段名和错误描述。
- *
- * <p><b>使用模式：</b>
- * <pre>{@code
- * ValidationResult result = new ValidationResult();
- * result.addError(3, "username", "用户名不能为空");
- * if (result.hasErrors()) {
- *     for (ValidationResult.ValidationError err : result.getErrors()) {
- *         log.warn("第{}行 {}: {}", err.getRow(), err.getField(), err.getMessage());
- *     }
- * }
- * }</pre>
- *
- * @author leyland
- * @since 1.0.0
+ * <p>结果对象同时记录已校验的数据行数和全部字段错误。通过
+ * {@link #getErrors()} 返回的是不可修改快照，调用方不能绕过
+ * {@link #addError(int, String, String)} 修改内部状态。</p>
  */
 public class ValidationResult {
 
-    // ======================== 错误列表 ========================
-
-    /**
-     * 存储所有校验错误的列表。
-     */
+    /** 当前结果中收集到的字段错误。 */
     private final List<ValidationError> errors = new ArrayList<>();
 
-    // ======================== 添加错误 ========================
+    /** 已参与校验的数据行总数。 */
+    private int totalRows;
 
     /**
-     * 添加一条校验错误记录。
+     * 添加一条字段校验错误。
      *
-     * @param row     Excel中的行号（从1开始）
-     * @param field   校验失败的字段名
-     * @param message 错误描述信息
+     * @param row Excel 中的实际行号，从 1 开始
+     * @param field 校验失败的字段名，不允许为空白
+     * @param message 错误描述，不允许为空白
+     * @throws IllegalArgumentException 当参数不符合约束时抛出
      */
     public void addError(int row, String field, String message) {
+        if (row < 1) {
+            throw new IllegalArgumentException("row must be greater than zero");
+        }
+        if (field == null || field.isBlank()) {
+            throw new IllegalArgumentException("field must not be blank");
+        }
+        if (message == null || message.isBlank()) {
+            throw new IllegalArgumentException("message must not be blank");
+        }
         errors.add(new ValidationError(row, field, message));
     }
 
-    // ======================== 状态查询 ========================
+    /**
+     * 判断是否存在字段校验错误。
+     *
+     * @return 至少存在一条错误时返回 {@code true}
+     */
+    public boolean hasErrors() {
+        return !errors.isEmpty();
+    }
 
     /**
-     * 判断是否存在校验错误。
-     *
-     * @return 若存在至少一条错误则返回 {@code true}，否则返回 {@code false}
+     * 记录一行已参与校验的数据。
      */
-    public boolean hasErrors() { return !errors.isEmpty(); }
-
-    // ======================== 获取错误列表 ========================
+    public void recordRow() {
+        totalRows++;
+    }
 
     /**
-     * 获取所有校验错误的列表。
+     * 获取已参与校验的数据行总数。
      *
-     * <p>返回内部列表的引用，调用方可以遍历但不能安全地修改。
-     *
-     * @return 校验错误列表，无错误时为空列表
+     * @return 已校验行数
      */
-    public List<ValidationError> getErrors() { return errors; }
-
-    // ======================== 内部类：单条校验错误 ========================
+    public int getTotalRows() {
+        return totalRows;
+    }
 
     /**
-     * 单条校验错误记录。
+     * 合并另一个校验结果。
      *
-     * <p>包含出错行号、字段名和错误消息三个不可变属性。
+     * @param other 待合并结果，不允许为 {@code null}
+     * @throws IllegalArgumentException 当结果为空时抛出
      */
-    public static class ValidationError {
+    public void merge(ValidationResult other) {
+        if (other == null) {
+            throw new IllegalArgumentException("other must not be null");
+        }
+        errors.addAll(other.errors);
+        totalRows += other.totalRows;
+    }
 
-        /** 出错行号（从1开始计数）。 */
+    /**
+     * 获取校验错误的不可修改快照。
+     *
+     * @return 与当前状态隔离的不可修改错误列表
+     */
+    public List<ValidationError> getErrors() {
+        return List.copyOf(errors);
+    }
+
+    /**
+     * 单个字段的校验错误。
+     */
+    public static final class ValidationError {
+
+        /** Excel 中的实际行号。 */
         private final int row;
 
         /** 校验失败的字段名。 */
         private final String field;
 
-        /** 错误描述消息。 */
+        /** 面向调用方的错误描述。 */
         private final String message;
 
         /**
-         * 构造一条校验错误记录。
+         * 创建一条不可变校验错误。
          *
-         * @param row     Excel中的行号
-         * @param field   字段名
+         * @param row Excel 中的实际行号
+         * @param field 校验失败的字段名
          * @param message 错误描述
          */
         public ValidationError(int row, String field, String message) {
@@ -97,15 +114,31 @@ public class ValidationResult {
             this.message = message;
         }
 
-        // ======================== Getters ========================
+        /**
+         * 获取 Excel 实际行号。
+         *
+         * @return 实际行号
+         */
+        public int getRow() {
+            return row;
+        }
 
-        /** @return 出错行号 */
-        public int getRow() { return row; }
+        /**
+         * 获取校验失败的字段名。
+         *
+         * @return 字段名
+         */
+        public String getField() {
+            return field;
+        }
 
-        /** @return 校验失败的字段名 */
-        public String getField() { return field; }
-
-        /** @return 错误描述消息 */
-        public String getMessage() { return message; }
+        /**
+         * 获取错误描述。
+         *
+         * @return 错误描述
+         */
+        public String getMessage() {
+            return message;
+        }
     }
 }

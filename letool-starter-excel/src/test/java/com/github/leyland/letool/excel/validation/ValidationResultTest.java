@@ -104,5 +104,49 @@ class ValidationResultTest {
 
             assertEquals(10, result.getErrors().get(0).getRow());
         }
+
+        @Test
+        @DisplayName("getErrors 应返回不可修改视图")
+        void getErrorsShouldBeUnmodifiable() {
+            ValidationResult result = new ValidationResult();
+            result.addError(1, "name", "不能为空");
+
+            List<ValidationResult.ValidationError> errors = result.getErrors();
+
+            assertThrows(UnsupportedOperationException.class,
+                    () -> errors.add(new ValidationResult.ValidationError(2, "phone", "格式错误")));
+        }
+    }
+
+    @Nested
+    @DisplayName("总行数与结果合并测试")
+    class TotalRowsAndMergeTests {
+
+        @Test
+        @DisplayName("记录校验行后应更新总行数")
+        void recordRowShouldIncreaseTotalRows() {
+            ValidationResult result = new ValidationResult();
+
+            result.recordRow();
+            result.recordRow();
+
+            assertEquals(2, result.getTotalRows());
+        }
+
+        @Test
+        @DisplayName("合并结果时应同时合并错误和总行数")
+        void mergeShouldCombineErrorsAndTotalRows() {
+            ValidationResult first = new ValidationResult();
+            first.recordRow();
+            first.addError(2, "name", "不能为空");
+            ValidationResult second = new ValidationResult();
+            second.recordRow();
+            second.addError(3, "phone", "格式错误");
+
+            first.merge(second);
+
+            assertEquals(2, first.getTotalRows());
+            assertEquals(2, first.getErrors().size());
+        }
     }
 }

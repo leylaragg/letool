@@ -1,6 +1,7 @@
 package com.github.leyland.letool.excel.validation;
 
 import com.github.leyland.letool.excel.annotation.ExcelValidation;
+import com.github.leyland.letool.excel.exception.ExcelException;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -8,94 +9,147 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 /**
- * Excel数据校验器。
+ * 基于 {@link ExcelValidation} 注解的 Excel 行数据校验器。
  *
- * <p>通过反射机制扫描实体类字段上的 {@link ExcelValidation} 注解，
- * 并根据注解配置的规则对字段值逐个进行校验。支持的校验规则包括：
- * <ul>
- *   <li><b>必填校验</b> —— {@code required}</li>
- *   <li><b>最小长度</b> —— {@code minLength}</li>
- *   <li><b>最大长度</b> —— {@code maxLength}</li>
- *   <li><b>正则匹配</b> —— {@code regex}</li>
- * </ul>
+ * <p>校验器会扫描实体类及其父类中声明的字段，并依次执行必填、最小长度、
+ * 最大长度和正则表达式校验。普通校验不通过会记录到 {@link ValidationResult}；
+ * 反射访问失败或规则本身无效等技术故障会转换为统一的 {@link ExcelException}。</p>
  *
- * <p>多条规则同时生效，任何一条不满足都会产生错误记录。
- * 该类无状态，所有方法均为静态方法，线程安全。
- *
- * @author leyland
- * @since 1.0.0
+ * <p>该类不持有共享状态，所有方法均可安全地被多个线程调用。</p>
  */
-public class DataValidator {
-
-    // ======================== 单行校验 ========================
+public final class DataValidator {
 
     /**
-     * 对单个实体对象进行数据校验。
+     * 禁止实例化静态工具类。
+     */
+    private DataValidator() {
+    }
+
+    /**
+     * 校验一行实体数据。
      *
-     * <p>使用反射遍历实体类的所有声明字段，查找标注了
-     * {@link ExcelValidation} 的字段，并依据注解配置执行校验规则。
-     * 通过 {@link Field#setAccessible} 绕过访问控制读取字段值。
-     *
-     * <p><b>校验流程：</b>
-     * <ol>
-     *   <li>遍历 {@code entity.getClass().getDeclaredFields()}</li>
-     *   <li>检查字段是否有 {@code @ExcelValidation} 注解，无则跳过</li>
-     *   <li>反射获取字段值并转为字符串</li>
-     *   <li>依次执行 required、minLength、maxLength、regex 校验</li>
-     *   <li>任何校验失败，将错误信息添加到结果集中</li>
-     * </ol>
-     *
-     * @param <T>    实体类型
-     * @param entity 待校验的实体对象，不能为 {@code null}
-     * @param rowNum Excel中的行号，用于错误定位
-     * @return 校验结果容器，包含所有校验失败的错误信息
+     * @param entity 待校验实体，不允许为 {@code null}
+     * @param rowNum 实体在 Excel 中的实际行号，从 1 开始
+     * @param <T> 实体类型
+     * @return 包含本行校验结果的独立结果对象
+     * @throws IllegalArgumentException 当实体为空或行号小于 1 时抛出
+     * @throws ExcelException 当反射访问失败或校验规则无法执行时抛出
      */
     public static <T> ValidationResult validate(T entity, int rowNum) {
-        ValidationResult result = new ValidationResult();
-        for (Field field : getAllFields(entity.getClass())) {
-            ExcelValidation ann = field.getAnnotation(ExcelValidation.class);
-            if (ann == null) continue;
-            field.setAccessible(true);
-            try {
-                Object value = field.get(entity);
-                String strValue = value == null ? null : value.toString();
+        if (entity == null) {
+            throw new IllegalArgumentException("entity must not be null");
+        }
+        if (rowNum < 1) {
+            throw new IllegalArgumentException("rowNum must be greater than zero");
+        }
 
-                // —— 必填校验 ——
-                if (ann.required() && (strValue == null || strValue.isEmpty())) {
-                    result.addError(rowNum, field.getName(), ann.message().isEmpty()
-                            ? field.getName() + " is required" : ann.message());
-                }
-                // —— 最小长度校验 ——
-                if (strValue != null && ann.minLength() >= 0 && strValue.length() < ann.minLength()) {
-                    result.addError(rowNum, field.getName(), "min length: " + ann.minLength());
-                }
-                // —— 最大长度校验 ——
-                if (strValue != null && ann.maxLength() >= 0 && strValue.length() > ann.maxLength()) {
-                    result.addError(rowNum, field.getName(), "max length: " + ann.maxLength());
-                }
-                // —— 正则表达式校验 ——
-                if (strValue != null && !ann.regex().isEmpty()
-                        && !Pattern.matches(ann.regex(), strValue)) {
-                    result.addError(rowNum, field.getName(),
-                            ann.message().isEmpty() ? "does not match pattern" : ann.message());
-                }
-            } catch (IllegalAccessException ignored) {
-                // 理论上不会发生，因为已通过 setAccessible(true) 绕过访问控制
+        ValidationResult result = new ValidationResult();
+        result.recordRow();
+        for (Field field : getAllFields(entity.getClass())) {
+            ExcelValidation validation = field.getAnnotation(ExcelValidation.class);
+            if (validation == null) {
+                continue;
             }
+            validateField(entity, rowNum, field, validation, result);
         }
         return result;
     }
 
     /**
-     * 获取类及其所有父类的字段（走类层次结构）.
+     * 对单个带注解字段执行全部校验规则。
+     *
+     * @param entity 当前行实体
+     * @param rowNum 当前 Excel 行号
+     * @param field 待校验字段
+     * @param validation 字段上的校验规则
+     * @param result 用于收集错误的结果对象
      */
-    private static List<Field> getAllFields(Class<?> clazz) {
+    private static void validateField(
+            Object entity,
+            int rowNum,
+            Field field,
+            ExcelValidation validation,
+            ValidationResult result) {
+        try {
+            if (!field.trySetAccessible()) {
+                throw new IllegalAccessException("无法访问字段：" + field.getName());
+            }
+            Object value = field.get(entity);
+            String text = value == null ? null : value.toString();
+
+            if (text == null || text.isBlank()) {
+                if (validation.required()) {
+                    result.addError(
+                            rowNum,
+                            field.getName(),
+                            resolveMessage(validation.message(), field.getName() + " 不能为空")
+                    );
+                }
+                // 空值只由必填规则负责，避免继续产生长度或格式级联错误。
+                return;
+            }
+            if (validation.minLength() >= 0
+                    && text.length() < validation.minLength()) {
+                result.addError(
+                        rowNum,
+                        field.getName(),
+                        resolveMessage(
+                                validation.message(),
+                                "长度不能小于 " + validation.minLength()
+                        )
+                );
+            }
+            if (validation.maxLength() >= 0
+                    && text.length() > validation.maxLength()) {
+                result.addError(
+                        rowNum,
+                        field.getName(),
+                        resolveMessage(
+                                validation.message(),
+                                "长度不能大于 " + validation.maxLength()
+                        )
+                );
+            }
+            if (!validation.regex().isEmpty()
+                    && !Pattern.matches(validation.regex(), text)) {
+                result.addError(
+                        rowNum,
+                        field.getName(),
+                        resolveMessage(validation.message(), "格式不符合要求")
+                );
+            }
+        } catch (IllegalAccessException | RuntimeException exception) {
+            throw ExcelException.validationFailed(exception);
+        }
+    }
+
+    /**
+     * 优先使用注解中的自定义消息，未配置时回退到默认消息。
+     *
+     * @param configuredMessage 注解中配置的消息
+     * @param defaultMessage 默认消息
+     * @return 最终使用的错误消息
+     */
+    private static String resolveMessage(String configuredMessage, String defaultMessage) {
+        return configuredMessage == null || configuredMessage.isBlank()
+                ? defaultMessage
+                : configuredMessage;
+    }
+
+    /**
+     * 获取指定类及其全部父类中声明的字段。
+     *
+     * @param type 待扫描类型
+     * @return 按子类到父类顺序收集的字段列表
+     */
+    private static List<Field> getAllFields(Class<?> type) {
         List<Field> fields = new ArrayList<>();
-        while (clazz != null && clazz != Object.class) {
-            for (Field field : clazz.getDeclaredFields()) {
+        Class<?> currentType = type;
+        while (currentType != null && currentType != Object.class) {
+            for (Field field : currentType.getDeclaredFields()) {
                 fields.add(field);
             }
-            clazz = clazz.getSuperclass();
+            currentType = currentType.getSuperclass();
         }
         return fields;
     }

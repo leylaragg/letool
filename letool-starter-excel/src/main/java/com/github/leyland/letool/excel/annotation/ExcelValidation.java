@@ -1,11 +1,15 @@
 package com.github.leyland.letool.excel.annotation;
 
-import java.lang.annotation.*;
+import java.lang.annotation.Documented;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 
 /**
- * Excel数据校验注解。
+ * Excel 数据校验注解。
  *
- * <p>标注在实体类字段上，用于定义该字段在Excel导入时的数据校验规则。
+ * <p>标注在实体类字段上，用于定义该字段在 Excel 导入时的数据校验规则。
  * 支持必填校验、长度范围校验、正则表达式校验等多种规则。
  * 校验逻辑由 {@link com.github.leyland.letool.excel.validation.DataValidator}
  * 在导入过程中统一执行。
@@ -40,7 +44,7 @@ public @interface ExcelValidation {
      * 是否必填。
      *
      * <p>当设置为 {@code true} 时，如果单元格值为 {@code null}
-     * 或空字符串，将产生校验错误。
+     * 或仅包含空白字符，将产生校验错误。
      *
      * @return 是否必填，默认 {@code false}
      */
@@ -87,10 +91,12 @@ public @interface ExcelValidation {
     /**
      * 校验失败时的错误消息。
      *
-     * <p>当值为空字符串时，使用默认英文消息：
+     * <p>当值为空字符串时，使用默认中文消息：
      * <ul>
-     *   <li>必填："{fieldName} is required"</li>
-     *   <li>正则："does not match pattern"</li>
+     *   <li>必填："{fieldName} 不能为空"</li>
+     *   <li>最小长度："长度不能小于 {minLength}"</li>
+     *   <li>最大长度："长度不能大于 {maxLength}"</li>
+     *   <li>正则："格式不符合要求"</li>
      * </ul>
      *
      * @return 自定义错误消息，默认为空
