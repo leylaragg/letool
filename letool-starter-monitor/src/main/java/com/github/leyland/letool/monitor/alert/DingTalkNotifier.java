@@ -1,6 +1,7 @@
 package com.github.leyland.letool.monitor.alert;
 
 import com.github.leyland.letool.monitor.config.MonitorProperties;
+import com.github.leyland.letool.monitor.exception.MonitorErrorCode;
 import com.github.leyland.letool.monitor.exception.MonitorException;
 import com.github.leyland.letool.tool.util.JsonUtil;
 import org.slf4j.Logger;
@@ -124,7 +125,10 @@ public class DingTalkNotifier implements AlertNotifier.AlertChannel {
             byte[] signData = mac.doFinal(stringToSign.getBytes(StandardCharsets.UTF_8));
             return Base64.getEncoder().encodeToString(signData);
         } catch (Exception e) {
-            throw new MonitorException("DingTalk webhook sign failed", e);
+            throw MonitorException.causedBy(
+                    MonitorErrorCode.WEBHOOK_DELIVERY_FAILED,
+                    e,
+                    "DingTalk 签名");
         }
     }
 }

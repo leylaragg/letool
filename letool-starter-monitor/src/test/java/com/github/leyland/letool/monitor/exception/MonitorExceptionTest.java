@@ -1,34 +1,58 @@
 package com.github.leyland.letool.monitor.exception;
 
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@DisplayName("MonitorException 监控异常测试")
+/**
+ * {@link MonitorException} 结构化错误码测试。
+ */
 class MonitorExceptionTest {
 
-    @Nested
-    @DisplayName("构造方法")
-    class ConstructorTests {
+    /**
+     * 验证无原因异常会保留稳定错误码和消息参数。
+     */
+    @Test
+    void shouldExposeStableErrorCode() {
+        MonitorException exception = MonitorException.of(
+                MonitorErrorCode.CONFIGURATION_INVALID,
+                "Cron 表达式为空");
 
-        @Test
-        @DisplayName("(message) 构造")
-        void constructorMessage() {
-            MonitorException ex = new MonitorException("指标采集失败");
-            assertEquals("指标采集失败", ex.getMessage());
-            assertNull(ex.getCause());
-            assertTrue(ex instanceof RuntimeException);
-        }
+        assertThat(exception.getCode())
+                .isEqualTo("MONITOR_CONFIGURATION_INVALID");
+        assertThat(exception.getMessageArgs())
+                .containsExactly("Cron 表达式为空");
+        assertThat(exception.getCause()).isNull();
+    }
 
-        @Test
-        @DisplayName("(message, cause) 构造")
-        void constructorMessageAndCause() {
-            RuntimeException cause = new RuntimeException("原始错误");
-            MonitorException ex = new MonitorException("告警发送失败", cause);
-            assertEquals("告警发送失败", ex.getMessage());
-            assertSame(cause, ex.getCause());
-        }
+    /**
+     * 验证带原因异常会保留底层原因链。
+     */
+    @Test
+    void shouldExposeStableErrorCodeAndCause() {
+        IllegalStateException cause = new IllegalStateException("底层失败");
+
+        MonitorException exception = MonitorException.causedBy(
+                MonitorErrorCode.CLEANUP_TASK_FAILED,
+                cause,
+                "archive");
+
+        assertThat(exception.getCode())
+                .isEqualTo("MONITOR_CLEANUP_TASK_FAILED");
+        assertThat(exception.getCause()).isSameAs(cause);
+    }
+
+    /**
+     * 验证创建带原因异常时不允许传入空原因。
+     */
+    @Test
+    void shouldRejectNullCause() {
+        assertThatThrownBy(() -> MonitorException.causedBy(
+                MonitorErrorCode.WEBHOOK_DELIVERY_FAILED,
+                null,
+                "DingTalk"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("cause 不能为空");
     }
 }

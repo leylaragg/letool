@@ -1,286 +1,287 @@
 package com.github.leyland.letool.monitor.metrics;
 
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.atomic.AtomicLong;
+import com.github.leyland.letool.monitor.exception.MonitorErrorCode;
+import com.github.leyland.letool.monitor.exception.MonitorException;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 /**
- * Micrometer 风格的指标收集器，提供基于内存的计数器与计时器功能.
+ * 基于 Micrometer 的业务指标便利门面。
  *
- * <h3>核心能力</h3>
- * <ul>
- *   <li><b>计数器 Counter</b> —— 基于 {@link AtomicLong}，支持原子递增和查询</li>
- *   <li><b>计时器 Timer</b> —— 基于滑动时间窗口，记录每次耗时并计算 avg / min / max</li>
- *   <li><b>快照导出</b> —— {@link #getAllMetrics()} 返回当前所有指标的 Map 视图</li>
- * </ul>
+ * <p>该类型不维护私有指标存储，所有计数器和计时器都注册到应用提供的
+ * {@link MeterRegistry}。应用可以通过 Spring Boot 支持的任意 Micrometer 注册表
+ * 将指标导出到 Prometheus、OTLP 或其他监控后端。</p>
  *
- * <h3>设计说明</h3>
- * <p>本类是 Micrometer 的轻量替代实现，不依赖外部监控库。
- * 所有指标数据存储在内存中，适用于中小规模应用场景。
- * 若需要对接 Prometheus，可在此层之上封装适配器。</p>
- *
- * <h3>使用方式</h3>
- * <pre>{@code
- * metricsCollector.increment("order.created");
- * metricsCollector.recordTime("order.process", 150);
- * long count = metricsCollector.getCounterValue("order.created");
- * MetricsCollector.TimerStats stats = metricsCollector.getTimerStats("order.process");
- * }</pre>
- *
- * @author leyland
- * @since 2.0.0
+ * <p>标签必须保持低基数，不应使用用户编号、订单编号、原始 URL 参数等无限增长值。</p>
  */
-public class MetricsCollector {
+public final class MetricsCollector {
 
-    // ======================== 指标存储 ========================
-
-    /** 计数器注册表 —— key 为指标名称，value 为原子计数器 */
-    private final ConcurrentHashMap<String, AtomicLong> counters = new ConcurrentHashMap<>();
-
-    /** 计时器注册表 —— key 为指标名称，value 为滑动窗口计时器 */
-    private final ConcurrentHashMap<String, Timer> timers = new ConcurrentHashMap<>();
-
-    // ======================== Counter 操作 ========================
+    /** 应用统一管理的 Micrometer 注册表。 */
+    private final MeterRegistry meterRegistry;
 
     /**
-     * 获取或创建指定名称的计数器.
+     * 创建业务指标便利门面。
      *
-     * @param name 指标名称，建议使用点号分隔的命名规范（如 "order.created"）
-     * @return 原子计数器实例，保证同一 name 返回相同实例
+     * @param meterRegistry 非空 Micrometer 注册表
+     * @throws MonitorException 注册表为空时抛出
      */
-    public AtomicLong counter(String name) {
-        return counters.computeIfAbsent(name, k -> new AtomicLong(0));
+    public MetricsCollector(MeterRegistry meterRegistry) {
+        if (meterRegistry == null) {
+            throw metricArgumentInvalid("meterRegistry 不能为空");
+        }
+        this.meterRegistry = meterRegistry;
     }
 
     /**
-     * 递增指定名称的计数器，并返回递增后的值.
+     * 获取或创建计数器。
      *
      * @param name 指标名称
-     * @return 递增后的计数值
+     * @param tags 成对出现的低基数标签键和值
+     * @return Micrometer 计数器
+     * @throws MonitorException 指标参数或注册冲突不合法时抛出
      */
-    public long increment(String name) {
-        return counter(name).incrementAndGet();
+    public Counter counter(String name, String... tags) {
+        String validatedName = validateName(name);
+        String[] validatedTags = validateTags(tags);
+        try {
+            return meterRegistry.counter(validatedName, validatedTags);
+        } catch (IllegalArgumentException exception) {
+            throw MonitorException.causedBy(
+                    MonitorErrorCode.METRIC_ARGUMENT_INVALID,
+                    exception,
+                    "计数器注册失败：" + validatedName);
+        }
     }
 
     /**
-     * 获取指定名称计数器的当前值.
+     * 将指定计数器递增一。
+     *
+     * <p>该方法只表达递增副作用，不返回容易被误认为累计值的结果。
+     * 如需读取 registry 当前视图，请显式调用 {@link #counterValue(String, String...)}。</p>
      *
      * @param name 指标名称
-     * @return 当前计数值，若该计数器不存在则返回 0
+     * @param tags 成对出现的低基数标签键和值
      */
-    public long getCounterValue(String name) {
-        AtomicLong counter = counters.get(name);
-        return counter != null ? counter.get() : 0;
+    public void increment(String name, String... tags) {
+        Counter counter = counter(name, tags);
+        counter.increment();
     }
 
     /**
-     * 获取所有已注册的计数器名称.
-     *
-     * @return 计数器名称的不可变集合
-     */
-    public Set<String> getCounterNames() {
-        return Collections.unmodifiableSet(counters.keySet());
-    }
-
-    // ======================== Timer 操作 ========================
-
-    /**
-     * 获取或创建指定名称的计时器.
-     *
-     * @param name 指标名称，建议使用点号分隔的命名规范（如 "order.process"）
-     * @return 计时器实例，保证同一 name 返回相同实例
-     */
-    public Timer timer(String name) {
-        return timers.computeIfAbsent(name, k -> new Timer(name));
-    }
-
-    /**
-     * 记录一次耗时到指定计时器.
-     *
-     * @param name   指标名称
-     * @param millis 耗时（毫秒）
-     */
-    public void recordTime(String name, long millis) {
-        timer(name).record(millis);
-    }
-
-    /**
-     * 获取指定名称计时器的统计信息.
+     * 获取或创建计时器。
      *
      * @param name 指标名称
-     * @return 计时器统计快照（count / avg / min / max），若不存在则返回空统计
+     * @param tags 成对出现的低基数标签键和值
+     * @return Micrometer 计时器
+     * @throws MonitorException 指标参数或注册冲突不合法时抛出
      */
-    public TimerStats getTimerStats(String name) {
-        Timer timer = timers.get(name);
-        return timer != null ? timer.stats() : new TimerStats(0, 0, 0, 0);
-    }
-
-    /**
-     * 获取所有已注册的计时器名称.
-     *
-     * @return 计时器名称的不可变集合
-     */
-    public Set<String> getTimerNames() {
-        return Collections.unmodifiableSet(timers.keySet());
-    }
-
-    // ======================== 全量指标导出 ========================
-
-    /**
-     * 获取当前所有指标的快照，包含计数器值和计时器统计信息.
-     *
-     * @return 不可修改的指标快照 Map，key 为指标名称，value 为 Long 或 TimerStats
-     */
-    public Map<String, Object> getAllMetrics() {
-        Map<String, Object> snapshot = new HashMap<>();
-
-        // 收集所有计数器快照
-        counters.forEach((name, counter) -> snapshot.put(name, counter.get()));
-
-        // 收集所有计时器快照
-        timers.forEach((name, timer) -> snapshot.put(name, timer.stats()));
-
-        return Collections.unmodifiableMap(snapshot);
-    }
-
-    // ======================== 内部类：计时器 ========================
-
-    /**
-     * 基于滑动时间窗口的计时器，记录每次调用的耗时数据.
-     *
-     * <p>内部使用 {@link ConcurrentLinkedDeque} 存储最近 N 次耗时记录，
-     * 每次调用 {@link #stats()} 时实时计算 avg / min / max。</p>
-     *
-     * @author leyland
-     * @since 2.0.0
-     */
-    public static class Timer {
-
-        /** 计时器名称 */
-        private final String name;
-
-        /** 最大窗口大小，超出时移除最早的记录 */
-        private static final int MAX_WINDOW_SIZE = 10_000;
-
-        /** 耗时记录双端队列 */
-        private final ConcurrentLinkedDeque<Long> records = new ConcurrentLinkedDeque<>();
-
-        /** 总调用次数（不受窗口滑动影响） */
-        private final AtomicLong totalCount = new AtomicLong(0);
-
-        /**
-         * 构造计时器.
-         *
-         * @param name 计时器名称
-         */
-        public Timer(String name) {
-            this.name = name;
+    public Timer timer(String name, String... tags) {
+        String validatedName = validateName(name);
+        String[] validatedTags = validateTags(tags);
+        try {
+            return meterRegistry.timer(validatedName, validatedTags);
+        } catch (IllegalArgumentException exception) {
+            throw MonitorException.causedBy(
+                    MonitorErrorCode.METRIC_ARGUMENT_INVALID,
+                    exception,
+                    "计时器注册失败：" + validatedName);
         }
+    }
 
-        /**
-         * 记录一次耗时.
-         *
-         * @param millis 耗时毫秒数
-         */
-        public void record(long millis) {
-            records.addLast(millis);
-            totalCount.incrementAndGet();
-            // 超过窗口大小时移除最早记录
-            while (records.size() > MAX_WINDOW_SIZE) {
-                records.pollFirst();
+    /**
+     * 记录一次已知耗时。
+     *
+     * @param name 指标名称
+     * @param duration 非负耗时
+     * @param tags 成对出现的低基数标签键和值
+     * @throws MonitorException 耗时或其他指标参数不合法时抛出
+     */
+    public void recordTime(
+            String name,
+            Duration duration,
+            String... tags) {
+        if (duration == null) {
+            throw metricArgumentInvalid("duration 不能为空");
+        }
+        if (duration.isNegative()) {
+            throw metricArgumentInvalid("duration 不能为负数");
+        }
+        timer(name, tags).record(duration);
+    }
+
+    /**
+     * 执行操作并记录实际耗时。
+     *
+     * @param name 指标名称
+     * @param action 待计时操作
+     * @param tags 成对出现的低基数标签键和值
+     * @throws MonitorException 操作或指标参数不合法时抛出
+     */
+    public void record(
+            String name,
+            Runnable action,
+            String... tags) {
+        if (action == null) {
+            throw metricArgumentInvalid("action 不能为空");
+        }
+        timer(name, tags).record(action);
+    }
+
+    /**
+     * 执行有返回值的操作并记录实际耗时。
+     *
+     * @param name 指标名称
+     * @param action 待计时操作
+     * @param tags 成对出现的低基数标签键和值
+     * @param <T> 操作返回值类型
+     * @return 原操作返回值
+     * @throws MonitorException 操作或指标参数不合法时抛出
+     */
+    public <T> T record(
+            String name,
+            Supplier<T> action,
+            String... tags) {
+        if (action == null) {
+            throw metricArgumentInvalid("action 不能为空");
+        }
+        return timer(name, tags).record(action);
+    }
+
+    /**
+     * 获取或创建完整身份对应的计数器，并查询当前值。
+     *
+     * <p>该方法遵循 Micrometer 的完整 meter 身份、公共标签和过滤器规则。
+     * 指标不存在时会注册零值计数器，避免标签子集检索任意命中同名指标。</p>
+     *
+     * @param name 指标名称
+     * @param tags 成对出现的低基数标签键和值
+     * @return registry 当前可见值
+     */
+    public double counterValue(String name, String... tags) {
+        return counter(name, tags).count();
+    }
+
+    /**
+     * 获取或创建完整身份对应的计时器，并查询统计快照。
+     *
+     * <p>该方法遵循 Micrometer 的完整 meter 身份、公共标签和过滤器规则。
+     * 指标不存在时会注册零值计时器，避免标签子集检索任意命中同名指标。</p>
+     *
+     * @param name 指标名称
+     * @param tags 成对出现的低基数标签键和值
+     * @return 不可变计时器快照
+     */
+    public TimerSnapshot timerSnapshot(String name, String... tags) {
+        Timer timer = timer(name, tags);
+        if (timer.count() == 0) {
+            return TimerSnapshot.empty();
+        }
+        return new TimerSnapshot(
+                timer.count(),
+                nanosToDuration(timer.totalTime(TimeUnit.NANOSECONDS)),
+                nanosToDuration(timer.mean(TimeUnit.NANOSECONDS)),
+                nanosToDuration(timer.max(TimeUnit.NANOSECONDS)));
+    }
+
+    /**
+     * 校验并规范化指标名称。
+     *
+     * @param name 原始指标名称
+     * @return 去除首尾空白的指标名称
+     */
+    private static String validateName(String name) {
+        if (name == null || name.isBlank()) {
+            throw metricArgumentInvalid("指标名称不能为空");
+        }
+        return name.trim();
+    }
+
+    /**
+     * 校验标签键值并创建防御性副本。
+     *
+     * @param tags 原始标签数组
+     * @return 防御性复制后的标签数组
+     */
+    private static String[] validateTags(String[] tags) {
+        if (tags == null) {
+            throw metricArgumentInvalid("tags 不能为空");
+        }
+        if (tags.length % 2 != 0) {
+            throw metricArgumentInvalid("标签必须以键值对形式出现");
+        }
+        String[] safeTags = tags.clone();
+        for (int index = 0; index < safeTags.length; index++) {
+            String value = safeTags[index];
+            if (value == null || value.isBlank()) {
+                String part = index % 2 == 0 ? "键" : "值";
+                throw metricArgumentInvalid("标签" + part + "不能为空");
             }
+            safeTags[index] = value.trim();
         }
-
-        /**
-         * 计算当前时间窗口内的统计信息.
-         *
-         * @return 计时器统计快照
-         */
-        public TimerStats stats() {
-            if (records.isEmpty()) {
-                return new TimerStats(0, 0, 0, 0);
-            }
-            long sum = 0;
-            long min = Long.MAX_VALUE;
-            long max = Long.MIN_VALUE;
-            int count = 0;
-            for (Long record : records) {
-                sum += record;
-                if (record < min) min = record;
-                if (record > max) max = record;
-                count++;
-            }
-            double avg = (double) sum / count;
-            return new TimerStats(count, avg, min, max);
-        }
-
-        /**
-         * 获取计时器名称.
-         *
-         * @return 计时器名称
-         */
-        public String getName() { return name; }
-
-        /**
-         * 获取总调用次数（包含已被滑动窗口淘汰的记录）.
-         *
-         * @return 总调用次数
-         */
-        public long getTotalCount() { return totalCount.get(); }
+        return safeTags;
     }
 
-    // ======================== 内部类：计时器统计快照 ========================
+    /**
+     * 将 Micrometer 的纳秒浮点值转换为 Duration。
+     *
+     * @param nanos 纳秒值
+     * @return 非负 Duration
+     */
+    private static Duration nanosToDuration(double nanos) {
+        if (!Double.isFinite(nanos) || nanos <= 0) {
+            return Duration.ZERO;
+        }
+        if (nanos >= Long.MAX_VALUE) {
+            return Duration.ofNanos(Long.MAX_VALUE);
+        }
+        return Duration.ofNanos(Math.round(nanos));
+    }
 
     /**
-     * 计时器统计快照，包含调用次数、平均耗时、最小耗时、最大耗时.
+     * 创建指标参数异常。
      *
-     * @author leyland
-     * @since 2.0.0
+     * @param reason 不合法原因
+     * @return 结构化监控异常
      */
-    public static class TimerStats {
+    private static MonitorException metricArgumentInvalid(String reason) {
+        return MonitorException.of(
+                MonitorErrorCode.METRIC_ARGUMENT_INVALID,
+                reason);
+    }
 
-        /** 调用次数 */
-        private final long count;
+    /**
+     * Micrometer 计时器的不可变统计快照。
+     *
+     * @param count registry 当前可见记录次数
+     * @param totalTime registry 当前可见总耗时
+     * @param mean 平均耗时
+     * @param max 最大耗时
+     */
+    public record TimerSnapshot(
+            long count,
+            Duration totalTime,
+            Duration mean,
+            Duration max) {
 
-        /** 平均耗时（毫秒） */
-        private final double avgMs;
-
-        /** 最小耗时（毫秒） */
-        private final long minMs;
-
-        /** 最大耗时（毫秒） */
-        private final long maxMs;
+        /** 复用的零值快照。 */
+        private static final TimerSnapshot EMPTY = new TimerSnapshot(
+                0,
+                Duration.ZERO,
+                Duration.ZERO,
+                Duration.ZERO);
 
         /**
-         * 构造计时器统计快照.
+         * 获取零值快照。
          *
-         * @param count 调用次数
-         * @param avgMs 平均耗时（毫秒）
-         * @param minMs 最小耗时（毫秒）
-         * @param maxMs 最大耗时（毫秒）
+         * @return 不含任何记录的快照
          */
-        public TimerStats(long count, double avgMs, long minMs, long maxMs) {
-            this.count = count;
-            this.avgMs = avgMs;
-            this.minMs = minMs;
-            this.maxMs = maxMs;
-        }
-
-        public long getCount() { return count; }
-
-        public double getAvgMs() { return avgMs; }
-
-        public long getMinMs() { return minMs; }
-
-        public long getMaxMs() { return maxMs; }
-
-        @Override
-        public String toString() {
-            return String.format("TimerStats{count=%d, avg=%.2fms, min=%dms, max=%dms}", count, avgMs, minMs, maxMs);
+        public static TimerSnapshot empty() {
+            return EMPTY;
         }
     }
 }

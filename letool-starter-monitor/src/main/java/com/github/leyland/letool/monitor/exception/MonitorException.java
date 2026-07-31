@@ -1,45 +1,62 @@
 package com.github.leyland.letool.monitor.exception;
 
-/**
- * 监控模块统一异常，用于封装监控采集、统计、告警过程中的运行时错误.
- *
- * <h3>使用场景</h3>
- * <ul>
- *   <li>指标采集失败时抛出</li>
- *   <li>告警通知发送异常时抛出</li>
- *   <li>数据清理任务执行失败时抛出</li>
- *   <li>配置参数不合法时抛出</li>
- * </ul>
- *
- * <h3>示例</h3>
- * <pre>{@code
- * throw new MonitorException("指标采集失败: 无法获取 JVM 堆内存使用量");
- * throw new MonitorException("钉钉告警发送失败", cause);
- * }</pre>
- *
- * @author leyland
- * @since 2.0.0
- */
-public class MonitorException extends RuntimeException {
+import com.github.leyland.letool.exception.core.SystemException;
 
+import java.io.Serial;
+
+/**
+ * 监控模块统一系统异常。
+ *
+ * <p>异常保留稳定错误码、国际化参数和底层原因链，供后台日志与响应边界统一处理。</p>
+ */
+public final class MonitorException extends SystemException {
+
+    @Serial
     private static final long serialVersionUID = 1L;
 
     /**
-     * 使用错误消息构造监控异常.
+     * 创建监控异常。
      *
-     * @param message 错误描述信息
+     * @param errorCode 监控错误码
+     * @param messageArgs 默认消息模板参数
+     * @param cause 底层原因；没有时可为 {@code null}
      */
-    public MonitorException(String message) {
-        super(message);
+    private MonitorException(
+            MonitorErrorCode errorCode,
+            Object[] messageArgs,
+            Throwable cause) {
+        super(errorCode, messageArgs, null, cause);
     }
 
     /**
-     * 使用错误消息和根因构造监控异常.
+     * 创建不包含底层原因的监控异常。
      *
-     * @param message 错误描述信息
-     * @param cause   原始异常
+     * @param errorCode 监控错误码
+     * @param messageArgs 默认消息模板参数
+     * @return 结构化监控异常
      */
-    public MonitorException(String message, Throwable cause) {
-        super(message, cause);
+    public static MonitorException of(
+            MonitorErrorCode errorCode,
+            Object... messageArgs) {
+        return new MonitorException(errorCode, messageArgs, null);
+    }
+
+    /**
+     * 创建保留底层原因链的监控异常。
+     *
+     * @param errorCode 监控错误码
+     * @param cause 非空底层异常
+     * @param messageArgs 默认消息模板参数
+     * @return 保留原因链的结构化监控异常
+     * @throws IllegalArgumentException 底层异常为空时抛出
+     */
+    public static MonitorException causedBy(
+            MonitorErrorCode errorCode,
+            Throwable cause,
+            Object... messageArgs) {
+        if (cause == null) {
+            throw new IllegalArgumentException("cause 不能为空");
+        }
+        return new MonitorException(errorCode, messageArgs, cause);
     }
 }

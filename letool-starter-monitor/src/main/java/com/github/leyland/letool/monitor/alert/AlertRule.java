@@ -9,7 +9,7 @@ import java.util.List;
  * <p>定义一条监控告警规则，包括触发条件、阈值、持续时长、告警级别和通知渠道。
  * 当指定指标满足条件并持续一定时间后，将通过配置的通知渠道发送告警。</p>
  *
- * <h3>示例</h3>
+ * <h2>示例</h2>
  * <pre>{@code
  * AlertRule rule = new AlertRule();
  * rule.setName("堆内存使用率过高");
@@ -85,29 +85,149 @@ public class AlertRule {
 
     // ======================== Getter / Setter ========================
 
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
+    /**
+     * 获取告警规则名称。
+     *
+     * @return 规则名称
+     */
+    public String getName() {
+        return name;
+    }
 
-    public String getMetric() { return metric; }
-    public void setMetric(String metric) { this.metric = metric; }
+    /**
+     * 设置告警规则名称。
+     *
+     * @param name 规则名称
+     */
+    public void setName(String name) {
+        this.name = name;
+    }
 
-    public AlertCondition getCondition() { return condition; }
-    public void setCondition(AlertCondition condition) { this.condition = condition; }
+    /**
+     * 获取监控指标名称。
+     *
+     * @return 指标名称
+     */
+    public String getMetric() {
+        return metric;
+    }
 
-    public double getThreshold() { return threshold; }
-    public void setThreshold(double threshold) { this.threshold = threshold; }
+    /**
+     * 设置监控指标名称。
+     *
+     * @param metric 指标名称
+     */
+    public void setMetric(String metric) {
+        this.metric = metric;
+    }
 
-    public String getDuration() { return duration; }
-    public void setDuration(String duration) { this.duration = duration; }
+    /**
+     * 获取阈值比较条件。
+     *
+     * @return 比较条件
+     */
+    public AlertCondition getCondition() {
+        return condition;
+    }
 
-    public AlertLevel getLevel() { return level; }
-    public void setLevel(AlertLevel level) { this.level = level; }
+    /**
+     * 设置阈值比较条件。
+     *
+     * @param condition 比较条件
+     */
+    public void setCondition(AlertCondition condition) {
+        this.condition = condition;
+    }
 
-    public String getMessage() { return message; }
-    public void setMessage(String message) { this.message = message; }
+    /**
+     * 获取告警阈值。
+     *
+     * @return 告警阈值
+     */
+    public double getThreshold() {
+        return threshold;
+    }
 
-    public List<String> getNotifierTypes() { return notifierTypes; }
-    public void setNotifierTypes(List<String> notifierTypes) { this.notifierTypes = notifierTypes; }
+    /**
+     * 设置告警阈值。
+     *
+     * @param threshold 告警阈值
+     */
+    public void setThreshold(double threshold) {
+        this.threshold = threshold;
+    }
+
+    /**
+     * 获取告警持续时长表达式。
+     *
+     * @return 持续时长表达式
+     */
+    public String getDuration() {
+        return duration;
+    }
+
+    /**
+     * 设置告警持续时长表达式。
+     *
+     * @param duration 持续时长表达式
+     */
+    public void setDuration(String duration) {
+        this.duration = duration;
+    }
+
+    /**
+     * 获取告警级别。
+     *
+     * @return 告警级别
+     */
+    public AlertLevel getLevel() {
+        return level;
+    }
+
+    /**
+     * 设置告警级别。
+     *
+     * @param level 告警级别
+     */
+    public void setLevel(AlertLevel level) {
+        this.level = level;
+    }
+
+    /**
+     * 获取告警消息模板。
+     *
+     * @return 消息模板
+     */
+    public String getMessage() {
+        return message;
+    }
+
+    /**
+     * 设置告警消息模板。
+     *
+     * @param message 消息模板
+     */
+    public void setMessage(String message) {
+        this.message = message;
+    }
+
+    /**
+     * 获取通知渠道类型列表。
+     *
+     * @return 通知渠道类型列表
+     */
+    public List<String> getNotifierTypes() {
+        return notifierTypes;
+    }
+
+    /**
+     * 设置通知渠道类型列表。
+     *
+     * @param notifierTypes 通知渠道类型列表
+     */
+    public void setNotifierTypes(List<String> notifierTypes) {
+        this.notifierTypes = notifierTypes;
+    }
 
     // ======================== 便捷方法 ========================
 

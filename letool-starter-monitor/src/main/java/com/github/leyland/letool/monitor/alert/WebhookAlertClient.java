@@ -1,6 +1,7 @@
 package com.github.leyland.letool.monitor.alert;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.github.leyland.letool.monitor.exception.MonitorErrorCode;
 import com.github.leyland.letool.monitor.exception.MonitorException;
 import com.github.leyland.letool.tool.util.JsonUtil;
 
@@ -39,39 +40,68 @@ final class WebhookAlertClient {
      * @param channelName 告警渠道名称，用于错误消息
      * @param webhookUrl  Webhook 地址
      * @param payload     JSON 请求体
-     * @throws MonitorException HTTP 失败、响应非 2xx 或业务错误码非 0 时抛出
+    * @throws MonitorException HTTP 失败、响应非 2xx 或业务错误码非 0 时抛出
      */
     static void postJson(String channelName, String webhookUrl, String payload) {
-        HttpRequest request = HttpRequest.newBuilder(URI.create(webhookUrl))
-                .timeout(REQUEST_TIMEOUT)
-                .header("Content-Type", "application/json; charset=utf-8")
-                .POST(HttpRequest.BodyPublishers.ofString(payload))
-                .build();
-
-        HttpResponse<String> response;
         try {
-            response = CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
-        } catch (InterruptedException e) {
+            HttpRequest request = HttpRequest.newBuilder(URI.create(webhookUrl))
+                    .timeout(REQUEST_TIMEOUT)
+                    .header("Content-Type", "application/json; charset=utf-8")
+                    .POST(HttpRequest.BodyPublishers.ofString(payload))
+                    .build();
+            HttpResponse<String> response = CLIENT.send(
+                    request,
+                    HttpResponse.BodyHandlers.ofString());
+            validateResponse(channelName, response);
+        } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new MonitorException(channelName + " webhook request interrupted", e);
-        } catch (IOException | IllegalArgumentException e) {
-            throw new MonitorException(channelName + " webhook request failed", e);
+            throw MonitorException.causedBy(
+                    MonitorErrorCode.WEBHOOK_DELIVERY_FAILED,
+                    exception,
+                    channelName);
+        } catch (MonitorException exception) {
+            throw exception;
+        } catch (IOException | RuntimeException exception) {
+            throw MonitorException.causedBy(
+                    MonitorErrorCode.WEBHOOK_DELIVERY_FAILED,
+                    exception,
+                    channelName);
         }
+    }
 
+    /**
+     * 校验 Webhook HTTP 状态和通用业务响应。
+     *
+     * @param channelName 告警渠道名称
+     * @param response HTTP 响应
+     * @throws MonitorException HTTP 或业务响应表示投递失败时抛出
+     */
+    private static void validateResponse(
+            String channelName,
+            HttpResponse<String> response) {
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new MonitorException(channelName + " webhook returned HTTP " + response.statusCode());
+            throw MonitorException.of(
+                    MonitorErrorCode.WEBHOOK_DELIVERY_FAILED,
+                    channelName + " HTTP " + response.statusCode());
         }
 
         JSONObject body = JsonUtil.parseObject(response.body());
         if (body == null) {
-            throw new MonitorException(channelName + " webhook returned empty response");
+            throw MonitorException.of(
+                    MonitorErrorCode.WEBHOOK_DELIVERY_FAILED,
+                    channelName + " 返回空响应");
         }
 
         Integer errCode = body.getInteger("errcode");
         if (errCode != null && errCode != 0) {
             String errMsg = body.getString("errmsg");
-            throw new MonitorException(channelName + " webhook returned errcode=" + errCode
-                    + (errMsg == null ? "" : ", errmsg=" + errMsg));
+            String detail = channelName + " errcode=" + errCode
+                    + (errMsg == null || errMsg.isBlank()
+                    ? ""
+                    : ", errmsg=" + errMsg);
+            throw MonitorException.of(
+                    MonitorErrorCode.WEBHOOK_DELIVERY_FAILED,
+                    detail);
         }
     }
 }

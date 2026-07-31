@@ -11,8 +11,7 @@
 
     <artifactId>letool-starter-monitor</artifactId>
     <name>letool-starter-monitor</name>
-    <description>letool 监控指标模块 —— 轻量指标采集、JVM/API 统计、Webhook 告警、显式数据清理调度
-    </description>
+    <description>letool 监控模块 —— Actuator/Micrometer 指标门面、Webhook 告警与用户清理任务调度</description>
     <packaging>jar</packaging>
 
     <dependencies>
@@ -21,14 +20,12 @@
             <artifactId>letool-starter-tool</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter</artifactId>
-            <scope>provided</scope>
+            <groupId>com.github.leyland</groupId>
+            <artifactId>letool-starter-exception</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-autoconfigure</artifactId>
-            <scope>provided</scope>
+            <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

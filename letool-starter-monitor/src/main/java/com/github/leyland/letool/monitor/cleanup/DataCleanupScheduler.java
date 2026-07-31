@@ -1,267 +1,472 @@
 package com.github.leyland.letool.monitor.cleanup;
 
-import com.github.leyland.letool.monitor.config.MonitorProperties;
+import com.github.leyland.letool.monitor.exception.MonitorErrorCode;
+import com.github.leyland.letool.monitor.exception.MonitorException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
+import org.springframework.scheduling.support.CronTrigger;
 
+import java.time.Clock;
+import java.time.DateTimeException;
 import java.time.Duration;
-import java.time.LocalDateTime;
-import java.util.*;
-import java.util.concurrent.*;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * 数据残留定期清理调度器.
+ * 基于 Spring CronTrigger 的生产级数据清理调度器。
  *
- * <p>管理多个 {@link CleanupTask}，根据 Cron 表达式或固定间隔周期性执行数据清理。
- * 内部使用 {@link ScheduledExecutorService} 驱动调度。</p>
- *
- * <h3>显式启用后的行为</h3>
- * <p>该调度器仅在 {@code letool.monitor.data-retention.enabled=true} 时由自动配置创建。
- * 启动后会按照 {@code letool.monitor.data-retention} 中配置的保留天数，自动注册以下清理任务：
- * <ul>
- *   <li>{@code monitor_audit_log} —— 审计日志</li>
- *   <li>{@code monitor_request_log} —— 请求日志</li>
- *   <li>{@code monitor_api_stats} —— API 统计数据</li>
- *   <li>{@code monitor_api_error} —— API 错误记录</li>
- * </ul></p>
- *
- * <p>当前内置 {@link CleanupTask} 只记录日志，不执行真实 SQL 删除。
- * 可通过 {@link #registerTask(CleanupTask)} 注册自定义清理任务。</p>
- *
- * @author leyland
- * @since 2.0.0
+ * <p>调度器不包含任何数据库删除实现，只负责用户 {@link CleanupTask} 的参数校验、
+ * 单线程调度、防重入、失败隔离、执行报告和优雅关闭。</p>
  */
-public class DataCleanupScheduler {
+public final class DataCleanupScheduler {
 
-    // ======================== 日志 ========================
+    /** 数据清理日志。 */
+    private static final Logger log =
+            LoggerFactory.getLogger(DataCleanupScheduler.class);
 
-    private static final Logger log = LoggerFactory.getLogger(DataCleanupScheduler.class);
+    /** 生命周期互斥锁。 */
+    private final Object lifecycleMonitor = new Object();
 
-    // ======================== 字段 ========================
+    /** 校验并冻结后的任务列表。 */
+    private final List<RegisteredTask> tasks;
 
-    /** 配置属性 */
-    private final MonitorProperties properties;
+    /** 真实 Cron 触发器。 */
+    private final CronTrigger cronTrigger;
 
-    /** 注册的清理任务列表（线程安全） */
-    private final List<CleanupTask> tasks = new CopyOnWriteArrayList<>();
+    /** 调度和执行使用的时钟。 */
+    private final Clock clock;
 
-    /** 定时调度线程池 */
-    private ScheduledExecutorService scheduler;
+    /** 调度器拥有的单线程 Spring 任务调度器。 */
+    private final ThreadPoolTaskScheduler taskScheduler;
 
-    /** 上次清理时间 */
-    private final AtomicReference<LocalDateTime> lastCleanupTime = new AtomicReference<>();
+    /** 防止手动触发和定时触发重叠。 */
+    private final AtomicBoolean executionInProgress = new AtomicBoolean();
 
-    /** 是否正在运行 */
-    private volatile boolean running = false;
+    /** 最近一次实际执行报告。 */
+    private final AtomicReference<CleanupRunReport> lastReport =
+            new AtomicReference<>();
 
-    // ======================== 构造方法 ========================
+    /** 当前 Cron 调度句柄。 */
+    private volatile ScheduledFuture<?> scheduledFuture;
+
+    /** Spring 调度器是否已经初始化。 */
+    private volatile boolean schedulerInitialized;
+
+    /** 当前是否已经启动 Cron 调度。 */
+    private volatile boolean running;
+
+    /** 调度器是否已经永久关闭。 */
+    private volatile boolean closed;
 
     /**
-     * 创建数据清理调度器.
+     * 创建拥有独立单线程资源的数据清理调度器。
      *
-     * @param properties 监控模块配置属性
+     * @param tasks 用户提供的清理任务
+     * @param cron Spring 六字段 Cron 表达式
+     * @param zoneId Cron 解析时区
+     * @param shutdownTimeout 优雅关闭最大等待时间
      */
-    public DataCleanupScheduler(MonitorProperties properties) {
-        this.properties = properties;
+    public DataCleanupScheduler(
+            List<CleanupTask> tasks,
+            String cron,
+            ZoneId zoneId,
+            Duration shutdownTimeout) {
+        this(
+                tasks,
+                cron,
+                zoneId,
+                shutdownTimeout,
+                Clock.system(zoneId == null
+                        ? ZoneId.systemDefault()
+                        : zoneId),
+                new ThreadPoolTaskScheduler());
     }
 
-    // ======================== 生命周期 ========================
+    /**
+     * 创建可注入时钟和 Spring 调度器的实例。
+     *
+     * <p>该构造器仅供同包测试使用，生产代码使用公开构造器并由当前实例拥有调度资源。</p>
+     *
+     * @param tasks 用户提供的清理任务
+     * @param cron Spring 六字段 Cron 表达式
+     * @param zoneId Cron 解析时区
+     * @param shutdownTimeout 优雅关闭最大等待时间
+     * @param clock 执行时钟
+     * @param taskScheduler 未初始化的单线程调度器
+     */
+    DataCleanupScheduler(
+            List<CleanupTask> tasks,
+            String cron,
+            ZoneId zoneId,
+            Duration shutdownTimeout,
+            Clock clock,
+            ThreadPoolTaskScheduler taskScheduler) {
+        this.clock = requireClock(clock);
+        this.tasks = validateTasks(tasks, this.clock);
+        this.taskScheduler = requireTaskScheduler(taskScheduler);
+        this.cronTrigger = createCronTrigger(cron, zoneId);
+        configureTaskScheduler(shutdownTimeout);
+    }
 
     /**
-     * 启动定时清理调度.
+     * 启动真实 Cron 调度。
      *
-     * <p>根据配置的 Cron 表达式设置调度频率，并自动注册默认的清理任务。</p>
+     * <p>重复启动是幂等操作；已经停止并永久关闭的实例不能再次启动。</p>
+     *
+     * @throws MonitorException 调度器已关闭或底层调度启动失败时抛出
      */
     public void start() {
-        if (running) {
-            log.warn("[Monitor-Cleanup] 数据清理调度器已在运行中");
-            return;
+        synchronized (lifecycleMonitor) {
+            if (running) {
+                return;
+            }
+            if (closed) {
+                throw MonitorException.of(
+                        MonitorErrorCode.CLEANUP_SCHEDULE_FAILED);
+            }
+            try {
+                taskScheduler.initialize();
+                schedulerInitialized = true;
+                ScheduledFuture<?> future = taskScheduler.schedule(
+                        this::runScheduled,
+                        cronTrigger);
+                if (future == null) {
+                    throw new IllegalStateException("CronTrigger 没有下一次执行时间");
+                }
+                scheduledFuture = future;
+                running = true;
+                log.info(
+                        "[Monitor-Cleanup] 数据清理调度器已启动，cron={}, zone={}",
+                        cronTrigger.getExpression(),
+                        taskScheduler.getClock().getZone());
+            } catch (RuntimeException exception) {
+                shutdownSchedulerAfterStartFailure();
+                throw MonitorException.causedBy(
+                        MonitorErrorCode.CLEANUP_SCHEDULE_FAILED,
+                        exception);
+            }
         }
-
-        running = true;
-        scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "letool-data-cleanup");
-            t.setDaemon(true);
-            return t;
-        });
-
-        // 注册默认清理任务
-        registerDefaultTasks();
-
-        // 计算 Cron 对应的初始延迟和间隔
-        String cron = properties.getDataRetention().getCleanCron();
-        long intervalSeconds = parseCronToIntervalSeconds(cron);
-
-        scheduler.scheduleAtFixedRate(this::cleanup, intervalSeconds, intervalSeconds, TimeUnit.SECONDS);
-
-        log.info("[Monitor-Cleanup] 数据清理调度器已启动，间隔 {}s，已注册 {} 个清理任务",
-                intervalSeconds, tasks.size());
     }
 
     /**
-     * 停止调度器.
+     * 手动执行一轮完整清理。
+     *
+     * <p>所有任务共享同一个触发时间。单任务失败会记录到报告并继续后续任务；
+     * 已有清理运行时立即返回重入跳过报告。</p>
+     *
+     * @return 不可变执行报告
+     */
+    public CleanupRunReport runOnce() {
+        Instant requestedAt = clock.instant();
+        if (!executionInProgress.compareAndSet(false, true)) {
+            return CleanupRunReport.overlapSkipped(requestedAt);
+        }
+
+        Instant startedAt = clock.instant();
+        List<CleanupExecution> executions = new ArrayList<>(tasks.size());
+        try {
+            for (RegisteredTask task : tasks) {
+                executions.add(executeTask(task, startedAt));
+            }
+            CleanupRunReport report = new CleanupRunReport(
+                    startedAt,
+                    clock.instant(),
+                    false,
+                    executions);
+            lastReport.set(report);
+            log.info(
+                    "[Monitor-Cleanup] 本轮完成：成功 {} 个，失败 {} 个，影响 {} 条记录",
+                    report.successCount(),
+                    report.failureCount(),
+                    report.totalAffectedRows());
+            return report;
+        } finally {
+            executionInProgress.set(false);
+        }
+    }
+
+    /**
+     * 获取最近一次实际执行报告。
+     *
+     * @return 尚未执行时为空
+     */
+    public Optional<CleanupRunReport> lastReport() {
+        return Optional.ofNullable(lastReport.get());
+    }
+
+    /**
+     * 停止调度并优雅关闭专用线程池。
+     *
+     * <p>重复停止是幂等操作；停止后的实例不可重新启动。</p>
      */
     public void stop() {
-        if (!running) return;
-        running = false;
-
-        if (scheduler != null && !scheduler.isShutdown()) {
-            scheduler.shutdown();
-            try {
-                if (!scheduler.awaitTermination(10, TimeUnit.SECONDS)) {
-                    scheduler.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                scheduler.shutdownNow();
-                Thread.currentThread().interrupt();
+        synchronized (lifecycleMonitor) {
+            if (closed) {
+                return;
             }
-        }
-        log.info("[Monitor-Cleanup] 数据清理调度器已停止");
-    }
-
-    // ======================== 公共方法 ========================
-
-    /**
-     * 手动触发一次全量清理.
-     *
-     * <p>遍历所有注册的清理任务，逐个执行清理操作。</p>
-     */
-    public void cleanup() {
-        log.info("[Monitor-Cleanup] 开始执行全量数据清理...");
-        LocalDateTime startTime = LocalDateTime.now();
-
-        int successCount = 0;
-        int skipCount = 0;
-        int failCount = 0;
-
-        for (CleanupTask task : tasks) {
-            try {
-                if (task.shouldCleanup()) {
-                    long deletedRows = task.execute();
-                    log.info("[Monitor-Cleanup] 任务 \"{}\" 完成，清理 {} 条记录", task.getTableName(), deletedRows);
-                    successCount++;
-                } else {
-                    skipCount++;
-                }
-            } catch (Exception e) {
-                log.error("[Monitor-Cleanup] 任务 \"{}\" 执行失败: {}", task.getTableName(), e.getMessage(), e);
-                failCount++;
+            closed = true;
+            running = false;
+            ScheduledFuture<?> future = scheduledFuture;
+            scheduledFuture = null;
+            if (future != null) {
+                future.cancel(false);
             }
-        }
-
-        lastCleanupTime.set(LocalDateTime.now());
-        log.info("[Monitor-Cleanup] 全量清理完成: 成功 {} 个, 跳过 {} 个, 失败 {} 个, 耗时 {}ms",
-                successCount, skipCount, failCount,
-                Duration.between(startTime, LocalDateTime.now()).toMillis());
-    }
-
-    /**
-     * 注册一个清理任务.
-     *
-     * <p>如果同表名的任务已存在，则不会重复注册。</p>
-     *
-     * @param task 清理任务实例
-     */
-    public void registerTask(CleanupTask task) {
-        if (task == null) return;
-        boolean exists = tasks.stream().anyMatch(t -> t.getTableName().equals(task.getTableName()));
-        if (!exists) {
-            tasks.add(task);
-            log.info("[Monitor-Cleanup] 注册清理任务: {}", task.getTableName());
+            if (schedulerInitialized) {
+                taskScheduler.shutdown();
+                schedulerInitialized = false;
+            }
+            log.info("[Monitor-Cleanup] 数据清理调度器已停止");
         }
     }
 
     /**
-     * 获取所有已注册的清理任务.
+     * 判断 Cron 调度是否正在运行。
      *
-     * @return 清理任务的不可变列表
+     * @return 已启动且未停止时返回 {@code true}
      */
-    public List<CleanupTask> getTasks() {
-        return Collections.unmodifiableList(tasks);
+    public boolean isRunning() {
+        return running;
     }
 
     /**
-     * 获取上次清理时间.
-     *
-     * @return 上次清理时间的 {@link Optional}，从未执行过则为空
+     * 执行定时触发并确保异常不会终止 Spring 后续调度。
      */
-    public Optional<LocalDateTime> getLastCleanupTime() {
-        return Optional.ofNullable(lastCleanupTime.get());
-    }
-
-    // ======================== 内部方法 ========================
-
-    /**
-     * 注册默认的清理任务（基于配置属性）.
-     */
-    private void registerDefaultTasks() {
-        MonitorProperties.DataRetention retention = properties.getDataRetention();
-
-        registerTask(new CleanupTask("monitor_audit_log", parseDays(retention.getAuditLog())));
-        registerTask(new CleanupTask("monitor_request_log", parseDays(retention.getRequestLog())));
-        registerTask(new CleanupTask("monitor_api_stats", parseDays(retention.getApiStats())));
-        registerTask(new CleanupTask("monitor_api_error", parseDays(retention.getApiError())));
-    }
-
-    /**
-     * 从配置字符串（如 {@code "90d"}）中提取天数.
-     *
-     * @param retention 保留字段，如 {@code "90d"}、{@code "7"}
-     * @return 天数，解析失败返回默认值 30
-     */
-    private int parseDays(String retention) {
-        if (retention == null || retention.isEmpty()) return 30;
+    private void runScheduled() {
         try {
-            String cleaned = retention.trim().toLowerCase().replace("d", "");
-            return Integer.parseInt(cleaned);
-        } catch (NumberFormatException e) {
-            log.warn("[Monitor-Cleanup] 无法解析保留天数: {}，使用默认值 30d", retention);
-            return 30;
+            runOnce();
+        } catch (RuntimeException exception) {
+            log.error("[Monitor-Cleanup] 定时清理基础设施执行失败", exception);
         }
     }
 
     /**
-     * 从 Cron 表达式估算执行间隔秒数.
+     * 执行单个清理任务并生成结果。
      *
-     * <p>简化实现：不支持完整 Cron 解析，仅识别常见的日期级调度模式。
-     * 对不支持的表达式，回退到默认间隔（24 小时）。</p>
+     * @param task 已校验任务
+     * @param triggeredAt 本轮统一触发时间
+     * @return 单任务执行结果
+     */
+    private CleanupExecution executeTask(
+            RegisteredTask task,
+            Instant triggeredAt) {
+        Instant taskStartedAt = clock.instant();
+        try {
+            CleanupContext context = new CleanupContext(
+                    task.name(),
+                    triggeredAt,
+                    triggeredAt.minus(task.retention()));
+            long affectedRows = task.delegate().cleanup(context);
+            if (affectedRows < 0) {
+                throw new IllegalStateException("清理任务返回了负数影响记录");
+            }
+            return CleanupExecution.success(
+                    task.name(),
+                    taskStartedAt,
+                    clock.instant(),
+                    affectedRows);
+        } catch (RuntimeException exception) {
+            log.error(
+                    "[Monitor-Cleanup] 清理任务执行失败：{}",
+                    task.name(),
+                    exception);
+            return CleanupExecution.failed(
+                    task.name(),
+                    taskStartedAt,
+                    clock.instant(),
+                    exception);
+        }
+    }
+
+    /**
+     * 校验并冻结任务定义。
+     *
+     * @param sourceTasks 原始任务列表
+     * @param clock 校验截止时间计算使用的时钟
+     * @return 不可变已注册任务列表
+     */
+    private static List<RegisteredTask> validateTasks(
+            List<CleanupTask> sourceTasks,
+            Clock clock) {
+        if (sourceTasks == null || sourceTasks.isEmpty()) {
+            throw MonitorException.of(MonitorErrorCode.CLEANUP_TASK_MISSING);
+        }
+        List<RegisteredTask> validated = new ArrayList<>(sourceTasks.size());
+        Set<String> names = new HashSet<>();
+        for (CleanupTask task : sourceTasks) {
+            if (task == null) {
+                throw configurationInvalid("CleanupTask 不能为空");
+            }
+            String name;
+            Duration retention;
+            try {
+                name = task.name();
+                retention = task.retention();
+            } catch (RuntimeException exception) {
+                throw MonitorException.causedBy(
+                        MonitorErrorCode.CONFIGURATION_INVALID,
+                        exception,
+                        "读取 CleanupTask 定义失败");
+            }
+            if (name == null || name.isBlank()) {
+                throw configurationInvalid("CleanupTask.name 不能为空");
+            }
+            String normalizedName = name.trim();
+            if (!names.add(normalizedName)) {
+                throw MonitorException.of(
+                        MonitorErrorCode.CLEANUP_TASK_DUPLICATED,
+                        normalizedName);
+            }
+            if (retention == null
+                    || retention.isZero()
+                    || retention.isNegative()) {
+                throw configurationInvalid(
+                        "CleanupTask.retention 必须为正数：" + normalizedName);
+            }
+            try {
+                clock.instant().minus(retention);
+            } catch (DateTimeException | ArithmeticException exception) {
+                throw MonitorException.causedBy(
+                        MonitorErrorCode.CONFIGURATION_INVALID,
+                        exception,
+                        "CleanupTask.retention 超出时间范围：" + normalizedName);
+            }
+            validated.add(new RegisteredTask(
+                    normalizedName,
+                    retention,
+                    task));
+        }
+        return List.copyOf(validated);
+    }
+
+    /**
+     * 创建并校验真实 Cron 触发器。
      *
      * @param cron Cron 表达式
-     * @return 间隔秒数
+     * @param zoneId Cron 时区
+     * @return Cron 触发器
      */
-    private long parseCronToIntervalSeconds(String cron) {
-        if (cron == null || cron.isEmpty()) {
-            return 24 * 60 * 60; // 默认每天一次
+    private static CronTrigger createCronTrigger(
+            String cron,
+            ZoneId zoneId) {
+        if (cron == null || cron.isBlank()) {
+            throw configurationInvalid("cleanCron 不能为空");
         }
-
-        // 简化 Cron 解析：仅识别 "*" 和具体数字
-        // 复杂 Cron 回退到 24 小时
+        if (zoneId == null) {
+            throw configurationInvalid("zoneId 不能为空");
+        }
         try {
-            String[] parts = cron.trim().split("\\s+");
-            if (parts.length < 6) {
-                return 24 * 60 * 60;
-            }
-
-            // 检查是否为每天固定时间执行（如 "0 0 3 * * ?"）
-            // 第 4 位 = 月份 → "*" 表示每月
-            // 第 5 位 = 星期 → "*" 或 "?" 表示每天
-            String month = parts[3];
-            String dayOfMonth = parts[2];
-            String dayOfWeek = parts[4];
-
-            if ("*".equals(month) && ("*".equals(dayOfWeek) || "?".equals(dayOfWeek))) {
-                if ("*".equals(dayOfMonth)) {
-                    return 24 * 60 * 60; // 每天
-                }
-                return 24 * 60 * 60;
-            }
-
-            // 无法精确匹配，回退到 24h
-            return 24 * 60 * 60;
-        } catch (Exception e) {
-            log.warn("[Monitor-Cleanup] 无法解析 Cron 表达式: {}，使用默认间隔 24h", cron);
-            return 24 * 60 * 60;
+            return new CronTrigger(cron.trim(), zoneId);
+        } catch (IllegalArgumentException exception) {
+            throw MonitorException.causedBy(
+                    MonitorErrorCode.CONFIGURATION_INVALID,
+                    exception,
+                    "cleanCron 不合法：" + cron);
         }
+    }
+
+    /**
+     * 配置专用 Spring 调度器。
+     *
+     * @param shutdownTimeout 优雅关闭期限
+     */
+    private void configureTaskScheduler(Duration shutdownTimeout) {
+        if (shutdownTimeout == null
+                || shutdownTimeout.isZero()
+                || shutdownTimeout.isNegative()) {
+            throw configurationInvalid("shutdownTimeout 必须为正数");
+        }
+        long timeoutMillis;
+        try {
+            timeoutMillis = shutdownTimeout.toMillis();
+        } catch (ArithmeticException exception) {
+            throw MonitorException.causedBy(
+                    MonitorErrorCode.CONFIGURATION_INVALID,
+                    exception,
+                    "shutdownTimeout 超出毫秒范围");
+        }
+        if (timeoutMillis <= 0) {
+            throw configurationInvalid("shutdownTimeout 不能小于一毫秒");
+        }
+        taskScheduler.setPoolSize(1);
+        taskScheduler.setThreadNamePrefix("letool-monitor-cleanup-");
+        taskScheduler.setRemoveOnCancelPolicy(true);
+        taskScheduler.setWaitForTasksToCompleteOnShutdown(true);
+        taskScheduler.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
+        taskScheduler.setContinueExistingPeriodicTasksAfterShutdownPolicy(false);
+        taskScheduler.setAwaitTerminationMillis(timeoutMillis);
+        taskScheduler.setClock(clock);
+    }
+
+    /**
+     * 在启动失败后释放已经初始化的调度资源。
+     */
+    private void shutdownSchedulerAfterStartFailure() {
+        running = false;
+        closed = true;
+        if (schedulerInitialized) {
+            taskScheduler.shutdown();
+            schedulerInitialized = false;
+        }
+    }
+
+    /**
+     * 校验执行时钟。
+     *
+     * @param clock 原始时钟
+     * @return 非空时钟
+     */
+    private static Clock requireClock(Clock clock) {
+        if (clock == null) {
+            throw configurationInvalid("clock 不能为空");
+        }
+        return clock;
+    }
+
+    /**
+     * 校验 Spring 任务调度器。
+     *
+     * @param taskScheduler 原始任务调度器
+     * @return 非空任务调度器
+     */
+    private static ThreadPoolTaskScheduler requireTaskScheduler(
+            ThreadPoolTaskScheduler taskScheduler) {
+        if (taskScheduler == null) {
+            throw configurationInvalid("taskScheduler 不能为空");
+        }
+        return taskScheduler;
+    }
+
+    /**
+     * 创建配置异常。
+     *
+     * @param reason 配置错误原因
+     * @return 结构化监控异常
+     */
+    private static MonitorException configurationInvalid(String reason) {
+        return MonitorException.of(
+                MonitorErrorCode.CONFIGURATION_INVALID,
+                reason);
+    }
+
+    /**
+     * 校验后冻结的用户清理任务定义。
+     *
+     * @param name 稳定任务名称
+     * @param retention 数据保留时长
+     * @param delegate 用户任务实现
+     */
+    private record RegisteredTask(
+            String name,
+            Duration retention,
+            CleanupTask delegate) {
     }
 }

@@ -57,7 +57,7 @@
 | **letool-starter-data-structure** | 数据结构 —— 泛型树、决策链（消除 if-else）、链表 | tool |
 | **letool-starter-websocket** | WebSocket —— 消息路由、房间管理、分布式会话 | tool, web |
 | **letool-starter-job** | 任务调度 —— 分布式定时任务、分片、重试 | tool |
-| **letool-starter-monitor** | 监控指标 —— 轻量指标采集可用，Webhook 告警真实发送，清理调度默认关闭且仍为占位实现 | tool |
+| **letool-starter-monitor** | 监控增强 —— Actuator/Micrometer 指标门面、真实 Webhook 告警、用户清理任务生产级调度 | tool, exception |
 
 ### 数据访问技术选择
 

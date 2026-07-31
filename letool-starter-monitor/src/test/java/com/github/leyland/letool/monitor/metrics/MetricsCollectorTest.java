@@ -1,212 +1,188 @@
 package com.github.leyland.letool.monitor.metrics;
 
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
+import com.github.leyland.letool.monitor.exception.MonitorException;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-import java.util.Map;
+import java.time.Duration;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@DisplayName("MetricsCollector 指标收集器测试")
+/**
+ * {@link MetricsCollector} Micrometer 委托契约测试。
+ */
 class MetricsCollectorTest {
 
-    private final MetricsCollector collector = new MetricsCollector();
+    /** 测试使用的内存 MeterRegistry。 */
+    private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
 
-    @Nested
-    @DisplayName("Counter 计数器操作")
-    class CounterTests {
+    /** 待测试的指标便利门面。 */
+    private final MetricsCollector collector = new MetricsCollector(registry);
 
-        @Test
-        @DisplayName("初始计数器值为 0")
-        void initialValue() {
-            long value = collector.getCounterValue("new.counter");
-            assertEquals(0, value);
-        }
-
-        @Test
-        @DisplayName("increment 返回递增后的值")
-        void increment() {
-            long result = collector.increment("order.created");
-            assertEquals(1, result);
-            assertEquals(1, collector.getCounterValue("order.created"));
-        }
-
-        @Test
-        @DisplayName("多次 increment")
-        void incrementMultiple() {
-            collector.increment("counter");
-            collector.increment("counter");
-            long result = collector.increment("counter");
-            assertEquals(3, result);
-        }
-
-        @Test
-        @DisplayName("counter 返回同一个实例")
-        void counterSameInstance() {
-            java.util.concurrent.atomic.AtomicLong c1 = collector.counter("test");
-            java.util.concurrent.atomic.AtomicLong c2 = collector.counter("test");
-            assertSame(c1, c2);
-        }
-
-        @Test
-        @DisplayName("不同名称的计数器独立")
-        void differentCountersIndependent() {
-            collector.increment("a");
-            collector.increment("a");
-            collector.increment("b");
-
-            assertEquals(2, collector.getCounterValue("a"));
-            assertEquals(1, collector.getCounterValue("b"));
-        }
-
-        @Test
-        @DisplayName("getCounterNames 返回所有计数器名称")
-        void getCounterNames() {
-            collector.increment("c1");
-            collector.increment("c2");
-            assertEquals(2, collector.getCounterNames().size());
-            assertTrue(collector.getCounterNames().contains("c1"));
-            assertTrue(collector.getCounterNames().contains("c2"));
-        }
+    /**
+     * 关闭测试注册表并释放内部资源。
+     */
+    @AfterEach
+    void tearDown() {
+        registry.close();
     }
 
-    @Nested
-    @DisplayName("Timer 计时器操作")
-    class TimerTests {
+    /**
+     * 验证计数器由 MeterRegistry 管理，并按标签隔离。
+     */
+    @Test
+    void shouldIncrementMicrometerCounterWithTags() {
+        collector.increment("order.created", "channel", "web");
+        collector.increment("order.created", "channel", "web");
+        collector.increment("order.created", "channel", "app");
 
-        @Test
-        @DisplayName("timer 返回同一个实例")
-        void timerSameInstance() {
-            MetricsCollector.Timer t1 = collector.timer("t");
-            MetricsCollector.Timer t2 = collector.timer("t");
-            assertSame(t1, t2);
-        }
-
-        @Test
-        @DisplayName("recordTime 记录单次耗时")
-        void recordTime() {
-            collector.recordTime("request.latency", 150);
-            MetricsCollector.TimerStats stats = collector.getTimerStats("request.latency");
-            assertEquals(1, stats.getCount());
-            assertEquals(150.0, stats.getAvgMs(), 0.01);
-            assertEquals(150, stats.getMinMs());
-            assertEquals(150, stats.getMaxMs());
-        }
-
-        @Test
-        @DisplayName("多次 recordTime 计算统计")
-        void recordMultipleTimes() {
-            collector.recordTime("task.duration", 100);
-            collector.recordTime("task.duration", 200);
-            collector.recordTime("task.duration", 300);
-
-            MetricsCollector.TimerStats stats = collector.getTimerStats("task.duration");
-            assertEquals(3, stats.getCount());
-            assertEquals(200.0, stats.getAvgMs(), 0.01);
-            assertEquals(100, stats.getMinMs());
-            assertEquals(300, stats.getMaxMs());
-        }
-
-        @Test
-        @DisplayName("不存在的计时器返回空统计")
-        void nonExistentTimer() {
-            MetricsCollector.TimerStats stats = collector.getTimerStats("nonexistent");
-            assertEquals(0, stats.getCount());
-            assertEquals(0.0, stats.getAvgMs(), 0.01);
-        }
-
-        @Test
-        @DisplayName("getTimerNames 返回所有计时器名称")
-        void getTimerNames() {
-            collector.recordTime("t1", 10);
-            collector.recordTime("t2", 20);
-            assertEquals(2, collector.getTimerNames().size());
-        }
+        assertThat(collector.counterValue(
+                "order.created",
+                "channel",
+                "web")).isEqualTo(2.0);
+        assertThat(registry.find("order.created")
+                .tag("channel", "app")
+                .counter()
+                .count()).isEqualTo(1.0);
     }
 
-    @Nested
-    @DisplayName("Timer 内部类")
-    class TimerInnerTests {
-
-        @Test
-        @DisplayName("getName 返回计时器名称")
-        void getName() {
-            MetricsCollector.Timer timer = new MetricsCollector.Timer("my-timer");
-            assertEquals("my-timer", timer.getName());
-        }
-
-        @Test
-        @DisplayName("getTotalCount 不受窗口大小影响")
-        void getTotalCount() {
-            MetricsCollector.Timer timer = new MetricsCollector.Timer("t");
-            for (int i = 0; i < 100; i++) {
-                timer.record(i);
-            }
-            assertEquals(100, timer.getTotalCount());
-        }
-
-        @Test
-        @DisplayName("空计时器的 stats 返回零值")
-        void emptyTimerStats() {
-            MetricsCollector.Timer timer = new MetricsCollector.Timer("empty");
-            MetricsCollector.TimerStats stats = timer.stats();
-            assertEquals(0, stats.getCount());
-            assertEquals(0.0, stats.getAvgMs(), 0.01);
-            assertEquals(0, stats.getMinMs());
-            assertEquals(0, stats.getMaxMs());
-        }
+    /**
+     * 验证递增 API 只表达副作用，不承诺不同 registry 下的即时累计返回值。
+     *
+     * @throws NoSuchMethodException 反射查找公开方法失败
+     */
+    @Test
+    void shouldExposeIncrementAsSideEffectOnly()
+            throws NoSuchMethodException {
+        assertThat(MetricsCollector.class.getMethod(
+                "increment",
+                String.class,
+                String[].class).getReturnType()).isEqualTo(Void.TYPE);
     }
 
-    @Nested
-    @DisplayName("TimerStats 统计快照")
-    class TimerStatsTests {
+    /**
+     * 验证同名同标签计数器和计时器由 Micrometer 复用。
+     */
+    @Test
+    void shouldReuseMetersWithSameIdentity() {
+        Counter firstCounter = collector.counter("order.created", "channel", "web");
+        Counter secondCounter = collector.counter("order.created", "channel", "web");
+        Timer firstTimer = collector.timer("order.latency", "channel", "web");
+        Timer secondTimer = collector.timer("order.latency", "channel", "web");
 
-        @Test
-        @DisplayName("getter 方法")
-        void getters() {
-            MetricsCollector.TimerStats stats = new MetricsCollector.TimerStats(10, 25.5, 5, 100);
-            assertEquals(10, stats.getCount());
-            assertEquals(25.5, stats.getAvgMs(), 0.01);
-            assertEquals(5, stats.getMinMs());
-            assertEquals(100, stats.getMaxMs());
-        }
-
-        @Test
-        @DisplayName("toString 包含关键信息")
-        void toStringContainsInfo() {
-            MetricsCollector.TimerStats stats = new MetricsCollector.TimerStats(5, 30.0, 10, 80);
-            String str = stats.toString();
-            assertTrue(str.contains("5"));
-            assertTrue(str.contains("30.00"));
-            assertTrue(str.contains("10"));
-            assertTrue(str.contains("80"));
-            assertTrue(str.contains("TimerStats"));
-        }
+        assertThat(firstCounter).isSameAs(secondCounter);
+        assertThat(firstTimer).isSameAs(secondTimer);
     }
 
-    @Nested
-    @DisplayName("getAllMetrics 全量指标导出")
-    class AllMetricsTests {
+    /**
+     * 验证 Duration、Runnable 和 Supplier 都会记录到 Micrometer Timer。
+     */
+    @Test
+    void shouldRecordTimerThroughConvenienceMethods() {
+        AtomicBoolean actionInvoked = new AtomicBoolean();
 
-        @Test
-        @DisplayName("空收集器返回空 Map")
-        void emptyCollector() {
-            Map<String, Object> metrics = collector.getAllMetrics();
-            assertTrue(metrics.isEmpty());
-        }
+        collector.recordTime("order.latency", Duration.ofMillis(150));
+        collector.record(
+                "order.latency",
+                () -> actionInvoked.set(true));
+        String result = collector.record(
+                "order.latency",
+                () -> "done");
 
-        @Test
-        @DisplayName("包含计数器和计时器")
-        void containsCountersAndTimers() {
-            collector.increment("order.count");
-            collector.increment("order.count");
-            collector.recordTime("order.time", 50);
+        MetricsCollector.TimerSnapshot snapshot =
+                collector.timerSnapshot("order.latency");
+        assertThat(actionInvoked).isTrue();
+        assertThat(result).isEqualTo("done");
+        assertThat(snapshot.count()).isEqualTo(3);
+        assertThat(snapshot.totalTime()).isGreaterThanOrEqualTo(
+                Duration.ofMillis(150));
+        assertThat(snapshot.max()).isGreaterThanOrEqualTo(
+                Duration.ofMillis(150));
+    }
 
-            Map<String, Object> metrics = collector.getAllMetrics();
-            assertEquals(2, metrics.size());
-            assertEquals(2L, metrics.get("order.count"));
-            assertTrue(metrics.get("order.time") instanceof MetricsCollector.TimerStats);
-        }
+    /**
+     * 验证查询不存在的完整身份会注册零值指标并返回零值视图。
+     */
+    @Test
+    void shouldReturnZeroValuesForMissingMeters() {
+        assertThat(collector.counterValue("missing.counter")).isZero();
+        assertThat(collector.timerSnapshot("missing.timer"))
+                .isEqualTo(MetricsCollector.TimerSnapshot.empty());
+        assertThat(registry.getMeters()).hasSize(2);
+    }
+
+    /**
+     * 验证查询遵循 Micrometer 完整身份和公共标签映射，不会任取子集匹配结果。
+     */
+    @Test
+    void shouldQueryMetersByExactRegistryIdentity() {
+        registry.config().commonTags("application", "test");
+        collector.counter("order.created", "channel", "web").increment(2);
+        collector.counter("order.created", "channel", "app").increment(3);
+        collector.recordTime(
+                "order.latency",
+                Duration.ofMillis(100),
+                "channel", "web");
+        collector.recordTime(
+                "order.latency",
+                Duration.ofMillis(50),
+                "channel", "app");
+
+        assertThat(collector.counterValue(
+                "order.created",
+                "channel",
+                "web")).isEqualTo(2);
+        assertThat(collector.counterValue("order.created")).isZero();
+
+        MetricsCollector.TimerSnapshot web =
+                collector.timerSnapshot(
+                        "order.latency",
+                        "channel",
+                        "web");
+        assertThat(web.count()).isEqualTo(1);
+        assertThat(web.totalTime()).isEqualTo(Duration.ofMillis(100));
+        assertThat(collector.timerSnapshot("order.latency"))
+                .isEqualTo(MetricsCollector.TimerSnapshot.empty());
+        assertThat(registry.find("order.created").counters()).hasSize(3);
+        assertThat(registry.find("order.latency").timers()).hasSize(3);
+    }
+
+    /**
+     * 验证指标名称、耗时和标签必须符合生产安全边界。
+     */
+    @Test
+    void shouldRejectInvalidMetricArguments() {
+        assertMetricArgumentInvalid(() -> collector.increment(" "));
+        assertMetricArgumentInvalid(() -> collector.increment(
+                "order.created",
+                "channel"));
+        assertMetricArgumentInvalid(() -> collector.increment(
+                "order.created",
+                " ",
+                "web"));
+        assertMetricArgumentInvalid(() -> collector.recordTime(
+                "order.latency",
+                Duration.ofMillis(-1)));
+        assertMetricArgumentInvalid(() -> collector.record(
+                "order.latency",
+                (Runnable) null));
+    }
+
+    /**
+     * 断言操作因指标参数不合法而失败。
+     *
+     * @param operation 待执行操作
+     */
+    private static void assertMetricArgumentInvalid(Runnable operation) {
+        assertThatThrownBy(operation::run)
+                .isInstanceOf(MonitorException.class)
+                .satisfies(throwable -> assertThat(
+                        ((MonitorException) throwable).getCode())
+                        .isEqualTo("MONITOR_METRIC_ARGUMENT_INVALID"));
     }
 }

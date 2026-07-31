@@ -16,7 +16,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  *
  * <p>通知渠道通过 {@link AlertChannel} 接口统一抽象，可扩展自定义渠道。</p>
  *
- * <h3>使用示例</h3>
+ * <h2>使用示例</h2>
  * <pre>{@code
  * AlertNotifier notifier = new AlertNotifier(properties);
  * notifier.registerChannel(new DingTalkNotifier(properties));

@@ -2,49 +2,16 @@ package com.github.leyland.letool.monitor.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.time.Duration;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 监控模块配置属性 —— 对应 application.yml 中 {@code letool.monitor} 前缀.
+ * 监控模块配置属性，对应 {@code application.yml} 中的 {@code letool.monitor} 前缀。
  *
- * <h3>示例配置</h3>
- * <pre>{@code
- * letool.monitor:
- *   enabled: true
- *   metrics:
- *     enabled: true
- *     export-prometheus: true
- *     step: 1m
- *   jvm:
- *     enabled: true
- *     collect-interval: 30s
- *   http:
- *     enabled: true
- *     include-paths: /**
- *   api-stats:
- *     enabled: true
- *     window-size: 60
- *     retention-days: 7
- *   alert:
- *     enabled: true
- *     dingtalk:
- *       webhook-url: https://oapi.dingtalk.com/robot/send?access_token=xxx
- *       secret: SECxxx
- *     wechat:
- *       webhook-url: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx
- *     mail:
- *       to:
- *         - admin@example.com
- *         - dev@example.com
- *   data-retention:
- *     enabled: false
- *     audit-log: 90d
- *     request-log: 30d
- *     api-stats: 7d
- *     api-error: 60d
- *     clean-cron: "0 0 3 * * ?"
- * }</pre>
+ * <p>指标采集与导出交由 Spring Boot Actuator 和 Micrometer 管理，本配置仅控制
+ * Letool 提供的便利门面、告警渠道和用户清理任务调度。</p>
  *
  * @author leyland
  * @since 2.0.0
@@ -52,307 +19,347 @@ import java.util.List;
 @ConfigurationProperties(prefix = "letool.monitor")
 public class MonitorProperties {
 
-    // ======================== 基础开关 ========================
-
-    /** 监控模块总开关 —— false 则禁用整个监控模块 */
+    /** 监控模块总开关。 */
     private boolean enabled = true;
 
-    // ======================== 子配置 ========================
-
-    /** 指标采集配置 */
+    /** 指标便利门面配置。 */
     private final Metrics metrics = new Metrics();
 
-    /** JVM 监控配置 */
-    private final Jvm jvm = new Jvm();
-
-    /** HTTP 请求监控配置 */
-    private final Http http = new Http();
-
-    /** API 调用统计配置 */
-    private final ApiStats apiStats = new ApiStats();
-
-    /** 告警通知配置 */
+    /** 告警通知配置。 */
     private final Alert alert = new Alert();
 
-    /** 数据保留与清理配置 */
+    /** 用户数据清理调度配置。 */
     private final DataRetention dataRetention = new DataRetention();
 
-    // ======================== Getter / Setter ========================
-
-    public boolean isEnabled() { return enabled; }
-
-    public void setEnabled(boolean enabled) { this.enabled = enabled; }
-
-    public Metrics getMetrics() { return metrics; }
-
-    public Jvm getJvm() { return jvm; }
-
-    public Http getHttp() { return http; }
-
-    public ApiStats getApiStats() { return apiStats; }
-
-    public Alert getAlert() { return alert; }
-
-    public DataRetention getDataRetention() { return dataRetention; }
-
-    // ======================== 内部类：指标采集配置 ========================
+    /**
+     * 判断是否启用监控模块。
+     *
+     * @return 启用时返回 {@code true}
+     */
+    public boolean isEnabled() {
+        return enabled;
+    }
 
     /**
-     * 指标采集配置 —— 控制轻量指标采集策略.
+     * 设置监控模块总开关。
      *
-     * @author leyland
-     * @since 2.0.0
+     * @param enabled 是否启用监控模块
+     */
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+    }
+
+    /**
+     * 获取指标便利门面配置。
+     *
+     * @return 指标配置
+     */
+    public Metrics getMetrics() {
+        return metrics;
+    }
+
+    /**
+     * 获取告警通知配置。
+     *
+     * @return 告警配置
+     */
+    public Alert getAlert() {
+        return alert;
+    }
+
+    /**
+     * 获取用户数据清理调度配置。
+     *
+     * @return 数据清理配置
+     */
+    public DataRetention getDataRetention() {
+        return dataRetention;
+    }
+
+    /**
+     * Letool 指标便利门面配置。
      */
     public static class Metrics {
 
-        /** 指标采集开关 */
+        /** 是否创建 Letool 的 {@code MetricsCollector} 便利门面。 */
         private boolean enabled = true;
 
-        /** 是否预留 Prometheus 导出配置；当前 starter 未内置 Actuator/Prometheus endpoint */
-        private boolean exportPrometheus = true;
+        /**
+         * 判断是否启用指标便利门面。
+         *
+         * @return 启用时返回 {@code true}
+         */
+        public boolean isEnabled() {
+            return enabled;
+        }
 
-        /** 指标采集步长，如 1m / 30s / 10s */
-        private String step = "1m";
-
-        public boolean isEnabled() { return enabled; }
-
-        public void setEnabled(boolean enabled) { this.enabled = enabled; }
-
-        public boolean isExportPrometheus() { return exportPrometheus; }
-
-        public void setExportPrometheus(boolean exportPrometheus) { this.exportPrometheus = exportPrometheus; }
-
-        public String getStep() { return step; }
-
-        public void setStep(String step) { this.step = step; }
+        /**
+         * 设置指标便利门面开关。
+         *
+         * @param enabled 是否启用指标便利门面
+         */
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
     }
 
-    // ======================== 内部类：JVM 监控配置 ========================
-
     /**
-     * JVM 监控配置 —— 控制堆内存、线程、GC 等 JVM 指标的采集频率.
-     *
-     * @author leyland
-     * @since 2.0.0
-     */
-    public static class Jvm {
-
-        /** JVM 监控开关 */
-        private boolean enabled = true;
-
-        /** 采集间隔，如 30s / 1m / 10s */
-        private String collectInterval = "30s";
-
-        public boolean isEnabled() { return enabled; }
-
-        public void setEnabled(boolean enabled) { this.enabled = enabled; }
-
-        public String getCollectInterval() { return collectInterval; }
-
-        public void setCollectInterval(String collectInterval) { this.collectInterval = collectInterval; }
-    }
-
-    // ======================== 内部类：HTTP 请求监控配置 ========================
-
-    /**
-     * HTTP 请求监控配置 —— 控制请求路径拦截范围.
-     *
-     * @author leyland
-     * @since 2.0.0
-     */
-    public static class Http {
-
-        /** HTTP 监控开关 */
-        private boolean enabled = true;
-
-        /** 需要监控的路径模式，支持 Ant 风格通配符，如 /api/**、/order/** */
-        private String includePaths = "/**";
-
-        public boolean isEnabled() { return enabled; }
-
-        public void setEnabled(boolean enabled) { this.enabled = enabled; }
-
-        public String getIncludePaths() { return includePaths; }
-
-        public void setIncludePaths(String includePaths) { this.includePaths = includePaths; }
-    }
-
-    // ======================== 内部类：API 调用统计配置 ========================
-
-    /**
-     * API 调用统计配置 —— 控制 API 调用数据的聚合窗口和保留时长.
-     *
-     * @author leyland
-     * @since 2.0.0
-     */
-    public static class ApiStats {
-
-        /** API 统计开关 */
-        private boolean enabled = true;
-
-        /** 时间窗口大小（分钟），超过此窗口的数据将被丢弃 */
-        private int windowSize = 60;
-
-        /** 统计数据保留天数 */
-        private int retentionDays = 7;
-
-        public boolean isEnabled() { return enabled; }
-
-        public void setEnabled(boolean enabled) { this.enabled = enabled; }
-
-        public int getWindowSize() { return windowSize; }
-
-        public void setWindowSize(int windowSize) { this.windowSize = windowSize; }
-
-        public int getRetentionDays() { return retentionDays; }
-
-        public void setRetentionDays(int retentionDays) { this.retentionDays = retentionDays; }
-    }
-
-    // ======================== 内部类：告警通知配置 ========================
-
-    /**
-     * 告警通知配置 —— 控制钉钉、企微、邮件三种告警渠道.
-     *
-     * @author leyland
-     * @since 2.0.0
+     * 告警通知配置。
      */
     public static class Alert {
 
-        /** 告警总开关 */
+        /** 告警总开关。 */
         private boolean enabled = true;
 
-        /** 钉钉机器人配置 */
+        /** 钉钉机器人配置。 */
         private final DingTalk dingtalk = new DingTalk();
 
-        /** 企业微信机器人配置 */
+        /** 企业微信机器人配置。 */
         private final Wechat wechat = new Wechat();
 
-        /** 邮件告警配置 */
+        /** 邮件告警接收人配置。 */
         private final Mail mail = new Mail();
 
-        public boolean isEnabled() { return enabled; }
-
-        public void setEnabled(boolean enabled) { this.enabled = enabled; }
-
-        public DingTalk getDingtalk() { return dingtalk; }
-
-        public Wechat getWechat() { return wechat; }
-
-        public Mail getMail() { return mail; }
-
-        // ---- 钉钉配置 ----
+        /**
+         * 判断是否启用告警通知。
+         *
+         * @return 启用时返回 {@code true}
+         */
+        public boolean isEnabled() {
+            return enabled;
+        }
 
         /**
-         * 钉钉机器人通知配置.
+         * 设置告警通知总开关。
          *
-         * @author leyland
-         * @since 2.0.0
+         * @param enabled 是否启用告警通知
+         */
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        /**
+         * 获取钉钉机器人配置。
+         *
+         * @return 钉钉配置
+         */
+        public DingTalk getDingtalk() {
+            return dingtalk;
+        }
+
+        /**
+         * 获取企业微信机器人配置。
+         *
+         * @return 企业微信配置
+         */
+        public Wechat getWechat() {
+            return wechat;
+        }
+
+        /**
+         * 获取邮件告警接收人配置。
+         *
+         * @return 邮件配置
+         */
+        public Mail getMail() {
+            return mail;
+        }
+
+        /**
+         * 钉钉机器人通知配置。
          */
         public static class DingTalk {
 
-            /** 钉钉 Webhook 地址 */
+            /** 钉钉机器人 Webhook 地址。 */
             private String webhookUrl;
 
-            /** 钉钉签名密钥（加签模式） */
+            /** 钉钉机器人加签密钥。 */
             private String secret;
 
-            public String getWebhookUrl() { return webhookUrl; }
+            /**
+             * 获取钉钉机器人 Webhook 地址。
+             *
+             * @return Webhook 地址
+             */
+            public String getWebhookUrl() {
+                return webhookUrl;
+            }
 
-            public void setWebhookUrl(String webhookUrl) { this.webhookUrl = webhookUrl; }
+            /**
+             * 设置钉钉机器人 Webhook 地址。
+             *
+             * @param webhookUrl Webhook 地址
+             */
+            public void setWebhookUrl(String webhookUrl) {
+                this.webhookUrl = webhookUrl;
+            }
 
-            public String getSecret() { return secret; }
+            /**
+             * 获取钉钉机器人加签密钥。
+             *
+             * @return 加签密钥
+             */
+            public String getSecret() {
+                return secret;
+            }
 
-            public void setSecret(String secret) { this.secret = secret; }
+            /**
+             * 设置钉钉机器人加签密钥。
+             *
+             * @param secret 加签密钥
+             */
+            public void setSecret(String secret) {
+                this.secret = secret;
+            }
         }
 
-        // ---- 企微配置 ----
-
         /**
-         * 企业微信机器人通知配置.
-         *
-         * @author leyland
-         * @since 2.0.0
+         * 企业微信机器人通知配置。
          */
         public static class Wechat {
 
-            /** 企微 Webhook 地址 */
+            /** 企业微信机器人 Webhook 地址。 */
             private String webhookUrl;
 
-            public String getWebhookUrl() { return webhookUrl; }
+            /**
+             * 获取企业微信机器人 Webhook 地址。
+             *
+             * @return Webhook 地址
+             */
+            public String getWebhookUrl() {
+                return webhookUrl;
+            }
 
-            public void setWebhookUrl(String webhookUrl) { this.webhookUrl = webhookUrl; }
+            /**
+             * 设置企业微信机器人 Webhook 地址。
+             *
+             * @param webhookUrl Webhook 地址
+             */
+            public void setWebhookUrl(String webhookUrl) {
+                this.webhookUrl = webhookUrl;
+            }
         }
 
-        // ---- 邮件配置 ----
-
         /**
-         * 邮件告警通知配置.
+         * 邮件告警接收人配置。
          *
-         * @author leyland
-         * @since 2.0.0
+         * <p>monitor 模块只保存接收人列表，实际邮件发送能力由邮件模块或用户实现接入。</p>
          */
         public static class Mail {
 
-            /** 告警邮件接收人列表 */
+            /** 告警邮件接收人列表。 */
             private List<String> to = new ArrayList<>();
 
-            public List<String> getTo() { return to; }
+            /**
+             * 获取告警邮件接收人列表。
+             *
+             * @return 可变接收人列表
+             */
+            public List<String> getTo() {
+                return to;
+            }
 
-            public void setTo(List<String> to) { this.to = to; }
+            /**
+             * 设置告警邮件接收人列表。
+             *
+             * @param to 接收人列表
+             */
+            public void setTo(List<String> to) {
+                this.to = to == null ? new ArrayList<>() : new ArrayList<>(to);
+            }
         }
     }
 
-    // ======================== 内部类：数据保留与清理配置 ========================
-
     /**
-     * 数据保留与清理配置 —— 控制各类型监控数据的保留时长和自动清理策略.
+     * 用户数据清理调度配置。
      *
-     * @author leyland
-     * @since 2.0.0
+     * <p>模块不假设数据库类型和表结构，具体保留时长由每个 {@code CleanupTask}
+     * 声明，当前配置只负责统一调度生命周期。</p>
      */
     public static class DataRetention {
 
-        /** 是否启用数据清理调度器，默认关闭 */
-        private boolean enabled = false;
+        /** 是否启用用户数据清理调度，默认关闭。 */
+        private boolean enabled;
 
-        /** 审计日志保留时长，如 90d */
-        private String auditLog = "90d";
-
-        /** 请求日志保留时长，如 30d */
-        private String requestLog = "30d";
-
-        /** API 统计数据保留时长，如 7d */
-        private String apiStats = "7d";
-
-        /** API 异常数据保留时长，如 60d */
-        private String apiError = "60d";
-
-        /** 清理任务的 Cron 表达式，默认每天凌晨 3:00 执行 */
+        /** 清理任务的 Spring 六字段 Cron 表达式。 */
         private String cleanCron = "0 0 3 * * ?";
 
-        public boolean isEnabled() { return enabled; }
+        /** Cron 表达式使用的时区标识。 */
+        private String zoneId = ZoneId.systemDefault().getId();
 
-        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        /** 应用关闭时等待清理线程完成的最长时间。 */
+        private Duration shutdownTimeout = Duration.ofSeconds(10);
 
-        public String getAuditLog() { return auditLog; }
+        /**
+         * 判断是否启用用户数据清理调度。
+         *
+         * @return 启用时返回 {@code true}
+         */
+        public boolean isEnabled() {
+            return enabled;
+        }
 
-        public void setAuditLog(String auditLog) { this.auditLog = auditLog; }
+        /**
+         * 设置用户数据清理调度开关。
+         *
+         * @param enabled 是否启用数据清理调度
+         */
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
 
-        public String getRequestLog() { return requestLog; }
+        /**
+         * 获取清理 Cron 表达式。
+         *
+         * @return Spring 六字段 Cron 表达式
+         */
+        public String getCleanCron() {
+            return cleanCron;
+        }
 
-        public void setRequestLog(String requestLog) { this.requestLog = requestLog; }
+        /**
+         * 设置清理 Cron 表达式。
+         *
+         * @param cleanCron Spring 六字段 Cron 表达式
+         */
+        public void setCleanCron(String cleanCron) {
+            this.cleanCron = cleanCron;
+        }
 
-        public String getApiStats() { return apiStats; }
+        /**
+         * 获取 Cron 时区标识。
+         *
+         * @return 时区标识
+         */
+        public String getZoneId() {
+            return zoneId;
+        }
 
-        public void setApiStats(String apiStats) { this.apiStats = apiStats; }
+        /**
+         * 设置 Cron 时区标识。
+         *
+         * @param zoneId 时区标识，例如 {@code Asia/Shanghai}
+         */
+        public void setZoneId(String zoneId) {
+            this.zoneId = zoneId;
+        }
 
-        public String getApiError() { return apiError; }
+        /**
+         * 获取优雅关闭等待时间。
+         *
+         * @return 关闭等待时间
+         */
+        public Duration getShutdownTimeout() {
+            return shutdownTimeout;
+        }
 
-        public void setApiError(String apiError) { this.apiError = apiError; }
-
-        public String getCleanCron() { return cleanCron; }
-
-        public void setCleanCron(String cleanCron) { this.cleanCron = cleanCron; }
+        /**
+         * 设置优雅关闭等待时间。
+         *
+         * @param shutdownTimeout 关闭等待时间
+         */
+        public void setShutdownTimeout(Duration shutdownTimeout) {
+            this.shutdownTimeout = shutdownTimeout;
+        }
     }
 }
