@@ -2,12 +2,12 @@ package com.github.leyland.letool.log.config;
 
 import com.github.leyland.letool.log.aspect.AuditLogAspect;
 import com.github.leyland.letool.log.aspect.MethodLogAspect;
-import com.github.leyland.letool.log.aspect.WebLogAspect;
 import com.github.leyland.letool.log.audit.AuditContextProvider;
 import com.github.leyland.letool.log.audit.AuditLogService;
 import com.github.leyland.letool.log.audit.ServletAuditContextProvider;
 import com.github.leyland.letool.log.audit.Slf4jAuditLogService;
 import com.github.leyland.letool.log.trace.TraceIdFilter;
+import com.github.leyland.letool.log.web.WebLogFilter;
 import com.github.leyland.letool.tool.json.Fastjson2JsonCodec;
 import com.github.leyland.letool.tool.json.JsonCodec;
 import org.springframework.beans.factory.ObjectProvider;
@@ -31,7 +31,7 @@ import org.springframework.context.annotation.Configuration;
  * <ul>
  *   <li><b>请求链路</b>：仅在 {@code letool.log.trace.enabled=true} 时注册。</li>
  *   <li><b>方法日志</b>：仅在 AspectJ 可用时注册。</li>
- *   <li><b>Web 日志</b>：仅在 Servlet Web 应用中注册。</li>
+ *   <li><b>Web 日志</b>：仅在 Servlet Web 应用中注册请求过滤器。</li>
  *   <li><b>审计日志</b>：独立于请求链路和 Web 日志注册。</li>
  * </ul>
  *
@@ -75,12 +75,18 @@ public class LogAutoConfiguration {
         /**
          * 为 {@code @MethodLog} 注册方法日志切面。
          *
+         * @param jsonCodecProvider 用户自定义 JSON 编解码器提供器
+         * @param properties 日志模块配置
          * @return 方法日志切面
          */
         @Bean
         @ConditionalOnMissingBean(type = "com.github.leyland.letool.log.aspect.MethodLogAspect")
-        public MethodLogAspect methodLogAspect() {
-            return new MethodLogAspect();
+        public MethodLogAspect methodLogAspect(
+                ObjectProvider<JsonCodec> jsonCodecProvider,
+                LogProperties properties) {
+            JsonCodec jsonCodec = jsonCodecProvider.getIfAvailable(
+                    Fastjson2JsonCodec::createDefault);
+            return new MethodLogAspect(jsonCodec, properties);
         }
     }
 
@@ -122,29 +128,52 @@ public class LogAutoConfiguration {
     }
 
     /**
-     * 将 Servlet 请求日志能力隔离在 AspectJ 和 Servlet 类路径条件之后。
+     * 将 Servlet 请求日志能力隔离在 Servlet Web 类路径条件之后。
      */
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnClass(name = {
-            "org.aspectj.lang.ProceedingJoinPoint",
-            "org.aspectj.lang.annotation.Aspect",
             "jakarta.servlet.http.HttpServletRequest",
-            "org.springframework.web.context.request.RequestContextHolder"
+            "org.springframework.web.filter.OncePerRequestFilter"
     })
     @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
-    static class WebLogAspectConfiguration {
+    @ConditionalOnProperty(
+            prefix = "letool.log.web-log",
+            name = "enabled",
+            havingValue = "true",
+            matchIfMissing = true)
+    static class WebLogFilterConfiguration {
 
         /**
-         * 为 Spring MVC 控制器注册请求日志切面。
+         * 创建可由业务应用按类型替换的 Web 请求日志过滤器。
          *
          * @param properties 日志配置属性
-         * @return Web 请求日志切面
+         * @return Web 请求日志过滤器
          */
         @Bean
-        @ConditionalOnProperty(prefix = "letool.log.web-log", name = "enabled", havingValue = "true", matchIfMissing = true)
-        @ConditionalOnMissingBean(type = "com.github.leyland.letool.log.aspect.WebLogAspect")
-        public WebLogAspect webLogAspect(LogProperties properties) {
-            return new WebLogAspect(properties);
+        @ConditionalOnMissingBean(
+                value = WebLogFilter.class,
+                name = "webLogFilterRegistration")
+        public WebLogFilter webLogFilter(LogProperties properties) {
+            return new WebLogFilter(properties);
+        }
+
+        /**
+         * 在 TraceId 过滤器之后注册 Web 请求日志过滤器。
+         *
+         * @param webLogFilter Web 请求日志过滤器
+         * @return Web 请求日志过滤器注册 Bean
+         */
+        @Bean
+        @ConditionalOnMissingBean(name = "webLogFilterRegistration")
+        public FilterRegistrationBean<WebLogFilter> webLogFilterRegistration(
+                WebLogFilter webLogFilter) {
+            FilterRegistrationBean<WebLogFilter> registration = new FilterRegistrationBean<>();
+            registration.setFilter(webLogFilter);
+            registration.addUrlPatterns("/*");
+            registration.setAsyncSupported(true);
+            // TraceIdFilter 的顺序为 MIN_VALUE + 100，确保请求日志能读取已经建立的 TraceId。
+            registration.setOrder(Integer.MIN_VALUE + 200);
+            return registration;
         }
     }
 

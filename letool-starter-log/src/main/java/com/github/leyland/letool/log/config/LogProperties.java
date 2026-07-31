@@ -23,8 +23,6 @@ import java.util.List;
  *     enabled: true
  *   web-log:
  *     enabled: true
- *     include-body: false
- *     max-body-length: 1024
  *     exclude-paths: [/actuator/**, /swagger-ui/**]
  * }</pre>
  */
@@ -219,15 +217,6 @@ public class LogProperties {
         /** Web 请求日志开关。 */
         private boolean enabled = true;
 
-        /** 是否记录请求 Header。 */
-        private boolean includeHeaders;
-
-        /** 是否记录请求体和响应体。 */
-        private boolean includeBody;
-
-        /** 请求体和响应体最大记录长度。 */
-        private int maxBodyLength = 1024;
-
         /** 不记录日志的 URL 路径列表。 */
         private List<String> excludePaths = Collections.emptyList();
 
@@ -247,60 +236,6 @@ public class LogProperties {
          */
         public void setEnabled(boolean enabled) {
             this.enabled = enabled;
-        }
-
-        /**
-         * 判断是否记录请求 Header。
-         *
-         * @return {@code true} 表示记录请求 Header
-         */
-        public boolean isIncludeHeaders() {
-            return includeHeaders;
-        }
-
-        /**
-         * 设置是否记录请求 Header。
-         *
-         * @param includeHeaders 是否记录请求 Header
-         */
-        public void setIncludeHeaders(boolean includeHeaders) {
-            this.includeHeaders = includeHeaders;
-        }
-
-        /**
-         * 判断是否记录请求体和响应体。
-         *
-         * @return {@code true} 表示记录请求体和响应体
-         */
-        public boolean isIncludeBody() {
-            return includeBody;
-        }
-
-        /**
-         * 设置是否记录请求体和响应体。
-         *
-         * @param includeBody 是否记录请求体和响应体
-         */
-        public void setIncludeBody(boolean includeBody) {
-            this.includeBody = includeBody;
-        }
-
-        /**
-         * 获取请求体和响应体最大记录长度。
-         *
-         * @return 最大记录长度
-         */
-        public int getMaxBodyLength() {
-            return maxBodyLength;
-        }
-
-        /**
-         * 设置请求体和响应体最大记录长度。
-         *
-         * @param maxBodyLength 最大记录长度
-         */
-        public void setMaxBodyLength(int maxBodyLength) {
-            this.maxBodyLength = maxBodyLength;
         }
 
         /**

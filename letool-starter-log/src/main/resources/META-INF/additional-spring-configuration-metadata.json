@@ -31,24 +31,6 @@
       "defaultValue": "true"
     },
     {
-      "name": "letool.log.web-log.include-headers",
-      "type": "java.lang.Boolean",
-      "description": "是否记录请求 Header（可能包含 Authorization Token，敏感场景建议关闭）。",
-      "defaultValue": "false"
-    },
-    {
-      "name": "letool.log.web-log.include-body",
-      "type": "java.lang.Boolean",
-      "description": "是否记录请求体和响应体（生产环境建议关闭或设置较短 maxBodyLength）。",
-      "defaultValue": "false"
-    },
-    {
-      "name": "letool.log.web-log.max-body-length",
-      "type": "java.lang.Integer",
-      "description": "请求体/响应体最大记录长度（字节），超长截断。",
-      "defaultValue": "1024"
-    },
-    {
       "name": "letool.log.web-log.exclude-paths",
       "type": "java.util.List<java.lang.String>",
       "description": "不记录日志的 URL 路径列表，支持 Ant 风格通配符（如 /actuator/**）。"

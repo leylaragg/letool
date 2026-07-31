@@ -2,12 +2,12 @@ package com.github.leyland.letool.log.config;
 
 import com.github.leyland.letool.log.aspect.AuditLogAspect;
 import com.github.leyland.letool.log.aspect.MethodLogAspect;
-import com.github.leyland.letool.log.aspect.WebLogAspect;
 import com.github.leyland.letool.log.audit.AuditContextProvider;
 import com.github.leyland.letool.log.audit.AuditLogService;
 import com.github.leyland.letool.log.audit.ServletAuditContextProvider;
 import com.github.leyland.letool.log.audit.Slf4jAuditLogService;
 import com.github.leyland.letool.log.trace.TraceIdFilter;
+import com.github.leyland.letool.log.web.WebLogFilter;
 import com.github.leyland.letool.tool.json.Fastjson2JsonCodec;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -39,7 +39,7 @@ class LogAutoConfigurationTest {
             .withPropertyValues("spring.main.allow-bean-definition-overriding=false");
 
     /**
-     * 非 Web 应用默认应创建可编程使用的审计服务和两个方法切面。
+     * 非 Web 应用默认应创建可编程使用的审计服务和方法切面。
      */
     @Test
     void shouldCreateNonWebLogInfrastructureBeans() {
@@ -53,7 +53,7 @@ class LogAutoConfigurationTest {
             assertThat(context).doesNotHaveBean(AuditContextProvider.class);
             assertThat(context).doesNotHaveBean(TaskDecorator.class);
             assertThat(context).doesNotHaveBean("traceIdFilter");
-            assertThat(context).doesNotHaveBean(WebLogAspect.class);
+            assertThat(context).doesNotHaveBean("webLogFilter");
         });
     }
 
@@ -67,8 +67,14 @@ class LogAutoConfigurationTest {
             assertThat(context).hasSingleBean(AuditLogAspect.class);
             assertThat(context).hasSingleBean(ServletAuditContextProvider.class);
             assertThat(context).hasSingleBean(MethodLogAspect.class);
-            assertThat(context).hasSingleBean(WebLogAspect.class);
             assertThat(context).hasBean("traceIdFilter");
+            assertThat(context).hasBean("webLogFilter");
+            assertThat(context).hasSingleBean(WebLogFilter.class);
+            assertThat(context).hasBean("webLogFilterRegistration");
+            assertThat(context.getBean(
+                    "webLogFilterRegistration",
+                    FilterRegistrationBean.class).getFilter())
+                    .isSameAs(context.getBean(WebLogFilter.class));
         });
     }
 
@@ -89,7 +95,7 @@ class LogAutoConfigurationTest {
     }
 
     /**
-     * AspectJ 缺失时应保留编程式审计服务，并跳过所有 AOP 能力。
+     * AspectJ 缺失时应跳过方法和审计切面，但保留独立的 Servlet 过滤器。
      */
     @Test
     void shouldStartWithoutAspectsWhenAspectJClasspathIsMissing() {
@@ -100,9 +106,9 @@ class LogAutoConfigurationTest {
                     assertThat(context).hasSingleBean(AuditLogService.class);
                     assertThat(context).hasSingleBean(ServletAuditContextProvider.class);
                     assertThat(context).hasBean("traceIdFilter");
+                    assertThat(context).hasBean("webLogFilter");
                     assertThat(context).doesNotHaveBean(AuditLogAspect.class);
                     assertThat(context).doesNotHaveBean(MethodLogAspect.class);
-                    assertThat(context).doesNotHaveBean(WebLogAspect.class);
                 });
     }
 
@@ -119,20 +125,20 @@ class LogAutoConfigurationTest {
                     assertThat(context).hasSingleBean(AuditLogAspect.class);
                     assertThat(context).doesNotHaveBean(AuditContextProvider.class);
                     assertThat(context).doesNotHaveBean("traceIdFilter");
-                    assertThat(context).doesNotHaveBean(WebLogAspect.class);
+                    assertThat(context).doesNotHaveBean("webLogFilter");
                 });
     }
 
     /**
-     * 关闭 Web 请求日志时只应跳过 Web 日志切面。
+     * 关闭 Web 请求日志时只应跳过 Web 日志过滤器。
      */
     @Test
-    void shouldDisableWebLogAspectOnly() {
+    void shouldDisableWebLogFilterOnly() {
         webContextRunner
                 .withPropertyValues("letool.log.web-log.enabled=false")
                 .run(context -> {
                     assertThat(context).hasBean("traceIdFilter");
-                    assertThat(context).doesNotHaveBean(WebLogAspect.class);
+                    assertThat(context).doesNotHaveBean("webLogFilter");
                     assertThat(context).hasSingleBean(AuditLogService.class);
                     assertThat(context).hasSingleBean(AuditLogAspect.class);
                 });
@@ -150,7 +156,7 @@ class LogAutoConfigurationTest {
                     assertThat(context).doesNotHaveBean(AuditLogAspect.class);
                     assertThat(context).doesNotHaveBean(AuditContextProvider.class);
                     assertThat(context).hasSingleBean(MethodLogAspect.class);
-                    assertThat(context).hasSingleBean(WebLogAspect.class);
+                    assertThat(context).hasBean("webLogFilter");
                 });
     }
 
@@ -179,15 +185,20 @@ class LogAutoConfigurationTest {
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context).hasSingleBean(MethodLogAspect.class);
-                    assertThat(context).hasSingleBean(WebLogAspect.class);
                     assertThat(context).hasSingleBean(AuditLogService.class);
                     assertThat(context).hasSingleBean(AuditLogAspect.class);
                     assertThat(context).hasSingleBean(AuditContextProvider.class);
                     assertThat(context).hasBean("traceIdFilter");
+                    assertThat(context).hasBean("webLogFilter");
+                    assertThat(context).hasBean("webLogFilterRegistration");
                     assertThat(context.getBean(MethodLogAspect.class))
                             .isSameAs(context.getBean("userMethodLogAspect"));
-                    assertThat(context.getBean(WebLogAspect.class))
-                            .isSameAs(context.getBean("userWebLogAspect"));
+                    assertThat(context.getBean(WebLogFilter.class))
+                            .isSameAs(context.getBean("userWebLogFilter"));
+                    assertThat(context.getBean(
+                            "webLogFilterRegistration",
+                            FilterRegistrationBean.class).getFilter())
+                            .isSameAs(context.getBean("userWebLogFilter"));
                     assertThat(context.getBean(AuditLogService.class))
                             .isSameAs(context.getBean("userAuditLogService"));
                     assertThat(context.getBean(AuditLogAspect.class))
@@ -206,6 +217,20 @@ class LogAutoConfigurationTest {
     void shouldRejectRemovedAuditStorageProperty() {
         contextRunner
                 .withPropertyValues("letool.log.audit.storage=database")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasRootCauseInstanceOf(UnboundConfigurationPropertiesException.class);
+                });
+    }
+
+    /**
+     * 已删除的请求体日志配置应启动失败，避免用户误以为请求体会被记录。
+     */
+    @Test
+    void shouldRejectRemovedWebBodyLoggingProperty() {
+        webContextRunner
+                .withPropertyValues("letool.log.web-log.include-body=true")
                 .run(context -> {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure())
@@ -243,14 +268,14 @@ class LogAutoConfigurationTest {
         }
 
         /**
-         * 创建用户自定义的 Web 日志切面。
+         * 创建用户自定义的 Web 日志过滤器。
          *
          * @param properties 日志配置属性
-         * @return 用户 Web 日志切面
+         * @return 用户 Web 日志过滤器
          */
-        @Bean({"webLogAspect", "userWebLogAspect"})
-        WebLogAspect webLogAspect(LogProperties properties) {
-            return new WebLogAspect(properties);
+        @Bean({"webLogFilter", "userWebLogFilter"})
+        WebLogFilter webLogFilter(LogProperties properties) {
+            return new WebLogFilter(properties);
         }
 
         /**

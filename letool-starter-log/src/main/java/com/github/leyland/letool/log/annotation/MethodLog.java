@@ -3,25 +3,25 @@ package com.github.leyland.letool.log.annotation;
 import java.lang.annotation.*;
 
 /**
- * 方法日志注解 —— 标记在需要自动记录入参/出参/耗时/异常的方法上.
+ * 方法日志注解 —— 标记在需要自动记录执行状态、耗时和异常的方法上。
  *
  * <h2>记录内容</h2>
  * <ul>
  *   <li>调用类名 + 方法名</li>
- *   <li>入参数组（Object[] toString）</li>
- *   <li>出参（toString，超长截断）</li>
+ *   <li>入参数组（显式开启后使用可替换的 JSON 编解码器序列化）</li>
+ *   <li>出参（显式开启后使用可替换的 JSON 编解码器序列化）</li>
  *   <li>执行耗时（毫秒）</li>
  *   <li>异常信息（异常时）</li>
  * </ul>
  *
  * <h2>典型场景</h2>
  * <pre>{@code
- * // 记录全部信息
- * @MethodLog
+ * // 显式记录入参与出参
+ * @MethodLog(logArgs = true, logResult = true)
  * public Order createOrder(OrderRequest req) { ... }
  *
- * // 只记录耗时和异常，不记录入参出参（参数包含敏感数据）
- * @MethodLog(logArgs = false, logResult = false)
+ * // 默认只记录执行结果、耗时和异常，不采集入参与出参
+ * @MethodLog
  * public void resetPassword(Long userId, String newPassword) { ... }
  *
  * // 自定义标题 + 限制出参长度
@@ -43,20 +43,28 @@ public @interface MethodLog {
     String value() default "";
 
     /**
-     * 是否记录入参 —— 默认 true。
-     * 参数包含密码/Token/文件流时建议关闭。
+     * 是否记录入参 —— 默认关闭。
+     * 确认参数不包含密码、Token、文件流等敏感或不可序列化数据后再显式开启。
      *
      * @return {@code true} 表示记录方法参数
      */
-    boolean logArgs() default true;
+    boolean logArgs() default false;
 
     /**
-     * 是否记录出参 —— 默认 true。
-     * 返回体过大或含敏感数据时建议关闭。
+     * 是否记录出参 —— 默认关闭。
+     * 确认返回值不包含敏感数据且体积可控后再显式开启。
      *
      * @return {@code true} 表示记录方法返回值
      */
-    boolean logResult() default true;
+    boolean logResult() default false;
+
+    /**
+     * 入参最大长度（字符数）—— 默认 500。
+     * 超出部分截断并追加 "..."，避免大集合或复杂对象占用过多日志空间。
+     *
+     * @return 入参最大记录长度
+     */
+    int maxArgsLength() default 500;
 
     /**
      * 出参最大长度（字符数）—— 默认 500。

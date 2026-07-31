@@ -98,26 +98,17 @@ class LogPropertiesTest {
     void testWebLogDefaults() {
         LogProperties.WebLog webLog = properties.getWebLog();
         assertTrue(webLog.isEnabled());
-        assertFalse(webLog.isIncludeHeaders());
-        assertFalse(webLog.isIncludeBody());
-        assertEquals(1024, webLog.getMaxBodyLength());
         assertTrue(webLog.getExcludePaths().isEmpty());
     }
 
     /**
-     * Web 请求日志的可选属性应支持标准绑定。
+     * Web 请求日志的排除路径应支持标准绑定。
      */
     @Test
-    @DisplayName("WebLog setter - includeHeaders / includeBody")
-    void testWebLogSetters() {
+    @DisplayName("WebLog setter - excludePaths")
+    void testWebLogExcludePathsSetter() {
         LogProperties.WebLog webLog = new LogProperties.WebLog();
-        webLog.setIncludeHeaders(true);
-        webLog.setIncludeBody(true);
-        webLog.setMaxBodyLength(2048);
         webLog.setExcludePaths(List.of("/actuator/**"));
-        assertTrue(webLog.isIncludeHeaders());
-        assertTrue(webLog.isIncludeBody());
-        assertEquals(2048, webLog.getMaxBodyLength());
         assertEquals(1, webLog.getExcludePaths().size());
         assertEquals("/actuator/**", webLog.getExcludePaths().get(0));
     }

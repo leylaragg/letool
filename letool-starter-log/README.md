@@ -3,11 +3,12 @@
 ## 模块简介
 
 `letool-starter-log` 是面向业务开发的轻量日志封装模块，提供**链路追踪 TraceId**、
-**审计日志**和**方法执行日志**三大核心能力。通过注解驱动与编程式 API，
-减少链路标识、关键操作审计和方法耗时记录的业务样板代码。
+**Web 请求日志**、**审计日志**和**方法执行日志**。通过 Servlet 标准过滤器、
+注解驱动与编程式 API，减少链路标识、请求耗时、关键操作审计和方法日志样板代码。
 
-模块直接复用 Spring Boot 官方 `spring-boot-starter-aop` 提供注解切面能力，
-无需业务项目额外补充 AspectJ 依赖。
+方法日志和审计日志直接复用 Spring Boot 官方 `spring-boot-starter-aop`；
+Web 请求日志复用 Spring `OncePerRequestFilter` 和 `PathPatternParser`，无需维护
+Controller 切面、Ant 路径转换或请求体缓存等重复基础设施。
 
 ## Maven 坐标
 
@@ -58,7 +59,7 @@
 ```java
 @MethodLog
 public Order createOrder(OrderRequest req) {
-    // 自动记录入参、出参、耗时
+    // 默认记录执行状态、耗时和异常，不记录可能包含敏感信息的入参与出参
     return orderService.create(req);
 }
 ```
@@ -98,7 +99,8 @@ TraceContext.clear();
 
 **声明式：无需代码，自动生效**
 
-引入模块后，`TraceFilter` 自动拦截所有 HTTP 请求：
+引入模块后，`TraceIdFilter` 自动拦截所有 HTTP 请求：
+
 - 从请求头 `X-Trace-Id` 读取 TraceId
 - 请求头缺失时自动生成
 - 响应头回写 `X-Trace-Id`，方便前端/网关串联
@@ -108,20 +110,21 @@ TraceContext.clear();
 **注解声明式**
 
 ```java
-// 记录全部信息（入参、出参、耗时）
+// 默认只记录执行状态、耗时和完整异常堆栈
 @MethodLog
 public Order createOrder(OrderRequest req) { ... }
 
-// 自定义标题
-@MethodLog("创建订单")
+// 确认数据安全后，显式记录 JSON 入参与出参
+@MethodLog(value = "创建订单", logArgs = true, logResult = true)
 public Order createOrder(OrderRequest req) { ... }
 
-// 不记录入参出参（参数包含敏感数据）
-@MethodLog(logArgs = false, logResult = false)
-public void resetPassword(Long userId, String newPassword) { ... }
-
-// 限制出参长度 + 不记录异常日志
-@MethodLog(value = "查询报表", maxResultLength = 200, logException = false)
+// 分别限制入参与出参长度
+@MethodLog(
+    value = "查询报表",
+    logArgs = true,
+    logResult = true,
+    maxArgsLength = 100,
+    maxResultLength = 200)
 public Report queryReport(ReportQuery query) { ... }
 ```
 
@@ -130,10 +133,26 @@ public Report queryReport(ReportQuery query) { ... }
 | 属性 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `value` | String | "" | 日志标题，为空时使用方法名 |
-| `logArgs` | boolean | true | 是否记录入参 |
-| `logResult` | boolean | true | 是否记录出参 |
+| `logArgs` | boolean | false | 是否使用 `JsonCodec` 记录入参 |
+| `logResult` | boolean | false | 是否使用 `JsonCodec` 记录出参 |
+| `maxArgsLength` | int | 500 | 入参最大字符数，超长截断 |
 | `maxResultLength` | int | 500 | 出参最大字符数，超长截断 |
 | `logException` | boolean | true | 是否记录异常日志 |
+
+方法日志会自动使用 Spring 容器中的 `JsonCodec` Bean。应用可以复用工具模块的
+Fastjson2 构建器，也可以提供 Jackson、Gson 等自定义实现：
+
+```java
+@Bean
+public JsonCodec jsonCodec() {
+    return Fastjson2JsonCodec.builder()
+        .dateFormat("yyyy-MM-dd HH:mm:ss")
+        .build();
+}
+```
+
+编解码器失败只会输出不包含原始数据的警告和 `<序列化失败>` 占位文本，不会改变
+业务方法的返回值或异常。非 Web 线程由方法切面临时创建的 TraceId 也会在调用结束后清理。
 
 **编程式：SLF4J 原生 API + TraceId**
 
@@ -243,6 +262,25 @@ META-INF/letool/log/mysql-audit-log.sql
 自动执行。业务可以增加租户、数据权限、逻辑删除或自定义主键字段，也可以改用 MQ、
 Elasticsearch 或其他存储方案。
 
+### 6. Web 请求日志
+
+Servlet Web 应用会自动注册 `WebLogFilter`，并在 `TraceIdFilter` 之后执行。默认日志只包含
+请求方法、URI、真实响应状态和完整处理耗时：
+
+```log
+[trace-web] POST /orders → 201，耗时: 36ms
+```
+
+- 正常响应使用 INFO，4xx 使用 WARN，5xx 和未处理异常使用 ERROR。
+- 未处理异常记录完整堆栈并继续抛给 Servlet 容器。
+- Spring MVC 异步请求会等待 `AsyncContext` 完成后再记录最终状态和总耗时。
+- 排除路径使用 Spring `PathPatternParser`，支持 `/actuator/**` 等标准路径模式。
+- 核心模块不采集 Header、请求体或响应体，避免 Token、密码、文件和大对象进入日志。
+- 应用声明自己的 `WebLogFilter` Bean 后，Starter 会自动退让默认实现并继续负责 Servlet 注册。
+
+需要完整 HTTP 报文日志时，建议由业务项目接入 Zalando Logbook 等专用框架，并关闭
+`letool.log.web-log.enabled`，而不是在轻量访问日志中重复维护请求/响应包装器。
+
 ## 配置属性
 
 ```yaml
@@ -255,14 +293,27 @@ letool:
     audit:
       enabled: true                     # 审计日志开关
     web-log:
-      enabled: true                     # Controller 请求日志开关
-      include-headers: false            # 是否记录请求头（含 Authorization）
-      include-body: false               # 是否记录请求/响应体
-      max-body-length: 1024             # 体截断长度（字节）
-      exclude-paths:                    # 不记录日志的路径
+      enabled: true                     # Servlet 请求日志开关
+      exclude-paths:                    # 不记录日志的 Spring 路径模式
         - /actuator/**
         - /swagger-ui/**
 ```
+
+## 从旧版方法与 Web 日志迁移
+
+本次调整是破坏性变更。旧版 `WebLogAspect` 无法获得请求完成后的可靠状态，并且
+`include-headers`、`include-body`、`max-body-length` 从未参与日志记录，因此均已移除。
+
+| 旧用法 | 迁移方式 |
+|---|---|
+| 依赖 `@MethodLog` 默认记录入参与出参 | 确认数据安全后显式设置 `logArgs = true`、`logResult = true` |
+| 依赖对象 `toString()` 输出 | 声明统一的 `JsonCodec` Bean，方法日志和审计日志会自动复用 |
+| `include-headers` / `include-body` / `max-body-length` | 删除旧配置；完整 HTTP 报文日志请接入专用框架 |
+| 自定义 `WebLogAspect` | 声明自己的 `WebLogFilter` Bean；需要完全接管注册时替换 `webLogFilterRegistration` |
+| Ant 风格排除路径 | 保留原路径配置，由 Spring `PathPatternParser` 解析 |
+
+配置采用严格绑定。继续保留已经删除的三项 Web 日志属性会使应用启动失败，
+避免用户误以为 Header 或请求体正在被记录。
 
 ## 从旧版审计存储迁移
 
