@@ -47,7 +47,7 @@
 | **letool-starter-mail** | 邮件发送 —— 显式启用的 Jakarta Mail、多账户、附件与同步/异步投递 | exception |
 | **letool-starter-distributed-lock** | 分布式锁 —— Redis 后端、`LockTemplate`、`@Lock`/`@Idempotent`；可替换 `DistributedLock` | tool |
 | **letool-starter-rule** | 规则执行 —— LiteFlow 原生能力薄封装、便捷执行与统一异常 | exception |
-| **letool-starter-net** | 网络通信 —— 默认不启用运行时 Bean，显式开启 TCP/HTTP/网关适配器 | tool |
+| **letool-starter-net** | 网络通信 —— Netty TCP、短连接/持久连接/有界连接池、可扩展分帧和载荷编解码 | exception |
 | **letool-starter-pay** | 支付抽象 —— 默认不启用，内置支付宝/微信支付仅显式 stub 或自定义 provider | tool, web |
 | **letool-starter-mq** | 消息队列 —— 当前内置内存队列，RabbitMQ/RocketMQ/Kafka 需自定义 provider 或后续真实扩展 | tool |
 | **letool-starter-ratelimiter** | 流量保护 —— Sentinel Core 薄封装、命名策略与热点参数限流 | tool, exception |
@@ -65,6 +65,17 @@ Letool 不再提供 `letool-starter-data`。数据库访问请根据项目模型
 MyBatis-Plus、Spring Data JDBC/JPA，或 Spring Framework 原生
 `JdbcClient` / `JdbcTemplate`。Letool 不在这些成熟方案之上维护额外的实体注解、
 Lambda 查询 DSL、分页模型和数据库方言。
+
+### 网络通信能力边界
+
+`letool-starter-net` 当前提供基于 Netty 的生产级 TCP 客户端封装，支持短连接、
+持久连接、有界固定连接池、长度字段/分隔符/定长分帧、自定义载荷编解码、应用层心跳
+应答检测，以及受单一请求绝对期限约束的写出前有界建连重试。未提供请求关联标识时，
+每条连接严格保持单请求独占，不会假设任意私有协议天然支持多路复用。
+
+HTTP、服务网关、负载均衡和熔断不在本阶段伪造实现；HTTP 客户端和网关能力将在后续
+阶段基于成熟框架单独建设。具体用法和限制见
+[`letool-starter-net/README.md`](letool-starter-net/README.md)。
 
 ## 快速开始
 

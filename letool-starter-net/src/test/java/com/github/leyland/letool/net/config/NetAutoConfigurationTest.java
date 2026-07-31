@@ -1,113 +1,100 @@
 package com.github.leyland.letool.net.config;
 
-import com.github.leyland.letool.net.gateway.NetGateway;
-import com.github.leyland.letool.net.http.NetHttpTemplate;
+import com.github.leyland.letool.net.tcp.NetRuntime;
+import com.github.leyland.letool.net.tcp.TcpClientFactory;
+import io.netty.channel.nio.NioEventLoopGroup;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.concurrent.TimeUnit;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * {@link NetAutoConfiguration} 的自动装配契约测试。
- *
- * <p>固定网络工具 starter 的默认轻量化、功能开关和业务项目自定义 Bean 退让行为。</p>
+ * {@link NetAutoConfiguration} 自动配置契约测试。
  */
 class NetAutoConfigurationTest {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-            .withConfiguration(AutoConfigurations.of(NetAutoConfiguration.class))
-            .withPropertyValues("spring.main.allow-bean-definition-overriding=false");
+            .withConfiguration(AutoConfigurations.of(NetAutoConfiguration.class));
 
     /**
-     * 验证默认配置下只绑定属性，不主动创建网络运行时 Bean。
+     * 关闭测试自行提供且不应由 Letool 越权关闭的线程组。
+     */
+    @AfterEach
+    void closeUserEventLoopGroup() {
+        NioEventLoopGroup eventLoopGroup = UserRuntimeConfiguration.eventLoopGroup;
+        if (eventLoopGroup != null) {
+            eventLoopGroup.shutdownGracefully(0, 1, TimeUnit.SECONDS)
+                    .syncUninterruptibly();
+            UserRuntimeConfiguration.eventLoopGroup = null;
+        }
+    }
+
+    /**
+     * 验证默认注册惰性运行时和客户端工厂。
      */
     @Test
-    void shouldOnlyBindPropertiesByDefault() {
+    void shouldCreateLazyTcpInfrastructureByDefault() {
         contextRunner.run(context -> {
-            assertThat(context).doesNotHaveBean(NetGateway.class);
-            assertThat(context).doesNotHaveBean(NetHttpTemplate.class);
             assertThat(context).hasSingleBean(NetProperties.class);
-            assertThat(context.getBean(NetProperties.class).getGateway().isEnabled()).isFalse();
-            assertThat(context.getBean(NetProperties.class).getHttp().isEnabled()).isFalse();
+            assertThat(context).hasSingleBean(NetRuntime.class);
+            assertThat(context).hasSingleBean(TcpClientFactory.class);
+            assertThat(context.getBean(NetRuntime.class).isInitialized()).isFalse();
         });
     }
 
     /**
-     * 验证显式开启网关和 HTTP 客户端时会注册对应 Bean。
+     * 验证关闭 TCP 功能后不会创建线程运行时和客户端工厂。
      */
     @Test
-    void shouldCreateNetworkBeansWhenExplicitlyEnabled() {
+    void shouldNotCreateTcpInfrastructureWhenDisabled() {
         contextRunner
-                .withPropertyValues(
-                        "letool.net.gateway.enabled=true",
-                        "letool.net.http.enabled=true")
+                .withPropertyValues("letool.net.tcp.enabled=false")
                 .run(context -> {
-                    assertThat(context).hasSingleBean(NetGateway.class);
-                    assertThat(context).hasSingleBean(NetHttpTemplate.class);
                     assertThat(context).hasSingleBean(NetProperties.class);
+                    assertThat(context).doesNotHaveBean(NetRuntime.class);
+                    assertThat(context).doesNotHaveBean(TcpClientFactory.class);
                 });
     }
 
     /**
-     * 验证关闭网关开关时不会创建 NetGateway。
+     * 验证用户提供运行时后自动配置会退让，客户端工厂复用该运行时。
      */
     @Test
-    void shouldNotCreateGatewayWhenDisabled() {
+    void shouldBackOffToUserRuntime() {
         contextRunner
-                .withPropertyValues("letool.net.gateway.enabled=false")
+                .withUserConfiguration(UserRuntimeConfiguration.class)
                 .run(context -> {
-                    assertThat(context).doesNotHaveBean(NetGateway.class);
-                    assertThat(context).doesNotHaveBean(NetHttpTemplate.class);
+                    NetRuntime runtime = context.getBean(NetRuntime.class);
+                    TcpClientFactory factory = context.getBean(TcpClientFactory.class);
+
+                    assertThat(runtime).isSameAs(context.getBean("customRuntime"));
+                    assertThat(factory.runtime()).isSameAs(runtime);
                 });
     }
 
     /**
-     * 验证关闭 HTTP 开关时不会创建 NetHttpTemplate。
-     */
-    @Test
-    void shouldNotCreateHttpTemplateWhenDisabled() {
-        contextRunner
-                .withPropertyValues("letool.net.http.enabled=false")
-                .run(context -> {
-                    assertThat(context).doesNotHaveBean(NetGateway.class);
-                    assertThat(context).doesNotHaveBean(NetHttpTemplate.class);
-                });
-    }
-
-    /**
-     * 验证业务项目自行提供网络基础设施 Bean 时自动配置会退让。
-     */
-    @Test
-    void shouldBackOffWhenUserProvidesNetworkBeans() {
-        contextRunner
-                .withUserConfiguration(UserNetConfiguration.class)
-                .run(context -> {
-                    assertThat(context).hasSingleBean(NetGateway.class);
-                    assertThat(context).hasSingleBean(NetHttpTemplate.class);
-                    assertThat(context.getBean(NetGateway.class))
-                            .isSameAs(context.getBean("netGateway"));
-                    assertThat(context.getBean(NetHttpTemplate.class))
-                            .isSameAs(context.getBean("netHttpTemplate"));
-                });
-    }
-
-    /**
-     * 模拟业务项目自行接管网络网关和 HTTP 模板。
+     * 模拟业务应用接管 Netty 线程资源。
      */
     @Configuration(proxyBeanMethods = false)
-    static class UserNetConfiguration {
+    static class UserRuntimeConfiguration {
 
-        @Bean
-        NetGateway netGateway() {
-            return new NetGateway();
-        }
+        private static NioEventLoopGroup eventLoopGroup;
 
-        @Bean
-        NetHttpTemplate netHttpTemplate() {
-            return new NetHttpTemplate(100, 100);
+        /**
+         * 创建由测试代码自行管理底层线程组的自定义运行时。
+         *
+         * @return 自定义网络运行时
+         */
+        @Bean(destroyMethod = "close")
+        NetRuntime customRuntime() {
+            eventLoopGroup = new NioEventLoopGroup(1);
+            return new NetRuntime(eventLoopGroup);
         }
     }
 }

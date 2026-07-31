@@ -1,52 +1,43 @@
 package com.github.leyland.letool.net.tcp;
 
+import java.util.concurrent.CompletionStage;
+
 /**
- * TCP 客户端统一接口 —— 定义 TCP 通信的标准操作（连接、发送、接收、断开）.
+ * 类型安全的异步 TCP 请求响应客户端。
  *
- * <p>所有 TCP 客户端实现（短连接 {@link TcpShortClient}、长连接池 {@link TcpLongClient}）
- * 均需实现此接口，确保上层调用方无需关心底层连接模式.</p>
+ * <p>异步接口是唯一核心语义。对于没有请求关联标识的协议，框架保证每条连接同一时间
+ * 只处理一个请求，避免并发响应被错误匹配。</p>
  *
- * <h3>标准使用流程</h3>
- * <pre>{@code
- * TcpClient client = new TcpShortClient(host, port, codec, timeout, 500);
- * try {
- *     client.connect();
- *     byte[] response = client.sendAndReceive(request);
- * } finally {
- *     client.disconnect();
- * }
- * }</pre>
- *
- * @author leyland
- * @since 2.0.0
+ * @param <REQ> 请求对象类型
+ * @param <RESP> 响应对象类型
  */
-public interface TcpClient {
+public interface TcpClient<REQ, RESP> extends AutoCloseable {
 
     /**
-     * 发送请求并同步等待返回响应.
+     * 异步发送请求并等待一个完整响应。
      *
-     * @param request 请求字节数组
-     * @return 响应字节数组
-     * @throws com.github.leyland.letool.net.exception.NetException 发送或接收失败时抛出
+     * @param request 请求对象
+     * @return 最终响应或结构化网络异常
      */
-    byte[] sendAndReceive(byte[] request);
+    CompletionStage<RESP> request(REQ request);
 
     /**
-     * 建立 TCP 连接.
+     * 获取创建客户端时使用的不可变配置。
      *
-     * @throws com.github.leyland.letool.net.exception.NetException 连接失败时抛出
+     * @return 客户端配置
      */
-    void connect();
+    TcpClientOptions options();
 
     /**
-     * 断开 TCP 连接（释放底层 Socket 资源）.
-     */
-    void disconnect();
-
-    /**
-     * 判断连接是否当前可用.
+     * 判断客户端是否已经关闭。
      *
-     * @return {@code true} 如果 Socket 连通且未关闭
+     * @return 已关闭时返回 {@code true}
      */
-    boolean isConnected();
+    boolean isClosed();
+
+    /**
+     * 关闭连接池和当前客户端持有的全部连接。
+     */
+    @Override
+    void close();
 }

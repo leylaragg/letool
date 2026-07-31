@@ -1,79 +1,61 @@
 package com.github.leyland.letool.net.exception;
 
+import com.github.leyland.letool.exception.core.SystemException;
+
+import java.io.Serial;
+
 /**
- * 网络通信框架统一异常 —— 所有网络相关异常的根类型.
+ * 网络模块统一系统异常。
  *
- * <p>携带可选的路由 ID，方便定位故障来源路由。支持链式异常传递.</p>
- *
- * <h3>使用示例</h3>
- * <pre>{@code
- * throw new NetException("TCP connection refused", e, "icbc-pay");
- * }</pre>
- *
- * @author leyland
- * @since 2.0.0
+ * <p>异常只保留结构化错误码和必要诊断参数，不会自动拼接底层异常消息或业务报文，
+ * 避免在日志及 HTTP 响应中泄露敏感数据。</p>
  */
-public class NetException extends RuntimeException {
+public final class NetException extends SystemException {
+
+    @Serial
+    private static final long serialVersionUID = 1L;
 
     /**
-     * 发生异常的路由 ID（可选）.
-     */
-    private final String routeId;
-
-    // ======================== 构造器 ========================
-
-    /**
-     * 仅携带错误消息.
+     * 创建网络异常。
      *
-     * @param message 错误描述
+     * @param errorCode 网络错误码
+     * @param messageArgs 默认消息模板参数
+     * @param cause 底层原因；没有时可为 {@code null}
      */
-    public NetException(String message) {
-        super(message);
-        this.routeId = null;
+    private NetException(
+            NetErrorCode errorCode,
+            Object[] messageArgs,
+            Throwable cause) {
+        super(errorCode, messageArgs, null, cause);
     }
 
     /**
-     * 携带错误消息和原始异常.
+     * 创建不包含底层原因的网络异常。
      *
-     * @param message 错误描述
-     * @param cause   原始异常
+     * @param errorCode 网络错误码
+     * @param messageArgs 默认消息模板参数
+     * @return 结构化网络异常
      */
-    public NetException(String message, Throwable cause) {
-        super(message, cause);
-        this.routeId = null;
+    public static NetException of(NetErrorCode errorCode, Object... messageArgs) {
+        return new NetException(errorCode, messageArgs, null);
     }
 
     /**
-     * 携带错误消息、原始异常和路由 ID.
+     * 创建保留底层原因链的网络异常。
      *
-     * @param message 错误描述
-     * @param cause   原始异常
-     * @param routeId 发生异常的路由标识
+     * @param errorCode 网络错误码
+     * @param cause 非空底层异常
+     * @param messageArgs 默认消息模板参数
+     * @return 保留原因链的结构化网络异常
+     * @throws IllegalArgumentException 底层异常为空时抛出
      */
-    public NetException(String message, Throwable cause, String routeId) {
-        super(message, cause);
-        this.routeId = routeId;
-    }
-
-    /**
-     * 携带错误消息和路由 ID.
-     *
-     * @param message 错误描述
-     * @param routeId 发生异常的路由标识
-     */
-    public NetException(String message, String routeId) {
-        super(message);
-        this.routeId = routeId;
-    }
-
-    // ======================== Getter ========================
-
-    /**
-     * 获取发生异常的路由 ID.
-     *
-     * @return 路由 ID，可能为 {@code null}
-     */
-    public String getRouteId() {
-        return routeId;
+    public static NetException causedBy(
+            NetErrorCode errorCode,
+            Throwable cause,
+            Object... messageArgs) {
+        if (cause == null) {
+            throw new IllegalArgumentException("cause 不能为空");
+        }
+        return new NetException(errorCode, messageArgs, cause);
     }
 }
