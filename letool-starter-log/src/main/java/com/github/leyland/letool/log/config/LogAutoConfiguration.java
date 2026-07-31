@@ -8,7 +8,6 @@ import com.github.leyland.letool.log.audit.DefaultAuditLogProcessor;
 import com.github.leyland.letool.log.store.FileLogStore;
 import com.github.leyland.letool.log.store.LogRecordStore;
 import com.github.leyland.letool.log.store.MemoryLogStore;
-import com.github.leyland.letool.log.trace.MdcTaskDecorator;
 import com.github.leyland.letool.log.trace.TraceIdFilter;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -20,22 +19,23 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.task.TaskDecorator;
 
 /**
- * Log module auto-configuration.
+ * 日志模块自动配置。
  *
- * <p>The log starter follows the toolkit/starter contract: defaults are enabled
- * when useful, each feature can be disabled independently, and application-defined
- * beans always win.</p>
+ * <p>日志 Starter 默认提供请求链路、方法日志、Web 日志和审计日志能力。
+ * 各项能力可以独立关闭，业务应用声明的同类型基础设施始终优先。</p>
  *
- * <h3>Registration strategy</h3>
+ * <h2>注册策略</h2>
  * <ul>
- *   <li><b>Trace</b>: registered only when {@code letool.log.trace.enabled=true}.</li>
- *   <li><b>Method log</b>: registered when AspectJ is available.</li>
- *   <li><b>Web log</b>: registered only in a servlet web application.</li>
- *   <li><b>Audit log</b>: registered independently from trace/web logging.</li>
+ *   <li><b>请求链路</b>：仅在 {@code letool.log.trace.enabled=true} 时注册。</li>
+ *   <li><b>方法日志</b>：仅在 AspectJ 可用时注册。</li>
+ *   <li><b>Web 日志</b>：仅在 Servlet Web 应用中注册。</li>
+ *   <li><b>审计日志</b>：独立于请求链路和 Web 日志注册。</li>
  * </ul>
+ *
+ * <p>线程上下文传播由线程模块或业务自定义 {@code TaskDecorator} 负责，
+ * 日志模块不注册线程基础设施，避免多个 Starter 同时启用时产生重复 Bean。</p>
  */
 @AutoConfiguration
 @EnableConfigurationProperties(LogProperties.class)
@@ -43,7 +43,10 @@ import org.springframework.core.task.TaskDecorator;
 public class LogAutoConfiguration {
 
     /**
-     * Registers the TraceId servlet filter at the front of the request chain.
+     * 在请求过滤链前部注册 TraceId Servlet 过滤器。
+     *
+     * @param properties 日志配置属性
+     * @return TraceId 过滤器注册 Bean
      */
     @Bean
     @ConditionalOnWebApplication
@@ -53,23 +56,13 @@ public class LogAutoConfiguration {
         FilterRegistrationBean<TraceIdFilter> registration = new FilterRegistrationBean<>();
         registration.setFilter(new TraceIdFilter(properties));
         registration.addUrlPatterns("/*");
-        // Keep TraceId available before most application filters and interceptors.
+        // 尽早建立 TraceId，确保后续过滤器和拦截器都能读取同一份链路标识。
         registration.setOrder(Integer.MIN_VALUE + 100);
         return registration;
     }
 
     /**
-     * Registers an MDC task decorator for propagating trace context to worker threads.
-     */
-    @Bean
-    @ConditionalOnProperty(prefix = "letool.log.trace", name = "enabled", havingValue = "true", matchIfMissing = true)
-    @ConditionalOnMissingBean(value = TaskDecorator.class, name = "mdcTaskDecorator")
-    public TaskDecorator mdcTaskDecorator() {
-        return new MdcTaskDecorator();
-    }
-
-    /**
-     * Groups AOP-based method logging behind an AspectJ classpath guard.
+     * 将基于 AOP 的方法日志能力隔离在 AspectJ 类路径条件之后。
      */
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnClass(name = {
@@ -79,7 +72,9 @@ public class LogAutoConfiguration {
     static class MethodLogAspectConfiguration {
 
         /**
-         * Registers the method logging aspect for {@code @MethodLog}.
+         * 为 {@code @MethodLog} 注册方法日志切面。
+         *
+         * @return 方法日志切面
          */
         @Bean
         @ConditionalOnMissingBean(type = "com.github.leyland.letool.log.aspect.MethodLogAspect")
@@ -89,7 +84,7 @@ public class LogAutoConfiguration {
     }
 
     /**
-     * Groups servlet request logging behind both AspectJ and Servlet classpath guards.
+     * 将 Servlet 请求日志能力隔离在 AspectJ 和 Servlet 类路径条件之后。
      */
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnClass(name = {
@@ -102,7 +97,10 @@ public class LogAutoConfiguration {
     static class WebLogAspectConfiguration {
 
         /**
-         * Registers request logging for Spring MVC controllers.
+         * 为 Spring MVC 控制器注册请求日志切面。
+         *
+         * @param properties 日志配置属性
+         * @return Web 请求日志切面
          */
         @Bean
         @ConditionalOnProperty(prefix = "letool.log.web-log", name = "enabled", havingValue = "true", matchIfMissing = true)
@@ -113,14 +111,17 @@ public class LogAutoConfiguration {
     }
 
     /**
-     * Groups audit logging beans behind the audit feature switch.
+     * 将审计日志相关 Bean 隔离在审计功能开关之后。
      */
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnProperty(prefix = "letool.log.audit", name = "enabled", havingValue = "true", matchIfMissing = true)
     static class AuditLogConfiguration {
 
         /**
-         * Registers the audit log service and wires it to the available audit store.
+         * 注册审计日志服务，并连接容器中可用的审计日志存储。
+         *
+         * @param auditLogStoreProvider 审计日志存储提供器
+         * @return 审计日志服务
          */
         @Bean
         @ConditionalOnMissingBean(AuditLogService.class)
@@ -130,7 +131,9 @@ public class LogAutoConfiguration {
         }
 
         /**
-         * Registers an in-memory audit store for lightweight local applications and tests.
+         * 为轻量应用和测试环境注册内存审计日志存储。
+         *
+         * @return 内存审计日志存储
          */
         @Bean
         @ConditionalOnProperty(prefix = "letool.log.audit", name = "storage", havingValue = "memory")
@@ -140,7 +143,10 @@ public class LogAutoConfiguration {
         }
 
         /**
-         * Registers a JSON Lines audit file store when file storage is selected.
+         * 选择文件存储时注册 JSON Lines 审计日志存储。
+         *
+         * @param properties 日志配置属性
+         * @return 文件审计日志存储
          */
         @Bean
         @ConditionalOnProperty(prefix = "letool.log.audit", name = "storage", havingValue = "file", matchIfMissing = true)

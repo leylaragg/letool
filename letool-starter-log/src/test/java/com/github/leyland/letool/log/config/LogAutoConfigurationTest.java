@@ -14,17 +14,17 @@ import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.task.TaskDecorator;
 
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Tests the Spring Boot starter contract for {@link LogAutoConfiguration}.
+ * {@link LogAutoConfiguration} 的 Spring Boot Starter 契约测试。
  *
- * <p>The log starter is a cross-cutting toolkit module, so it must allow
- * applications to disable each feature independently and replace default beans
- * without bean-definition conflicts.</p>
+ * <p>日志模块只负责日志、审计和请求链路能力，不负责创建线程上下文传播组件。
+ * 各项能力应支持独立关闭，并允许业务侧替换默认 Bean。</p>
  */
 class LogAutoConfigurationTest {
 
@@ -46,7 +46,7 @@ class LogAutoConfigurationTest {
             assertThat(context).hasSingleBean(AuditLogService.class);
             assertThat(context).hasSingleBean(LogRecordStore.class);
             assertThat(context).hasSingleBean(MethodLogAspect.class);
-            assertThat(context).hasBean("mdcTaskDecorator");
+            assertThat(context).doesNotHaveBean(TaskDecorator.class);
             assertThat(context).doesNotHaveBean("traceIdFilter");
             assertThat(context).doesNotHaveBean(WebLogAspect.class);
         });
@@ -81,7 +81,7 @@ class LogAutoConfigurationTest {
     }
 
     /**
-     * 没有 AspectJ 时，审计和 MDC 仍可用，但方法日志/Web 日志切面不应加载。
+     * 没有 AspectJ 时，审计能力仍可用，但方法日志和 Web 日志切面不应加载。
      */
     @Test
     void shouldStartWithoutAspectsWhenAspectJClasspathIsMissing() {
@@ -126,21 +126,21 @@ class LogAutoConfigurationTest {
     }
 
     /**
-     * 关闭审计时，只应跳过审计服务和审计存储，不影响 trace/MDC。
+     * 关闭审计时，只应跳过审计服务和审计存储，不影响其他日志能力。
      */
     @Test
     void shouldDisableAuditOnly() {
         contextRunner
                 .withPropertyValues("letool.log.audit.enabled=false")
                 .run(context -> {
-                    assertThat(context).hasBean("mdcTaskDecorator");
+                    assertThat(context).doesNotHaveBean(TaskDecorator.class);
                     assertThat(context).doesNotHaveBean(AuditLogService.class);
                     assertThat(context).doesNotHaveBean(LogRecordStore.class);
                 });
     }
 
     /**
-     * Disabling trace must not disable unrelated audit infrastructure.
+     * 关闭请求链路追踪时，不应关闭无关的审计日志基础设施。
      */
     @Test
     void shouldKeepAuditEnabledWhenTraceIsDisabled() {
@@ -155,7 +155,7 @@ class LogAutoConfigurationTest {
     }
 
     /**
-     * User-defined log infrastructure should replace starter defaults cleanly.
+     * 用户自定义日志基础设施时，Starter 默认实现应正确退让。
      */
     @Test
     void shouldBackOffWhenUserProvidesLogInfrastructureBeans() {
@@ -182,11 +182,17 @@ class LogAutoConfigurationTest {
     }
 
     /**
-     * Simulates an application replacing all log starter infrastructure beans.
+     * 模拟业务应用替换全部日志基础设施 Bean。
      */
     @Configuration(proxyBeanMethods = false)
     static class UserLogConfiguration {
 
+        /**
+         * 创建用户自定义的 TraceId 过滤器。
+         *
+         * @param properties 日志配置属性
+         * @return 用户 TraceId 过滤器注册 Bean
+         */
         @Bean({"traceIdFilter", "userTraceIdFilter"})
         FilterRegistrationBean<TraceIdFilter> traceIdFilter(LogProperties properties) {
             FilterRegistrationBean<TraceIdFilter> registration = new FilterRegistrationBean<>();
@@ -194,22 +200,43 @@ class LogAutoConfigurationTest {
             return registration;
         }
 
+        /**
+         * 创建用户自定义的方法日志切面。
+         *
+         * @return 用户方法日志切面
+         */
         @Bean({"methodLogAspect", "userMethodLogAspect"})
         MethodLogAspect methodLogAspect() {
             return new MethodLogAspect();
         }
 
+        /**
+         * 创建用户自定义的 Web 日志切面。
+         *
+         * @param properties 日志配置属性
+         * @return 用户 Web 日志切面
+         */
         @Bean({"webLogAspect", "userWebLogAspect"})
         WebLogAspect webLogAspect(LogProperties properties) {
             return new WebLogAspect(properties);
         }
 
+        /**
+         * 创建用户自定义的审计日志服务。
+         *
+         * @return 用户审计日志服务
+         */
         @Bean({"auditLogService", "userAuditLogService"})
         AuditLogService auditLogService() {
             return event -> {
             };
         }
 
+        /**
+         * 创建用户自定义的审计日志存储。
+         *
+         * @return 用户审计日志存储
+         */
         @Bean({"auditLogStore", "userAuditLogStore"})
         LogRecordStore<AuditLogEvent> auditLogStore() {
             return new LogRecordStore<>() {

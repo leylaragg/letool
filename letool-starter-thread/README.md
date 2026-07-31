@@ -4,6 +4,10 @@
 
 线程管理模块，提供线程池原子注册、运行指标、MDC 上下文传播和虚拟线程（Java 21+）支持。默认异步执行器复用 Spring `AsyncTaskExecutor`、`TaskExecutorAdapter` 与 `TaskDecorator`，模块只保留轻量的线程池管理能力。
 
+与 `letool-starter-log` 同时使用时，日志模块负责在请求线程建立 TraceId，
+线程模块负责把 MDC 自动传播到异步任务。MDC 装饰器只由线程模块注册，
+业务无需编写额外配置，也不会出现多个 Starter 注册同名 Bean 的问题。
+
 ## Maven 坐标
 
 ```xml

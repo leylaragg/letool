@@ -2,7 +2,9 @@
 
 ## 模块简介
 
-`letool-starter-log` 是企业级日志封装模块，自动检测 Log4j2 / Logback 日志框架，提供**链路追踪 TraceId**、**审计日志**和**方法执行日志**三大核心能力。通过注解驱动 + 编程式 API，实现全链路日志串联、关键操作审计、方法入参/出参/耗时自动记录。
+`letool-starter-log` 是面向业务开发的轻量日志封装模块，提供**链路追踪 TraceId**、
+**审计日志**和**方法执行日志**三大核心能力。通过注解驱动与编程式 API，
+减少链路标识、关键操作审计和方法耗时记录的业务样板代码。
 
 ## Maven 坐标
 
@@ -33,6 +35,20 @@
 ```log
 2025-01-15 14:30:00.123 [http-nio-8080-exec-1] [traceId=abc123def456] INFO  c.e.controller.UserController - 查询用户信息
 ```
+
+异步方法或线程池任务需要传播 TraceId 时，引入线程模块即可继续自动使用：
+
+```xml
+<dependency>
+    <groupId>com.github.leyland</groupId>
+    <artifactId>letool-starter-thread</artifactId>
+    <version>${letool.version}</version>
+</dependency>
+```
+
+日志模块负责在请求线程建立 TraceId，线程模块负责通过唯一的 `MdcTaskDecorator`
+传播 MDC。两个 Starter 可以直接同时引入，不会注册重名 Bean。只引入日志模块时
+不会额外创建线程基础设施；业务也可以直接声明 Spring `TaskDecorator` 接入自己的执行器。
 
 ### 3. 记录方法日志
 
@@ -197,3 +213,19 @@ letool:
         - /actuator/**
         - /swagger-ui/**
 ```
+
+## 从旧版 MDC 装饰器迁移
+
+本次调整是破坏性变更。日志模块中的
+`com.github.leyland.letool.log.trace.MdcTaskDecorator` 及其自动配置 Bean
+将在下一个 2.0 预发布版本移除，因为它与线程模块重复，并且会在两个 Starter
+同时启用时造成 `mdcTaskDecorator` Bean 重名。
+
+| 旧用法 | 迁移方式 |
+|---|---|
+| 仅引入日志模块并依赖自动创建的 `mdcTaskDecorator` | 增加 `letool-starter-thread`，默认自动传播 MDC |
+| 手动创建日志模块 `MdcTaskDecorator` | 改用 `com.github.leyland.letool.thread.propagation.MdcTaskDecorator` |
+| 自定义上下文传播 | 继续声明 Spring `TaskDecorator`；线程模块会按 Spring 顺序规则组合用户装饰器 |
+
+该删除项是重复的具体实现，不是要求用户实现的预留接口。Spring `TaskDecorator`
+仍然是公开扩展点，业务可以按租户、安全上下文或其他需求自由组合。
