@@ -14,7 +14,7 @@ import java.lang.reflect.Method;
 /**
  * 方法日志切面 —— 拦截 @MethodLog 注解标记的方法，自动记录入参/出参/耗时/异常.
  *
- * <h3>执行流程</h3>
+ * <h2>执行流程</h2>
  * <pre>
  *   1. 解析注解 → 获取日志标题、是否记录入参/出参/异常
  *   2. 生成/获取 TraceId → 写入 MDC
@@ -31,6 +31,10 @@ public class MethodLogAspect {
      * Around 通知 —— 环绕拦截所有标注 @MethodLog 的方法.
      *
      * <p>使用 @annotation 切点表达式精确匹配，不拦截父类/接口方法上的注解（JDK 默认行为）.
+     *
+     * @param joinPoint 当前被拦截的方法调用
+     * @return 业务方法原始返回值
+     * @throws Throwable 业务方法抛出的原始异常
      */
     @Around("@annotation(com.github.leyland.letool.log.annotation.MethodLog)")
     public Object around(ProceedingJoinPoint joinPoint) throws Throwable {

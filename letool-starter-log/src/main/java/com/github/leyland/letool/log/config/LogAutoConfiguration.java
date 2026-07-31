@@ -1,14 +1,15 @@
 package com.github.leyland.letool.log.config;
 
+import com.github.leyland.letool.log.aspect.AuditLogAspect;
 import com.github.leyland.letool.log.aspect.MethodLogAspect;
 import com.github.leyland.letool.log.aspect.WebLogAspect;
-import com.github.leyland.letool.log.audit.AuditLogEvent;
+import com.github.leyland.letool.log.audit.AuditContextProvider;
 import com.github.leyland.letool.log.audit.AuditLogService;
-import com.github.leyland.letool.log.audit.DefaultAuditLogProcessor;
-import com.github.leyland.letool.log.store.FileLogStore;
-import com.github.leyland.letool.log.store.LogRecordStore;
-import com.github.leyland.letool.log.store.MemoryLogStore;
+import com.github.leyland.letool.log.audit.ServletAuditContextProvider;
+import com.github.leyland.letool.log.audit.Slf4jAuditLogService;
 import com.github.leyland.letool.log.trace.TraceIdFilter;
+import com.github.leyland.letool.tool.json.Fastjson2JsonCodec;
+import com.github.leyland.letool.tool.json.JsonCodec;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -84,6 +85,43 @@ public class LogAutoConfiguration {
     }
 
     /**
+     * 将注解式审计能力隔离在 AspectJ 类路径和审计开关之后。
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = {
+            "org.aspectj.lang.ProceedingJoinPoint",
+            "org.aspectj.lang.annotation.Aspect"
+    })
+    @ConditionalOnProperty(
+            prefix = "letool.log.audit",
+            name = "enabled",
+            havingValue = "true",
+            matchIfMissing = true)
+    static class AuditLogAspectConfiguration {
+
+        /**
+         * 为 {@code @AuditLog} 注册审计日志切面。
+         *
+         * @param auditLogService 审计事件输出服务
+         * @param jsonCodecProvider 用户自定义 JSON 编解码器提供器
+         * @param contextProvider 当前审计上下文提供器
+         * @return 审计日志切面
+         */
+        @Bean
+        @ConditionalOnMissingBean(AuditLogAspect.class)
+        public AuditLogAspect auditLogAspect(
+                AuditLogService auditLogService,
+                ObjectProvider<JsonCodec> jsonCodecProvider,
+                ObjectProvider<AuditContextProvider> contextProvider) {
+            JsonCodec jsonCodec = jsonCodecProvider.getIfAvailable(
+                    Fastjson2JsonCodec::createDefault);
+            AuditContextProvider provider = contextProvider.getIfAvailable(
+                    AuditContextProvider::empty);
+            return new AuditLogAspect(auditLogService, jsonCodec, provider);
+        }
+    }
+
+    /**
      * 将 Servlet 请求日志能力隔离在 AspectJ 和 Servlet 类路径条件之后。
      */
     @Configuration(proxyBeanMethods = false)
@@ -118,42 +156,46 @@ public class LogAutoConfiguration {
     static class AuditLogConfiguration {
 
         /**
-         * 注册审计日志服务，并连接容器中可用的审计日志存储。
+         * 注册向专用 SLF4J Logger 输出结构化 JSON 的默认审计服务。
          *
-         * @param auditLogStoreProvider 审计日志存储提供器
+         * @param jsonCodecProvider 用户自定义 JSON 编解码器提供器
          * @return 审计日志服务
          */
         @Bean
         @ConditionalOnMissingBean(AuditLogService.class)
-        public AuditLogService auditLogService(ObjectProvider<LogRecordStore<AuditLogEvent>> auditLogStoreProvider) {
-            LogRecordStore<AuditLogEvent> store = auditLogStoreProvider.getIfAvailable(() -> new MemoryLogStore<>(10000));
-            return new DefaultAuditLogProcessor(store);
+        public AuditLogService auditLogService(
+                ObjectProvider<JsonCodec> jsonCodecProvider) {
+            JsonCodec jsonCodec = jsonCodecProvider.getIfAvailable(
+                    Fastjson2JsonCodec::createDefault);
+            return new Slf4jAuditLogService(jsonCodec);
         }
+    }
+
+    /**
+     * 在 Servlet Web 应用中提供默认审计上下文。
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = {
+            "jakarta.servlet.http.HttpServletRequest",
+            "org.springframework.web.context.request.RequestContextHolder"
+    })
+    @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
+    @ConditionalOnProperty(
+            prefix = "letool.log.audit",
+            name = "enabled",
+            havingValue = "true",
+            matchIfMissing = true)
+    static class ServletAuditContextConfiguration {
 
         /**
-         * 为轻量应用和测试环境注册内存审计日志存储。
+         * 注册基于标准 Servlet 请求信息的审计上下文提供器。
          *
-         * @return 内存审计日志存储
+         * @return Servlet 审计上下文提供器
          */
         @Bean
-        @ConditionalOnProperty(prefix = "letool.log.audit", name = "storage", havingValue = "memory")
-        @ConditionalOnMissingBean(LogRecordStore.class)
-        public LogRecordStore<AuditLogEvent> auditMemoryLogStore() {
-            return new MemoryLogStore<>(10000);
-        }
-
-        /**
-         * 选择文件存储时注册 JSON Lines 审计日志存储。
-         *
-         * @param properties 日志配置属性
-         * @return 文件审计日志存储
-         */
-        @Bean
-        @ConditionalOnProperty(prefix = "letool.log.audit", name = "storage", havingValue = "file", matchIfMissing = true)
-        @ConditionalOnMissingBean(LogRecordStore.class)
-        public LogRecordStore<AuditLogEvent> auditFileLogStore(LogProperties properties) {
-            String baseDir = System.getProperty("user.home") + "/.letool/logs/audit-log";
-            return new FileLogStore<>(baseDir, AuditLogEvent.class);
+        @ConditionalOnMissingBean(AuditContextProvider.class)
+        public ServletAuditContextProvider servletAuditContextProvider() {
+            return new ServletAuditContextProvider();
         }
     }
 }

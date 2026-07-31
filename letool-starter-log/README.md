@@ -6,6 +6,9 @@
 **审计日志**和**方法执行日志**三大核心能力。通过注解驱动与编程式 API，
 减少链路标识、关键操作审计和方法耗时记录的业务样板代码。
 
+模块直接复用 Spring Boot 官方 `spring-boot-starter-aop` 提供注解切面能力，
+无需业务项目额外补充 AspectJ 依赖。
+
 ## Maven 坐标
 
 ```xml
@@ -68,6 +71,10 @@ public void deleteUser(Long userId) {
     userMapper.deleteById(userId);
 }
 ```
+
+切面会在方法结束后生成完整的 `AuditLogEvent`。默认实现将事件序列化为 JSON，
+并写入名称为 `letool.audit` 的专用 SLF4J Logger。文件滚动、异步输出和集中采集
+继续由应用使用的 Logback、Log4j2 或日志平台负责。
 
 ## 核心 API 示例
 
@@ -158,9 +165,17 @@ public void deleteUser(Long userId) { ... }
 @AuditLog(operation = "创建订单", type = AuditType.BUSINESS, bizNo = "#request.orderNo")
 public Order createOrder(@RequestBody CreateOrderRequest request) { ... }
 
-// 敏感操作：不记录请求体
-@AuditLog(operation = "修改密码", type = AuditType.AUTH, bizNo = "#userId", logRequestBody = false)
+// 请求参数默认不记录，适合密码等敏感操作
+@AuditLog(operation = "修改密码", type = AuditType.AUTH, bizNo = "#userId")
 public void changePassword(Long userId, String newPassword) { ... }
+
+// 只有确认参数可安全输出时，才显式开启请求参数记录
+@AuditLog(
+    operation = "创建公开报表",
+    bizNo = "#request.reportNo",
+    logRequestBody = true,
+    maxBodyLength = 512)
+public Report createReport(CreateReportRequest request) { ... }
 ```
 
 **注解属性说明**
@@ -170,7 +185,7 @@ public void changePassword(Long userId, String newPassword) { ... }
 | `operation` | String | (必填) | 操作名称，人类可读 |
 | `type` | AuditType | BUSINESS | AUTH=认证, ADMIN=管理, BUSINESS=业务 |
 | `bizNo` | String | "" | 业务单号，支持 SpEL 表达式 (如 `#userId`) |
-| `logRequestBody` | boolean | true | 是否记录请求体 |
+| `logRequestBody` | boolean | false | 是否记录方法参数 JSON，需显式开启 |
 | `maxBodyLength` | int | 1024 | 请求体最大字符数 |
 
 **编程式**
@@ -186,10 +201,47 @@ AuditLogEvent event = AuditLogEvent.builder()
     .type(AuditType.BUSINESS)
     .bizNo("RPT-20250115-001")
     .result("SUCCESS")
-    .clientIp("192.168.1.100")
+    .ip("192.168.1.100")
     .build();
 auditLogService.record(event);
 ```
+
+### 4. 自定义审计上下文
+
+Servlet 应用默认从标准 Principal、远端地址和 User-Agent 获取上下文，不会直接信任
+`X-Forwarded-For`。接入 Spring Security、租户体系或可信网关时，可以替换扩展点：
+
+```java
+@Bean
+public AuditContextProvider auditContextProvider(CurrentUser currentUser) {
+    return () -> new AuditContext(
+        currentUser.getUserId(),
+        currentUser.getClientIp(),
+        currentUser.getUserAgent());
+}
+```
+
+### 5. 自定义数据库持久化
+
+核心模块不依赖 JDBC、MyBatis-Plus 或 Spring Data，也不会自动创建数据库表。需要数据库
+查询和统计时，业务应用只需提供自己的 `AuditLogService`：
+
+```java
+@Bean
+public AuditLogService auditLogService(SysAuditLogService service) {
+    return event -> service.save(SysAuditLog.from(event));
+}
+```
+
+MySQL 8 参考脚本位于：
+
+```text
+META-INF/letool/log/mysql-audit-log.sql
+```
+
+该脚本覆盖 `AuditLogEvent` 的全部通用字段和常用查询索引，但不会被 Spring Boot
+自动执行。业务可以增加租户、数据权限、逻辑删除或自定义主键字段，也可以改用 MQ、
+Elasticsearch 或其他存储方案。
 
 ## 配置属性
 
@@ -202,8 +254,6 @@ letool:
       generate-if-absent: true          # 无 TraceId 时自动生成
     audit:
       enabled: true                     # 审计日志开关
-      async: true                       # 异步写入（推荐，不阻塞业务）
-      storage: file                     # 存储后端: memory / file / database
     web-log:
       enabled: true                     # Controller 请求日志开关
       include-headers: false            # 是否记录请求头（含 Authorization）
@@ -213,6 +263,25 @@ letool:
         - /actuator/**
         - /swagger-ui/**
 ```
+
+## 从旧版审计存储迁移
+
+旧版 `async`、`storage` 配置以及 `LogRecordStore`、`FileLogStore`、`MemoryLogStore`
+已移除。它们分别重复实现了日志后端已有的异步、滚动文件能力，并且不存在真正的
+`database` 实现。
+
+| 旧用法 | 迁移方式 |
+|---|---|
+| 使用旧版 `@AuditLog` | 新版注解切面会真正生成事件，请在升级前复核现有注解和敏感参数 |
+| 依赖请求参数默认记录 | 新版默认关闭；确认数据安全后显式设置 `logRequestBody = true` |
+| `storage: file` | 配置 `letool.audit` Logger 的 Logback/Log4j2 Appender |
+| `storage: memory` | 测试中自定义收集事件的 `AuditLogService` |
+| `storage: database` | 按参考 SQL 建表，并声明自己的 `AuditLogService` |
+| 实现 `LogRecordStore` | 改为实现更高层的 `AuditLogService` |
+| `async: true` | 使用日志后端的 AsyncAppender，或在自定义服务中接入业务线程设施 |
+
+配置属性采用严格绑定。升级后继续保留 `letool.log.audit.storage` 或
+`letool.log.audit.async` 会使应用启动失败，避免持久化方式被静默改变。
 
 ## 从旧版 MDC 装饰器迁移
 

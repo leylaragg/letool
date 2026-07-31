@@ -10,7 +10,7 @@ import java.io.IOException;
 /**
  * Web 请求 TraceId 注入过滤器 —— 从请求头提取或生成 TraceId，写入 MDC 和响应头.
  *
- * <h3>执行流程</h3>
+ * <h2>执行流程</h2>
  * <pre>
  *   1. 从请求 Header（默认 X-Trace-Id）读取 TraceId —— 支持网关/上游传递
  *   2. 如果 Header 为空且 generateIfAbsent=true → 自动生成 UUID 短格式
@@ -23,6 +23,11 @@ public class TraceIdFilter implements Filter {
 
     private final LogProperties properties;
 
+    /**
+     * 创建使用指定日志配置的 TraceId 过滤器。
+     *
+     * @param properties 日志模块配置
+     */
     public TraceIdFilter(LogProperties properties) {
         this.properties = properties;
     }

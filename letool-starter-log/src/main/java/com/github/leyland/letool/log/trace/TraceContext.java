@@ -7,12 +7,15 @@ import org.slf4j.MDC;
  */
 public final class TraceContext {
 
+    /** SLF4J MDC 中保存 TraceId 的键名。 */
     public static final String TRACE_ID_KEY = "traceId";
 
     private TraceContext() {}
 
     /**
      * 获取当前线程的 TraceId.
+     *
+     * @return 当前 TraceId；不存在时返回 {@code null}
      */
     public static String getTraceId() {
         return MDC.get(TRACE_ID_KEY);
@@ -20,6 +23,8 @@ public final class TraceContext {
 
     /**
      * 设置当前线程的 TraceId.
+     *
+     * @param traceId 待写入 MDC 的 TraceId
      */
     public static void setTraceId(String traceId) {
         if (traceId != null && !traceId.isEmpty()) {
@@ -29,6 +34,8 @@ public final class TraceContext {
 
     /**
      * 获取或生成 TraceId —— 有则返回，无则生成.
+     *
+     * @return 当前已有或新生成的 TraceId
      */
     public static String getOrGenerate() {
         String traceId = MDC.get(TRACE_ID_KEY);

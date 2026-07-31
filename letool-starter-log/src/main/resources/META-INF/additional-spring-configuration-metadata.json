@@ -25,18 +25,6 @@
       "defaultValue": "true"
     },
     {
-      "name": "letool.log.audit.async",
-      "type": "java.lang.Boolean",
-      "description": "是否异步写入 —— true 不阻塞业务线程，false 同步写入保证可靠性。",
-      "defaultValue": "true"
-    },
-    {
-      "name": "letool.log.audit.storage",
-      "type": "java.lang.String",
-      "description": "存储后端类型 —— memory（内存环形缓冲区）/ file（JSON Lines）/ database（自动检测表结构）。",
-      "defaultValue": "file"
-    },
-    {
       "name": "letool.log.web-log.enabled",
       "type": "java.lang.Boolean",
       "description": "Web 请求日志总开关 —— 是否记录 Controller 层请求日志。",
@@ -64,25 +52,6 @@
       "name": "letool.log.web-log.exclude-paths",
       "type": "java.util.List<java.lang.String>",
       "description": "不记录日志的 URL 路径列表，支持 Ant 风格通配符（如 /actuator/**）。"
-    }
-  ],
-  "hints": [
-    {
-      "name": "letool.log.audit.storage",
-      "values": [
-        {
-          "value": "memory",
-          "description": "内存环形缓冲区，重启后丢失。"
-        },
-        {
-          "value": "file",
-          "description": "JSON Lines 文件存储，适合单机或日志采集场景。"
-        },
-        {
-          "value": "database",
-          "description": "数据库自动检测表结构存储，适合多实例集中查询。"
-        }
-      ]
     }
   ]
 }

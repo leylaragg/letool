@@ -10,13 +10,13 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 动态日志级别修改器 —— 运行时不重启服务即可修改/恢复 Logback 日志级别.
  *
- * <h3>使用场景</h3>
+ * <h2>使用场景</h2>
  * <ul>
  *   <li>生产问题排查：临时提升某个包为 DEBUG 级别，排查完成后恢复</li>
  *   <li>性能调优：临时关闭某些嘈杂的 INFO 日志</li>
  * </ul>
  *
- * <h3>工作流程</h3>
+ * <h2>工作流程</h2>
  * <pre>
  *   setLevel("com.example", "DEBUG")
  *     → 保存原始级别到 ORIGINAL_LEVELS
@@ -54,6 +54,8 @@ public class DynamicLogLevelChanger {
 
     /**
      * 恢复指定 Logger 的原始日志级别.
+     *
+     * @param loggerName Logger 名称
      */
     public static void restore(String loggerName) {
         Level original = ORIGINAL_LEVELS.remove(loggerName);
@@ -69,6 +71,7 @@ public class DynamicLogLevelChanger {
     /**
      * 获取当前日志级别.
      *
+     * @param loggerName Logger 名称
      * @return 当前级别字符串，未设置则返回 "UNKNOWN"
      */
     public static String getLevel(String loggerName) {

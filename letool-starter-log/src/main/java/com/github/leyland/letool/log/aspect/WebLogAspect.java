@@ -14,7 +14,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 /**
  * Web 请求日志切面 —— 拦截所有 Controller 层方法，自动记录请求路径/方法/耗时/状态.
  *
- * <h3>执行流程</h3>
+ * <h2>执行流程</h2>
  * <pre>
  *   1. 检查 web-log.enabled → false 则透传
  *   2. 从 RequestContextHolder 获取 HttpServletRequest（需在 Servlet 容器中运行）
@@ -30,6 +30,11 @@ public class WebLogAspect {
 
     private final LogProperties properties;
 
+    /**
+     * 创建 Web 请求日志切面。
+     *
+     * @param properties 日志模块配置
+     */
     public WebLogAspect(LogProperties properties) {
         this.properties = properties;
     }
@@ -38,6 +43,10 @@ public class WebLogAspect {
      * Around 通知 —— 拦截所有 @RestController 和 @Controller 注解的类.
      *
      * <p>使用 @within 切点表达式匹配类上的注解，而非方法级别.
+     *
+     * @param joinPoint 当前被拦截的 Controller 方法调用
+     * @return Controller 方法原始返回值
+     * @throws Throwable Controller 方法抛出的原始异常
      */
     @Around("@within(org.springframework.web.bind.annotation.RestController) || " +
             "@within(org.springframework.stereotype.Controller)")

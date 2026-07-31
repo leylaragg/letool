@@ -1,13 +1,17 @@
 package com.github.leyland.letool.log.config;
 
+import com.github.leyland.letool.log.aspect.AuditLogAspect;
 import com.github.leyland.letool.log.aspect.MethodLogAspect;
 import com.github.leyland.letool.log.aspect.WebLogAspect;
-import com.github.leyland.letool.log.audit.AuditLogEvent;
+import com.github.leyland.letool.log.audit.AuditContextProvider;
 import com.github.leyland.letool.log.audit.AuditLogService;
-import com.github.leyland.letool.log.store.LogRecordStore;
+import com.github.leyland.letool.log.audit.ServletAuditContextProvider;
+import com.github.leyland.letool.log.audit.Slf4jAuditLogService;
 import com.github.leyland.letool.log.trace.TraceIdFilter;
+import com.github.leyland.letool.tool.json.Fastjson2JsonCodec;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.context.properties.bind.UnboundConfigurationPropertiesException;
 import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
@@ -16,15 +20,13 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.task.TaskDecorator;
 
-import java.util.List;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * {@link LogAutoConfiguration} 的 Spring Boot Starter 契约测试。
  *
- * <p>日志模块只负责日志、审计和请求链路能力，不负责创建线程上下文传播组件。
- * 各项能力应支持独立关闭，并允许业务侧替换默认 Bean。</p>
+ * <p>日志模块负责日志、审计和请求链路能力，但不创建线程池、数据库连接或
+ * 线程上下文传播组件。各项能力可以独立关闭，并允许业务应用替换默认 Bean。</p>
  */
 class LogAutoConfigurationTest {
 
@@ -37,15 +39,18 @@ class LogAutoConfigurationTest {
             .withPropertyValues("spring.main.allow-bean-definition-overriding=false");
 
     /**
-     * 非 Web 应用默认只装配通用日志能力，不应创建 Servlet 过滤器或 Web 日志切面。
+     * 非 Web 应用默认应创建可编程使用的审计服务和两个方法切面。
      */
     @Test
     void shouldCreateNonWebLogInfrastructureBeans() {
         contextRunner.run(context -> {
             assertThat(context).hasSingleBean(LogProperties.class);
             assertThat(context).hasSingleBean(AuditLogService.class);
-            assertThat(context).hasSingleBean(LogRecordStore.class);
+            assertThat(context.getBean(AuditLogService.class))
+                    .isInstanceOf(Slf4jAuditLogService.class);
+            assertThat(context).hasSingleBean(AuditLogAspect.class);
             assertThat(context).hasSingleBean(MethodLogAspect.class);
+            assertThat(context).doesNotHaveBean(AuditContextProvider.class);
             assertThat(context).doesNotHaveBean(TaskDecorator.class);
             assertThat(context).doesNotHaveBean("traceIdFilter");
             assertThat(context).doesNotHaveBean(WebLogAspect.class);
@@ -53,12 +58,14 @@ class LogAutoConfigurationTest {
     }
 
     /**
-     * Web 应用默认应额外创建 TraceId 过滤器和 Web 请求日志切面。
+     * Servlet Web 应用默认应额外创建请求链路、Web 日志和 Servlet 审计上下文。
      */
     @Test
     void shouldCreateWebLogInfrastructureBeansInWebApplication() {
         webContextRunner.run(context -> {
             assertThat(context).hasSingleBean(AuditLogService.class);
+            assertThat(context).hasSingleBean(AuditLogAspect.class);
+            assertThat(context).hasSingleBean(ServletAuditContextProvider.class);
             assertThat(context).hasSingleBean(MethodLogAspect.class);
             assertThat(context).hasSingleBean(WebLogAspect.class);
             assertThat(context).hasBean("traceIdFilter");
@@ -66,7 +73,7 @@ class LogAutoConfigurationTest {
     }
 
     /**
-     * 总开关关闭时，log starter 不应创建任何日志基础设施 Bean。
+     * 总开关关闭时不应创建任何日志基础设施 Bean。
      */
     @Test
     void shouldDisableLogAutoConfiguration() {
@@ -75,13 +82,14 @@ class LogAutoConfigurationTest {
                 .run(context -> {
                     assertThat(context).doesNotHaveBean(LogProperties.class);
                     assertThat(context).doesNotHaveBean(AuditLogService.class);
+                    assertThat(context).doesNotHaveBean(AuditLogAspect.class);
                     assertThat(context).doesNotHaveBean(MethodLogAspect.class);
                     assertThat(context).doesNotHaveBean("mdcTaskDecorator");
                 });
     }
 
     /**
-     * 没有 AspectJ 时，审计能力仍可用，但方法日志和 Web 日志切面不应加载。
+     * AspectJ 缺失时应保留编程式审计服务，并跳过所有 AOP 能力。
      */
     @Test
     void shouldStartWithoutAspectsWhenAspectJClasspathIsMissing() {
@@ -90,14 +98,16 @@ class LogAutoConfigurationTest {
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context).hasSingleBean(AuditLogService.class);
+                    assertThat(context).hasSingleBean(ServletAuditContextProvider.class);
                     assertThat(context).hasBean("traceIdFilter");
+                    assertThat(context).doesNotHaveBean(AuditLogAspect.class);
                     assertThat(context).doesNotHaveBean(MethodLogAspect.class);
                     assertThat(context).doesNotHaveBean(WebLogAspect.class);
                 });
     }
 
     /**
-     * 没有 Web/Servlet classpath 时，log starter 应保留非 Web 日志能力并跳过 Web 组件。
+     * Web 与 Servlet 类缺失时应保留通用日志和审计能力。
      */
     @Test
     void shouldStartWithoutWebAndServletClasspath() {
@@ -106,13 +116,15 @@ class LogAutoConfigurationTest {
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context).hasSingleBean(AuditLogService.class);
+                    assertThat(context).hasSingleBean(AuditLogAspect.class);
+                    assertThat(context).doesNotHaveBean(AuditContextProvider.class);
                     assertThat(context).doesNotHaveBean("traceIdFilter");
                     assertThat(context).doesNotHaveBean(WebLogAspect.class);
                 });
     }
 
     /**
-     * 关闭 Web 请求日志时，只应跳过 WebLogAspect，不影响 TraceId 过滤器。
+     * 关闭 Web 请求日志时只应跳过 Web 日志切面。
      */
     @Test
     void shouldDisableWebLogAspectOnly() {
@@ -122,25 +134,28 @@ class LogAutoConfigurationTest {
                     assertThat(context).hasBean("traceIdFilter");
                     assertThat(context).doesNotHaveBean(WebLogAspect.class);
                     assertThat(context).hasSingleBean(AuditLogService.class);
+                    assertThat(context).hasSingleBean(AuditLogAspect.class);
                 });
     }
 
     /**
-     * 关闭审计时，只应跳过审计服务和审计存储，不影响其他日志能力。
+     * 关闭审计能力时应同时跳过审计服务、切面和上下文提供器。
      */
     @Test
     void shouldDisableAuditOnly() {
-        contextRunner
+        webContextRunner
                 .withPropertyValues("letool.log.audit.enabled=false")
                 .run(context -> {
-                    assertThat(context).doesNotHaveBean(TaskDecorator.class);
                     assertThat(context).doesNotHaveBean(AuditLogService.class);
-                    assertThat(context).doesNotHaveBean(LogRecordStore.class);
+                    assertThat(context).doesNotHaveBean(AuditLogAspect.class);
+                    assertThat(context).doesNotHaveBean(AuditContextProvider.class);
+                    assertThat(context).hasSingleBean(MethodLogAspect.class);
+                    assertThat(context).hasSingleBean(WebLogAspect.class);
                 });
     }
 
     /**
-     * 关闭请求链路追踪时，不应关闭无关的审计日志基础设施。
+     * 关闭请求链路追踪时不应关闭审计能力。
      */
     @Test
     void shouldKeepAuditEnabledWhenTraceIsDisabled() {
@@ -148,14 +163,14 @@ class LogAutoConfigurationTest {
                 .withPropertyValues("letool.log.trace.enabled=false")
                 .run(context -> {
                     assertThat(context).hasSingleBean(AuditLogService.class);
-                    assertThat(context).hasSingleBean(LogRecordStore.class);
+                    assertThat(context).hasSingleBean(AuditLogAspect.class);
                     assertThat(context).doesNotHaveBean("mdcTaskDecorator");
                     assertThat(context).hasSingleBean(MethodLogAspect.class);
                 });
     }
 
     /**
-     * 用户自定义日志基础设施时，Starter 默认实现应正确退让。
+     * 用户声明日志基础设施时，Starter 默认实现应完整退让。
      */
     @Test
     void shouldBackOffWhenUserProvidesLogInfrastructureBeans() {
@@ -166,7 +181,8 @@ class LogAutoConfigurationTest {
                     assertThat(context).hasSingleBean(MethodLogAspect.class);
                     assertThat(context).hasSingleBean(WebLogAspect.class);
                     assertThat(context).hasSingleBean(AuditLogService.class);
-                    assertThat(context).hasSingleBean(LogRecordStore.class);
+                    assertThat(context).hasSingleBean(AuditLogAspect.class);
+                    assertThat(context).hasSingleBean(AuditContextProvider.class);
                     assertThat(context).hasBean("traceIdFilter");
                     assertThat(context.getBean(MethodLogAspect.class))
                             .isSameAs(context.getBean("userMethodLogAspect"));
@@ -174,10 +190,26 @@ class LogAutoConfigurationTest {
                             .isSameAs(context.getBean("userWebLogAspect"));
                     assertThat(context.getBean(AuditLogService.class))
                             .isSameAs(context.getBean("userAuditLogService"));
-                    assertThat(context.getBean(LogRecordStore.class))
-                            .isSameAs(context.getBean("userAuditLogStore"));
+                    assertThat(context.getBean(AuditLogAspect.class))
+                            .isSameAs(context.getBean("userAuditLogAspect"));
+                    assertThat(context.getBean(AuditContextProvider.class))
+                            .isSameAs(context.getBean("userAuditContextProvider"));
                     assertThat(context.getBean("traceIdFilter"))
                             .isSameAs(context.getBean("userTraceIdFilter"));
+                });
+    }
+
+    /**
+     * 已删除的数据库存储配置应启动失败，避免升级后静默改变持久化方式。
+     */
+    @Test
+    void shouldRejectRemovedAuditStorageProperty() {
+        contextRunner
+                .withPropertyValues("letool.log.audit.storage=database")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasRootCauseInstanceOf(UnboundConfigurationPropertiesException.class);
                 });
     }
 
@@ -229,31 +261,35 @@ class LogAutoConfigurationTest {
         @Bean({"auditLogService", "userAuditLogService"})
         AuditLogService auditLogService() {
             return event -> {
+                // 测试扩展点只验证自动配置退让，不执行真实持久化。
             };
         }
 
         /**
-         * 创建用户自定义的审计日志存储。
+         * 创建用户自定义的审计上下文提供器。
          *
-         * @return 用户审计日志存储
+         * @return 用户审计上下文提供器
          */
-        @Bean({"auditLogStore", "userAuditLogStore"})
-        LogRecordStore<AuditLogEvent> auditLogStore() {
-            return new LogRecordStore<>() {
-                @Override
-                public void save(AuditLogEvent record) {
-                }
+        @Bean({"auditContextProvider", "userAuditContextProvider"})
+        AuditContextProvider auditContextProvider() {
+            return AuditContextProvider.empty();
+        }
 
-                @Override
-                public List<AuditLogEvent> queryRecent(int limit) {
-                    return List.of();
-                }
-
-                @Override
-                public long count() {
-                    return 0;
-                }
-            };
+        /**
+         * 创建用户自定义的审计日志切面。
+         *
+         * @param auditLogService 用户审计日志服务
+         * @param contextProvider 用户审计上下文提供器
+         * @return 用户审计日志切面
+         */
+        @Bean({"auditLogAspect", "userAuditLogAspect"})
+        AuditLogAspect auditLogAspect(
+                AuditLogService auditLogService,
+                AuditContextProvider contextProvider) {
+            return new AuditLogAspect(
+                    auditLogService,
+                    Fastjson2JsonCodec.createDefault(),
+                    contextProvider);
         }
     }
 }

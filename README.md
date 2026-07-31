@@ -233,7 +233,7 @@ letool:
       enabled: true
     audit:
       enabled: true
-      storage: file
+      # 默认输出到 letool.audit Logger；数据库持久化通过自定义 AuditLogService 接入
   cache:
     enabled: true
     annotation:
