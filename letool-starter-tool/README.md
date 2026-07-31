@@ -326,7 +326,43 @@ boolean exists = SpringUtil.containsBean("dataSource");
 String profile = SpringUtil.getActiveProfile();  // "dev" / "prod"
 ```
 
-### 13. 分页结果 PageResult
+### 13. Spring 表达式工具 SpelUtil
+
+```java
+// 普通表达式与显式返回类型
+Integer total = SpelUtil.eval(
+        "#price * #quantity",
+        null,
+        Map.of("price", 20, "quantity", 3),
+        Integer.class
+);
+
+// Spring 原生模板表达式
+String message = SpelUtil.evalTemplate(
+        "订单 #{#orderNo} 已创建",
+        Map.of("orderNo", "A1001")
+);
+
+// 方法上下文支持参数名、#p0、#a0、#target、#method 和 #args
+String key = SpelUtil.evalMethod(
+        "#userId",
+        target,
+        method,
+        arguments,
+        String.class
+);
+
+// 只读安全模式不允许类型引用、构造器、Bean 引用和任意实例方法
+String name = SpelUtil.evalSafe("name", user, String.class);
+```
+
+表达式使用有界 LRU 缓存。解析失败与求值失败分别抛出带稳定错误码的
+`SpelException`，异常消息不会回显表达式或上下文数据。
+普通 `eval` 使用 Spring 完整表达式能力，只适合可信表达式；不可信输入必须使用 `evalSafe`。
+模板现在遵循 Spring 原生 `#{...}` 语法；旧版 Map 变量占位符 `#{name}` 需要迁移为
+`#{#name}`。
+
+### 14. 分页结果 PageResult
 
 ```java
 PageResult<User> page = PageResult.of(users, totalCount, 1, 20);

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/leyland-wang/letool/actions/workflows/maven.yml/badge.svg)](https://github.com/leyland-wang/letool/actions/workflows/maven.yml)
 [![JDK](https://img.shields.io/badge/JDK-17%2B-orange)](https://openjdk.org/)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.4.x-brightgreen)](https://spring.io/projects/spring-boot)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.x-brightgreen)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 
 企业级 Java 工具包 —— 提供缓存、日志、安全、加密、网络通信、规则引擎、支付集成等开箱即用的 Spring Boot 3.x Starter 组件。按需引入，零耦合。
@@ -12,7 +12,7 @@
 | 依赖 | 版本 |
 |------|------|
 | JDK | 17+（推荐 21） |
-| Spring Boot | 3.4.x |
+| Spring Boot | 3.5.x |
 | Maven | 3.9+ |
 
 ## 工程化文档
@@ -50,7 +50,7 @@
 | **letool-starter-net** | 网络通信 —— 默认不启用运行时 Bean，显式开启 TCP/HTTP/网关适配器 | tool |
 | **letool-starter-pay** | 支付抽象 —— 默认不启用，内置支付宝/微信支付仅显式 stub 或自定义 provider | tool, web |
 | **letool-starter-mq** | 消息队列 —— 当前内置内存队列，RabbitMQ/RocketMQ/Kafka 需自定义 provider 或后续真实扩展 | tool |
-| **letool-starter-ratelimiter** | 限流熔断 —— 令牌桶/滑动窗口、熔断器 | tool |
+| **letool-starter-ratelimiter** | 流量保护 —— Sentinel Core 薄封装、命名策略与热点参数限流 | tool, exception |
 | **letool-starter-oss** | 对象存储抽象 —— 默认不启用，内置 OSS/COS/MinIO 仅显式 stub 或自定义 provider | tool, file |
 | **letool-starter-sms** | 短信通知抽象 —— 默认不启用，内置阿里云/腾讯云仅显式 mock/stub 或自定义 provider | tool |
 | **letool-starter-ai** | AI 集成 —— OpenAI 兼容 HTTP 调用，已具备超时、重试、错误脱敏、流式输出和可替换 HTTP 传输层 | tool |
@@ -250,6 +250,10 @@ letool:
       mdc: true
   rate-limiter:
     enabled: true
+    default-policy: default
+    policies:
+      default:
+        threshold: 10
     annotation:
       enabled: true
   security:

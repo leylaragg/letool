@@ -11,7 +11,7 @@
 
     <artifactId>letool-starter-ratelimiter</artifactId>
     <name>letool-starter-ratelimiter</name>
-    <description>letool 限流熔断模块 —— 令牌桶/滑动窗口/漏桶算法、熔断降级、声明式注解</description>
+    <description>letool 限流模块 —— Alibaba Sentinel Core 薄封装、命名策略、热点参数限流与声明式注解</description>
     <packaging>jar</packaging>
 
     <dependencies>
@@ -20,9 +20,20 @@
             <artifactId>letool-starter-tool</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.aspectj</groupId>
-            <artifactId>aspectjweaver</artifactId>
-            <optional>true</optional>
+            <groupId>com.github.leyland</groupId>
+            <artifactId>letool-starter-exception</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.csp</groupId>
+            <artifactId>sentinel-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.csp</groupId>
+            <artifactId>sentinel-parameter-flow-control</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

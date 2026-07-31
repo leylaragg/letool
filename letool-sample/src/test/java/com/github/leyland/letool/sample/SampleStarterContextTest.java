@@ -1,5 +1,6 @@
 package com.github.leyland.letool.sample;
 
+import com.github.leyland.letool.ratelimiter.aspect.RateLimitAspect;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -21,17 +22,19 @@ class SampleStarterContextTest {
     private ApplicationContext applicationContext;
 
     /**
-     * 验证 sample 应用上下文可以完整启动，且 Letool 执行器不会覆盖 Spring Boot 基础执行器。
+     * 验证示例应用可以完整启动，且 Letool 执行器不会覆盖 Spring Boot 基础执行器。
+     *
+     * <p>Spring Boot 3.5 只注册 {@code applicationTaskExecutor}，不再提供
+     * {@code taskExecutor} 别名。</p>
      */
     @Test
     void sampleStartersShouldLoadTogether() {
         assertThat(applicationContext.containsBean("applicationTaskExecutor")).isTrue();
-        assertThat(applicationContext.containsBean("taskExecutor")).isTrue();
+        assertThat(applicationContext.containsBean("taskExecutor")).isFalse();
         assertThat(applicationContext.containsBean("letoolTaskExecutor")).isTrue();
         assertThat(applicationContext.containsBean("letoolIoExecutor")).isTrue();
-        assertThat(applicationContext.getBean("applicationTaskExecutor"))
-                .isSameAs(applicationContext.getBean("taskExecutor"));
+        assertThat(applicationContext.getBeansOfType(RateLimitAspect.class)).hasSize(1);
         assertThat(applicationContext.getBean("letoolTaskExecutor"))
-                .isNotSameAs(applicationContext.getBean("taskExecutor"));
+                .isNotSameAs(applicationContext.getBean("applicationTaskExecutor"));
     }
 }

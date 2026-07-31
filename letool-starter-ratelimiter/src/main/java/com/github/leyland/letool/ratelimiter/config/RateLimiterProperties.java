@@ -2,37 +2,15 @@ package com.github.leyland.letool.ratelimiter.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
- * letool-starter-ratelimiter 模块的全局配置属性类。
+ * Letool 限流模块配置。
  *
- * <p>通过 Spring Boot 的 {@code @ConfigurationProperties} 机制绑定
- * {@code letool.rate-limiter} 前缀下的所有配置项，包含以下子模块配置：</p>
- *
- * <ul>
- *   <li><b>全局设置</b>：控制是否启用限流模块、默认算法类型</li>
- *   <li><b>TokenBucket（令牌桶）</b>：容量、令牌补充速率</li>
- *   <li><b>SlidingWindow（滑动窗口）</b>：窗口大小、最大许可数</li>
- *   <li><b>CircuitBreaker（熔断器）</b>：失败阈值、窗口大小、恢复超时、半开最大请求数</li>
- * </ul>
- *
- * <p>使用示例（application.yml）：</p>
- * <pre>{@code
- * letool:
- *   rate-limiter:
- *     enabled: true
- *     default-algorithm: token-bucket
- *     token-bucket:
- *       capacity: 100
- *       refill-rate: 10
- *     sliding-window:
- *       window-size: 60
- *       max-permits: 100
- *     circuit-breaker:
- *       failure-threshold: 0.5
- *       window-size: 60
- *       recovery-timeout: 60
- *       half-open-max-requests: 3
- * }</pre>
+ * <p>本模块只负责将简洁的命名策略转换为 Sentinel 本地静态规则。
+ * 生产环境若通过 Nacos、Apollo 或 Sentinel 控制台管理动态规则，应关闭
+ * {@link #localRulesEnabled}，由外部 Sentinel 数据源接管规则生命周期。</p>
  *
  * @author leyland
  * @since 2.0.0
@@ -40,253 +18,187 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "letool.rate-limiter")
 public class RateLimiterProperties {
 
-    // ======================== 顶层属性 ========================
-
-    /** 全局开关：是否启用限流熔断模块，默认 {@code true} */
+    /**
+     * 是否启用 Letool 限流模块。
+     */
     private boolean enabled = true;
 
     /**
-     * 默认限流算法。
-     *
-     * <p>可选值：</p>
-     * <ul>
-     *   <li>{@code "token-bucket"} —— 令牌桶算法（默认）</li>
-     *   <li>{@code "sliding-window"} —— 滑动窗口算法</li>
-     *   <li>{@code "leaky-bucket"} —— 漏桶算法（预留）</li>
-     * </ul>
+     * 未显式指定策略时使用的默认策略名称。
      */
-    private String defaultAlgorithm = "token-bucket";
+    private String defaultPolicy = "default";
 
-    /** 令牌桶子配置 */
-    private TokenBucket tokenBucket = new TokenBucket();
+    /**
+     * 是否根据本配置注册 Sentinel 本地静态规则。
+     */
+    private boolean localRulesEnabled = true;
 
-    /** 滑动窗口子配置 */
-    private SlidingWindow slidingWindow = new SlidingWindow();
+    /**
+     * 命名限流策略。
+     */
+    private Map<String, Policy> policies = defaultPolicies();
 
-    /** 熔断器子配置 */
-    private CircuitBreaker circuitBreaker = new CircuitBreaker();
-
-    /** Annotation-based rate-limit and circuit-breaker AOP configuration. */
+    /**
+     * 声明式限流配置。
+     */
     private AnnotationConfig annotation = new AnnotationConfig();
 
-    // ======================== Getter / Setter ========================
+    /**
+     * 创建默认策略集合。
+     *
+     * @return 包含默认策略的可变映射
+     */
+    private static Map<String, Policy> defaultPolicies() {
+        Map<String, Policy> defaults = new LinkedHashMap<>();
+        defaults.put("default", new Policy());
+        return defaults;
+    }
 
+    /**
+     * 判断模块是否启用。
+     *
+     * @return 启用时返回 {@code true}
+     */
     public boolean isEnabled() {
         return enabled;
     }
 
+    /**
+     * 设置模块开关。
+     *
+     * @param enabled 是否启用
+     */
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
     }
 
-    public String getDefaultAlgorithm() {
-        return defaultAlgorithm;
+    /**
+     * 获取默认策略名称。
+     *
+     * @return 默认策略名称
+     */
+    public String getDefaultPolicy() {
+        return defaultPolicy;
     }
 
-    public void setDefaultAlgorithm(String defaultAlgorithm) {
-        this.defaultAlgorithm = defaultAlgorithm;
+    /**
+     * 设置默认策略名称。
+     *
+     * @param defaultPolicy 默认策略名称
+     */
+    public void setDefaultPolicy(String defaultPolicy) {
+        this.defaultPolicy = defaultPolicy;
     }
 
-    public TokenBucket getTokenBucket() {
-        return tokenBucket;
+    /**
+     * 判断是否启用本地静态规则。
+     *
+     * @return 启用时返回 {@code true}
+     */
+    public boolean isLocalRulesEnabled() {
+        return localRulesEnabled;
     }
 
-    public void setTokenBucket(TokenBucket tokenBucket) {
-        this.tokenBucket = tokenBucket;
+    /**
+     * 设置是否启用本地静态规则。
+     *
+     * @param localRulesEnabled 是否启用本地静态规则
+     */
+    public void setLocalRulesEnabled(boolean localRulesEnabled) {
+        this.localRulesEnabled = localRulesEnabled;
     }
 
-    public SlidingWindow getSlidingWindow() {
-        return slidingWindow;
+    /**
+     * 获取命名策略。
+     *
+     * @return 可变的命名策略映射
+     */
+    public Map<String, Policy> getPolicies() {
+        return policies;
     }
 
-    public void setSlidingWindow(SlidingWindow slidingWindow) {
-        this.slidingWindow = slidingWindow;
+    /**
+     * 设置命名策略。
+     *
+     * @param policies 命名策略映射
+     */
+    public void setPolicies(Map<String, Policy> policies) {
+        this.policies = policies;
     }
 
-    public CircuitBreaker getCircuitBreaker() {
-        return circuitBreaker;
-    }
-
-    public void setCircuitBreaker(CircuitBreaker circuitBreaker) {
-        this.circuitBreaker = circuitBreaker;
-    }
-
+    /**
+     * 获取声明式限流配置。
+     *
+     * @return 声明式限流配置
+     */
     public AnnotationConfig getAnnotation() {
         return annotation;
     }
 
+    /**
+     * 设置声明式限流配置。
+     *
+     * @param annotation 声明式限流配置
+     */
     public void setAnnotation(AnnotationConfig annotation) {
         this.annotation = annotation;
     }
 
     /**
-     * Controls annotation-driven rate limiting such as {@code @RateLimit}.
+     * 单个命名限流策略。
+     */
+    public static class Policy {
+
+        /**
+         * 每秒允许通过的许可数量。
+         */
+        private double threshold = 10D;
+
+        /**
+         * 获取每秒许可阈值。
+         *
+         * @return 每秒许可阈值
+         */
+        public double getThreshold() {
+            return threshold;
+        }
+
+        /**
+         * 设置每秒许可阈值。
+         *
+         * @param threshold 每秒许可阈值
+         */
+        public void setThreshold(double threshold) {
+            this.threshold = threshold;
+        }
+    }
+
+    /**
+     * 声明式限流开关。
      */
     public static class AnnotationConfig {
 
+        /**
+         * 是否启用 {@code @RateLimit} 切面。
+         */
         private boolean enabled = true;
 
+        /**
+         * 判断声明式限流是否启用。
+         *
+         * @return 启用时返回 {@code true}
+         */
         public boolean isEnabled() {
             return enabled;
         }
 
+        /**
+         * 设置声明式限流开关。
+         *
+         * @param enabled 是否启用
+         */
         public void setEnabled(boolean enabled) {
             this.enabled = enabled;
-        }
-    }
-
-    // ======================== 内部类：令牌桶配置 ========================
-
-    /**
-     * 令牌桶（Token Bucket）算法相关配置。
-     *
-     * <p>令牌桶算法以恒定速率向桶中放入令牌，请求到达时需从桶中获取令牌。
-     * 如果桶为空则拒绝请求。该算法允许一定程度的突发流量（桶容量即为最大突发量）。</p>
-     *
-     * <h3>核心参数</h3>
-     * <ul>
-     *   <li><b>capacity</b>：桶的最大容量，决定允许的最大突发流量</li>
-     *   <li><b>refillRate</b>：每秒补充的令牌数，决定稳态 QPS</li>
-     * </ul>
-     */
-    public static class TokenBucket {
-
-        /** 桶的最大容量（最大令牌数），默认 {@code 100} */
-        private long capacity = 100;
-
-        /** 每秒补充的令牌数（稳态 QPS），默认 {@code 10} */
-        private double refillRate = 10;
-
-        // ======================== Getter / Setter ========================
-
-        public long getCapacity() {
-            return capacity;
-        }
-
-        public void setCapacity(long capacity) {
-            this.capacity = capacity;
-        }
-
-        public double getRefillRate() {
-            return refillRate;
-        }
-
-        public void setRefillRate(double refillRate) {
-            this.refillRate = refillRate;
-        }
-    }
-
-    // ======================== 内部类：滑动窗口配置 ========================
-
-    /**
-     * 滑动窗口（Sliding Window）算法相关配置。
-     *
-     * <p>滑动窗口算法将时间划分为细粒度的时间片，统计当前窗口内的请求总数。
-     * 与固定窗口不同，滑动窗口能更平滑地控制流量，避免窗口边界的突发问题。</p>
-     *
-     * <h3>核心参数</h3>
-     * <ul>
-     *   <li><b>windowSize</b>：窗口时间长度（秒），统计此范围内的请求</li>
-     *   <li><b>maxPermits</b>：窗口内允许的最大请求数</li>
-     * </ul>
-     */
-    public static class SlidingWindow {
-
-        /** 窗口时间长度（秒），默认 {@code 60} */
-        private long windowSize = 60;
-
-        /** 窗口内允许的最大请求数，默认 {@code 100} */
-        private long maxPermits = 100;
-
-        // ======================== Getter / Setter ========================
-
-        public long getWindowSize() {
-            return windowSize;
-        }
-
-        public void setWindowSize(long windowSize) {
-            this.windowSize = windowSize;
-        }
-
-        public long getMaxPermits() {
-            return maxPermits;
-        }
-
-        public void setMaxPermits(long maxPermits) {
-            this.maxPermits = maxPermits;
-        }
-    }
-
-    // ======================== 内部类：熔断器配置 ========================
-
-    /**
-     * 熔断器（Circuit Breaker）相关配置。
-     *
-     * <p>熔断器用于保护下游服务，当失败率达到阈值时自动熔断（快速失败），
-     * 经过恢复超时后进入半开状态试探，成功后恢复关闭。</p>
-     *
-     * <h3>状态流转</h3>
-     * <ol>
-     *   <li><b>CLOSED（关闭）</b>：正常工作，统计失败率</li>
-     *   <li><b>OPEN（开启）</b>：失败率超过阈值，拒绝所有请求</li>
-     *   <li><b>HALF_OPEN（半开）</b>：恢复超时后，允许少量请求探测</li>
-     *   <li>半开成功 → CLOSED；半开失败 → OPEN</li>
-     * </ol>
-     *
-     * <h3>核心参数</h3>
-     * <ul>
-     *   <li><b>failureThreshold</b>：失败率阈值（0~1），超过此值触发熔断</li>
-     *   <li><b>windowSize</b>：统计窗口大小（秒），在此窗口内计算失败率</li>
-     *   <li><b>recoveryTimeout</b>：熔断恢复超时（秒），超过后可进入半开</li>
-     *   <li><b>halfOpenMaxRequests</b>：半开状态下允许的最大试探请求数</li>
-     * </ul>
-     */
-    public static class CircuitBreaker {
-
-        /** 失败率阈值（0~1），超过此值触发熔断，默认 {@code 0.5} */
-        private double failureThreshold = 0.5;
-
-        /** 统计窗口大小（秒），默认 {@code 60} */
-        private long windowSize = 60;
-
-        /** 熔断恢复超时（秒），超过此时间后进入半开状态，默认 {@code 60} */
-        private long recoveryTimeout = 60;
-
-        /** 半开状态下允许的最大试探请求数，默认 {@code 3} */
-        private int halfOpenMaxRequests = 3;
-
-        // ======================== Getter / Setter ========================
-
-        public double getFailureThreshold() {
-            return failureThreshold;
-        }
-
-        public void setFailureThreshold(double failureThreshold) {
-            this.failureThreshold = failureThreshold;
-        }
-
-        public long getWindowSize() {
-            return windowSize;
-        }
-
-        public void setWindowSize(long windowSize) {
-            this.windowSize = windowSize;
-        }
-
-        public long getRecoveryTimeout() {
-            return recoveryTimeout;
-        }
-
-        public void setRecoveryTimeout(long recoveryTimeout) {
-            this.recoveryTimeout = recoveryTimeout;
-        }
-
-        public int getHalfOpenMaxRequests() {
-            return halfOpenMaxRequests;
-        }
-
-        public void setHalfOpenMaxRequests(int halfOpenMaxRequests) {
-            this.halfOpenMaxRequests = halfOpenMaxRequests;
         }
     }
 }

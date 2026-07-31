@@ -53,10 +53,12 @@ letool:
         thread-name-prefix: sample-task-
   rate-limiter:
     enabled: true
-    default-algorithm: token-bucket
-    token-bucket:
-      capacity: 100
-      refill-rate: 10
+    default-policy: hello-api
+    policies:
+      hello-api:
+        threshold: 5
+      user-api:
+        threshold: 3
 
 logging:
   level:

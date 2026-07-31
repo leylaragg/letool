@@ -1,62 +1,38 @@
 package com.github.leyland.letool.ratelimiter.exception;
 
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
+import com.github.leyland.letool.exception.core.BusinessException;
+import com.github.leyland.letool.exception.core.SystemException;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
-@DisplayName("RateLimitException 限流异常测试")
+/**
+ * 限流模块统一异常测试。
+ */
 class RateLimitExceptionTest {
 
-    @Nested
-    @DisplayName("构造函数测试")
-    class ConstructorTests {
+    /**
+     * 正常限流拒绝应属于可由调用方处理的业务异常。
+     */
+    @Test
+    void shouldRepresentRejectionAsBusinessException() {
+        RateLimitException exception = RateLimitException.rejected("send-sms");
 
-        @Test
-        @DisplayName("(message) 构造函数应正确设置消息")
-        void messageConstructorShouldSetMessage() {
-            RateLimitException ex = new RateLimitException("请求被限流");
-
-            assertEquals("请求被限流", ex.getMessage());
-            assertNull(ex.getCause());
-        }
-
-        @Test
-        @DisplayName("(message, cause) 构造函数应设置消息和原因")
-        void messageCauseConstructorShouldSetBoth() {
-            Throwable cause = new RuntimeException("原始错误");
-            RateLimitException ex = new RateLimitException("限流失败", cause);
-
-            assertEquals("限流失败", ex.getMessage());
-            assertSame(cause, ex.getCause());
-        }
+        assertThat(exception).isInstanceOf(BusinessException.class);
+        assertThat(exception.getCode()).isEqualTo("RATE_LIMIT_001");
+        assertThat(exception.getFallbackMessage()).contains("send-sms");
     }
 
-    @Nested
-    @DisplayName("继承关系测试")
-    class InheritanceTests {
+    /**
+     * 配置问题应属于需要排查的系统异常。
+     */
+    @Test
+    void shouldRepresentConfigurationFailureAsSystemException() {
+        RateLimitConfigurationException exception =
+                RateLimitConfigurationException.invalid("policies.send-sms.threshold");
 
-        @Test
-        @DisplayName("应继承 RuntimeException")
-        void shouldExtendRuntimeException() {
-            RateLimitException ex = new RateLimitException("test");
-            assertTrue(ex instanceof RuntimeException);
-        }
-    }
-
-    @Nested
-    @DisplayName("独立实例测试")
-    class IndependenceTests {
-
-        @Test
-        @DisplayName("不同异常实例消息应独立")
-        void differentInstancesShouldHaveIndependentMessages() {
-            RateLimitException ex1 = new RateLimitException("msg1");
-            RateLimitException ex2 = new RateLimitException("msg2");
-
-            assertEquals("msg1", ex1.getMessage());
-            assertEquals("msg2", ex2.getMessage());
-        }
+        assertThat(exception).isInstanceOf(SystemException.class);
+        assertThat(exception.getCode()).isEqualTo("RATE_LIMIT_002");
+        assertThat(exception.getFallbackMessage()).contains("policies.send-sms.threshold");
     }
 }

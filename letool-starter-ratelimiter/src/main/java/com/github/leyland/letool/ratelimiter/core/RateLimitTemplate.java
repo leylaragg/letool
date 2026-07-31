@@ -1,258 +1,321 @@
 package com.github.leyland.letool.ratelimiter.core;
 
 import com.github.leyland.letool.ratelimiter.config.RateLimiterProperties;
+import com.github.leyland.letool.ratelimiter.exception.RateLimitConfigurationException;
 import com.github.leyland.letool.ratelimiter.exception.RateLimitException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
+import java.util.LinkedHashSet;
+import java.util.Objects;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /**
- * 限流操作模板 —— 提供函数式编程风格的限流 API。
+ * 面向业务代码的编程式限流模板。
  *
- * <p>这是用户使用限流功能的<b>推荐入口</b>。相较于直接使用 {@link RateLimiter}
- * 接口手动管理许可获取和释放，本模板自动处理以下细节：</p>
- *
- * <ul>
- *   <li><b>自动获取许可</b>：根据配置的算法自动选择合适的限流器</li>
- *   <li><b>统一异常处理</b>：限流拒绝时抛出统一的 {@link RateLimitException}</li>
- *   <li><b>便捷 API</b>：提供多个重载方法，支持 Lambda 表达式、降级回退等</li>
- *   <li><b>Builder 模式</b>：支持链式调用构建复杂限流策略</li>
- * </ul>
- *
- * <h3>使用示例</h3>
- *
- * <p><b>1. 简单许可检查：</b></p>
- * <pre>{@code
- * if (rateLimitTemplate.tryAcquire("sms:138xxxx")) {
- *     sendSms();
- * } else {
- *     throw new RateLimitException("发送频率过高");
- * }
- * }</pre>
- *
- * <p><b>2. 带降级的执行：</b></p>
- * <pre>{@code
- * String result = rateLimitTemplate.executeOrFallback("order:123",
- *     () -> createOrder(),           // 正常执行
- *     () -> "系统繁忙，请稍后重试"    // 限流拒绝时的降级
- * );
- * }</pre>
- *
- * <p><b>3. Builder 模式：</b></p>
- * <pre>{@code
- * boolean allowed = rateLimitTemplate.builder()
- *         .key("sms:138xxxx")
- *         .permits(1)
- *         .tryAcquire();
- * }</pre>
+ * <p>该模板隐藏 Sentinel 资源命名与阻断异常等实现细节，同时保留
+ * {@link RateLimiter} 扩展接口，便于业务项目替换底层实现。</p>
  *
  * @author leyland
  * @since 2.0.0
- * @see RateLimiter
- * @see RateLimitResult
- * @see RateLimitException
  */
 public class RateLimitTemplate {
 
-    // ======================== 日志 ========================
-
-    private static final Logger log = LoggerFactory.getLogger(RateLimitTemplate.class);
-
-    // ======================== 依赖 ========================
-
-    /** 底层限流器实现 */
+    /**
+     * 底层限流器。
+     */
     private final RateLimiter rateLimiter;
 
-    /** 限流配置属性 */
-    private final RateLimiterProperties properties;
-
-    // ======================== 构造方法 ========================
+    /**
+     * 默认策略名称。
+     */
+    private final String defaultPolicy;
 
     /**
-     * 构造限流操作模板。
+     * 本地规则模式下允许使用的策略名称；外部规则模式下为空集合。
+     */
+    private final Set<String> localPolicies;
+
+    /**
+     * 创建限流模板。
      *
-     * @param rateLimiter 限流器实例（不可为 null）
-     * @param properties  限流配置属性（不可为 null）
+     * @param rateLimiter 底层限流器
+     * @param properties  限流配置
      */
     public RateLimitTemplate(RateLimiter rateLimiter, RateLimiterProperties properties) {
-        this.rateLimiter = rateLimiter;
-        this.properties = properties;
+        this.rateLimiter = Objects.requireNonNull(rateLimiter, "rateLimiter must not be null");
+        Objects.requireNonNull(properties, "properties must not be null");
+        this.defaultPolicy = requirePolicy(properties.getDefaultPolicy());
+        this.localPolicies = properties.isLocalRulesEnabled()
+                ? copyLocalPolicies(properties)
+                : Set.of();
     }
 
-    // ======================== 许可检查：无回退 ========================
-
     /**
-     * 尝试获取 1 个许可。
+     * 使用默认策略和动态 key 尝试获取一个许可。
      *
-     * <p>这是最简洁的调用方式，适用于大多数单次请求限流场景。</p>
-     *
-     * @param key 限流的唯一标识
-     * @return {@code true} 允许通过，{@code false} 被限流
+     * @param key 动态业务 key；为空时执行默认策略的全局限流
+     * @return 允许通过时返回 {@code true}
      */
     public boolean tryAcquire(String key) {
-        return tryAcquire(key, 1);
+        return tryAcquire(defaultPolicy, key, 1);
     }
 
     /**
-     * 尝试获取指定数量的许可。
+     * 使用默认策略和动态 key 尝试获取指定数量的许可。
      *
-     * <p>调用者应自行处理被拒绝的情况，如抛异常、返回错误码、或等待重试。</p>
-     *
-     * @param key     限流的唯一标识
-     * @param permits 请求许可数
-     * @return {@code true} 允许通过，{@code false} 被限流
+     * @param key     动态业务 key；为空时执行默认策略的全局限流
+     * @param permits 许可数量
+     * @return 允许通过时返回 {@code true}
      */
     public boolean tryAcquire(String key, int permits) {
-        RateLimitResult result = rateLimiter.tryAcquire(key, permits);
-        if (!result.isAllowed()) {
-            log.warn("Rate limit rejected: key={}, permits={}, waitMs={}",
-                    key, permits, result.getWaitTimeMs());
-        }
-        return result.isAllowed();
+        return tryAcquire(defaultPolicy, key, permits);
     }
 
     /**
-     * 获取详细的限流结果（包含可用许可数和等待时间）。
+     * 使用命名策略尝试获取指定数量的许可。
      *
-     * @param key     限流的唯一标识
-     * @param permits 请求许可数
-     * @return 限流结果，包含是否允许、可用许可数、预估等待时间
+     * @param policy  策略名称；为空白时使用默认策略
+     * @param key     动态业务 key；为空时执行全局限流
+     * @param permits 许可数量
+     * @return 允许通过时返回 {@code true}
+     */
+    public boolean tryAcquire(String policy, String key, int permits) {
+        return tryAcquireWithResult(policy, key, permits).isAllowed();
+    }
+
+    /**
+     * 使用默认策略获取详细限流结果。
+     *
+     * @param key     动态业务 key；为空时执行全局限流
+     * @param permits 许可数量
+     * @return 详细限流结果
      */
     public RateLimitResult tryAcquireWithResult(String key, int permits) {
-        return rateLimiter.tryAcquire(key, permits);
+        return tryAcquireWithResult(defaultPolicy, key, permits);
     }
 
-    // ======================== 许可检查：带回退（Supplier） ========================
+    /**
+     * 使用命名策略获取详细限流结果。
+     *
+     * @param policy  策略名称；为空白时使用默认策略
+     * @param key     动态业务 key；为空时执行全局限流
+     * @param permits 许可数量
+     * @return 详细限流结果
+     */
+    public RateLimitResult tryAcquireWithResult(String policy, String key, int permits) {
+        String actualPolicy = resolvePolicy(policy);
+        return rateLimiter.tryAcquire(actualPolicy, key, permits);
+    }
 
     /**
-     * 执行带降级回退的操作 —— 有返回值版本。
+     * 使用默认策略执行带回退逻辑的操作。
      *
-     * <p>如果获取许可成功，执行 {@code action} 并返回其结果；
-     * 否则执行 {@code fallback} 并返回其结果。不会抛出异常。</p>
-     *
-     * <p>这是<b>推荐</b>的使用方式，因为它强制调用方考虑被限流时的降级行为。</p>
-     *
+     * @param key      动态业务 key
+     * @param action   正常业务逻辑
+     * @param fallback 限流回退逻辑
      * @param <T>      返回值类型
-     * @param key      限流的唯一标识
-     * @param action   正常业务逻辑（获取许可成功时执行）
-     * @param fallback 降级回退逻辑（被限流时执行）
-     * @return 正常执行结果或降级回退结果
+     * @return 正常结果或回退结果
      */
     public <T> T executeOrFallback(String key, Supplier<T> action, Supplier<T> fallback) {
-        return executeOrFallback(key, 1, action, fallback);
+        return executeOrFallback(defaultPolicy, key, 1, action, fallback);
     }
 
     /**
-     * 执行带降级回退的操作 —— 有返回值版本（指定许可数）。
+     * 使用命名策略执行带回退逻辑的操作。
      *
-     * @param <T>      返回值类型
-     * @param key      限流的唯一标识
-     * @param permits  请求许可数
+     * @param policy   策略名称
+     * @param key      动态业务 key
      * @param action   正常业务逻辑
-     * @param fallback 降级回退逻辑
-     * @return 正常执行结果或降级回退结果
+     * @param fallback 限流回退逻辑
+     * @param <T>      返回值类型
+     * @return 正常结果或回退结果
      */
-    public <T> T executeOrFallback(String key, int permits, Supplier<T> action, Supplier<T> fallback) {
-        if (tryAcquire(key, permits)) {
+    public <T> T executeOrFallback(String policy,
+                                   String key,
+                                   Supplier<T> action,
+                                   Supplier<T> fallback) {
+        return executeOrFallback(policy, key, 1, action, fallback);
+    }
+
+    /**
+     * 使用命名策略和指定许可数执行带回退逻辑的操作。
+     *
+     * @param policy   策略名称
+     * @param key      动态业务 key
+     * @param permits  许可数量
+     * @param action   正常业务逻辑
+     * @param fallback 限流回退逻辑
+     * @param <T>      返回值类型
+     * @return 正常结果或回退结果
+     */
+    public <T> T executeOrFallback(String policy,
+                                   String key,
+                                   int permits,
+                                   Supplier<T> action,
+                                   Supplier<T> fallback) {
+        Objects.requireNonNull(action, "action must not be null");
+        Objects.requireNonNull(fallback, "fallback must not be null");
+        if (tryAcquire(policy, key, permits)) {
             return action.get();
         }
-        log.warn("Rate limit triggered, executing fallback: key={}, permits={}", key, permits);
         return fallback.get();
     }
 
     /**
-     * 执行带降级回退的操作 —— 无返回值版本。
+     * 使用默认策略执行操作，被拒绝时抛出统一异常。
      *
-     * @param key      限流的唯一标识
-     * @param action   正常业务逻辑
-     * @param fallback 降级回退逻辑
-     */
-    public void executeOrFallback(String key, Runnable action, Runnable fallback) {
-        if (tryAcquire(key, 1)) {
-            action.run();
-        } else {
-            log.warn("Rate limit triggered, executing fallback: key={}", key);
-            fallback.run();
-        }
-    }
-
-    // ======================== 许可检查：抛异常 ========================
-
-    /**
-     * 执行操作，被限流时抛出 {@link RateLimitException}。
-     *
-     * <p>适用于无法提供降级逻辑、希望由上层统一处理限流异常的场景。</p>
-     *
+     * @param key      动态业务 key
+     * @param supplier 正常业务逻辑
      * @param <T>      返回值类型
-     * @param key      限流的唯一标识
-     * @param supplier 业务逻辑
-     * @return 业务逻辑的返回值
-     * @throws RateLimitException 当被限流拒绝时抛出
+     * @return 正常业务结果
+     * @throws RateLimitException 请求被拒绝时抛出
      */
     public <T> T executeOrThrow(String key, Supplier<T> supplier) {
-        return executeOrThrow(key, 1, supplier);
+        return executeOrThrow(defaultPolicy, key, 1, supplier);
     }
 
     /**
-     * 执行操作，被限流时抛出 {@link RateLimitException}（指定许可数）。
+     * 使用命名策略执行操作，被拒绝时抛出统一异常。
      *
+     * @param policy   策略名称
+     * @param key      动态业务 key
+     * @param supplier 正常业务逻辑
      * @param <T>      返回值类型
-     * @param key      限流的唯一标识
-     * @param permits  请求许可数
-     * @param supplier 业务逻辑
-     * @return 业务逻辑的返回值
-     * @throws RateLimitException 当被限流拒绝时抛出
+     * @return 正常业务结果
+     * @throws RateLimitException 请求被拒绝时抛出
      */
-    public <T> T executeOrThrow(String key, int permits, Supplier<T> supplier) {
-        if (!tryAcquire(key, permits)) {
-            throw new RateLimitException("Rate limit exceeded: key=" + key + ", permits=" + permits);
+    public <T> T executeOrThrow(String policy, String key, Supplier<T> supplier) {
+        return executeOrThrow(policy, key, 1, supplier);
+    }
+
+    /**
+     * 使用命名策略和指定许可数执行操作，被拒绝时抛出统一异常。
+     *
+     * @param policy   策略名称
+     * @param key      动态业务 key
+     * @param permits  许可数量
+     * @param supplier 正常业务逻辑
+     * @param <T>      返回值类型
+     * @return 正常业务结果
+     * @throws RateLimitException 请求被拒绝时抛出
+     */
+    public <T> T executeOrThrow(String policy,
+                                String key,
+                                int permits,
+                                Supplier<T> supplier) {
+        Objects.requireNonNull(supplier, "supplier must not be null");
+        String actualPolicy = resolvePolicy(policy);
+        if (!tryAcquire(actualPolicy, key, permits)) {
+            throw RateLimitException.rejected(actualPolicy);
         }
         return supplier.get();
     }
 
-    // ======================== Builder ========================
-
     /**
-     * 创建限流操作的 Builder 实例，支持链式调用。
+     * 创建链式限流构建器。
      *
-     * <p>Builder 模式适合需要动态配置多个参数的场景，例如：</p>
-     * <pre>{@code
-     * rateLimitTemplate.builder()
-     *         .key("sms:138xxxx")
-     *         .permits(1)
-     *         .execute(() -> sendSms());
-     * }</pre>
-     *
-     * @return 新的 Builder 实例
+     * @return 新的限流构建器
      */
     public Builder builder() {
         return new Builder();
     }
 
-    // ======================== 内部类：Builder ========================
+    /**
+     * 获取当前默认策略名称。
+     *
+     * @return 默认策略名称
+     */
+    public String getDefaultPolicy() {
+        return defaultPolicy;
+    }
 
     /**
-     * 限流操作的 Builder。
+     * 解析实际使用的策略名称。
      *
-     * <p>提供链式 API 构建限流参数并执行。使用示例：</p>
-     * <pre>{@code
-     * rateLimitTemplate.builder()
-     *         .key("sms:138xxxx")
-     *         .permits(1)
-     *         .tryAcquire();
-     * }</pre>
+     * @param policy 调用方指定的策略名称
+     * @return 非空策略名称
      */
-    public class Builder {
+    private String resolvePolicy(String policy) {
+        String actualPolicy = policy == null || policy.isBlank()
+                ? defaultPolicy
+                : requirePolicy(policy);
+        if (!localPolicies.isEmpty() && !localPolicies.contains(actualPolicy)) {
+            throw RateLimitConfigurationException.invalid(
+                    "policies." + actualPolicy);
+        }
+        return actualPolicy;
+    }
 
+    /**
+     * 校验策略名称。
+     *
+     * @param policy 策略名称
+     * @return 已校验策略名称
+     */
+    private String requirePolicy(String policy) {
+        if (policy == null || policy.isBlank()) {
+            throw RateLimitConfigurationException.invalid("default-policy");
+        }
+        return policy;
+    }
+
+    /**
+     * 复制本地策略名称并校验默认策略。
+     *
+     * @param properties 限流配置
+     * @return 不可变策略名称集合
+     */
+    private Set<String> copyLocalPolicies(RateLimiterProperties properties) {
+        if (properties.getPolicies() == null
+                || !properties.getPolicies().containsKey(defaultPolicy)) {
+            throw RateLimitConfigurationException.invalid("default-policy");
+        }
+        Set<String> policies = new LinkedHashSet<>();
+        for (String policy : properties.getPolicies().keySet()) {
+            if (policy == null || policy.isBlank()) {
+                throw RateLimitConfigurationException.invalid("policies");
+            }
+            policies.add(policy);
+        }
+        return Set.copyOf(policies);
+    }
+
+    /**
+     * 限流操作链式构建器。
+     */
+    public final class Builder {
+
+        /**
+         * 策略名称，默认使用全局默认策略。
+         */
+        private String policy = defaultPolicy;
+
+        /**
+         * 动态业务 key。
+         */
         private String key;
+
+        /**
+         * 本次请求消耗的许可数。
+         */
         private int permits = 1;
 
         /**
-         * 设置限流的唯一标识。
+         * 设置策略名称。
          *
-         * @param key 限流 key
-         * @return 当前 Builder 实例
+         * @param policy 策略名称
+         * @return 当前构建器
+         */
+        public Builder policy(String policy) {
+            this.policy = policy;
+            return this;
+        }
+
+        /**
+         * 设置动态业务 key。
+         *
+         * @param key 动态业务 key
+         * @return 当前构建器
          */
         public Builder key(String key) {
             this.key = key;
@@ -260,10 +323,10 @@ public class RateLimitTemplate {
         }
 
         /**
-         * 设置请求许可数（默认 1）。
+         * 设置本次请求消耗的许可数。
          *
-         * @param permits 许可数
-         * @return 当前 Builder 实例
+         * @param permits 许可数量
+         * @return 当前构建器
          */
         public Builder permits(int permits) {
             this.permits = permits;
@@ -273,51 +336,35 @@ public class RateLimitTemplate {
         /**
          * 尝试获取许可。
          *
-         * @return {@code true} 允许通过，{@code false} 被限流
-         * @throws IllegalStateException 如果未设置 key
+         * @return 允许通过时返回 {@code true}
          */
         public boolean tryAcquire() {
-            validateKey();
-            return RateLimitTemplate.this.tryAcquire(key, permits);
+            return RateLimitTemplate.this.tryAcquire(policy, key, permits);
         }
 
         /**
-         * 执行操作，被限流时执行降级回退。
+         * 执行带回退逻辑的操作。
          *
-         * @param <T>      返回值类型
          * @param action   正常业务逻辑
-         * @param fallback 降级回退逻辑
-         * @return 正常执行结果或降级回退结果
-         * @throws IllegalStateException 如果未设置 key
+         * @param fallback 限流回退逻辑
+         * @param <T>      返回值类型
+         * @return 正常结果或回退结果
          */
         public <T> T executeOrFallback(Supplier<T> action, Supplier<T> fallback) {
-            validateKey();
-            return RateLimitTemplate.this.executeOrFallback(key, permits, action, fallback);
+            return RateLimitTemplate.this.executeOrFallback(
+                    policy, key, permits, action, fallback);
         }
 
         /**
-         * 执行操作，被限流时抛出异常。
+         * 执行业务操作，被拒绝时抛出统一异常。
          *
+         * @param supplier 正常业务逻辑
          * @param <T>      返回值类型
-         * @param supplier 业务逻辑
-         * @return 业务逻辑的返回值
-         * @throws RateLimitException      当被限流拒绝时抛出
-         * @throws IllegalStateException  如果未设置 key
+         * @return 正常业务结果
          */
         public <T> T executeOrThrow(Supplier<T> supplier) {
-            validateKey();
-            return RateLimitTemplate.this.executeOrThrow(key, permits, supplier);
-        }
-
-        /**
-         * 校验 key 是否已设置。
-         *
-         * @throws IllegalStateException 如果 key 为 null
-         */
-        private void validateKey() {
-            if (key == null) {
-                throw new IllegalStateException("Rate limit key must not be null. Call .key() before executing.");
-            }
+            return RateLimitTemplate.this.executeOrThrow(
+                    policy, key, permits, supplier);
         }
     }
 }

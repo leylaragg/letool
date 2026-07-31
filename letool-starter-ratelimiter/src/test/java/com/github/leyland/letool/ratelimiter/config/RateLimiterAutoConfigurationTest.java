@@ -1,10 +1,10 @@
 package com.github.leyland.letool.ratelimiter.config;
 
-import com.github.leyland.letool.ratelimiter.algorithm.SlidingWindowLimiter;
-import com.github.leyland.letool.ratelimiter.algorithm.TokenBucketLimiter;
 import com.github.leyland.letool.ratelimiter.aspect.RateLimitAspect;
-import com.github.leyland.letool.ratelimiter.circuit.DefaultCircuitBreaker;
 import com.github.leyland.letool.ratelimiter.core.RateLimitTemplate;
+import com.github.leyland.letool.ratelimiter.core.RateLimiter;
+import com.github.leyland.letool.ratelimiter.sentinel.SentinelRateLimiter;
+import com.github.leyland.letool.ratelimiter.sentinel.SentinelRuleRegistrar;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.FilteredClassLoader;
@@ -15,146 +15,120 @@ import org.springframework.context.annotation.Configuration;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * {@link RateLimiterAutoConfiguration} 的自动装配契约测试。
- *
- * <p>重点覆盖业务项目自定义限流基础设施 Bean 时，ratelimiter starter 是否正确退让。</p>
+ * {@link RateLimiterAutoConfiguration} 自动装配契约测试。
  */
 class RateLimiterAutoConfigurationTest {
 
+    /**
+     * 自动配置测试运行器。
+     */
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(RateLimiterAutoConfiguration.class))
             .withPropertyValues("spring.main.allow-bean-definition-overriding=false");
 
     /**
-     * 默认启用时应创建编程式限流、熔断和注解切面基础设施。
+     * 默认启用时应装配 Sentinel 限流基础设施。
      */
     @Test
-    void shouldCreateDefaultRateLimiterInfrastructureBeans() {
+    void shouldCreateSentinelRateLimiterInfrastructure() {
         contextRunner.run(context -> {
             assertThat(context).hasSingleBean(RateLimiterProperties.class);
-            assertThat(context).hasSingleBean(TokenBucketLimiter.class);
-            assertThat(context).hasSingleBean(SlidingWindowLimiter.class);
+            assertThat(context).hasSingleBean(SentinelRuleRegistrar.class);
+            assertThat(context).hasSingleBean(SentinelRateLimiter.class);
+            assertThat(context).hasSingleBean(RateLimiter.class);
             assertThat(context).hasSingleBean(RateLimitTemplate.class);
-            assertThat(context).hasSingleBean(DefaultCircuitBreaker.class);
             assertThat(context).hasSingleBean(RateLimitAspect.class);
         });
     }
 
     /**
-     * 总开关关闭时，ratelimiter starter 不应创建任何限流基础设施。
+     * 总开关关闭时不应装配任何限流基础设施。
      */
     @Test
-    void shouldDisableRateLimiterAutoConfiguration() {
+    void shouldDisableAllRateLimiterInfrastructure() {
         contextRunner
                 .withPropertyValues("letool.rate-limiter.enabled=false")
                 .run(context -> {
                     assertThat(context).doesNotHaveBean(RateLimiterProperties.class);
+                    assertThat(context).doesNotHaveBean(RateLimiter.class);
                     assertThat(context).doesNotHaveBean(RateLimitTemplate.class);
                     assertThat(context).doesNotHaveBean(RateLimitAspect.class);
                 });
     }
 
     /**
-     * 没有 AspectJ 时，应保留编程式限流 API，并跳过注解切面。
+     * 关闭本地规则管理时应保留调用 API，并允许外部动态数据源接管规则。
      */
     @Test
-    void shouldStartWithoutRateLimitAspectWhenAspectJClasspathIsMissing() {
+    void shouldAllowExternalSentinelRuleManagement() {
+        contextRunner
+                .withPropertyValues("letool.rate-limiter.local-rules-enabled=false")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(RateLimiter.class);
+                    assertThat(context).hasSingleBean(RateLimitTemplate.class);
+                    assertThat(context).doesNotHaveBean(SentinelRuleRegistrar.class);
+                });
+    }
+
+    /**
+     * 缺少 AspectJ 时应保留编程式 API，并跳过声明式切面。
+     */
+    @Test
+    void shouldKeepProgrammaticApiWithoutAspectJ() {
         contextRunner
                 .withClassLoader(new FilteredClassLoader("org.aspectj"))
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context).hasSingleBean(RateLimitTemplate.class);
-                    assertThat(context).hasSingleBean(DefaultCircuitBreaker.class);
                     assertThat(context).doesNotHaveBean(RateLimitAspect.class);
                 });
     }
 
     /**
-     * 限流核心不应依赖 cache/redis classpath，缺失时仍可作为纯本地算法工具使用。
+     * 用户提供自定义限流器和模板时，自动配置应主动退让。
      */
     @Test
-    void shouldStartWithoutCacheAndRedisClasspath() {
-        contextRunner
-                .withClassLoader(new FilteredClassLoader(
-                        "com.github.leyland.letool.cache",
-                        "org.springframework.data.redis"))
-                .run(context -> {
-                    assertThat(context).hasNotFailed();
-                    assertThat(context).hasSingleBean(RateLimitTemplate.class);
-                });
-    }
-
-    /**
-     * 验证用户提供限流器、模板、熔断器和切面时，自动配置不会创建重复 Bean。
-     */
-    @Test
-    void shouldBackOffWhenUserProvidesRateLimiterInfrastructureBeans() {
+    void shouldBackOffForUserProvidedInfrastructure() {
         contextRunner
                 .withUserConfiguration(UserRateLimiterConfiguration.class)
                 .run(context -> {
-                    assertThat(context).hasSingleBean(TokenBucketLimiter.class);
-                    assertThat(context).hasSingleBean(SlidingWindowLimiter.class);
+                    assertThat(context).hasSingleBean(RateLimiter.class);
                     assertThat(context).hasSingleBean(RateLimitTemplate.class);
-                    assertThat(context).hasSingleBean(DefaultCircuitBreaker.class);
-                    assertThat(context).hasSingleBean(RateLimitAspect.class);
-                    assertThat(context.getBean(TokenBucketLimiter.class))
-                            .isSameAs(context.getBean("tokenBucketLimiter"));
-                    assertThat(context.getBean(SlidingWindowLimiter.class))
-                            .isSameAs(context.getBean("slidingWindowLimiter"));
+                    assertThat(context.getBean(RateLimiter.class))
+                            .isSameAs(context.getBean("customRateLimiter"));
                     assertThat(context.getBean(RateLimitTemplate.class))
-                            .isSameAs(context.getBean("rateLimitTemplate"));
-                    assertThat(context.getBean(DefaultCircuitBreaker.class))
-                            .isSameAs(context.getBean("defaultCircuitBreaker"));
-                    assertThat(context.getBean(RateLimitAspect.class))
-                            .isSameAs(context.getBean("rateLimitAspect"));
+                            .isSameAs(context.getBean("customRateLimitTemplate"));
                 });
     }
 
     /**
-     * Disabling annotation support should keep the programmatic rate-limit API available.
+     * 用户自定义限流基础设施。
      */
-    @Test
-    void shouldDisableRateLimitAspectWhenAnnotationSupportIsDisabled() {
-        contextRunner
-                .withPropertyValues("letool.rate-limiter.annotation.enabled=false")
-                .run(context -> {
-                    assertThat(context).hasSingleBean(TokenBucketLimiter.class);
-                    assertThat(context).hasSingleBean(SlidingWindowLimiter.class);
-                    assertThat(context).hasSingleBean(RateLimitTemplate.class);
-                    assertThat(context).hasSingleBean(DefaultCircuitBreaker.class);
-                    assertThat(context).doesNotHaveBean(RateLimitAspect.class);
-                });
-    }
-
     @Configuration(proxyBeanMethods = false)
     static class UserRateLimiterConfiguration {
 
-        @Bean(destroyMethod = "shutdown")
-        TokenBucketLimiter tokenBucketLimiter() {
-            return new TokenBucketLimiter(100, 10.0);
-        }
-
-        @Bean(destroyMethod = "shutdown")
-        SlidingWindowLimiter slidingWindowLimiter() {
-            return new SlidingWindowLimiter(60, 100);
-        }
-
+        /**
+         * 创建始终放行的测试限流器。
+         *
+         * @return 自定义限流器
+         */
         @Bean
-        RateLimitTemplate rateLimitTemplate(TokenBucketLimiter tokenBucketLimiter,
-                                            RateLimiterProperties properties) {
-            return new RateLimitTemplate(tokenBucketLimiter, properties);
+        RateLimiter customRateLimiter() {
+            return (policy, key, permits) ->
+                    com.github.leyland.letool.ratelimiter.core.RateLimitResult.allowed();
         }
 
+        /**
+         * 创建自定义限流模板。
+         *
+         * @param customRateLimiter 自定义限流器
+         * @param properties        限流配置
+         * @return 自定义限流模板
+         */
         @Bean
-        DefaultCircuitBreaker defaultCircuitBreaker() {
-            return new DefaultCircuitBreaker("user", 0.5, 60, 30, 3);
-        }
-
-        @Bean
-        RateLimitAspect rateLimitAspect(RateLimitTemplate rateLimitTemplate) {
-            RateLimitAspect.CircuitBreakerConfig config =
-                    new RateLimitAspect.CircuitBreakerConfig(0.5, 60, 30, 3);
-            return new RateLimitAspect(rateLimitTemplate, config);
+        RateLimitTemplate customRateLimitTemplate(RateLimiter customRateLimiter,
+                                                   RateLimiterProperties properties) {
+            return new RateLimitTemplate(customRateLimiter, properties);
         }
     }
 }

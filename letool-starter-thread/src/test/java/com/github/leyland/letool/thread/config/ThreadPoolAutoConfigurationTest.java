@@ -167,6 +167,9 @@ class ThreadPoolAutoConfigurationTest {
     /**
      * 验证模块执行器与 Spring Boot 默认任务执行器并存，
      * 且不会抢占 MVC 和普通 {@code @Async} 使用的基础设施 Bean。
+     *
+     * <p>Spring Boot 3.5 仅注册 {@code applicationTaskExecutor}，
+     * 不再同时注册 {@code taskExecutor} 别名。</p>
      */
     @Test
     void shouldCoexistWithBootTaskExecutionAutoConfiguration() {
@@ -177,13 +180,11 @@ class ThreadPoolAutoConfigurationTest {
                 ))
                 .run(context -> {
                     assertThat(context).hasBean("applicationTaskExecutor");
-                    assertThat(context).hasBean("taskExecutor");
+                    assertThat(context).doesNotHaveBean("taskExecutor");
                     assertThat(context).hasBean("letoolTaskExecutor");
                     assertThat(context).hasBean("letoolIoExecutor");
-                    assertThat(context.getBean("applicationTaskExecutor"))
-                            .isSameAs(context.getBean("taskExecutor"));
                     assertThat(context.getBean("letoolTaskExecutor"))
-                            .isNotSameAs(context.getBean("taskExecutor"));
+                            .isNotSameAs(context.getBean("applicationTaskExecutor"));
                 });
     }
 
