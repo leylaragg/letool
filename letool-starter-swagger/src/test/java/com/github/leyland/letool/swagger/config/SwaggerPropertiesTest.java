@@ -1,280 +1,153 @@
 package com.github.leyland.letool.swagger.config;
 
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Configuration;
 
-import java.util.List;
+import java.lang.reflect.Field;
+import java.util.Arrays;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
-@DisplayName("SwaggerProperties Swagger 配置属性测试")
+/**
+ * {@link SwaggerProperties} 最终公开配置契约测试。
+ */
+@DisplayName("Swagger 最终配置属性契约")
 class SwaggerPropertiesTest {
 
-    @Nested
-    @DisplayName("基础属性默认值测试")
-    class DefaultValueTests {
+    /** 配置属性真实绑定测试运行器。 */
+    private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
+            .withUserConfiguration(PropertiesBindingConfiguration.class);
 
-        @Test
-        @DisplayName("enabled 默认应为 true")
-        void enabledShouldDefaultToTrue() {
-            SwaggerProperties props = new SwaggerProperties();
-            assertTrue(props.isEnabled());
-        }
+    /**
+     * 验证 Spring Boot 将全部有效配置绑定到最终属性模型。
+     */
+    @Test
+    @DisplayName("Spring Boot 绑定全部有效配置")
+    void shouldBindAllEffectiveProperties() {
+        contextRunner
+                .withPropertyValues(
+                        "letool.swagger.title=绑定测试 API",
+                        "letool.swagger.description=绑定测试接口文档",
+                        "letool.swagger.version=8.1.0",
+                        "letool.swagger.contact.name=测试团队",
+                        "letool.swagger.contact.email=test@example.com",
+                        "letool.swagger.contact.url=https://example.com/team",
+                        "letool.swagger.security.bearer-token=true")
+                .run(context -> {
+                    SwaggerProperties properties = context.getBean(SwaggerProperties.class);
 
-        @Test
-        @DisplayName("title 应有默认值")
-        void titleShouldHaveDefault() {
-            SwaggerProperties props = new SwaggerProperties();
-            assertNotNull(props.getTitle());
-            assertEquals("API Documentation", props.getTitle());
-        }
-
-        @Test
-        @DisplayName("description 默认应为空字符串")
-        void descriptionShouldDefaultToEmpty() {
-            SwaggerProperties props = new SwaggerProperties();
-            assertEquals("", props.getDescription());
-        }
-
-        @Test
-        @DisplayName("version 默认应为 '1.0.0'")
-        void versionShouldDefaultTo100() {
-            SwaggerProperties props = new SwaggerProperties();
-            assertEquals("1.0.0", props.getVersion());
-        }
+                    assertThat(properties.getTitle()).isEqualTo("绑定测试 API");
+                    assertThat(properties.getDescription()).isEqualTo("绑定测试接口文档");
+                    assertThat(properties.getVersion()).isEqualTo("8.1.0");
+                    assertThat(properties.getContact().getName()).isEqualTo("测试团队");
+                    assertThat(properties.getContact().getEmail()).isEqualTo("test@example.com");
+                    assertThat(properties.getContact().getUrl()).isEqualTo("https://example.com/team");
+                    assertThat(properties.getSecurity().isBearerToken()).isTrue();
+                });
     }
 
-    @Nested
-    @DisplayName("基础属性 getter/setter 测试")
-    class BasicSetterGetterTests {
+    /**
+     * 验证基础文档信息使用稳定默认值。
+     */
+    @Test
+    @DisplayName("基础文档信息具有稳定默认值")
+    void shouldProvideDocumentDefaults() {
+        SwaggerProperties properties = new SwaggerProperties();
 
-        @Test
-        @DisplayName("enabled 应正确存取")
-        void enabledGetterSetter() {
-            SwaggerProperties props = new SwaggerProperties();
-            props.setEnabled(false);
-            assertFalse(props.isEnabled());
-        }
-
-        @Test
-        @DisplayName("title 应正确存取")
-        void titleGetterSetter() {
-            SwaggerProperties props = new SwaggerProperties();
-            props.setTitle("My API");
-            assertEquals("My API", props.getTitle());
-        }
-
-        @Test
-        @DisplayName("description 应正确存取")
-        void descriptionGetterSetter() {
-            SwaggerProperties props = new SwaggerProperties();
-            props.setDescription("RESTful API 文档");
-            assertEquals("RESTful API 文档", props.getDescription());
-        }
-
-        @Test
-        @DisplayName("version 应正确存取")
-        void versionGetterSetter() {
-            SwaggerProperties props = new SwaggerProperties();
-            props.setVersion("2.0.0");
-            assertEquals("2.0.0", props.getVersion());
-        }
+        assertThat(properties.getTitle()).isEqualTo("API Documentation");
+        assertThat(properties.getDescription()).isEmpty();
+        assertThat(properties.getVersion()).isEqualTo("1.0.0");
     }
 
-    @Nested
-    @DisplayName("Contact 联系人配置测试")
-    class ContactTests {
+    /**
+     * 验证联系人和安全配置始终提供可用的默认对象。
+     */
+    @Test
+    @DisplayName("嵌套配置默认非空")
+    void shouldProvideNonNullNestedProperties() {
+        SwaggerProperties properties = new SwaggerProperties();
 
-        @Test
-        @DisplayName("contact 默认非 null")
-        void contactShouldNotBeNull() {
-            SwaggerProperties props = new SwaggerProperties();
-            assertNotNull(props.getContact());
-        }
-
-        @Test
-        @DisplayName("name 应正确存取")
-        void nameGetterSetter() {
-            SwaggerProperties.Contact contact = new SwaggerProperties.Contact();
-            contact.setName("张三");
-            assertEquals("张三", contact.getName());
-        }
-
-        @Test
-        @DisplayName("email 应正确存取")
-        void emailGetterSetter() {
-            SwaggerProperties.Contact contact = new SwaggerProperties.Contact();
-            contact.setEmail("zhangsan@example.com");
-            assertEquals("zhangsan@example.com", contact.getEmail());
-        }
-
-        @Test
-        @DisplayName("url 应正确存取")
-        void urlGetterSetter() {
-            SwaggerProperties.Contact contact = new SwaggerProperties.Contact();
-            contact.setUrl("https://example.com");
-            assertEquals("https://example.com", contact.getUrl());
-        }
-
-        @Test
-        @DisplayName("setContact 应正确替换实例")
-        void setContactShouldReplace() {
-            SwaggerProperties props = new SwaggerProperties();
-            SwaggerProperties.Contact custom = new SwaggerProperties.Contact();
-            custom.setName("李四");
-            props.setContact(custom);
-            assertEquals("李四", props.getContact().getName());
-        }
+        assertThat(properties.getContact()).isNotNull();
+        assertThat(properties.getSecurity()).isNotNull();
     }
 
-    @Nested
-    @DisplayName("Security 安全认证配置测试")
-    class SecurityTests {
+    /**
+     * 验证 Bearer 安全方案需要由使用方显式开启。
+     */
+    @Test
+    @DisplayName("Bearer 安全方案默认关闭")
+    void shouldDisableBearerByDefault() {
+        SwaggerProperties properties = new SwaggerProperties();
 
-        @Test
-        @DisplayName("security 默认非 null")
-        void securityShouldNotBeNull() {
-            SwaggerProperties props = new SwaggerProperties();
-            assertNotNull(props.getSecurity());
-        }
-
-        @Test
-        @DisplayName("bearerToken 默认应为 true")
-        void bearerTokenShouldDefaultToTrue() {
-            SwaggerProperties.Security security = new SwaggerProperties.Security();
-            assertTrue(security.isBearerToken());
-        }
-
-        @Test
-        @DisplayName("headerName 默认应为 'Authorization'")
-        void headerNameShouldDefaultToAuthorization() {
-            SwaggerProperties.Security security = new SwaggerProperties.Security();
-            assertEquals("Authorization", security.getHeaderName());
-        }
-
-        @Test
-        @DisplayName("bearerToken 应正确存取")
-        void bearerTokenGetterSetter() {
-            SwaggerProperties.Security security = new SwaggerProperties.Security();
-            security.setBearerToken(false);
-            assertFalse(security.isBearerToken());
-        }
-
-        @Test
-        @DisplayName("headerName 应正确存取")
-        void headerNameGetterSetter() {
-            SwaggerProperties.Security security = new SwaggerProperties.Security();
-            security.setHeaderName("X-Auth-Token");
-            assertEquals("X-Auth-Token", security.getHeaderName());
-        }
-
-        @Test
-        @DisplayName("setSecurity 应正确替换实例")
-        void setSecurityShouldReplace() {
-            SwaggerProperties props = new SwaggerProperties();
-            SwaggerProperties.Security custom = new SwaggerProperties.Security();
-            custom.setBearerToken(false);
-            props.setSecurity(custom);
-            assertFalse(props.getSecurity().isBearerToken());
-        }
+        assertThat(properties.getSecurity().isBearerToken()).isFalse();
     }
 
-    @Nested
-    @DisplayName("Knife4j 增强配置测试")
-    class Knife4jTests {
-
-        @Test
-        @DisplayName("knife4j 默认非 null")
-        void knife4jShouldNotBeNull() {
-            SwaggerProperties props = new SwaggerProperties();
-            assertNotNull(props.getKnife4j());
-        }
-
-        @Test
-        @DisplayName("offlineDocs 默认应为 false")
-        void offlineDocsShouldDefaultToFalse() {
-            SwaggerProperties.Knife4j knife4j = new SwaggerProperties.Knife4j();
-            assertFalse(knife4j.isOfflineDocs());
-        }
-
-        @Test
-        @DisplayName("enableFooter 默认应为 false")
-        void enableFooterShouldDefaultToFalse() {
-            SwaggerProperties.Knife4j knife4j = new SwaggerProperties.Knife4j();
-            assertFalse(knife4j.isEnableFooter());
-        }
-
-        @Test
-        @DisplayName("offlineDocs 应正确存取")
-        void offlineDocsGetterSetter() {
-            SwaggerProperties.Knife4j knife4j = new SwaggerProperties.Knife4j();
-            knife4j.setOfflineDocs(true);
-            assertTrue(knife4j.isOfflineDocs());
-        }
-
-        @Test
-        @DisplayName("enableFooter 应正确存取")
-        void enableFooterGetterSetter() {
-            SwaggerProperties.Knife4j knife4j = new SwaggerProperties.Knife4j();
-            knife4j.setEnableFooter(true);
-            assertTrue(knife4j.isEnableFooter());
-        }
-
-        @Test
-        @DisplayName("setKnife4j 应正确替换实例")
-        void setKnife4jShouldReplace() {
-            SwaggerProperties props = new SwaggerProperties();
-            SwaggerProperties.Knife4j custom = new SwaggerProperties.Knife4j();
-            custom.setOfflineDocs(true);
-            props.setKnife4j(custom);
-            assertTrue(props.getKnife4j().isOfflineDocs());
-        }
+    /**
+     * 验证主属性不再暴露无效的旧开关与伪配置。
+     */
+    @Test
+    @DisplayName("主属性删除旧开关和伪配置")
+    void shouldRemoveLegacyTopLevelProperties() {
+        assertThat(Arrays.stream(SwaggerProperties.class.getDeclaredFields())
+                .map(Field::getName))
+                .doesNotContain("enabled", "knife4j", "groups");
     }
 
-    @Nested
-    @DisplayName("Group API 分组配置测试")
-    class GroupTests {
+    /**
+     * 验证属性模型不再保留 Knife4j 与伪分组嵌套类型。
+     */
+    @Test
+    @DisplayName("属性模型删除旧嵌套类型")
+    void shouldRemoveLegacyNestedTypes() {
+        assertThat(Arrays.stream(SwaggerProperties.class.getDeclaredClasses())
+                .map(Class::getSimpleName))
+                .doesNotContain("Knife4j", "Group");
+    }
 
-        @Test
-        @DisplayName("groups 默认应为空列表")
-        void groupsShouldDefaultToEmpty() {
-            SwaggerProperties props = new SwaggerProperties();
-            assertNotNull(props.getGroups());
-            assertTrue(props.getGroups().isEmpty());
-        }
+    /**
+     * 验证标准 HTTP Bearer 配置不再镜像请求头名称。
+     */
+    @Test
+    @DisplayName("安全配置删除请求头名称")
+    void shouldRemoveLegacySecurityHeaderName() {
+        assertThat(Arrays.stream(SwaggerProperties.Security.class.getDeclaredFields())
+                .map(Field::getName))
+                .doesNotContain("headerName");
+    }
 
-        @Test
-        @DisplayName("name 应正确存取")
-        void nameGetterSetter() {
-            SwaggerProperties.Group group = new SwaggerProperties.Group();
-            group.setName("用户模块");
-            assertEquals("用户模块", group.getName());
-        }
+    /**
+     * 验证联系人嵌套对象不能被替换为 {@code null}。
+     */
+    @Test
+    @DisplayName("联系人配置拒绝空对象")
+    void shouldRejectNullContact() {
+        SwaggerProperties properties = new SwaggerProperties();
 
-        @Test
-        @DisplayName("basePackage 应正确存取")
-        void basePackageGetterSetter() {
-            SwaggerProperties.Group group = new SwaggerProperties.Group();
-            group.setBasePackage("com.example.user.controller");
-            assertEquals("com.example.user.controller", group.getBasePackage());
-        }
+        assertThatNullPointerException()
+                .isThrownBy(() -> properties.setContact(null));
+    }
 
-        @Test
-        @DisplayName("setGroups 应正确替换列表")
-        void setGroupsShouldReplace() {
-            SwaggerProperties props = new SwaggerProperties();
-            SwaggerProperties.Group g1 = new SwaggerProperties.Group();
-            g1.setName("用户模块");
-            g1.setBasePackage("com.example.user");
-            SwaggerProperties.Group g2 = new SwaggerProperties.Group();
-            g2.setName("订单模块");
-            g2.setBasePackage("com.example.order");
-            props.setGroups(List.of(g1, g2));
+    /**
+     * 验证安全嵌套对象不能被替换为 {@code null}。
+     */
+    @Test
+    @DisplayName("安全配置拒绝空对象")
+    void shouldRejectNullSecurity() {
+        SwaggerProperties properties = new SwaggerProperties();
 
-            assertEquals(2, props.getGroups().size());
-            assertEquals("用户模块", props.getGroups().get(0).getName());
-            assertEquals("订单模块", props.getGroups().get(1).getName());
-        }
+        assertThatNullPointerException()
+                .isThrownBy(() -> properties.setSecurity(null));
+    }
+
+    /**
+     * 仅注册最终 Swagger 配置属性以验证真实 Spring Boot 绑定。
+     */
+    @Configuration(proxyBeanMethods = false)
+    @EnableConfigurationProperties(SwaggerProperties.class)
+    static class PropertiesBindingConfiguration {
     }
 }
