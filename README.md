@@ -53,7 +53,7 @@
 | **letool-starter-ratelimiter** | 流量保护 —— Sentinel Core 薄封装、命名策略与热点参数限流 | tool, exception |
 | **letool-starter-oss** | 对象存储抽象 —— 默认不启用，内置 OSS/COS/MinIO 仅显式 stub 或自定义 provider | tool, file |
 | **letool-starter-sms** | 短信通知抽象 —— 默认不启用，内置阿里云/腾讯云仅显式 mock/stub 或自定义 provider | tool |
-| **letool-starter-ai** | AI 集成 —— OpenAI 兼容 HTTP 调用，已具备超时、重试、错误脱敏、流式输出和可替换 HTTP 传输层 | tool |
+| [**letool-starter-ai**](letool-starter-ai/README.md) | AI 便利门面 —— Spring AI Provider 中立模型路由、默认选择与原生 `ChatClient` 缓存 | exception, Spring AI |
 | **letool-starter-data-structure** | 数据结构 —— 泛型树、决策链（消除 if-else）、链表 | tool |
 | **letool-starter-websocket** | WebSocket —— 消息路由、房间管理、分布式会话 | tool, web |
 | **letool-starter-job** | 任务调度 —— 分布式定时任务、分片、重试 | tool |

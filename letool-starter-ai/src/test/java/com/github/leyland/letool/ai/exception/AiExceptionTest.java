@@ -1,163 +1,103 @@
 package com.github.leyland.letool.ai.exception;
 
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import static org.junit.jupiter.api.Assertions.*;
-
-@DisplayName("AiException AI 异常测试")
+/**
+ * {@link AiException} 结构化错误语义测试。
+ */
+@DisplayName("AiException 结构化异常测试")
 class AiExceptionTest {
 
-    @Nested
-    @DisplayName("构造方法")
-    class ConstructorTests {
-
-        @Test
-        @DisplayName("(message, provider) 构造")
-        void constructorMessageProvider() {
-            AiException ex = new AiException("API 调用失败", "openai");
-
-            assertEquals("API 调用失败", ex.getMessage());
-            assertEquals("openai", ex.getProvider());
-            assertEquals(0, ex.getStatusCode());
-            assertNull(ex.getCause());
-        }
-
-        @Test
-        @DisplayName("(message, provider, cause) 带原始异常")
-        void constructorWithCause() {
-            IOException cause = new IOException("连接超时");
-            AiException ex = new AiException("请求失败", "deepseek", cause);
-
-            assertEquals("请求失败", ex.getMessage());
-            assertEquals("deepseek", ex.getProvider());
-            assertEquals(0, ex.getStatusCode());
-            assertSame(cause, ex.getCause());
-        }
-
-        @Test
-        @DisplayName("(statusCode, message, provider) 带状态码")
-        void constructorWithStatusCode() {
-            AiException ex = new AiException(429, "请求频率超限", "openai");
-
-            assertEquals("请求频率超限", ex.getMessage());
-            assertEquals("openai", ex.getProvider());
-            assertEquals(429, ex.getStatusCode());
-            assertNull(ex.getCause());
-        }
-
-        @Test
-        @DisplayName("(statusCode, message, provider, cause) 完整参数")
-        void constructorFull() {
-            IOException cause = new IOException("网络错误");
-            AiException ex = new AiException(500, "服务器内部错误", "azure", cause);
-
-            assertEquals("服务器内部错误", ex.getMessage());
-            assertEquals("azure", ex.getProvider());
-            assertEquals(500, ex.getStatusCode());
-            assertSame(cause, ex.getCause());
-        }
+    /**
+     * 验证 AI 模块错误码具有稳定标识和默认中文消息。
+     */
+    @Test
+    @DisplayName("AI 错误码定义稳定")
+    void shouldDefineStableErrorCodes() {
+        assertErrorCode(
+                AiErrorCode.CONFIGURATION_INVALID,
+                "AI_CONFIGURATION_INVALID",
+                "AI 配置不合法：{0}");
+        assertErrorCode(
+                AiErrorCode.CHAT_MODEL_NOT_FOUND,
+                "AI_CHAT_MODEL_NOT_FOUND",
+                "未找到 ChatModel：{0}");
+        assertErrorCode(
+                AiErrorCode.EMBEDDING_MODEL_NOT_FOUND,
+                "AI_EMBEDDING_MODEL_NOT_FOUND",
+                "未找到 EmbeddingModel：{0}");
+        assertErrorCode(
+                AiErrorCode.CLIENT_CUSTOMIZATION_FAILED,
+                "AI_CLIENT_CUSTOMIZATION_FAILED",
+                "AI 客户端定制失败：{0}");
     }
 
-    @Nested
-    @DisplayName("isRateLimitExceeded 速率限制判断")
-    class RateLimitTests {
+    /**
+     * 验证无底层原因的工厂方法保留错误码和消息参数。
+     */
+    @Test
+    @DisplayName("of 保留结构化错误码和消息参数")
+    void shouldRetainErrorCodeAndArguments() {
+        AiException exception = AiException.of(
+                AiErrorCode.CHAT_MODEL_NOT_FOUND,
+                "primary");
 
-        @Test
-        @DisplayName("状态码 429 返回 true")
-        void rateLimitExceededTrue() {
-            AiException ex = new AiException(429, "rate limited", "openai");
-            assertTrue(ex.isRateLimitExceeded());
-        }
-
-        @Test
-        @DisplayName("状态码 200 返回 false")
-        void rateLimitExceededFalse200() {
-            AiException ex = new AiException(200, "ok", "openai");
-            assertFalse(ex.isRateLimitExceeded());
-        }
-
-        @Test
-        @DisplayName("状态码 0（非 HTTP 错误）返回 false")
-        void rateLimitExceededFalseZero() {
-            AiException ex = new AiException("网络错误", "openai");
-            assertFalse(ex.isRateLimitExceeded());
-        }
-
-        @Test
-        @DisplayName("状态码 500 返回 false")
-        void rateLimitExceededFalse500() {
-            AiException ex = new AiException(500, "server error", "openai");
-            assertFalse(ex.isRateLimitExceeded());
-        }
+        assertSame(AiErrorCode.CHAT_MODEL_NOT_FOUND, exception.getErrorCode());
+        assertArrayEquals(new Object[]{"primary"}, exception.getMessageArgs());
+        assertNull(exception.getCause());
     }
 
-    @Nested
-    @DisplayName("isAuthError 认证错误判断")
-    class AuthErrorTests {
+    /**
+     * 验证带底层原因的工厂方法完整保留原因链。
+     */
+    @Test
+    @DisplayName("causedBy 保留底层原因")
+    void shouldRetainCause() {
+        IllegalStateException cause = new IllegalStateException("定制失败");
 
-        @Test
-        @DisplayName("状态码 401 返回 true")
-        void authError401() {
-            AiException ex = new AiException(401, "unauthorized", "openai");
-            assertTrue(ex.isAuthError());
-        }
+        AiException exception = AiException.causedBy(
+                AiErrorCode.CLIENT_CUSTOMIZATION_FAILED,
+                cause,
+                "primary");
 
-        @Test
-        @DisplayName("状态码 403 返回 true")
-        void authError403() {
-            AiException ex = new AiException(403, "forbidden", "openai");
-            assertTrue(ex.isAuthError());
-        }
-
-        @Test
-        @DisplayName("状态码 200 返回 false")
-        void authErrorFalse200() {
-            AiException ex = new AiException(200, "ok", "openai");
-            assertFalse(ex.isAuthError());
-        }
-
-        @Test
-        @DisplayName("状态码 429 返回 false")
-        void authErrorFalse429() {
-            AiException ex = new AiException(429, "rate limited", "openai");
-            assertFalse(ex.isAuthError());
-        }
-
-        @Test
-        @DisplayName("状态码 0 返回 false")
-        void authErrorFalseZero() {
-            AiException ex = new AiException("网络错误", "openai");
-            assertFalse(ex.isAuthError());
-        }
+        assertSame(AiErrorCode.CLIENT_CUSTOMIZATION_FAILED, exception.getErrorCode());
+        assertArrayEquals(new Object[]{"primary"}, exception.getMessageArgs());
+        assertSame(cause, exception.getCause());
     }
 
-    @Nested
-    @DisplayName("getProvider / getStatusCode")
-    class GetterTests {
+    /**
+     * 验证创建带原因异常时拒绝空原因。
+     */
+    @Test
+    @DisplayName("causedBy 拒绝空原因")
+    void shouldRejectNullCause() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> AiException.causedBy(
+                        AiErrorCode.CLIENT_CUSTOMIZATION_FAILED,
+                        null,
+                        "primary"));
+    }
 
-        @Test
-        @DisplayName("getProvider 返回提供商")
-        void getProvider() {
-            AiException ex = new AiException("error", "qwen");
-            assertEquals("qwen", ex.getProvider());
-        }
-
-        @Test
-        @DisplayName("getStatusCode 返回状态码")
-        void getStatusCode() {
-            AiException ex = new AiException(404, "not found", "openai");
-            assertEquals(404, ex.getStatusCode());
-        }
-
-        @Test
-        @DisplayName("非 HTTP 错误 getStatusCode 返回 0")
-        void getStatusCodeZero() {
-            AiException ex = new AiException("timeout", "openai", new RuntimeException());
-            assertEquals(0, ex.getStatusCode());
-        }
+    /**
+     * 断言单个错误码的稳定标识与默认消息。
+     *
+     * @param errorCode 待验证的 AI 错误码
+     * @param code 期望的稳定错误码标识
+     * @param defaultMessage 期望的默认中文消息
+     */
+    private static void assertErrorCode(
+            AiErrorCode errorCode,
+            String code,
+            String defaultMessage) {
+        assertEquals(code, errorCode.getCode());
+        assertEquals(defaultMessage, errorCode.getDefaultMessage());
     }
 }

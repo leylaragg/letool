@@ -1,480 +1,201 @@
 package com.github.leyland.letool.ai.core;
 
-import com.github.leyland.letool.ai.config.AiProperties;
+import com.github.leyland.letool.ai.exception.AiErrorCode;
 import com.github.leyland.letool.ai.exception.AiException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.embedding.EmbeddingModel;
+import org.springframework.core.annotation.AnnotationAwareOrderComparator;
 
-import java.util.*;
-import java.util.function.Consumer;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 /**
- * AI 模板引擎 —— 统一的 LLM 调用入口，提供流畅的构建器 API.
+ * 基于 Spring AI 原生类型的统一调用门面。
  *
- * <h3>核心职责</h3>
- * <ul>
- *   <li>管理所有注册的 {@link AiProvider} 实例</li>
- *   <li>提供 {@link #chat()} 和 {@link #embedding()} 流畅构建器</li>
- *   <li>根据提供商名称路由请求到正确的 Provider</li>
- *   <li>自动填充默认值（模型、温度、Token 数等）</li>
- * </ul>
- *
- * <h3>使用示例</h3>
- * <pre>{@code
- * @Autowired
- * private AiTemplate aiTemplate;
- *
- * // 简单对话
- * ChatResponse response = aiTemplate.chat()
- *     .provider("openai")
- *     .model("gpt-4o")
- *     .system("你是一个助手")
- *     .user("你好")
- *     .execute();
- *
- * System.out.println(response.getContent());
- *
- * // 流式对话
- * aiTemplate.chat()
- *     .provider("openai")
- *     .user("写一段欢迎语")
- *     .executeStream(System.out::print);
- *
- * // 获取嵌入向量
- * float[] vector = aiTemplate.embedding()
- *     .provider("openai")
- *     .model("text-embedding-3-small")
- *     .input("Hello World")
- *     .executeSingle();
- *
- * // 查询可用提供商
- * List<String> providers = aiTemplate.listProviders();
- *
- * // 查询可用模型
- * List<String> models = aiTemplate.listModels("deepseek");
- * }</pre>
- *
- * @author leyland
- * @since 2.0.0
+ * <p>门面在构造阶段为每个 {@link ChatModel} 创建并缓存独立的 {@link ChatClient}，
+ * 同时保留按 Spring Bean 名称选择模型的能力。模型调用、流式响应、工具调用和顾问机制
+ * 均由 Spring AI 负责，本类只处理稳定路由和客户端定制。</p>
  */
-public class AiTemplate {
+public final class AiTemplate {
 
-    private static final Logger log = LoggerFactory.getLogger(AiTemplate.class);
+    /** 不可变模型注册表。 */
+    private final AiModelRegistry modelRegistry;
 
-    // ======================== 字段 ========================
-
-    /**
-     * 提供商映射（providerName -> AiProvider）
-     */
-    private final Map<String, AiProvider> providers;
+    /** 按模型 Bean 名称排序且不可修改的客户端缓存。 */
+    private final Map<String, ChatClient> chatClients;
 
     /**
-     * AI 全局配置
-     */
-    private final AiProperties properties;
-
-    // ======================== 构造方法 ========================
-
-    /**
-     * 创建 AiTemplate 实例.
+     * 创建 AI 统一调用门面。
      *
-     * <p>将提供商列表转换为 Map 以便按名称查找.</p>
+     * <p>定制器列表会进行非空校验、防御复制并按 Spring 规则排序。每个模型使用独立
+     * 构建器执行全部定制器；定制器失败会转换为包含模型名称和原因链的结构化异常。</p>
      *
-     * @param providers  注册的提供商列表
-     * @param properties AI 全局配置
+     * @param modelRegistry 不可变模型注册表
+     * @param customizers 对话客户端构建器定制器列表
+     * @throws NullPointerException 注册表、定制器列表或任一定制器为空时抛出
+     * @throws AiException 任一定制器执行失败时抛出
      */
-    public AiTemplate(List<AiProvider> providers, AiProperties properties) {
-        this.properties = properties;
-        this.providers = new LinkedHashMap<>();
-        if (providers != null) {
-            for (AiProvider provider : providers) {
-                this.providers.put(provider.getProviderName().toLowerCase(), provider);
+    public AiTemplate(
+            AiModelRegistry modelRegistry,
+            List<AiChatClientCustomizer> customizers) {
+        this.modelRegistry = Objects.requireNonNull(modelRegistry, "模型注册表不能为空");
+        List<AiChatClientCustomizer> orderedCustomizers = orderedCustomizers(customizers);
+        this.chatClients = buildChatClients(modelRegistry, orderedCustomizers);
+    }
+
+    /**
+     * 获取默认对话客户端。
+     *
+     * @return 默认模型对应的缓存客户端
+     * @throws AiException 没有可用默认对话模型时抛出
+     */
+    public ChatClient chatClient() {
+        String defaultModelName = modelRegistry.defaultChatModelName();
+        if (defaultModelName == null) {
+            // 复用注册表的稳定错误码和“默认模型”显示参数。
+            modelRegistry.chatModel();
+        }
+        return requiredChatClient(defaultModelName);
+    }
+
+    /**
+     * 按 Spring Bean 名称获取对话客户端。
+     *
+     * @param modelName 对话模型的 Spring Bean 名称
+     * @return 指定模型对应的缓存客户端
+     * @throws AiException 指定对话模型不存在时抛出
+     */
+    public ChatClient chatClient(String modelName) {
+        // 先由注册表校验名称，确保模型与客户端查询使用相同的结构化异常语义。
+        modelRegistry.chatModel(modelName);
+        return requiredChatClient(modelName);
+    }
+
+    /**
+     * 获取默认对话模型。
+     *
+     * @return 默认对话模型
+     * @throws AiException 没有可用默认对话模型时抛出
+     */
+    public ChatModel chatModel() {
+        return modelRegistry.chatModel();
+    }
+
+    /**
+     * 按 Spring Bean 名称获取对话模型。
+     *
+     * @param modelName 对话模型的 Spring Bean 名称
+     * @return 指定对话模型
+     * @throws AiException 指定对话模型不存在时抛出
+     */
+    public ChatModel chatModel(String modelName) {
+        return modelRegistry.chatModel(modelName);
+    }
+
+    /**
+     * 获取默认嵌入模型。
+     *
+     * @return 默认嵌入模型
+     * @throws AiException 没有可用默认嵌入模型时抛出
+     */
+    public EmbeddingModel embeddingModel() {
+        return modelRegistry.embeddingModel();
+    }
+
+    /**
+     * 按 Spring Bean 名称获取嵌入模型。
+     *
+     * @param modelName 嵌入模型的 Spring Bean 名称
+     * @return 指定嵌入模型
+     * @throws AiException 指定嵌入模型不存在时抛出
+     */
+    public EmbeddingModel embeddingModel(String modelName) {
+        return modelRegistry.embeddingModel(modelName);
+    }
+
+    /**
+     * 获取全部对话模型 Bean 名称。
+     *
+     * @return 按名称排序且不可修改的名称快照
+     */
+    public Set<String> chatModelNames() {
+        return modelRegistry.chatModelNames();
+    }
+
+    /**
+     * 获取全部嵌入模型 Bean 名称。
+     *
+     * @return 按名称排序且不可修改的名称快照
+     */
+    public Set<String> embeddingModelNames() {
+        return modelRegistry.embeddingModelNames();
+    }
+
+    /**
+     * 校验、复制并排序客户端定制器。
+     *
+     * @param customizers 调用方提供的客户端定制器列表
+     * @return 排序后的不可修改定制器列表
+     * @throws NullPointerException 列表或任一元素为空时抛出
+     */
+    private static List<AiChatClientCustomizer> orderedCustomizers(
+            List<AiChatClientCustomizer> customizers) {
+        Objects.requireNonNull(customizers, "客户端定制器列表不能为空");
+        List<AiChatClientCustomizer> copy = new ArrayList<>(customizers.size());
+        for (AiChatClientCustomizer customizer : customizers) {
+            copy.add(Objects.requireNonNull(customizer, "客户端定制器不能为空"));
+        }
+        AnnotationAwareOrderComparator.sort(copy);
+        return List.copyOf(copy);
+    }
+
+    /**
+     * 为全部对话模型创建独立客户端并形成不可变缓存。
+     *
+     * @param modelRegistry 不可变模型注册表
+     * @param customizers 已排序的客户端定制器列表
+     * @return 按模型名称排序且不可修改的客户端缓存
+     * @throws AiException 任一定制器执行失败时抛出
+     */
+    private static Map<String, ChatClient> buildChatClients(
+            AiModelRegistry modelRegistry,
+            List<AiChatClientCustomizer> customizers) {
+        Map<String, ChatClient> clients = new LinkedHashMap<>();
+        for (String modelName : modelRegistry.chatModelNames()) {
+            ChatClient.Builder builder = ChatClient.builder(modelRegistry.chatModel(modelName));
+            for (AiChatClientCustomizer customizer : customizers) {
+                try {
+                    customizer.customize(modelName, builder);
+                } catch (RuntimeException exception) {
+                    throw AiException.causedBy(
+                            AiErrorCode.CLIENT_CUSTOMIZATION_FAILED,
+                            exception,
+                            modelName);
+                }
             }
+            clients.put(modelName, builder.build());
         }
-        log.info("AiTemplate 初始化完成，已注册提供商: {}", this.providers.keySet());
-    }
-
-    // ======================== 构建器入口 ========================
-
-    /**
-     * 创建对话构建器 —— 用于构建和发送对话请求.
-     *
-     * @return {@link ChatBuilder} 实例
-     */
-    public ChatBuilder chat() {
-        return new ChatBuilder();
+        return Collections.unmodifiableMap(clients);
     }
 
     /**
-     * 创建嵌入构建器 —— 用于构建和发送嵌入请求.
+     * 从客户端缓存获取指定实例。
      *
-     * @return {@link EmbeddingBuilder} 实例
+     * @param modelName 已通过注册表校验的模型 Bean 名称
+     * @return 对应的缓存客户端
+     * @throws AiException 客户端缓存与注册表意外不一致时抛出
      */
-    public EmbeddingBuilder embedding() {
-        return new EmbeddingBuilder();
-    }
-
-    // ======================== 提供商查询 ========================
-
-    /**
-     * 列出所有已注册的提供商名称.
-     *
-     * @return 提供商名称列表
-     */
-    public List<String> listProviders() {
-        return new ArrayList<>(providers.keySet());
-    }
-
-    /**
-     * 列出指定提供商的可用模型.
-     *
-     * @param provider 提供商名称
-     * @return 模型名称列表
-     * @throws AiException 如果提供商不存在
-     */
-    public List<String> listModels(String provider) {
-        AiProvider p = getProvider(provider);
-        return p.getAvailableModels();
-    }
-
-    // ======================== 内部工具方法 ========================
-
-    /**
-     * 根据名称获取提供商.
-     *
-     * @param name 提供商名称，若为空则使用默认提供商
-     * @return {@link AiProvider} 实例
-     * @throws AiException 如果提供商不存在
-     */
-    protected AiProvider getProvider(String name) {
-        String resolvedName = (name != null && !name.isEmpty())
-                ? name.toLowerCase()
-                : properties.getDefaultProvider().toLowerCase();
-        AiProvider provider = providers.get(resolvedName);
-        if (provider == null) {
-            throw new AiException(
-                    "未找到 AI 提供商: " + resolvedName + "，可用提供商: " + providers.keySet(),
-                    resolvedName);
+    private ChatClient requiredChatClient(String modelName) {
+        ChatClient client = chatClients.get(modelName);
+        if (client == null) {
+            throw AiException.of(AiErrorCode.CHAT_MODEL_NOT_FOUND, String.valueOf(modelName));
         }
-        if (!provider.isAvailable()) {
-            throw new AiException(
-                    "AI 提供商不可用: " + resolvedName + "，请检查 API 密钥配置",
-                    resolvedName);
-        }
-        return provider;
-    }
-
-    // ======================== 内部类：ChatBuilder ========================
-
-    /**
-     * 对话构建器 —— 流畅的链式 API，最后调用 {@link #execute()} 发送请求.
-     *
-     * <h3>使用示例</h3>
-     * <pre>{@code
-     * ChatResponse resp = aiTemplate.chat()
-     *     .provider("openai")
-     *     .model("gpt-4o")
-     *     .system("你是助手")
-     *     .user("你好")
-     *     .temperature(0.8)
-     *     .maxTokens(2048)
-     *     .functions(functionDefinitions)
-     *     .execute();
-     * }</pre>
-     */
-    public class ChatBuilder {
-        private String provider;
-        private String model;
-        private List<ChatMessage> messages = new ArrayList<>();
-        private double temperature = -1;
-        private int maxTokens = -1;
-        private List<FunctionDefinition> functions;
-
-        /**
-         * 设置提供商名称.
-         *
-         * @param provider 提供商名称
-         * @return this
-         */
-        public ChatBuilder provider(String provider) {
-            this.provider = provider;
-            return this;
-        }
-
-        /**
-         * 设置模型名称.
-         *
-         * @param model 模型名称
-         * @return this
-         */
-        public ChatBuilder model(String model) {
-            this.model = model;
-            return this;
-        }
-
-        /**
-         * 设置系统提示词.
-         *
-         * @param content 系统提示词
-         * @return this
-         */
-        public ChatBuilder system(String content) {
-            this.messages.add(ChatMessage.system(content));
-            return this;
-        }
-
-        /**
-         * 设置用户消息.
-         *
-         * @param content 用户输入
-         * @return this
-         */
-        public ChatBuilder user(String content) {
-            this.messages.add(ChatMessage.user(content));
-            return this;
-        }
-
-        /**
-         * 添加助手消息.
-         *
-         * @param content 助手消息内容
-         * @return this
-         */
-        public ChatBuilder assistant(String content) {
-            this.messages.add(ChatMessage.assistant(content));
-            return this;
-        }
-
-        /**
-         * 添加函数返回消息.
-         *
-         * @param name    函数名称
-         * @param content 函数返回内容
-         * @return this
-         */
-        public ChatBuilder function(String name, String content) {
-            this.messages.add(ChatMessage.function(name, content));
-            return this;
-        }
-
-        /**
-         * 添加消息列表.
-         *
-         * @param messages 消息列表
-         * @return this
-         */
-        public ChatBuilder messages(List<ChatMessage> messages) {
-            if (messages != null) {
-                this.messages.addAll(messages);
-            }
-            return this;
-        }
-
-        /**
-         * 添加单条消息.
-         *
-         * @param message 消息对象
-         * @return this
-         */
-        public ChatBuilder message(ChatMessage message) {
-            this.messages.add(message);
-            return this;
-        }
-
-        /**
-         * 设置温度参数.
-         *
-         * @param temperature 温度值（0.0~2.0）
-         * @return this
-         */
-        public ChatBuilder temperature(double temperature) {
-            this.temperature = temperature;
-            return this;
-        }
-
-        /**
-         * 设置最大生成 Token 数.
-         *
-         * @param maxTokens Token 上限
-         * @return this
-         */
-        public ChatBuilder maxTokens(int maxTokens) {
-            this.maxTokens = maxTokens;
-            return this;
-        }
-
-        /**
-         * 设置函数定义列表（Function Calling）.
-         *
-         * @param functions 函数定义列表
-         * @return this
-         */
-        public ChatBuilder functions(List<FunctionDefinition> functions) {
-            this.functions = functions;
-            return this;
-        }
-
-        /**
-         * 构建请求并执行，返回 AI 响应.
-         *
-         * <p>自动填充默认值：如果未设置 provider，使用默认提供商；
-         * 如果未设置 temperature/maxTokens，使用全局配置的默认值.</p>
-         *
-         * @return 对话响应
-         * @throws AiException 当调用失败时
-         */
-        public ChatResponse execute() {
-            ChatInvocation invocation = getProviderAndRequest();
-            return invocation.provider.chat(invocation.request);
-        }
-
-        /**
-         * 构建请求并执行流式对话，逐段回调增量文本。
-         *
-         * @param onDelta 增量文本回调
-         * @throws AiException 当调用失败或 provider 不支持流式输出时
-         */
-        public void executeStream(Consumer<String> onDelta) {
-            ChatInvocation invocation = getProviderAndRequest();
-            invocation.provider.chatStream(invocation.request, onDelta);
-        }
-
-        /**
-         * 解析 provider 并构建最终请求。
-         *
-         * @return 对话调用上下文
-         */
-        private ChatInvocation getProviderAndRequest() {
-            String resolvedProvider = (provider != null && !provider.isEmpty())
-                    ? provider : properties.getDefaultProvider();
-            AiProvider aiProvider = getProvider(resolvedProvider);
-
-            ChatRequest request = ChatRequest.builder()
-                    .provider(resolvedProvider)
-                    .model(model != null ? model : properties.getProviderConfig(resolvedProvider).getDefaultModel())
-                    .messages(messages)
-                    .temperature(temperature >= 0 ? temperature : properties.getChat().getDefaultTemperature())
-                    .maxTokens(maxTokens > 0 ? maxTokens : properties.getChat().getDefaultMaxTokens())
-                    .functions(functions)
-                    .build();
-
-            return new ChatInvocation(aiProvider, request);
-        }
-
-        /**
-         * 对话调用上下文。
-         *
-         * @param provider AI 提供商
-         * @param request  对话请求
-         */
-        private record ChatInvocation(AiProvider provider, ChatRequest request) {
-        }
-    }
-
-    // ======================== 内部类：EmbeddingBuilder ========================
-
-    /**
-     * 嵌入构建器 —— 流畅的链式 API，最后调用 {@link #execute()} 发送请求.
-     *
-     * <h3>使用示例</h3>
-     * <pre>{@code
-     * EmbeddingResponse resp = aiTemplate.embedding()
-     *     .provider("openai")
-     *     .model("text-embedding-3-small")
-     *     .input("Hello World")
-     *     .input("你好世界")
-     *     .execute();
-     *
-     * float[] vec = aiTemplate.embedding()
-     *     .input("Hello")
-     *     .executeSingle();
-     * }</pre>
-     */
-    public class EmbeddingBuilder {
-        private String provider;
-        private String model;
-        private List<String> input = new ArrayList<>();
-
-        /**
-         * 设置提供商名称.
-         *
-         * @param provider 提供商名称
-         * @return this
-         */
-        public EmbeddingBuilder provider(String provider) {
-            this.provider = provider;
-            return this;
-        }
-
-        /**
-         * 设置嵌入模型名称.
-         *
-         * @param model 模型名称
-         * @return this
-         */
-        public EmbeddingBuilder model(String model) {
-            this.model = model;
-            return this;
-        }
-
-        /**
-         * 添加待向量化的文本.
-         *
-         * @param text 文本内容
-         * @return this
-         */
-        public EmbeddingBuilder input(String text) {
-            this.input.add(text);
-            return this;
-        }
-
-        /**
-         * 批量添加文本.
-         *
-         * @param texts 文本列表
-         * @return this
-         */
-        public EmbeddingBuilder input(List<String> texts) {
-            if (texts != null) {
-                this.input.addAll(texts);
-            }
-            return this;
-        }
-
-        /**
-         * 构建请求并执行，返回嵌入响应.
-         *
-         * @return 嵌入响应
-         */
-        public EmbeddingResponse execute() {
-            String resolvedProvider = (provider != null && !provider.isEmpty())
-                    ? provider : properties.getDefaultProvider();
-            AiProvider aiProvider = getProvider(resolvedProvider);
-
-            EmbeddingRequest request = EmbeddingRequest.builder()
-                    .provider(resolvedProvider)
-                    .model(model != null ? model : properties.getEmbedding().getDefaultModel())
-                    .input(input)
-                    .build();
-
-            return aiProvider.embedding(request);
-        }
-
-        /**
-         * 执行嵌入请求并返回第一条文本的向量.
-         *
-         * <p>适用于只需要嵌入单条文本的场景.</p>
-         *
-         * @return 浮点向量数组
-         * @throws AiException 如果响应中无数据
-         */
-        public float[] executeSingle() {
-            EmbeddingResponse response = execute();
-            if (response.getData() == null || response.getData().isEmpty()) {
-                throw new AiException("嵌入响应中没有数据", provider);
-            }
-            return response.getData().get(0).getEmbedding();
-        }
+        return client;
     }
 }
