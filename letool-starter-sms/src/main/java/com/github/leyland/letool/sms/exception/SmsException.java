@@ -1,56 +1,54 @@
 package com.github.leyland.letool.sms.exception;
 
-// ======================== 类级别说明 ========================
+import com.github.leyland.letool.exception.core.SystemException;
+
+import java.io.Serial;
 
 /**
- * <p>短信异常 — 短信模块所有异常的根类型。</p>
- *
- * <h3>职责</h3>
- * <p>继承自 {@link RuntimeException}（非受检异常），用于在短信发送失败时向上抛出，
- * 调用方可根据需要决定是否捕获处理。</p>
- *
- * <h3>抛出场景</h3>
- * <ul>
- *   <li>短信服务商 API 调用失败。</li>
- *   <li>短信签名或模板未正确配置。</li>
- *   <li>手机号码格式校验不通过。</li>
- *   <li>短信发送频率超限。</li>
- *   <li>网络通信异常。</li>
- * </ul>
- *
- * <h3>典型用法</h3>
- * <pre>{@code
- * try {
- *     smsTemplate.builder().to("13800138000").template("SMS_001").param("code", "1234").send();
- * } catch (SmsException e) {
- *     log.error("短信发送失败: {}", e.getMessage());
- *     // 执行补偿逻辑
- * }
- * }</pre>
- *
- * @author leyland
- * @since 2.0.0
+ * 短信模块统一系统异常。
  */
-public class SmsException extends RuntimeException {
+public final class SmsException extends SystemException {
 
-    // ======================== 构造方法 ========================
+    @Serial
+    private static final long serialVersionUID = 1L;
 
     /**
-     * 使用消息文本构造短信异常。
+     * 创建短信异常。
      *
-     * @param message 错误消息
+     * @param errorCode 短信错误码
+     * @param messageArgs 默认消息模板参数
+     * @param cause 底层原因；没有时可为 {@code null}
      */
-    public SmsException(String message) {
-        super(message);
+    private SmsException(SmsErrorCode errorCode, Object[] messageArgs, Throwable cause) {
+        super(errorCode, messageArgs, null, cause);
     }
 
     /**
-     * 使用消息文本和原因异常构造短信异常。
+     * 创建不包含底层原因的短信异常。
      *
-     * @param message 错误消息
-     * @param cause   导致此异常的根本原因
+     * @param errorCode 短信错误码
+     * @param messageArgs 默认消息模板参数
+     * @return 结构化短信异常
      */
-    public SmsException(String message, Throwable cause) {
-        super(message, cause);
+    public static SmsException of(SmsErrorCode errorCode, Object... messageArgs) {
+        return new SmsException(errorCode, messageArgs, null);
+    }
+
+    /**
+     * 创建保留底层原因链的短信异常。
+     *
+     * @param errorCode 短信错误码
+     * @param cause 非空底层异常
+     * @param messageArgs 默认消息模板参数
+     * @return 结构化短信异常
+     */
+    public static SmsException causedBy(
+            SmsErrorCode errorCode,
+            Throwable cause,
+            Object... messageArgs) {
+        if (cause == null) {
+            throw new IllegalArgumentException("cause 不能为空");
+        }
+        return new SmsException(errorCode, messageArgs, cause);
     }
 }

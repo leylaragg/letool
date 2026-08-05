@@ -1,98 +1,81 @@
 package com.github.leyland.letool.sms.model;
 
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import java.util.ArrayList;
+import java.util.List;
 
-@DisplayName("SmsResult 短信发送结果模型测试")
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+/**
+ * {@link SmsResult} 不可变结果测试。
+ */
 class SmsResultTest {
 
-    @Nested
-    @DisplayName("success() 工厂方法测试")
-    class SuccessFactoryTests {
+    /**
+     * 验证全部手机号成功时整体成功。
+     */
+    @Test
+    void shouldBeSuccessfulWhenAllRecipientsSucceed() {
+        SmsResult result = SmsResult.fromRecipients(
+                "aliyun",
+                "request-1",
+                "OK",
+                "发送成功",
+                List.of(SmsRecipientResult.success("+8613800138000", "OK", "成功")));
 
-        @Test
-        @DisplayName("应创建成功结果")
-        void shouldCreateSuccessResult() {
-            SmsResult result = SmsResult.success("REQ-12345");
-
-            assertTrue(result.isSuccess());
-            assertEquals("REQ-12345", result.getRequestId());
-            assertNull(result.getErrorCode());
-            assertNull(result.getErrorMessage());
-        }
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getErrorCode()).isNull();
+        assertThat(result.getProvider()).isEqualTo("aliyun");
     }
 
-    @Nested
-    @DisplayName("fail() 工厂方法测试")
-    class FailFactoryTests {
+    /**
+     * 验证任一手机号失败时整体失败。
+     */
+    @Test
+    void shouldFailWhenAnyRecipientFails() {
+        SmsResult result = SmsResult.fromRecipients(
+                "tencent",
+                "request-2",
+                "PARTIAL_FAILURE",
+                "部分失败",
+                List.of(
+                        SmsRecipientResult.success("+8613800138000", "Ok", "成功"),
+                        SmsRecipientResult.failure("+8613900139000", "Failed", "失败")));
 
-        @Test
-        @DisplayName("应创建失败结果")
-        void shouldCreateFailResult() {
-            SmsResult result = SmsResult.fail("E001", "模板不存在");
-
-            assertFalse(result.isSuccess());
-            assertEquals("E001", result.getErrorCode());
-            assertEquals("模板不存在", result.getErrorMessage());
-            assertNull(result.getRequestId());
-        }
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getErrorCode()).isEqualTo("PARTIAL_FAILURE");
+        assertThat(result.getRecipientResults()).hasSize(2);
     }
 
-    @Nested
-    @DisplayName("字段互斥性测试")
-    class FieldExclusivityTests {
+    /**
+     * 验证结果复制调用方列表。
+     */
+    @Test
+    void shouldCopyRecipientResults() {
+        List<SmsRecipientResult> source = new ArrayList<>();
+        source.add(SmsRecipientResult.success("+8613800138000", "OK", "成功"));
+        SmsResult result = SmsResult.fromRecipients("mock", "request", "OK", "成功", source);
+        source.clear();
 
-        @Test
-        @DisplayName("成功时 errorCode 和 errorMessage 应为 null")
-        void successShouldHaveNullErrors() {
-            SmsResult result = SmsResult.success("REQ-001");
-            assertNull(result.getErrorCode());
-            assertNull(result.getErrorMessage());
-        }
-
-        @Test
-        @DisplayName("失败时 requestId 应为 null")
-        void failShouldHaveNullRequestId() {
-            SmsResult result = SmsResult.fail("ERR", "失败");
-            assertNull(result.getRequestId());
-        }
+        assertThat(result.getRecipientResults()).hasSize(1);
+        assertThatThrownBy(() -> result.getRecipientResults().clear())
+                .isInstanceOf(UnsupportedOperationException.class);
     }
 
-    @Nested
-    @DisplayName("toString() 测试")
-    class ToStringTests {
+    /**
+     * 验证安全诊断文本不包含手机号和模板内容。
+     */
+    @Test
+    void shouldNotExposePhoneInToString() {
+        SmsResult result = SmsResult.fromRecipients(
+                "mock",
+                "request",
+                "OK",
+                "成功",
+                List.of(SmsRecipientResult.success("+8613800138000", "OK", "成功")));
 
-        @Test
-        @DisplayName("成功结果的 toString 应包含 requestId")
-        void successToStringShouldContainRequestId() {
-            SmsResult result = SmsResult.success("REQ-999");
-            assertTrue(result.toString().contains("success=true"));
-            assertTrue(result.toString().contains("REQ-999"));
-        }
-
-        @Test
-        @DisplayName("失败结果的 toString 应包含错误信息")
-        void failToStringShouldContainErrors() {
-            SmsResult result = SmsResult.fail("E002", "超限");
-            assertTrue(result.toString().contains("success=false"));
-            assertTrue(result.toString().contains("E002"));
-            assertTrue(result.toString().contains("超限"));
-        }
-    }
-
-    @Nested
-    @DisplayName("不可变性测试")
-    class ImmutabilityTests {
-
-        @Test
-        @DisplayName("工厂方法应返回不同实例")
-        void factoriesShouldReturnDifferentInstances() {
-            SmsResult r1 = SmsResult.success("a");
-            SmsResult r2 = SmsResult.success("a");
-            assertNotSame(r1, r2);
-        }
+        assertThat(result.toString()).doesNotContain("+8613800138000");
     }
 }

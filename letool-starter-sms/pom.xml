@@ -11,13 +11,17 @@
 
     <artifactId>letool-starter-sms</artifactId>
     <name>letool-starter-sms</name>
-    <description>letool 短信模块 —— 统一阿里云/腾讯云短信 API，模板发送、频率限制、发送记录</description>
+    <description>Letool 短信公共契约、便捷门面、Mock Provider 与可替换限流模块</description>
     <packaging>jar</packaging>
 
     <dependencies>
         <dependency>
             <groupId>com.github.leyland</groupId>
-            <artifactId>letool-starter-tool</artifactId>
+            <artifactId>letool-starter-exception</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

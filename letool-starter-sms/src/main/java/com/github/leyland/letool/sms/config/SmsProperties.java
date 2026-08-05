@@ -2,195 +2,195 @@ package com.github.leyland.letool.sms.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-// ======================== 类级别说明 ========================
-
 /**
- * <p>短信模块的全局配置属性类，绑定 {@code letool.sms} 前缀的配置项。</p>
- *
- * <h3>核心职责</h3>
- * <ul>
- *   <li>管理短信模块的全局开关 ({@code enabled}) 与默认服务商选择 ({@code defaultProvider})。</li>
- *   <li>提供阿里云 ({@link Aliyun})、腾讯云 ({@link Tencent}) 两大服务商的独立配置内部类。</li>
- *   <li>提供频率限制 ({@link RateLimit}) 配置，防止短信接口被滥用。</li>
- * </ul>
- *
- * <h3>配置示例 (application.yml)</h3>
- * <pre>{@code
- * letool:
- *   sms:
- *     enabled: true
- *     mock-enabled: true
- *     default-provider: mock
- *     aliyun:
- *       access-key-id: your-access-key-id
- *       access-key-secret: your-access-key-secret
- *       sign-name: 您的应用
- *       region-id: cn-hangzhou
- *     tencent:
- *       secret-id: your-secret-id
- *       secret-key: your-secret-key
- *       app-id: your-sms-app-id
- *       sign-name: 您的应用
- *     rate-limit:
- *       enabled: true
- *       max-per-minute: 10
- *       max-per-day: 100
- * }</pre>
- *
- * <h3>设计说明</h3>
- * <ul>
- *   <li>当前内置 Provider 均为 mock/stub，不会发送真实短信。</li>
- *   <li>{@code defaultProvider} 决定显式 mock 模式下注册哪个模拟 Provider Bean。</li>
- *   <li>频率限制基于内存中的 {@code ConcurrentHashMap} 实现，重启后计数清零。</li>
- * </ul>
- *
- * @author leyland
- * @since 2.0.0
+ * 短信核心配置，绑定 {@code letool.sms}。
  */
 @ConfigurationProperties(prefix = "letool.sms")
 public class SmsProperties {
 
-    // ======================== 全局配置字段 ========================
-
-    /** 短信模块总开关，默认关闭 */
-    private boolean enabled = false;
-
-    /** 是否允许创建内置 mock/stub provider，默认关闭 */
-    private boolean mockEnabled = false;
-
-    /** 默认短信服务商：aliyun / tencent / mock，默认 mock */
-    private String defaultProvider = "mock";
-
-    /** 阿里云短信配置 */
-    private Aliyun aliyun = new Aliyun();
-
-    /** 腾讯云短信配置 */
-    private Tencent tencent = new Tencent();
-
-    /** 频率限制配置 */
+    private boolean enabled;
+    private String defaultProvider;
+    private Mock mock = new Mock();
     private RateLimit rateLimit = new RateLimit();
 
-    // ======================== Getter / Setter ========================
-
-    public boolean isEnabled() { return enabled; }
-
-    public void setEnabled(boolean enabled) { this.enabled = enabled; }
-
-    public boolean isMockEnabled() { return mockEnabled; }
-
-    public void setMockEnabled(boolean mockEnabled) { this.mockEnabled = mockEnabled; }
-
-    public String getDefaultProvider() { return defaultProvider; }
-
-    public void setDefaultProvider(String defaultProvider) { this.defaultProvider = defaultProvider; }
-
-    public Aliyun getAliyun() { return aliyun; }
-
-    public void setAliyun(Aliyun aliyun) { this.aliyun = aliyun; }
-
-    public Tencent getTencent() { return tencent; }
-
-    public void setTencent(Tencent tencent) { this.tencent = tencent; }
-
-    public RateLimit getRateLimit() { return rateLimit; }
-
-    public void setRateLimit(RateLimit rateLimit) { this.rateLimit = rateLimit; }
-
-    // ======================== 内部类：阿里云配置 ========================
-
     /**
-     * <p>阿里云短信服务的配置项，与 {@code letool.sms.aliyun} 下的属性一一对应。</p>
+     * 判断短信模块是否启用。
      *
-     * <h3>字段说明</h3>
-     * <ul>
-     *   <li><b>accessKeyId</b> — 阿里云 AccessKey ID，用于 API 鉴权。</li>
-     *   <li><b>accessKeySecret</b> — 阿里云 AccessKey Secret，用于 API 鉴权。</li>
-     *   <li><b>signName</b> — 短信签名名称，需在阿里云短信控制台审核通过。</li>
-     *   <li><b>regionId</b> — 短信服务所在地域，默认 {@code cn-hangzhou}。</li>
-     * </ul>
+     * @return 启用时返回 {@code true}
      */
-    public static class Aliyun {
-
-        private String accessKeyId;
-        private String accessKeySecret;
-        private String signName;
-        private String regionId = "cn-hangzhou";
-
-        // ---- Getter / Setter ----
-        public String getAccessKeyId() { return accessKeyId; }
-        public void setAccessKeyId(String accessKeyId) { this.accessKeyId = accessKeyId; }
-        public String getAccessKeySecret() { return accessKeySecret; }
-        public void setAccessKeySecret(String accessKeySecret) { this.accessKeySecret = accessKeySecret; }
-        public String getSignName() { return signName; }
-        public void setSignName(String signName) { this.signName = signName; }
-        public String getRegionId() { return regionId; }
-        public void setRegionId(String regionId) { this.regionId = regionId; }
+    public boolean isEnabled() {
+        return enabled;
     }
 
-    // ======================== 内部类：腾讯云配置 ========================
-
     /**
-     * <p>腾讯云短信服务的配置项，与 {@code letool.sms.tencent} 下的属性一一对应。</p>
+     * 设置短信模块开关。
      *
-     * <h3>字段说明</h3>
-     * <ul>
-     *   <li><b>secretId</b> — 腾讯云 SecretId，用于 API 鉴权。</li>
-     *   <li><b>secretKey</b> — 腾讯云 SecretKey，用于 API 鉴权。</li>
-     *   <li><b>appId</b> — 短信应用 SDK AppID，在腾讯云短信控制台获取。</li>
-     *   <li><b>signName</b> — 短信签名内容，需在腾讯云短信控制台审核通过。</li>
-     * </ul>
+     * @param enabled 是否启用
      */
-    public static class Tencent {
-
-        private String secretId;
-        private String secretKey;
-        private String appId;
-        private String signName;
-
-        // ---- Getter / Setter ----
-        public String getSecretId() { return secretId; }
-        public void setSecretId(String secretId) { this.secretId = secretId; }
-        public String getSecretKey() { return secretKey; }
-        public void setSecretKey(String secretKey) { this.secretKey = secretKey; }
-        public String getAppId() { return appId; }
-        public void setAppId(String appId) { this.appId = appId; }
-        public String getSignName() { return signName; }
-        public void setSignName(String signName) { this.signName = signName; }
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
     }
 
-    // ======================== 内部类：频率限制配置 ========================
+    /**
+     * 获取默认 Provider。
+     *
+     * @return 默认 Provider；未配置时为 {@code null}
+     */
+    public String getDefaultProvider() {
+        return defaultProvider;
+    }
 
     /**
-     * <p>短信发送频率限制配置，与 {@code letool.sms.rate-limit} 下的属性一一对应。</p>
+     * 设置默认 Provider。
      *
-     * <h3>字段说明</h3>
-     * <ul>
-     *   <li><b>enabled</b> — 是否启用频率限制，默认 {@code true}。</li>
-     *   <li><b>maxPerMinute</b> — 同一手机号每分钟最大发送次数，默认 10。</li>
-     *   <li><b>maxPerDay</b> — 同一手机号每天最大发送次数，默认 100。</li>
-     * </ul>
+     * @param defaultProvider Provider 名称
+     */
+    public void setDefaultProvider(String defaultProvider) {
+        this.defaultProvider = defaultProvider;
+    }
+
+    /**
+     * 获取 Mock 配置。
      *
-     * <h3>实现说明</h3>
-     * <p>频率限制基于内存 {@code ConcurrentHashMap} 实现，服务重启后计数自动清零。
-     * 如需分布式环境下的精确限制，建议结合 Redis 等外部存储实现。</p>
+     * @return Mock 配置
+     */
+    public Mock getMock() {
+        return mock;
+    }
+
+    /**
+     * 设置 Mock 配置。
+     *
+     * @param mock Mock 配置
+     */
+    public void setMock(Mock mock) {
+        this.mock = mock;
+    }
+
+    /**
+     * 获取限流配置。
+     *
+     * @return 限流配置
+     */
+    public RateLimit getRateLimit() {
+        return rateLimit;
+    }
+
+    /**
+     * 设置限流配置。
+     *
+     * @param rateLimit 限流配置
+     */
+    public void setRateLimit(RateLimit rateLimit) {
+        this.rateLimit = rateLimit;
+    }
+
+    /**
+     * Mock Provider 配置。
+     */
+    public static class Mock {
+
+        private boolean enabled;
+
+        /**
+         * 判断 Mock Provider 是否启用。
+         *
+         * @return 启用时返回 {@code true}
+         */
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        /**
+         * 设置 Mock Provider 开关。
+         *
+         * @param enabled 是否启用
+         */
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+    }
+
+    /**
+     * 本地发送尝试限流配置。
      */
     public static class RateLimit {
 
-        /** 是否启用频率限制 */
         private boolean enabled = true;
-
-        /** 同一手机号每分钟最大发送次数 */
         private int maxPerMinute = 10;
-
-        /** 同一手机号每天最大发送次数 */
         private int maxPerDay = 100;
+        private long maximumTrackedPhones = 100_000L;
 
-        // ---- Getter / Setter ----
-        public boolean isEnabled() { return enabled; }
-        public void setEnabled(boolean enabled) { this.enabled = enabled; }
-        public int getMaxPerMinute() { return maxPerMinute; }
-        public void setMaxPerMinute(int maxPerMinute) { this.maxPerMinute = maxPerMinute; }
-        public int getMaxPerDay() { return maxPerDay; }
-        public void setMaxPerDay(int maxPerDay) { this.maxPerDay = maxPerDay; }
+        /**
+         * 判断本地限流是否启用。
+         *
+         * @return 启用时返回 {@code true}
+         */
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        /**
+         * 设置本地限流开关。
+         *
+         * @param enabled 是否启用
+         */
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        /**
+         * 获取单个手机号每分钟最多发送尝试次数。
+         *
+         * @return 每分钟上限
+         */
+        public int getMaxPerMinute() {
+            return maxPerMinute;
+        }
+
+        /**
+         * 设置单个手机号每分钟最多发送尝试次数。
+         *
+         * @param maxPerMinute 每分钟上限
+         */
+        public void setMaxPerMinute(int maxPerMinute) {
+            this.maxPerMinute = maxPerMinute;
+        }
+
+        /**
+         * 获取单个手机号每天最多发送尝试次数。
+         *
+         * @return 每日上限
+         */
+        public int getMaxPerDay() {
+            return maxPerDay;
+        }
+
+        /**
+         * 设置单个手机号每天最多发送尝试次数。
+         *
+         * @param maxPerDay 每日上限
+         */
+        public void setMaxPerDay(int maxPerDay) {
+            this.maxPerDay = maxPerDay;
+        }
+
+        /**
+         * 获取本地限流最多跟踪的手机号数量。
+         *
+         * @return 最大跟踪数量
+         */
+        public long getMaximumTrackedPhones() {
+            return maximumTrackedPhones;
+        }
+
+        /**
+         * 设置本地限流最多跟踪的手机号数量。
+         *
+         * @param maximumTrackedPhones 最大跟踪数量
+         */
+        public void setMaximumTrackedPhones(long maximumTrackedPhones) {
+            this.maximumTrackedPhones = maximumTrackedPhones;
+        }
     }
 }

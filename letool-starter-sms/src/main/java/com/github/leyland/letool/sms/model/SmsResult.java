@@ -1,158 +1,196 @@
 package com.github.leyland.letool.sms.model;
 
-// ======================== 类级别说明 ========================
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /**
- * <p>短信发送结果模型 — 封装一次短信发送操作的结果。</p>
+ * 不可变短信发送结果。
  *
- * <h3>职责</h3>
- * <p>{@code SmsResult} 作为短信发送操作的统一返回值，提供对发送结果的标准化访问接口。</p>
- *
- * <h3>字段说明</h3>
- * <ul>
- *   <li><b>success</b> — 发送是否成功。</li>
- *   <li><b>requestId</b> — 成功时返回的请求 ID（由短信服务商 API 分配）。</li>
- *   <li><b>errorCode</b> — 失败时的错误码。</li>
- *   <li><b>errorMessage</b> — 失败时的错误描述信息。</li>
- * </ul>
- *
- * <h3>使用方式</h3>
- * <p>本类不提供公开构造方法，只能通过静态工厂方法创建：</p>
- * <ul>
- *   <li>{@link #success(String)} — 发送成功时使用。</li>
- *   <li>{@link #fail(String, String)} — 发送失败时使用。</li>
- * </ul>
- *
- * <h3>典型用法</h3>
- * <pre>{@code
- * SmsResult result = smsTemplate.builder()
- *     .to("13800138000")
- *     .template("SMS_001")
- *     .param("code", "1234")
- *     .send();
- *
- * if (result.isSuccess()) {
- *     log.info("短信发送成功, requestId={}", result.getRequestId());
- * } else {
- *     log.error("短信发送失败: [{}] {}", result.getErrorCode(), result.getErrorMessage());
- * }
- * }</pre>
- *
- * <h3>不可变性</h3>
- * <p>本类为不可变对象（immutable），所有字段均为 {@code final}，
- * 通过构造方法一次性赋值，无 Setter 方法，保证线程安全。</p>
- *
- * @author leyland
- * @since 2.0.0
+ * <p>结果同时保存厂商请求级信息和逐手机号状态，能够准确表达批量请求的部分失败。</p>
  */
-public class SmsResult {
+public final class SmsResult {
 
-    // ======================== 字段定义 ========================
-
-    /** 发送是否成功 */
     private final boolean success;
-
-    /** 请求 ID（成功时由短信服务商 API 分配） */
+    private final String provider;
     private final String requestId;
-
-    /** 失败时的错误码 */
-    private final String errorCode;
-
-    /** 失败时的错误描述信息 */
-    private final String errorMessage;
-
-    // ======================== 私有构造方法 ========================
+    private final String code;
+    private final String message;
+    private final List<SmsRecipientResult> recipientResults;
 
     /**
-     * 私有构造方法，只能通过静态工厂方法创建实例。
+     * 创建短信发送结果。
      *
-     * @param success      是否成功
-     * @param requestId    请求 ID（成功时有效）
-     * @param errorCode    错误码（失败时有效）
-     * @param errorMessage 错误描述（失败时有效）
+     * @param success 整体是否成功
+     * @param provider Provider 名称
+     * @param requestId 厂商请求 ID
+     * @param code 厂商结果码
+     * @param message 厂商结果说明
+     * @param recipientResults 逐手机号结果
      */
-    private SmsResult(boolean success, String requestId, String errorCode, String errorMessage) {
+    private SmsResult(
+            boolean success,
+            String provider,
+            String requestId,
+            String code,
+            String message,
+            List<SmsRecipientResult> recipientResults) {
         this.success = success;
+        this.provider = provider;
         this.requestId = requestId;
-        this.errorCode = errorCode;
-        this.errorMessage = errorMessage;
+        this.code = code;
+        this.message = message;
+        this.recipientResults = immutableResults(recipientResults);
     }
 
-    // ======================== 静态工厂方法 ========================
+    /**
+     * 根据逐手机号状态创建发送结果。
+     *
+     * @param provider Provider 名称
+     * @param requestId 厂商请求 ID
+     * @param code 厂商请求级结果码
+     * @param message 厂商请求级结果说明
+     * @param recipientResults 逐手机号结果
+     * @return 结构化发送结果
+     */
+    public static SmsResult fromRecipients(
+            String provider,
+            String requestId,
+            String code,
+            String message,
+            List<SmsRecipientResult> recipientResults) {
+        if (provider == null || provider.isBlank()) {
+            throw new IllegalArgumentException("Provider 名称不能为空");
+        }
+        if (recipientResults == null || recipientResults.isEmpty()) {
+            throw new IllegalArgumentException("逐手机号结果不能为空");
+        }
+        boolean success = recipientResults.stream().allMatch(SmsRecipientResult::isSuccess);
+        return new SmsResult(success, provider, requestId, code, message, recipientResults);
+    }
 
     /**
-     * 创建发送成功的响应。
+     * 创建兼容旧版单请求成功结果。
      *
-     * @param requestId 短信服务商返回的请求 ID
-     * @return 成功响应实例
+     * @param requestId 请求 ID
+     * @return 成功结果
      */
     public static SmsResult success(String requestId) {
-        return new SmsResult(true, requestId, null, null);
+        return new SmsResult(true, "unknown", requestId, null, null, Collections.emptyList());
     }
 
     /**
-     * 创建发送失败的响应。
+     * 创建兼容旧版单请求失败结果。
      *
-     * @param errorCode    错误码
-     * @param errorMessage 错误描述
-     * @return 失败响应实例
+     * @param errorCode 错误码
+     * @param errorMessage 错误说明
+     * @return 失败结果
      */
     public static SmsResult fail(String errorCode, String errorMessage) {
-        return new SmsResult(false, null, errorCode, errorMessage);
+        return new SmsResult(false, "unknown", null, errorCode, errorMessage, Collections.emptyList());
     }
 
-    // ======================== Getter ========================
-
     /**
-     * 获取发送是否成功。
+     * 判断全部手机号是否发送成功。
      *
-     * @return {@code true} 表示发送成功
+     * @return 全部成功时返回 {@code true}
      */
     public boolean isSuccess() {
         return success;
     }
 
     /**
-     * 获取请求 ID。
+     * 获取实际使用的 Provider。
      *
-     * @return 请求 ID，仅在成功时有效；失败时为 {@code null}
+     * @return Provider 名称
+     */
+    public String getProvider() {
+        return provider;
+    }
+
+    /**
+     * 获取厂商请求 ID。
+     *
+     * @return 请求 ID；厂商未返回时可为 {@code null}
      */
     public String getRequestId() {
         return requestId;
     }
 
     /**
-     * 获取错误码。
+     * 获取厂商请求级结果码。
      *
-     * @return 错误码，仅在失败时有效；成功时为 {@code null}
+     * @return 结果码
+     */
+    public String getCode() {
+        return code;
+    }
+
+    /**
+     * 获取厂商请求级结果说明。
+     *
+     * @return 结果说明
+     */
+    public String getMessage() {
+        return message;
+    }
+
+    /**
+     * 获取兼容旧版 API 的错误码。
+     *
+     * @return 失败时返回厂商结果码；成功时返回 {@code null}
      */
     public String getErrorCode() {
-        return errorCode;
+        return success ? null : code;
     }
 
     /**
-     * 获取错误描述信息。
+     * 获取兼容旧版 API 的错误说明。
      *
-     * @return 错误描述，仅在失败时有效；成功时为 {@code null}
+     * @return 失败时返回厂商说明；成功时返回 {@code null}
      */
     public String getErrorMessage() {
-        return errorMessage;
+        return success ? null : message;
     }
 
-    // ======================== Object 方法重写 ========================
+    /**
+     * 获取逐手机号结果的不可变快照。
+     *
+     * @return 逐手机号结果
+     */
+    public List<SmsRecipientResult> getRecipientResults() {
+        return recipientResults;
+    }
 
     /**
-     * 返回短信发送结果的字符串表示，便于日志记录和调试。
+     * 复制逐手机号结果。
      *
-     * @return 格式化的结果字符串
+     * @param source 原始结果列表
+     * @return 不可变结果列表
+     */
+    private static List<SmsRecipientResult> immutableResults(List<SmsRecipientResult> source) {
+        if (source == null || source.isEmpty()) {
+            return Collections.emptyList();
+        }
+        if (source.stream().anyMatch(item -> item == null)) {
+            throw new IllegalArgumentException("逐手机号结果不能包含 null");
+        }
+        return Collections.unmodifiableList(new ArrayList<>(source));
+    }
+
+    /**
+     * 返回不包含手机号和短信参数的安全诊断文本。
+     *
+     * @return 安全诊断文本
      */
     @Override
     public String toString() {
         return "SmsResult{" +
                 "success=" + success +
+                ", provider='" + provider + '\'' +
                 ", requestId='" + requestId + '\'' +
-                ", errorCode='" + errorCode + '\'' +
-                ", errorMessage='" + errorMessage + '\'' +
+                ", code='" + code + '\'' +
+                ", recipientCount=" + recipientResults.size() +
                 '}';
     }
 }

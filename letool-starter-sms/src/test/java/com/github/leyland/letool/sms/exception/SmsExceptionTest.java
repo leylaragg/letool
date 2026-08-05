@@ -1,47 +1,37 @@
 package com.github.leyland.letool.sms.exception;
 
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
+import com.github.leyland.letool.exception.core.SystemException;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
-@DisplayName("SmsException 短信异常测试")
+/**
+ * {@link SmsException} 统一异常契约测试。
+ */
 class SmsExceptionTest {
 
-    @Nested
-    @DisplayName("构造函数测试")
-    class ConstructorTests {
+    /**
+     * 验证短信异常保留稳定错误码和消息参数。
+     */
+    @Test
+    void shouldExposeStableErrorCodeAndArguments() {
+        SmsException exception = SmsException.of(SmsErrorCode.CONFIGURATION_INVALID, "缺少签名");
 
-        @Test
-        @DisplayName("(message) 构造函数应正确设置消息")
-        void messageConstructorShouldSetMessage() {
-            SmsException ex = new SmsException("短信发送失败");
-
-            assertEquals("短信发送失败", ex.getMessage());
-            assertNull(ex.getCause());
-        }
-
-        @Test
-        @DisplayName("(message, cause) 构造函数应设置消息和原因")
-        void messageCauseConstructorShouldSetBoth() {
-            Throwable cause = new RuntimeException("网络错误");
-            SmsException ex = new SmsException("调用失败", cause);
-
-            assertEquals("调用失败", ex.getMessage());
-            assertSame(cause, ex.getCause());
-        }
+        assertThat(exception).isInstanceOf(SystemException.class);
+        assertThat(exception.getCode()).isEqualTo("SMS_CONFIG_INVALID");
+        assertThat(exception.getMessageArgs()).containsExactly("缺少签名");
     }
 
-    @Nested
-    @DisplayName("继承关系测试")
-    class InheritanceTests {
+    /**
+     * 验证 SDK 原始原因链不会丢失。
+     */
+    @Test
+    void shouldPreserveSdkCause() {
+        RuntimeException cause = new RuntimeException("network");
 
-        @Test
-        @DisplayName("应继承 RuntimeException")
-        void shouldExtendRuntimeException() {
-            SmsException ex = new SmsException("test");
-            assertTrue(ex instanceof RuntimeException);
-        }
+        SmsException exception = SmsException.causedBy(SmsErrorCode.SEND_FAILED, cause, "aliyun");
+
+        assertThat(exception.getCause()).isSameAs(cause);
+        assertThat(exception.getCode()).isEqualTo("SMS_SEND_FAILED");
     }
 }
