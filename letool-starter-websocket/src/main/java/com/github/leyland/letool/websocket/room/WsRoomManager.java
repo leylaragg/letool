@@ -1,286 +1,374 @@
 package com.github.leyland.letool.websocket.room;
 
+import com.github.leyland.letool.tool.json.Fastjson2JsonCodec;
+import com.github.leyland.letool.websocket.core.WsDeliveryResult;
 import com.github.leyland.letool.websocket.core.WsMessage;
 import com.github.leyland.letool.websocket.core.WsSession;
 import com.github.leyland.letool.websocket.core.WsSessionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.LinkedHashSet;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 /**
- * WebSocket 房间/频道管理器，负责房间的创建、销毁、成员进出以及消息广播。
- *
- * <p>该管理器提供了完整的房间生命周期管理能力：</p>
- * <ul>
- *   <li>创建和删除房间</li>
- *   <li>会话加入/离开房间</li>
- *   <li>查询房间成员</li>
- *   <li>房间内消息广播（支持排除指定发送者）</li>
- *   <li>查询用户所在的所有房间</li>
- * </ul>
- *
- * <p>线程安全：使用 {@link ConcurrentHashMap} 存储房间映射。</p>
- *
- * <p>使用示例：</p>
- * <pre>{@code
- * // 创建房间
- * roomManager.create("chat:room_1", "聊天室1");
- *
- * // 加入房间
- * roomManager.join("chat:room_1", userSession);
- *
- * // 广播消息到房间（排除发送者）
- * roomManager.broadcast("chat:room_1", message, senderSessionId);
- * }</pre>
- *
- * @author leyland
- * @since 2.0.0
+ * 维护房间成员和会话反向索引的线程安全管理器。
  */
 public class WsRoomManager {
 
     private static final Logger log = LoggerFactory.getLogger(WsRoomManager.class);
+    private static final int LOCK_STRIPE_COUNT = 128;
 
-    // ======================== 字段 ========================
-
-    /** roomId -> WsRoom 映射 */
     private final ConcurrentHashMap<String, WsRoom> rooms = new ConcurrentHashMap<>();
-
-    /** 关联的会话管理器，用于通过 sessionId 获取 WsSession 进行消息发送 */
+    private final ConcurrentHashMap<String, Set<String>> sessionRooms = new ConcurrentHashMap<>();
+    private final Object[] roomLocks = createLocks();
     private final WsSessionManager sessionManager;
-
-    // ======================== 构造 ========================
+    private final com.github.leyland.letool.websocket.core.WsMessageCodec messageCodec;
 
     /**
      * 创建房间管理器。
      *
-     * @param sessionManager 会话管理器，用于解析 sessionId 为 WsSession
+     * @param sessionManager 会话管理器
      */
     public WsRoomManager(WsSessionManager sessionManager) {
-        this.sessionManager = Objects.requireNonNull(sessionManager, "sessionManager must not be null");
+        this(sessionManager, new com.github.leyland.letool.websocket.core.WsMessageCodec(
+                Fastjson2JsonCodec.createDefault()));
     }
 
-    // ======================== 房间操作 ========================
+    /**
+     * 使用指定消息编解码器创建房间管理器。
+     *
+     * @param sessionManager 会话管理器
+     * @param messageCodec 消息编解码器
+     */
+    public WsRoomManager(
+            WsSessionManager sessionManager,
+            com.github.leyland.letool.websocket.core.WsMessageCodec messageCodec) {
+        this.sessionManager = Objects.requireNonNull(sessionManager, "sessionManager must not be null");
+        this.messageCodec = Objects.requireNonNull(messageCodec, "messageCodec must not be null");
+    }
 
     /**
-     * 创建房间。如果房间已存在则直接返回已存在的房间。
+     * 创建或查询房间。
      *
-     * @param roomId 房间唯一标识
-     * @param name   房间名称
-     * @return 创建或已存在的 WsRoom 实例
+     * @param roomId 房间 ID
+     * @param name 房间名称
+     * @return 房间
      */
     public WsRoom create(String roomId, String name) {
-        return rooms.computeIfAbsent(roomId, id -> {
-            WsRoom room = new WsRoom(id, name);
-            log.info("Room created: {}", room);
-            return room;
-        });
-    }
-
-    /**
-     * 删除房间（如果房间为空会自动移除）。
-     * 如果房间还有成员，默认不删除，需要设置 force=true 强制删除。
-     *
-     * @param roomId 房间 ID
-     * @param force  是否强制删除（即使还有成员）
-     * @return {@code true} 如果房间被删除
-     */
-    public boolean remove(String roomId, boolean force) {
-        WsRoom room = rooms.get(roomId);
-        if (room == null) return false;
-        if (!room.isEmpty() && !force) {
-            log.warn("Cannot remove room {} with {} members, use force=true to remove", roomId, room.getMemberCount());
-            return false;
+        requireText(roomId, "roomId");
+        synchronized (lockFor(roomId)) {
+            return rooms.computeIfAbsent(roomId, id -> new WsRoom(id, name));
         }
-        rooms.remove(roomId);
-        log.info("Room removed: {}", roomId);
-        return true;
     }
 
     /**
-     * 删除空房间。如果房间还有成员则不会删除。
+     * 删除空房间。
      *
      * @param roomId 房间 ID
-     * @return {@code true} 如果房间被删除，{@code false} 如果房间不存在或仍有成员
+     * @return 删除成功时返回 {@code true}
      */
     public boolean remove(String roomId) {
         return remove(roomId, false);
     }
 
     /**
-     * 获取房间信息。
+     * 删除房间并在强制模式下同步反向索引。
      *
      * @param roomId 房间 ID
-     * @return 对应的 WsRoom，不存在返回 {@code null}
+     * @param force 是否允许删除非空房间
+     * @return 删除成功时返回 {@code true}
      */
-    public WsRoom getRoom(String roomId) {
-        return rooms.get(roomId);
-    }
-
-    /**
-     * 检查房间是否存在。
-     *
-     * @param roomId 房间 ID
-     * @return {@code true} 如果房间存在
-     */
-    public boolean exists(String roomId) {
-        return rooms.containsKey(roomId);
-    }
-
-    /**
-     * 获取所有房间。
-     *
-     * @return 所有房间的集合视图
-     */
-    public Collection<WsRoom> getAllRooms() {
-        return rooms.values();
-    }
-
-    // ======================== 成员操作 ========================
-
-    /**
-     * 会话加入房间。
-     *
-     * @param roomId  房间 ID
-     * @param session 待加入的会话
-     * @return {@code true} 如果成功加入，{@code false} 如果已在房间中或房间不存在
-     */
-    public boolean join(String roomId, WsSession session) {
-        if (session == null) return false;
-        WsRoom room = rooms.get(roomId);
-        if (room == null) {
-            log.warn("Room {} does not exist, cannot join", roomId);
+    public boolean remove(String roomId, boolean force) {
+        if (roomId == null) {
             return false;
         }
-        boolean added = room.addMember(session.getSessionId());
-        if (added) {
-            log.info("Session {} joined room {}", session.getSessionId(), roomId);
-        }
-        return added;
-    }
-
-    /**
-     * 会话离开房间。
-     *
-     * @param roomId  房间 ID
-     * @param session 待离开的会话
-     * @return {@code true} 如果成功离开，{@code false} 如果不在房间中或房间不存在
-     */
-    public boolean leave(String roomId, WsSession session) {
-        if (session == null) return false;
-        WsRoom room = rooms.get(roomId);
-        if (room == null) return false;
-        boolean removed = room.removeMember(session.getSessionId());
-        if (removed) {
-            log.info("Session {} left room {}", session.getSessionId(), roomId);
-            // 如果房间变为空，自动清理
-            if (room.isEmpty()) {
-                rooms.remove(roomId);
-                log.info("Room {} auto-removed (no members left)", roomId);
+        synchronized (lockFor(roomId)) {
+            WsRoom room = rooms.get(roomId);
+            if (room == null || (!force && !room.isEmpty())) {
+                return false;
             }
+            if (!rooms.remove(roomId, room)) {
+                return false;
+            }
+            for (String sessionId : room.getMembers()) {
+                removeReverseIndex(sessionId, roomId);
+            }
+            return true;
         }
-        return removed;
     }
 
     /**
-     * 获取房间内的所有成员会话（已过滤不活跃的会话）。
+     * 查询房间。
      *
      * @param roomId 房间 ID
-     * @return 成员 WsSession 集合，房间不存在返回空集合
+     * @return 房间，不存在时返回 {@code null}
+     */
+    public WsRoom getRoom(String roomId) {
+        return roomId == null ? null : rooms.get(roomId);
+    }
+
+    /**
+     * 判断房间是否存在。
+     *
+     * @param roomId 房间 ID
+     * @return 房间存在时返回 {@code true}
+     */
+    public boolean exists(String roomId) {
+        return roomId != null && rooms.containsKey(roomId);
+    }
+
+    /**
+     * 获取全部房间快照。
+     *
+     * @return 不可变房间快照
+     */
+    public Collection<WsRoom> getAllRooms() {
+        return java.util.List.copyOf(rooms.values());
+    }
+
+    /**
+     * 将已注册会话加入房间。
+     *
+     * @param roomId 房间 ID
+     * @param session 会话
+     * @return 首次加入时返回 {@code true}
+     */
+    public boolean join(String roomId, WsSession session) {
+        Objects.requireNonNull(session, "session must not be null");
+        requireText(roomId, "roomId");
+        synchronized (lockFor(roomId)) {
+            synchronized (session) {
+                if (sessionManager.getSession(session.getSessionId()) != session || !session.isAlive()) {
+                    throw new IllegalArgumentException("session must be registered before joining a room");
+                }
+                WsRoom room = rooms.get(roomId);
+                if (room == null) {
+                    return false;
+                }
+                boolean added = room.addMember(session.getSessionId());
+                if (!added) {
+                    return false;
+                }
+                sessionRooms.computeIfAbsent(session.getSessionId(), ignored -> ConcurrentHashMap.newKeySet())
+                        .add(roomId);
+                return true;
+            }
+        }
+    }
+
+    /**
+     * 将会话移出房间，并自动删除空房间。
+     *
+     * @param roomId 房间 ID
+     * @param session 会话
+     * @return 实际移除时返回 {@code true}
+     */
+    public boolean leave(String roomId, WsSession session) {
+        return session != null && leave(roomId, session.getSessionId());
+    }
+
+    /**
+     * 按会话 ID 离开房间。
+     *
+     * @param roomId 房间 ID
+     * @param sessionId 会话 ID
+     * @return 实际移除时返回 {@code true}
+     */
+    public boolean leave(String roomId, String sessionId) {
+        if (roomId == null || sessionId == null) {
+            return false;
+        }
+        synchronized (lockFor(roomId)) {
+            WsRoom room = rooms.get(roomId);
+            if (room == null || !room.removeMember(sessionId)) {
+                return false;
+            }
+            removeReverseIndex(sessionId, roomId);
+            if (room.isEmpty()) {
+                rooms.remove(roomId, room);
+            }
+            return true;
+        }
+    }
+
+    /**
+     * 清理指定会话加入的全部房间。
+     *
+     * @param sessionId 会话 ID
+     */
+    public void removeSession(String sessionId) {
+        for (String roomId : getSessionRooms(sessionId)) {
+            leave(roomId, sessionId);
+        }
+        if (sessionId != null) {
+            sessionRooms.remove(sessionId);
+        }
+    }
+
+    /**
+     * 查询会话加入的房间 ID 快照。
+     *
+     * @param sessionId 会话 ID
+     * @return 不可变房间 ID 集合
+     */
+    public Set<String> getSessionRooms(String sessionId) {
+        Set<String> roomIds = sessionId == null ? null : sessionRooms.get(sessionId);
+        return roomIds == null ? Set.of() : Set.copyOf(roomIds);
+    }
+
+    /**
+     * 查询房间内仍存在的会话快照。
+     *
+     * @param roomId 房间 ID
+     * @return 不可变会话集合
      */
     public Set<WsSession> getMembers(String roomId) {
         WsRoom room = rooms.get(roomId);
-        if (room == null) return Collections.emptySet();
-        return room.getMembers().stream()
-                .map(sessionManager::getSession)
-                .filter(Objects::nonNull)
-                .filter(WsSession::isAlive)
-                .collect(Collectors.toSet());
+        if (room == null) {
+            return Set.of();
+        }
+        Set<WsSession> result = new LinkedHashSet<>();
+        for (String sessionId : room.getMembers()) {
+            WsSession session = sessionManager.getSession(sessionId);
+            if (session != null) {
+                result.add(session);
+            }
+        }
+        return Set.copyOf(result);
     }
 
     /**
-     * 获取用户所在的所有房间。
+     * 查询用户会话加入的全部房间。
      *
-     * @param userId 用户 ID
-     * @return 该用户所在的所有房间集合
+     * @param userId 用户标识
+     * @return 不可变房间集合
      */
     public Set<WsRoom> getUserRooms(String userId) {
-        if (userId == null || userId.isEmpty()) return Collections.emptySet();
-        Set<WsSession> userSessions = sessionManager.getUserSessions(userId);
-        Set<String> userSessionIds = userSessions.stream()
-                .map(WsSession::getSessionId)
-                .collect(Collectors.toSet());
-        return rooms.values().stream()
-                .filter(room -> room.getMembers().stream().anyMatch(userSessionIds::contains))
-                .collect(Collectors.toSet());
-    }
-
-    // ======================== 消息广播 ========================
-
-    /**
-     * 向房间内所有成员广播消息。
-     *
-     * <p>遍历房间内所有会话，逐个发送消息。发送失败的会话不会被中断后续发送。</p>
-     *
-     * @param roomId 目标房间 ID
-     * @param message 待广播的消息
-     */
-    public void broadcast(String roomId, WsMessage message) {
-        broadcast(roomId, message, null);
+        Set<WsRoom> result = new LinkedHashSet<>();
+        for (WsSession session : sessionManager.getUserSessions(userId)) {
+            for (String roomId : getSessionRooms(session.getSessionId())) {
+                WsRoom room = rooms.get(roomId);
+                if (room != null) {
+                    result.add(room);
+                }
+            }
+        }
+        return Set.copyOf(result);
     }
 
     /**
-     * 向房间内所有成员广播消息（排除指定会话）。
+     * 向房间全部成员广播消息。
      *
-     * <p>常见于聊天场景：发送者本人的消息已在前端展现，无需服务端再推送一次，
-     * 可通过 {@code excludeSessionId} 排除发送者自己的会话。</p>
-     *
-     * @param roomId           目标房间 ID
-     * @param message          待广播的消息
-     * @param excludeSessionId 需排除的会话 ID（如发送者本人），{@code null} 时不排除任何会话
+     * @param roomId 房间 ID
+     * @param message 消息
+     * @return 投递结果
      */
-    public void broadcast(String roomId, WsMessage message, String excludeSessionId) {
+    public WsDeliveryResult broadcast(String roomId, WsMessage message) {
+        return broadcast(roomId, message, null);
+    }
+
+    /**
+     * 向房间成员广播消息并排除指定会话。
+     *
+     * @param roomId 房间 ID
+     * @param message 消息
+     * @param excludeSessionId 排除的会话 ID
+     * @return 投递结果
+     */
+    public WsDeliveryResult broadcast(String roomId, WsMessage message, String excludeSessionId) {
         WsRoom room = rooms.get(roomId);
         if (room == null) {
-            log.warn("Room {} does not exist, cannot broadcast", roomId);
-            return;
+            return WsDeliveryResult.empty();
         }
-        for (String sid : room.getMembers()) {
-            if (Objects.equals(sid, excludeSessionId)) continue;
-            WsSession session = sessionManager.getSession(sid);
-            if (session != null && session.isAlive()) {
-                try {
-                    session.sendMessage(message);
-                } catch (Exception e) {
-                    log.warn("Failed to send message to session {} in room {}: {}", sid, roomId, e.getMessage());
+        int targets = 0;
+        int successes = 0;
+        int failures = 0;
+        int stale = 0;
+        for (String sessionId : room.getMembers()) {
+            if (Objects.equals(sessionId, excludeSessionId)) {
+                continue;
+            }
+            targets++;
+            WsSession session = sessionManager.getSession(sessionId);
+            if (session == null || !session.isAlive()) {
+                stale++;
+                continue;
+            }
+            try {
+                session.sendText(messageCodec.encode(message));
+                successes++;
+            } catch (RuntimeException exception) {
+                failures++;
+                log.warn("房间消息投递失败，roomId={}，sessionId={}，type={}",
+                        roomId, sessionId, exception.getClass().getSimpleName());
+            }
+        }
+        return new WsDeliveryResult(targets, successes, failures, stale);
+    }
+
+    /**
+     * 清理当前已经失效的会话成员。
+     */
+    public void cleanupInactiveSessions() {
+        for (WsRoom room : java.util.List.copyOf(rooms.values())) {
+            for (String sessionId : room.getMembers()) {
+                WsSession session = sessionManager.getSession(sessionId);
+                if (session == null || !session.isAlive()) {
+                    leave(room.getRoomId(), sessionId);
                 }
             }
         }
     }
 
     /**
-     * 自动清理不活跃的会话（从所有房间中移除已断开或心跳超时的会话）。
+     * 删除会话反向索引。
      *
-     * <p>建议配合 {@code HeartbeatDetector} 定期调用该方法，
-     * 或由心跳检测器在发现超时会话后主动调用 {@link #leave(String, WsSession)}。</p>
+     * @param sessionId 会话 ID
+     * @param roomId 房间 ID
      */
-    public void cleanupInactiveSessions() {
-        for (WsRoom room : rooms.values()) {
-            Iterator<String> it = room.getMembers().iterator();
-            while (it.hasNext()) {
-                String sessionId = it.next();
-                WsSession session = sessionManager.getSession(sessionId);
-                if (session == null || !session.isAlive()) {
-                    it.remove();
-                }
-            }
-            // 移除空房间
-            if (room.isEmpty()) {
-                rooms.remove(room.getRoomId());
-                log.info("Room {} auto-removed during cleanup", room.getRoomId());
-            }
+    private void removeReverseIndex(String sessionId, String roomId) {
+        sessionRooms.computeIfPresent(sessionId, (ignored, roomIds) -> {
+            roomIds.remove(roomId);
+            return roomIds.isEmpty() ? null : roomIds;
+        });
+    }
+
+    /**
+     * 校验必填文本。
+     *
+     * @param value 文本值
+     * @param name 参数名称
+     */
+    private void requireText(String value, String name) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(name + " must not be blank");
         }
+    }
+
+    /**
+     * 获取房间对应的稳定分段锁。
+     *
+     * @param roomId 房间 ID
+     * @return 分段锁
+     */
+    private Object lockFor(String roomId) {
+        return roomLocks[(roomId.hashCode() & Integer.MAX_VALUE) % roomLocks.length];
+    }
+
+    /**
+     * 创建固定数量的房间分段锁，避免房间动态创建导致锁对象无限增长。
+     *
+     * @return 分段锁数组
+     */
+    private static Object[] createLocks() {
+        Object[] locks = new Object[LOCK_STRIPE_COUNT];
+        for (int index = 0; index < locks.length; index++) {
+            locks[index] = new Object();
+        }
+        return locks;
     }
 }

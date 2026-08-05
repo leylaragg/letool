@@ -1,82 +1,112 @@
 package com.github.leyland.letool.websocket.core;
 
 import java.security.Principal;
-import java.util.*;
+import java.util.Collection;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 /**
- * WebSocket 用户主体，代表建立 WebSocket 连接的已验证用户身份。
+ * WebSocket 不可变用户主体。
  *
- * <p>在握手阶段通过 {@code WsHandshakeInterceptor} 解析 Token 生成此对象，
- * 并将其存入 WebSocket Session 的 attributes 中，供后续消息处理使用。</p>
- *
- * <p>实现了 {@link Principal} 接口，可无缝对接 Spring Security 体系。</p>
- *
- * <pre>{@code
- * // 在消息处理器中获取当前用户
- * WsPrincipal principal = session.getAttribute("principal");
- * String userId = principal.getUserId();
- * }</pre>
- *
- * @author leyland
- * @since 2.0.0
+ * <p>主体只能由握手认证器创建。角色和扩展属性在构造时复制，连接建立后不能被
+ * 外部代码修改，避免授权判断受到共享可变状态影响。</p>
  */
-public class WsPrincipal implements Principal {
+public final class WsPrincipal implements Principal {
 
-    // ======================== 字段 ========================
-
-    /** 用户唯一标识 */
     private final String userId;
-
-    /** 用户显示名称 */
     private final String username;
-
-    /** 用户拥有的角色列表 */
-    private final List<String> roles;
-
-    /** 扩展属性（可存放租户 ID、部门 ID 等业务信息） */
+    private final Set<String> roles;
     private final Map<String, Object> attributes;
-
-    // ======================== 构造 ========================
+    private final boolean authenticated;
 
     /**
-     * 创建 WebSocket 用户主体。
+     * 创建完整用户主体。
      *
-     * @param userId   用户唯一标识，不可为 {@code null}
-     * @param username 用户显示名称
-     * @param roles    用户角色列表
+     * @param userId 用户唯一标识，不允许为空
+     * @param username 用户显示名称；为空时使用用户标识
+     * @param roles 用户角色集合
+     * @param attributes 不包含凭据的业务扩展属性
      */
-    public WsPrincipal(String userId, String username, List<String> roles) {
-        this.userId = Objects.requireNonNull(userId, "userId must not be null");
-        this.username = username != null ? username : userId;
-        this.roles = roles != null ? Collections.unmodifiableList(new ArrayList<>(roles)) : Collections.emptyList();
-        this.attributes = new HashMap<>();
+    public WsPrincipal(
+            String userId,
+            String username,
+            Collection<String> roles,
+            Map<String, Object> attributes) {
+        this(userId, username, roles, attributes, true);
     }
 
     /**
-     * 创建仅包含 userId 的匿名用户主体。
+     * 创建用户主体并明确认证状态。
+     *
+     * @param userId 用户唯一标识
+     * @param username 用户显示名称
+     * @param roles 用户角色集合
+     * @param attributes 不包含凭据的业务扩展属性
+     * @param authenticated 是否已经通过身份认证
+     */
+    private WsPrincipal(
+            String userId,
+            String username,
+            Collection<String> roles,
+            Map<String, Object> attributes,
+            boolean authenticated) {
+        if (userId == null || userId.isBlank()) {
+            throw new IllegalArgumentException("userId must not be blank");
+        }
+        this.userId = userId;
+        this.username = username == null || username.isBlank() ? userId : username;
+        this.roles = roles == null ? Set.of() : Set.copyOf(new LinkedHashSet<>(roles));
+        this.attributes = attributes == null ? Map.of() : Map.copyOf(attributes);
+        this.authenticated = authenticated;
+    }
+
+    /**
+     * 创建不包含扩展属性的用户主体。
+     *
+     * @param userId 用户唯一标识
+     * @param username 用户显示名称
+     * @param roles 用户角色集合
+     */
+    public WsPrincipal(String userId, String username, Collection<String> roles) {
+        this(userId, username, roles, Map.of());
+    }
+
+    /**
+     * 创建只包含用户标识的主体。
      *
      * @param userId 用户唯一标识
      */
     public WsPrincipal(String userId) {
-        this(userId, userId, Collections.emptyList());
+        this(userId, userId, Set.of(), Map.of());
     }
 
-    // ======================== Principal 实现 ========================
+    /**
+     * 创建匿名主体。
+     *
+     * @param identifier 匿名连接随机标识
+     * @return 未认证的匿名主体
+     */
+    public static WsPrincipal anonymous(String identifier) {
+        if (identifier == null || identifier.isBlank()) {
+            throw new IllegalArgumentException("identifier must not be blank");
+        }
+        return new WsPrincipal("anonymous:" + identifier, "anonymous", Set.of(), Map.of(), false);
+    }
 
     /**
-     * 获取用户名称（Principal 接口规范）。
+     * 获取标准主体名称。
      *
-     * @return userId，与 Spring Security 的 Principal.getName() 行为一致
+     * @return 用户唯一标识
      */
     @Override
     public String getName() {
         return userId;
     }
 
-    // ======================== 扩展方法 ========================
-
     /**
-     * 获取用户 ID。
+     * 获取用户唯一标识。
      *
      * @return 用户唯一标识
      */
@@ -87,93 +117,113 @@ public class WsPrincipal implements Principal {
     /**
      * 获取用户显示名称。
      *
-     * @return 用户名，可能为空字符串
+     * @return 用户显示名称
      */
     public String getUsername() {
         return username;
     }
 
     /**
-     * 获取用户角色列表（不可修改）。
+     * 获取不可变角色集合。
      *
-     * @return 角色列表，永不为 {@code null}，可能为空列表
+     * @return 不可变角色集合
      */
-    public List<String> getRoles() {
+    public Set<String> getRoles() {
         return roles;
     }
 
     /**
-     * 判断用户是否拥有指定角色。
+     * 判断主体是否已经通过身份认证。
      *
-     * @param role 角色名
-     * @return {@code true} 如果拥有该角色
+     * @return 已认证时返回 {@code true}
      */
-    public boolean hasRole(String role) {
-        return roles.contains(role);
+    public boolean isAuthenticated() {
+        return authenticated;
     }
 
     /**
-     * 判断用户是否拥有所有指定角色。
+     * 判断主体是否拥有指定角色。
      *
-     * @param requiredRoles 需要的角色列表
-     * @return {@code true} 如果拥有所有指定角色
+     * @param role 角色名称
+     * @return 拥有该角色时返回 {@code true}
+     */
+    public boolean hasRole(String role) {
+        return role != null && roles.contains(role);
+    }
+
+    /**
+     * 判断主体是否拥有全部指定角色。
+     *
+     * @param requiredRoles 必需角色
+     * @return 拥有全部角色时返回 {@code true}
      */
     public boolean hasAllRoles(String... requiredRoles) {
-        if (requiredRoles == null || requiredRoles.length == 0) return true;
-        for (String role : requiredRoles) {
-            if (!roles.contains(role)) return false;
+        if (requiredRoles == null || requiredRoles.length == 0) {
+            return true;
+        }
+        for (String requiredRole : requiredRoles) {
+            if (!hasRole(requiredRole)) {
+                return false;
+            }
         }
         return true;
     }
 
     /**
-     * 获取所有扩展属性。
+     * 获取不可变扩展属性。
      *
-     * @return 扩展属性 Map，可修改
+     * @return 不可变扩展属性
      */
     public Map<String, Object> getAttributes() {
         return attributes;
     }
 
     /**
-     * 设置扩展属性。
+     * 获取指定扩展属性。
      *
-     * @param key   属性名
-     * @param value 属性值
-     */
-    public void setAttribute(String key, Object value) {
-        this.attributes.put(key, value);
-    }
-
-    /**
-     * 获取扩展属性。
-     *
-     * @param key 属性名
-     * @param <T> 属性值类型
-     * @return 属性值，不存在返回 {@code null}
+     * @param key 属性名称
+     * @param <T> 属性类型
+     * @return 属性值，不存在时返回 {@code null}
      */
     @SuppressWarnings("unchecked")
     public <T> T getAttribute(String key) {
-        return (T) this.attributes.get(key);
+        return (T) attributes.get(key);
     }
 
-    // ======================== Object 方法 ========================
-
+    /**
+     * 按用户唯一标识比较主体。
+     *
+     * @param object 待比较对象
+     * @return 用户标识相同时返回 {@code true}
+     */
     @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        WsPrincipal that = (WsPrincipal) o;
+    public boolean equals(Object object) {
+        if (this == object) {
+            return true;
+        }
+        if (!(object instanceof WsPrincipal that)) {
+            return false;
+        }
         return userId.equals(that.userId);
     }
 
+    /**
+     * 计算主体哈希值。
+     *
+     * @return 用户标识哈希值
+     */
     @Override
     public int hashCode() {
-        return userId.hashCode();
+        return Objects.hash(userId);
     }
 
+    /**
+     * 返回不包含扩展属性的安全摘要。
+     *
+     * @return 安全主体摘要
+     */
     @Override
     public String toString() {
-        return "WsPrincipal{userId='" + userId + "', username='" + username + "', roles=" + roles + "}";
+        return "WsPrincipal{userId='" + userId + "', username='" + username + "', roles=" + roles + '}';
     }
 }

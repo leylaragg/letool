@@ -1,210 +1,263 @@
 package com.github.leyland.letool.websocket.core;
 
-import com.github.leyland.letool.tool.util.JsonUtil;
 import com.github.leyland.letool.websocket.exception.WsException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorator;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * WebSocket 会话包装器，封装了 Spring 原生 {@link WebSocketSession}，并扩展了业务属性。
+ * 带有并发发送保护和业务身份的 WebSocket 会话。
  *
- * <p>该类是 letool WebSocket 模块中的核心会话对象，将框架层面的原生会话与业务层面的
- * 用户信息、心跳时间、扩展属性等关联起来，提供统一的会话操作接口。</p>
- *
- * <p>核心能力：</p>
- * <ul>
- *   <li>生成全局唯一的 {@code sessionId}</li>
- *   <li>关联可选的用户身份（{@code userId}、{@code WsPrincipal}）</li>
- *   <li>记录连接时间和最后心跳时间</li>
- *   <li>通过 {@link WebSocketSession} 发送消息</li>
- *   <li>判断会话是否因心跳超时而脱离活跃状态</li>
- * </ul>
- *
- * @author leyland
- * @since 2.0.0
+ * <p>会话 ID 直接使用容器提供的原生 ID。发送由 Spring
+ * {@link ConcurrentWebSocketSessionDecorator} 串行化，并设置发送时间和缓冲区上限，
+ * 防止慢连接无限占用内存。</p>
  */
-public class WsSession {
+public final class WsSession {
 
     private static final Logger log = LoggerFactory.getLogger(WsSession.class);
+    private static final int DEFAULT_SEND_TIME_LIMIT_MILLIS = 10_000;
+    private static final int DEFAULT_SEND_BUFFER_SIZE_BYTES = 512 * 1024;
 
-    // ======================== 字段 ========================
-
-    /** 全局唯一的会话 ID（UUID） */
     private final String sessionId;
-
-    /** 用户 ID（来自鉴权或匿名） */
-    private String userId;
-
-    /** Spring 原生 WebSocket 会话 */
+    private final String userId;
     private final WebSocketSession nativeSession;
-
-    /** 连接建立时间（epoch millis） */
     private final long connectedAt;
-
-    /** 最近一次心跳时间（epoch millis） */
-    private long lastHeartbeat;
-
-    /** 扩展属性（可存放 WsPrincipal、租户信息等） */
-    private final Map<String, Object> attributes;
-
-    /** 是否已断开 */
-    private volatile boolean disconnected = false;
-
-    /** 心跳超时阈值（秒），默认 90 秒，由 HeartbeatDetector 在检查时设置 */
-    private int heartbeatTimeoutSeconds = 90;
-
-    // ======================== 构造 ========================
+    private final AtomicLong lastActivityAt;
+    private final Map<String, Object> attributes = new ConcurrentHashMap<>();
+    private final AtomicBoolean disconnected = new AtomicBoolean();
+    private volatile long heartbeatTimeoutMillis = Duration.ofSeconds(90).toMillis();
+    private volatile boolean heartbeatCheckEnabled = true;
 
     /**
-     * 基于原生 WebSocketSession 创建会话包装器。
+     * 使用默认发送限制创建会话。
      *
-     * @param nativeSession Spring 原生 WebSocket 会话
+     * @param nativeSession Spring 原生会话
      */
     public WsSession(WebSocketSession nativeSession) {
-        this.sessionId = UUID.randomUUID().toString().replace("-", "");
-        this.nativeSession = Objects.requireNonNull(nativeSession, "nativeSession must not be null");
-        this.connectedAt = System.currentTimeMillis();
-        this.lastHeartbeat = System.currentTimeMillis();
-        this.attributes = new ConcurrentHashMap<>();
+        this(nativeSession, null);
     }
 
     /**
-     * 基于原生 WebSocketSession 和用户 ID 创建会话包装器。
+     * 使用默认发送限制创建已绑定用户的会话。
      *
-     * @param nativeSession Spring 原生 WebSocket 会话
-     * @param userId        用户唯一标识
+     * @param nativeSession Spring 原生会话
+     * @param userId 用户唯一标识
      */
     public WsSession(WebSocketSession nativeSession, String userId) {
-        this(nativeSession);
-        this.userId = userId;
+        this(nativeSession, userId, DEFAULT_SEND_TIME_LIMIT_MILLIS, DEFAULT_SEND_BUFFER_SIZE_BYTES);
     }
 
-    // ======================== 消息发送 ========================
-
     /**
-     * 向当前会话发送 WebSocket 消息。
+     * 创建带指定发送限制的会话。
      *
-     * <p>消息会被序列化为 JSON 字符串并通过原生会话发送。发送前会检查会话是否仍然打开。</p>
-     *
-     * @param message 待发送的消息对象
-     * @throws WsException 发送失败时抛出（例如会话已断开）
+     * @param nativeSession Spring 原生会话
+     * @param userId 用户唯一标识
+     * @param sendTimeLimitMillis 单次发送时间上限，单位毫秒
+     * @param sendBufferSizeBytes 待发送缓冲区上限，单位字节
      */
-    public void sendMessage(WsMessage message) {
-        if (disconnected || nativeSession == null || !nativeSession.isOpen()) {
-            log.warn("Session {} is closed, cannot send message", sessionId);
-            return;
+    public WsSession(
+            WebSocketSession nativeSession,
+            String userId,
+            int sendTimeLimitMillis,
+            int sendBufferSizeBytes) {
+        WebSocketSession requiredSession = Objects.requireNonNull(nativeSession, "nativeSession must not be null");
+        if (requiredSession.getId() == null || requiredSession.getId().isBlank()) {
+            throw new IllegalArgumentException("nativeSession id must not be blank");
         }
-        try {
-            String json = JsonUtil.toJsonString(message);
-            synchronized (nativeSession) {
-                nativeSession.sendMessage(new TextMessage(json));
-            }
-        } catch (IOException e) {
-            log.error("Failed to send message to session {}: {}", sessionId, e.getMessage());
-            throw new WsException("WS_SEND", "消息发送失败: " + e.getMessage(), e);
+        if (sendTimeLimitMillis <= 0 || sendBufferSizeBytes <= 0) {
+            throw new IllegalArgumentException("send limits must be positive");
         }
+        this.sessionId = requiredSession.getId();
+        this.userId = userId;
+        this.nativeSession = new ConcurrentWebSocketSessionDecorator(
+                requiredSession,
+                sendTimeLimitMillis,
+                sendBufferSizeBytes,
+                ConcurrentWebSocketSessionDecorator.OverflowStrategy.TERMINATE);
+        this.connectedAt = System.currentTimeMillis();
+        this.lastActivityAt = new AtomicLong(connectedAt);
     }
 
     /**
-     * 向当前会话发送原始文本消息（不包装为 WsMessage）。
+     * 发送原始文本帧。
      *
-     * @param text 纯文本内容
+     * @param text 待发送文本
+     * @throws WsException 会话关闭或发送失败时抛出
      */
     public void sendText(String text) {
-        if (disconnected || nativeSession == null || !nativeSession.isOpen()) {
-            log.warn("Session {} is closed, cannot send text", sessionId);
-            return;
+        if (!isOpen()) {
+            throw WsException.deliveryFailed(sessionId,
+                    new IllegalStateException("WebSocket session is closed"));
         }
         try {
-            synchronized (nativeSession) {
-                nativeSession.sendMessage(new TextMessage(text));
-            }
-        } catch (IOException e) {
-            log.error("Failed to send text to session {}: {}", sessionId, e.getMessage());
-            throw new WsException("WS_SEND", "文本发送失败: " + e.getMessage(), e);
+            nativeSession.sendMessage(new TextMessage(Objects.requireNonNull(text, "text must not be null")));
+        } catch (IOException | RuntimeException exception) {
+            throw WsException.deliveryFailed(sessionId, exception);
         }
     }
 
-    // ======================== 生命周期 ========================
-
     /**
-     * 判断会话是否仍然活跃（连接未关闭且心跳未超时）。
+     * 判断会话是否仍处于活动状态。
      *
-     * @return {@code true} 如果会话活跃
+     * @return 连接打开且未超过心跳阈值时返回 {@code true}
      */
     public boolean isAlive() {
-        if (disconnected) return false;
-        if (nativeSession == null || !nativeSession.isOpen()) return false;
-        // 心跳超时检查：lastHeartbeat + timeout > now
-        return System.currentTimeMillis() - lastHeartbeat < heartbeatTimeoutSeconds * 1000L;
+        return isOpen()
+                && (!heartbeatCheckEnabled
+                || System.currentTimeMillis() - lastActivityAt.get() < heartbeatTimeoutMillis);
     }
 
     /**
-     * 判断原生 WebSocket 会话是否处于打开状态。
+     * 判断底层连接是否打开。
      *
-     * @return {@code true} 如果原生会话已打开
+     * @return 底层连接打开时返回 {@code true}
      */
     public boolean isOpen() {
-        return nativeSession != null && nativeSession.isOpen();
+        return !disconnected.get() && nativeSession.isOpen();
     }
 
     /**
-     * 断开当前会话（关闭原生连接并标记为已断开）。
+     * 使用正常状态关闭连接。
      */
     public void disconnect() {
-        this.disconnected = true;
-        if (nativeSession != null && nativeSession.isOpen()) {
+        disconnect(CloseStatus.NORMAL);
+    }
+
+    /**
+     * 使用指定状态幂等关闭连接。
+     *
+     * @param closeStatus WebSocket 关闭状态
+     */
+    public void disconnect(CloseStatus closeStatus) {
+        if (!disconnected.compareAndSet(false, true)) {
+            return;
+        }
+        if (nativeSession.isOpen()) {
             try {
-                nativeSession.close();
-            } catch (IOException e) {
-                log.warn("Error closing session {}: {}", sessionId, e.getMessage());
+                nativeSession.close(closeStatus);
+            } catch (IOException exception) {
+                log.debug("关闭 WebSocket 会话失败，sessionId={}", sessionId, exception);
             }
         }
     }
 
     /**
-     * 刷新心跳时间（记录当前时间为最近心跳时间）。
+     * 刷新最近活动时间。
      */
     public void refreshHeartbeat() {
-        this.lastHeartbeat = System.currentTimeMillis();
+        lastActivityAt.set(System.currentTimeMillis());
     }
 
-    // ======================== Getter / Setter ========================
-
-    public String getSessionId() { return sessionId; }
-
-    public String getUserId() { return userId; }
-
-    public void setUserId(String userId) { this.userId = userId; }
-
-    public WebSocketSession getNativeSession() { return nativeSession; }
-
-    public long getConnectedAt() { return connectedAt; }
-
-    public long getLastHeartbeat() { return lastHeartbeat; }
-
-    public void setLastHeartbeat(long lastHeartbeat) { this.lastHeartbeat = lastHeartbeat; }
-
-    public int getHeartbeatTimeoutSeconds() { return heartbeatTimeoutSeconds; }
-
-    public void setHeartbeatTimeoutSeconds(int heartbeatTimeoutSeconds) { this.heartbeatTimeoutSeconds = heartbeatTimeoutSeconds; }
-
-    public boolean isDisconnected() { return disconnected; }
+    /**
+     * 获取会话 ID。
+     *
+     * @return 原生会话 ID
+     */
+    public String getSessionId() {
+        return sessionId;
+    }
 
     /**
-     * 获取扩展属性。
+     * 获取用户标识。
      *
-     * @param key 属性名
+     * @return 用户标识，尚未绑定时为 {@code null}
+     */
+    public String getUserId() {
+        return userId;
+    }
+
+    /**
+     * 获取经过并发保护的原生会话。
+     *
+     * @return Spring WebSocket 会话
+     */
+    public WebSocketSession getNativeSession() {
+        return nativeSession;
+    }
+
+    /**
+     * 获取连接建立时间。
+     *
+     * @return Epoch 毫秒
+     */
+    public long getConnectedAt() {
+        return connectedAt;
+    }
+
+    /**
+     * 获取最近活动时间。
+     *
+     * @return Epoch 毫秒
+     */
+    public long getLastHeartbeat() {
+        return lastActivityAt.get();
+    }
+
+    /**
+     * 设置最近活动时间，主要用于可控时钟的检测场景。
+     *
+     * @param lastHeartbeat Epoch 毫秒
+     */
+    public void setLastHeartbeat(long lastHeartbeat) {
+        lastActivityAt.set(lastHeartbeat);
+    }
+
+    /**
+     * 获取心跳超时阈值。
+     *
+     * @return 心跳超时时间
+     */
+    public Duration getHeartbeatTimeout() {
+        return Duration.ofMillis(heartbeatTimeoutMillis);
+    }
+
+    /**
+     * 设置心跳超时阈值。
+     *
+     * @param heartbeatTimeout 心跳超时时间
+     */
+    public void setHeartbeatTimeout(Duration heartbeatTimeout) {
+        if (heartbeatTimeout == null || heartbeatTimeout.toMillis() <= 0) {
+            throw new IllegalArgumentException("heartbeatTimeout must be positive");
+        }
+        this.heartbeatTimeoutMillis = heartbeatTimeout.toMillis();
+    }
+
+    /**
+     * 设置是否在活动状态判断中应用心跳超时。
+     *
+     * @param heartbeatCheckEnabled 是否启用心跳超时判断
+     */
+    public void setHeartbeatCheckEnabled(boolean heartbeatCheckEnabled) {
+        this.heartbeatCheckEnabled = heartbeatCheckEnabled;
+    }
+
+    /**
+     * 判断会话是否已经执行断开流程。
+     *
+     * @return 已断开时返回 {@code true}
+     */
+    public boolean isDisconnected() {
+        return disconnected.get();
+    }
+
+    /**
+     * 获取业务扩展属性。
+     *
+     * @param key 属性名称
      * @param <T> 属性类型
-     * @return 属性值，不存在返回 {@code null}
+     * @return 属性值
      */
     @SuppressWarnings("unchecked")
     public <T> T getAttribute(String key) {
@@ -212,50 +265,33 @@ public class WsSession {
     }
 
     /**
-     * 设置扩展属性。
+     * 设置业务扩展属性。
      *
-     * @param key   属性名
+     * @param key 属性名称
      * @param value 属性值
      */
     public void setAttribute(String key, Object value) {
-        attributes.put(key, value);
+        attributes.put(Objects.requireNonNull(key, "key must not be null"),
+                Objects.requireNonNull(value, "value must not be null"));
     }
 
     /**
-     * 移除扩展属性。
+     * 删除业务扩展属性。
      *
-     * @param key 属性名
+     * @param key 属性名称
      */
     public void removeAttribute(String key) {
-        attributes.remove(key);
+        if (key != null) {
+            attributes.remove(key);
+        }
     }
 
     /**
-     * 获取全部扩展属性。
+     * 获取不可变属性快照。
      *
-     * @return 扩展属性 Map
+     * @return 不可变属性快照
      */
     public Map<String, Object> getAttributes() {
-        return attributes;
-    }
-
-    // ======================== Object 方法 ========================
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        WsSession session = (WsSession) o;
-        return sessionId.equals(session.sessionId);
-    }
-
-    @Override
-    public int hashCode() {
-        return sessionId.hashCode();
-    }
-
-    @Override
-    public String toString() {
-        return "WsSession{sessionId='" + sessionId + "', userId='" + userId + "', open=" + isOpen() + ", alive=" + isAlive() + "}";
+        return Map.copyOf(attributes);
     }
 }

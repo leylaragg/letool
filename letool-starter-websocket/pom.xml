@@ -11,18 +11,17 @@
 
     <artifactId>letool-starter-websocket</artifactId>
     <name>letool-starter-websocket</name>
-    <description>letool WebSocket 增强模块 —— 消息路由、房间管理、消息推送、分布式会话、心跳检测</description>
+    <description>letool 单节点 WebSocket 开发框架 —— 握手鉴权、消息路由、房间管理、可靠推送与心跳检测</description>
     <packaging>jar</packaging>
 
     <dependencies>
         <dependency>
             <groupId>com.github.leyland</groupId>
-            <artifactId>letool-starter-tool</artifactId>
+            <artifactId>letool-starter-exception</artifactId>
         </dependency>
         <dependency>
             <groupId>com.github.leyland</groupId>
-            <artifactId>letool-starter-web</artifactId>
-            <optional>true</optional>
+            <artifactId>letool-starter-tool</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

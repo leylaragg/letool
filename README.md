@@ -57,7 +57,7 @@
 | **letool-starter-sms-tencent** | 腾讯云 SMS 3.0 产品级官方 SDK Provider，自动传递短信核心模块 | sms、腾讯云 SDK |
 | [**letool-starter-ai**](letool-starter-ai/README.md) | AI 便利门面 —— Spring AI Provider 中立模型路由、默认选择与原生 `ChatClient` 缓存 | exception, Spring AI |
 | **letool-starter-data-structure** | 数据结构 —— 泛型树、决策链（消除 if-else）、链表 | tool |
-| **letool-starter-websocket** | WebSocket —— 消息路由、房间管理、分布式会话 | tool, web |
+| [**letool-starter-websocket**](letool-starter-websocket/README.md) | 单节点 WebSocket 开发框架 —— 握手鉴权、消息路由、会话限流、房间管理、可靠发送与心跳清理 | exception, tool, Spring WebSocket |
 | **letool-starter-job** | 任务调度 —— Spring Boot Quartz 便捷封装、分片、重试、日志扩展 | exception, Spring Boot Quartz |
 | **letool-starter-monitor** | 监控增强 —— Actuator/Micrometer 指标门面、真实 Webhook 告警、用户清理任务生产级调度 | tool, exception |
 

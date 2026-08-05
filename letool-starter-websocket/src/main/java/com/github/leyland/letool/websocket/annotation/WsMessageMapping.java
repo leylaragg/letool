@@ -16,8 +16,8 @@ import java.lang.annotation.*;
  * }
  * }</pre>
  *
- * <p>注意：当前版本中，消息路由主要通过实现 {@code WsMessageHandler} 接口完成。
- * 此注解留作后续扩展（如基于注解的自动发现和注册机制）。</p>
+ * <p>启动时会扫描 Spring Bean 并注册该方法。重复消息类型或非法方法签名会直接导致
+ * 应用启动失败，避免把配置错误延迟到运行阶段。</p>
  *
  * @author leyland
  * @since 2.0.0

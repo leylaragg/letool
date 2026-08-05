@@ -1,15 +1,28 @@
 package com.github.leyland.letool.websocket.config;
 
+import com.github.leyland.letool.websocket.auth.PrincipalWsAuthenticator;
+import com.github.leyland.letool.websocket.auth.WsAuthenticator;
 import com.github.leyland.letool.websocket.auth.WsHandshakeInterceptor;
+import com.github.leyland.letool.tool.json.Fastjson2JsonCodec;
+import com.github.leyland.letool.tool.json.JsonCodec;
+import com.github.leyland.letool.websocket.core.WsMessageCodec;
 import com.github.leyland.letool.websocket.core.WsSessionManager;
 import com.github.leyland.letool.websocket.core.WsTemplate;
+import com.github.leyland.letool.websocket.handler.DefaultWsErrorHandler;
 import com.github.leyland.letool.websocket.handler.DefaultWsHandler;
+import com.github.leyland.letool.websocket.handler.DefaultWsMessageRouter;
+import com.github.leyland.letool.websocket.handler.WsErrorHandler;
 import com.github.leyland.letool.websocket.handler.WsMessageHandler;
+import com.github.leyland.letool.websocket.handler.WsMessageRouteRegistrar;
+import com.github.leyland.letool.websocket.handler.WsMessageRouter;
 import com.github.leyland.letool.websocket.heartbeat.HeartbeatDetector;
 import com.github.leyland.letool.websocket.room.WsRoomManager;
+import jakarta.websocket.WebSocketContainer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -17,12 +30,12 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.scheduling.TaskScheduler;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
-import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
-
-import java.util.Collections;
-import java.util.List;
+import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistration;
+import org.springframework.web.socket.server.standard.ServletServerContainerFactoryBean;
 
 /**
  * WebSocket 模块自动配置类，负责创建并注册所有 WebSocket 核心组件。
@@ -35,7 +48,7 @@ import java.util.List;
  *   <li>{@code heartbeatDetector} — 心跳检测器（可选，默认启用）</li>
  *   <li>{@code wsHandshakeInterceptor} — 握手鉴权拦截器</li>
  *   <li>{@code defaultWsHandler} — 默认 WebSocket 消息处理器</li>
- *   <li>{@code webSocketConfigurer} — 端点注册器（由 Spring WebSocket 自动发现并调用）</li>
+ *   <li>{@code letoolWebSocketConfigurer} — 端点注册器（由 Spring WebSocket 自动发现并调用）</li>
  * </ul>
  *
  * <p>通过 {@code letool.websocket.enabled=false} 可禁用整个模块。</p>
@@ -58,13 +71,14 @@ public class WebSocketAutoConfiguration {
     /**
      * 创建 WebSocket 会话管理器 Bean。
      *
+     * @param properties WebSocket 配置
      * @return WsSessionManager 单例实例
      */
     @Bean
     @ConditionalOnMissingBean
-    public WsSessionManager wsSessionManager() {
-        log.info("Creating WsSessionManager");
-        return new WsSessionManager();
+    public WsSessionManager wsSessionManager(WebSocketProperties properties) {
+        log.debug("创建 WebSocket 会话管理器");
+        return new WsSessionManager(properties.getMaxSessionPerUser());
     }
 
     /**
@@ -72,26 +86,85 @@ public class WebSocketAutoConfiguration {
      *
      * @param sessionManager 会话管理器
      * @param roomManager    房间管理器
+     * @param messageCodec 消息编解码器
      * @return WsTemplate 实例
      */
     @Bean
     @ConditionalOnMissingBean
-    public WsTemplate wsTemplate(WsSessionManager sessionManager, WsRoomManager roomManager) {
-        log.info("Creating WsTemplate");
-        return new WsTemplate(sessionManager, roomManager);
+    public WsTemplate wsTemplate(
+            WsSessionManager sessionManager,
+            WsRoomManager roomManager,
+            WsMessageCodec messageCodec) {
+        log.debug("创建 WebSocket 消息发送模板");
+        return new WsTemplate(sessionManager, roomManager, messageCodec);
     }
 
     /**
      * 创建 WebSocket 房间管理器 Bean。
      *
      * @param sessionManager 会话管理器
+     * @param messageCodec 消息编解码器
      * @return WsRoomManager 实例
      */
     @Bean
     @ConditionalOnMissingBean
-    public WsRoomManager wsRoomManager(WsSessionManager sessionManager) {
-        log.info("Creating WsRoomManager");
-        return new WsRoomManager(sessionManager);
+    public WsRoomManager wsRoomManager(
+            WsSessionManager sessionManager,
+            WsMessageCodec messageCodec) {
+        log.debug("创建 WebSocket 房间管理器");
+        return new WsRoomManager(sessionManager, messageCodec);
+    }
+
+    /**
+     * 创建使用应用 JSON 扩展的消息编解码器。
+     *
+     * @param jsonCodecProvider 应用提供的 JSON 编解码器
+     * @return WebSocket 消息编解码器
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public WsMessageCodec wsMessageCodec(ObjectProvider<JsonCodec> jsonCodecProvider) {
+        JsonCodec jsonCodec = jsonCodecProvider.getIfAvailable(Fastjson2JsonCodec::createDefault);
+        return new WsMessageCodec(jsonCodec);
+    }
+
+    /**
+     * 创建默认消息路由器并注册程序化处理器。
+     *
+     * @param handlers 程序化处理器
+     * @return 消息路由器
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public WsMessageRouter wsMessageRouter(ObjectProvider<WsMessageHandler> handlers) {
+        return new DefaultWsMessageRouter(handlers.orderedStream().toList());
+    }
+
+    /**
+     * 创建注解消息路由注册器。
+     *
+     * @param messageRouter 消息路由器
+     * @param beanFactory Spring Bean 工厂
+     * @return 注解消息路由注册器
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public WsMessageRouteRegistrar wsMessageRouteRegistrar(
+            WsMessageRouter messageRouter,
+            ConfigurableListableBeanFactory beanFactory) {
+        return new WsMessageRouteRegistrar(messageRouter, beanFactory);
+    }
+
+    /**
+     * 创建安全错误响应处理器。
+     *
+     * @param messageCodec 消息编解码器
+     * @return 错误处理器
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public WsErrorHandler wsErrorHandler(WsMessageCodec messageCodec) {
+        return new DefaultWsErrorHandler(messageCodec);
     }
 
     /**
@@ -103,27 +176,83 @@ public class WebSocketAutoConfiguration {
      *
      * @param properties     WebSocket 配置属性
      * @param sessionManager 会话管理器
+     * @param roomManager 房间管理器
+     * @param taskScheduler 心跳任务调度器
      * @return HeartbeatDetector 实例
      */
     @Bean(initMethod = "start", destroyMethod = "stop")
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "letool.websocket.heartbeat", name = "enabled", havingValue = "true", matchIfMissing = true)
-    public HeartbeatDetector heartbeatDetector(WebSocketProperties properties, WsSessionManager sessionManager) {
-        log.info("Creating HeartbeatDetector");
-        return new HeartbeatDetector(properties, sessionManager);
+    public HeartbeatDetector heartbeatDetector(
+            WebSocketProperties properties,
+            WsSessionManager sessionManager,
+            WsRoomManager roomManager,
+            @Qualifier("letoolWebSocketTaskScheduler") TaskScheduler taskScheduler) {
+        log.debug("创建 WebSocket 心跳检测器");
+        return new HeartbeatDetector(properties, sessionManager, roomManager, taskScheduler);
+    }
+
+    /**
+     * 创建 WebSocket 心跳专用任务调度器。
+     *
+     * <p>独立线程池可避免占用业务调度任务，并由 Spring 容器负责优雅关闭。</p>
+     *
+     * @return 心跳任务调度器
+     */
+    @Bean(name = "letoolWebSocketTaskScheduler", destroyMethod = "shutdown")
+    @ConditionalOnMissingBean(name = "letoolWebSocketTaskScheduler")
+    @ConditionalOnProperty(prefix = "letool.websocket.heartbeat", name = "enabled", havingValue = "true", matchIfMissing = true)
+    public ThreadPoolTaskScheduler letoolWebSocketTaskScheduler() {
+        ThreadPoolTaskScheduler taskScheduler = new ThreadPoolTaskScheduler();
+        taskScheduler.setPoolSize(1);
+        taskScheduler.setThreadNamePrefix("letool-ws-heartbeat-");
+        taskScheduler.setWaitForTasksToCompleteOnShutdown(true);
+        taskScheduler.setAwaitTerminationSeconds(5);
+        return taskScheduler;
+    }
+
+    /**
+     * 将应用层帧大小配置同步到底层 Jakarta WebSocket 容器。
+     *
+     * <p>容器限制会在消息进入应用前生效，避免超大文本帧先占用内存后才被处理器拒绝。
+     * 业务自行提供 {@link WebSocketContainer} Bean 时，starter 会退让。</p>
+     *
+     * @param properties WebSocket 配置
+     * @return Servlet WebSocket 容器配置工厂
+     */
+    @Bean(name = "letoolWebSocketContainer")
+    @ConditionalOnMissingBean(WebSocketContainer.class)
+    public ServletServerContainerFactoryBean letoolWebSocketContainer(WebSocketProperties properties) {
+        ServletServerContainerFactoryBean container = new ServletServerContainerFactoryBean();
+        container.setMaxTextMessageBufferSize(Math.toIntExact(properties.getMaxFrameSize().toBytes()));
+        return container;
+    }
+
+    /**
+     * 创建握手拦截器 Bean。
+     *
+     * @return 默认 HTTP 主体认证器
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public WsAuthenticator wsAuthenticator() {
+        return new PrincipalWsAuthenticator();
     }
 
     /**
      * 创建握手拦截器 Bean。
      *
      * @param properties WebSocket 配置属性
+     * @param authenticator 握手认证器
      * @return WsHandshakeInterceptor 实例
      */
     @Bean
     @ConditionalOnMissingBean
-    public WsHandshakeInterceptor wsHandshakeInterceptor(WebSocketProperties properties) {
-        log.info("Creating WsHandshakeInterceptor");
-        return new WsHandshakeInterceptor(properties);
+    public WsHandshakeInterceptor wsHandshakeInterceptor(
+            WebSocketProperties properties,
+            WsAuthenticator authenticator) {
+        log.debug("创建 WebSocket 握手拦截器");
+        return new WsHandshakeInterceptor(properties, authenticator);
     }
 
     /**
@@ -134,20 +263,26 @@ public class WebSocketAutoConfiguration {
      *
      * @param sessionManager    会话管理器
      * @param roomManager       房间管理器
-     * @param heartbeatDetector 心跳检测器（可能为 {@code null}，心跳功能禁用时不存在该 Bean）
-     * @param handlers          消息处理器列表（可能为空）
+     * @param heartbeatDetectorProvider 心跳检测器提供器，心跳关闭时返回空
+     * @param messageRouter     消息路由器
+     * @param messageCodec      消息编解码器
+     * @param errorHandler      错误处理器
+     * @param properties        WebSocket 配置
      * @return DefaultWsHandler 实例
      */
     @Bean
     @ConditionalOnMissingBean
     public DefaultWsHandler defaultWsHandler(WsSessionManager sessionManager,
                                               WsRoomManager roomManager,
-                                              @Autowired(required = false) HeartbeatDetector heartbeatDetector,
-                                              @Autowired(required = false) List<WsMessageHandler> handlers) {
-        log.info("Creating DefaultWsHandler with {} message handlers",
-                handlers != null ? handlers.size() : 0);
-        return new DefaultWsHandler(sessionManager, roomManager, heartbeatDetector,
-                handlers != null ? handlers : Collections.emptyList());
+                                              ObjectProvider<HeartbeatDetector> heartbeatDetectorProvider,
+                                              WsMessageRouter messageRouter,
+                                              WsMessageCodec messageCodec,
+                                              WsErrorHandler errorHandler,
+                                              WebSocketProperties properties) {
+        log.debug("创建 WebSocket 默认连接处理器");
+        return new DefaultWsHandler(
+                sessionManager, roomManager, heartbeatDetectorProvider.getIfAvailable(), messageRouter,
+                messageCodec, errorHandler, properties);
     }
 
     // ======================== WebSocket 端点注册 ========================
@@ -167,19 +302,19 @@ public class WebSocketAutoConfiguration {
      * @return WebSocketConfigurer 实例
     */
     @Bean
-    @ConditionalOnMissingBean(name = "webSocketConfigurer")
-    public WebSocketConfigurer webSocketConfigurer(WebSocketProperties properties,
-                                                    DefaultWsHandler wsHandler,
-                                                    WsHandshakeInterceptor wsInterceptor) {
+    @ConditionalOnMissingBean(name = "letoolWebSocketConfigurer")
+    public WebSocketConfigurer letoolWebSocketConfigurer(WebSocketProperties properties,
+                                                          DefaultWsHandler wsHandler,
+                                                          WsHandshakeInterceptor wsInterceptor) {
         return registry -> {
             String path = properties.getPath();
-            String allowedOrigins = properties.getAllowedOrigins();
-
-            registry.addHandler(wsHandler, path)
-                    .addInterceptors(wsInterceptor)
-                    .setAllowedOrigins(allowedOrigins.split(","));
-
-            log.info("WebSocket endpoint registered: path={}, allowedOrigins={}", path, allowedOrigins);
+            WebSocketHandlerRegistration registration = registry.addHandler(wsHandler, path)
+                    .addInterceptors(wsInterceptor);
+            if (!properties.getAllowedOrigins().isEmpty()) {
+                registration.setAllowedOrigins(properties.getAllowedOrigins().toArray(String[]::new));
+            }
+            log.info("WebSocket 端点已注册，path={}，allowedOrigins={}",
+                    path, properties.getAllowedOrigins().isEmpty() ? "same-origin" : properties.getAllowedOrigins());
         };
     }
 }

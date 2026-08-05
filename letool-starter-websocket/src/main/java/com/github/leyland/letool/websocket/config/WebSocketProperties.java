@@ -1,147 +1,356 @@
 package com.github.leyland.letool.websocket.config;
 
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.util.unit.DataSize;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * WebSocket 模块配置属性类，对应 YAML 中的 {@code letool.websocket} 前缀。
+ * WebSocket 模块配置，对应 {@code letool.websocket} 前缀。
  *
- * <p>该配置类聚合了 WebSocket 连接路径、跨域、会话上限、帧大小、心跳检测、鉴权等所有配置项。
- * 使用者可在 {@code application.yml} 中按如下结构配置：</p>
- *
- * <pre>{@code
- * letool:
- *   websocket:
- *     enabled: true              # 是否启用 WebSocket 模块
- *     path: /ws                  # WebSocket 连接端点路径
- *     allowed-origins: "*"       # 允许的跨域来源
- *     max-session-per-user: 5    # 单用户最大会话数
- *     max-frame-size: 65536      # 最大帧大小（字节）
- *     heartbeat:
- *       enabled: true            # 是否启用心跳检测
- *       interval: 30s            # 心跳检测间隔
- *       timeout: 90s             # 心跳超时时间
- *     auth:
- *       enabled: true            # 是否启用连接鉴权
- *       token-param: token       # 鉴权 Token 的查询参数名
- * }</pre>
- *
- * @author leyland
- * @since 2.0.0
+ * <p>默认只接受同源握手。只有业务明确配置 {@code allowed-origins} 后，
+ * 才会开放跨域来源；鉴权默认启用并委托给 {@code WsAuthenticator}。</p>
  */
 @ConfigurationProperties(prefix = "letool.websocket")
-public class WebSocketProperties {
+public class WebSocketProperties implements InitializingBean {
 
-    // ======================== 顶层属性 ========================
-
-    /** 是否启用 WebSocket 模块，默认 true */
     private boolean enabled = true;
-
-    /** WebSocket 连接端点路径，默认 /ws */
     private String path = "/ws";
-
-    /** 允许的跨域来源，多个用逗号分隔，默认 *（允许所有） */
-    private String allowedOrigins = "*";
-
-    /** 单个用户最大同时在线会话数，默认 5 */
+    private List<String> allowedOrigins = new ArrayList<>();
     private int maxSessionPerUser = 5;
-
-    /** WebSocket 最大帧大小（字节），默认 65536（64KB） */
-    private int maxFrameSize = 65536;
-
-    /** 心跳检测配置 */
+    private DataSize maxFrameSize = DataSize.ofKilobytes(64);
+    private Duration sendTimeLimit = Duration.ofSeconds(10);
+    private DataSize sendBufferSize = DataSize.ofKilobytes(512);
     private Heartbeat heartbeat = new Heartbeat();
-
-    /** 连接鉴权配置 */
     private Auth auth = new Auth();
 
-    // ======================== Getter / Setter ========================
+    /**
+     * 获取模块启用状态。
+     *
+     * @return 启用时返回 {@code true}
+     */
+    public boolean isEnabled() {
+        return enabled;
+    }
 
-    public boolean isEnabled() { return enabled; }
+    /**
+     * 设置模块启用状态。
+     *
+     * @param enabled 是否启用模块
+     */
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+    }
 
-    public void setEnabled(boolean enabled) { this.enabled = enabled; }
+    /**
+     * 获取 WebSocket 端点路径。
+     *
+     * @return 端点路径
+     */
+    public String getPath() {
+        return path;
+    }
 
-    public String getPath() { return path; }
+    /**
+     * 设置 WebSocket 端点路径。
+     *
+     * @param path 以斜杠开头的端点路径
+     */
+    public void setPath(String path) {
+        if (path == null || path.isBlank() || !path.startsWith("/") || path.contains("?")) {
+            throw new IllegalArgumentException("WebSocket 端点路径必须以 / 开头且不能包含查询参数");
+        }
+        this.path = path;
+    }
 
-    public void setPath(String path) { this.path = path; }
+    /**
+     * 获取允许跨域握手的来源。
+     *
+     * @return 不可变来源列表，空列表表示沿用 Spring 同源策略
+     */
+    public List<String> getAllowedOrigins() {
+        return List.copyOf(allowedOrigins);
+    }
 
-    public String getAllowedOrigins() { return allowedOrigins; }
+    /**
+     * 设置允许跨域握手的来源。
+     *
+     * @param allowedOrigins 来源列表，可包含通配符 {@code *}
+     */
+    public void setAllowedOrigins(List<String> allowedOrigins) {
+        this.allowedOrigins = allowedOrigins == null
+                ? new ArrayList<>()
+                : allowedOrigins.stream()
+                .filter(origin -> origin != null && !origin.isBlank())
+                .map(String::trim)
+                .distinct()
+                .toList();
+    }
 
-    public void setAllowedOrigins(String allowedOrigins) { this.allowedOrigins = allowedOrigins; }
+    /**
+     * 获取单用户会话上限。
+     *
+     * @return 会话上限
+     */
+    public int getMaxSessionPerUser() {
+        return maxSessionPerUser;
+    }
 
-    public int getMaxSessionPerUser() { return maxSessionPerUser; }
+    /**
+     * 设置单用户会话上限。
+     *
+     * @param maxSessionPerUser 会话上限
+     */
+    public void setMaxSessionPerUser(int maxSessionPerUser) {
+        if (maxSessionPerUser <= 0) {
+            throw new IllegalArgumentException("单用户 WebSocket 会话上限必须大于 0");
+        }
+        this.maxSessionPerUser = maxSessionPerUser;
+    }
 
-    public void setMaxSessionPerUser(int maxSessionPerUser) { this.maxSessionPerUser = maxSessionPerUser; }
+    /**
+     * 获取单个文本帧大小上限。
+     *
+     * @return 字节数
+     */
+    public DataSize getMaxFrameSize() {
+        return maxFrameSize;
+    }
 
-    public int getMaxFrameSize() { return maxFrameSize; }
+    /**
+     * 设置单个文本帧大小上限。
+     *
+     * @param maxFrameSize 数据大小
+     */
+    public void setMaxFrameSize(DataSize maxFrameSize) {
+        if (maxFrameSize == null || maxFrameSize.toBytes() <= 0) {
+            throw new IllegalArgumentException("WebSocket 最大消息大小必须大于 0 字节");
+        }
+        requireIntBytes(maxFrameSize, "WebSocket 最大消息大小不能超过 2147483647 字节");
+        this.maxFrameSize = maxFrameSize;
+    }
 
-    public void setMaxFrameSize(int maxFrameSize) { this.maxFrameSize = maxFrameSize; }
+    /**
+     * 获取单次发送时间上限。
+     *
+     * @return 发送时间上限
+     */
+    public Duration getSendTimeLimit() {
+        return sendTimeLimit;
+    }
 
-    public Heartbeat getHeartbeat() { return heartbeat; }
+    /**
+     * 设置单次发送时间上限。
+     *
+     * @param sendTimeLimit 发送时间上限
+     */
+    public void setSendTimeLimit(Duration sendTimeLimit) {
+        requirePositive(sendTimeLimit, "WebSocket 发送时间上限必须大于 0");
+        if (sendTimeLimit.toMillis() > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("WebSocket 发送时间上限不能超过 2147483647 毫秒");
+        }
+        this.sendTimeLimit = sendTimeLimit;
+    }
 
-    public void setHeartbeat(Heartbeat heartbeat) { this.heartbeat = heartbeat; }
+    /**
+     * 获取单连接发送缓冲区上限。
+     *
+     * @return 缓冲区字节数
+     */
+    public DataSize getSendBufferSize() {
+        return sendBufferSize;
+    }
 
-    public Auth getAuth() { return auth; }
+    /**
+     * 设置单连接发送缓冲区上限。
+     *
+     * @param sendBufferSize 缓冲区大小
+     */
+    public void setSendBufferSize(DataSize sendBufferSize) {
+        if (sendBufferSize == null || sendBufferSize.toBytes() <= 0) {
+            throw new IllegalArgumentException("WebSocket 发送缓冲区大小必须大于 0 字节");
+        }
+        requireIntBytes(sendBufferSize, "WebSocket 发送缓冲区大小不能超过 2147483647 字节");
+        this.sendBufferSize = sendBufferSize;
+    }
 
-    public void setAuth(Auth auth) { this.auth = auth; }
+    /**
+     * 获取心跳配置。
+     *
+     * @return 心跳配置
+     */
+    public Heartbeat getHeartbeat() {
+        return heartbeat;
+    }
 
-    // ======================== 内嵌类：心跳检测配置 ========================
+    /**
+     * 设置心跳配置。
+     *
+     * @param heartbeat 心跳配置
+     */
+    public void setHeartbeat(Heartbeat heartbeat) {
+        this.heartbeat = requireNonNull(heartbeat, "WebSocket 心跳配置不能为空");
+    }
+
+    /**
+     * 获取鉴权配置。
+     *
+     * @return 鉴权配置
+     */
+    public Auth getAuth() {
+        return auth;
+    }
+
+    /**
+     * 设置鉴权配置。
+     *
+     * @param auth 鉴权配置
+     */
+    public void setAuth(Auth auth) {
+        this.auth = requireNonNull(auth, "WebSocket 鉴权配置不能为空");
+    }
+
+    /**
+     * 在属性绑定完成后校验跨字段约束。
+     */
+    @Override
+    public void afterPropertiesSet() {
+        if (heartbeat.enabled && heartbeat.timeout.compareTo(heartbeat.interval) <= 0) {
+            throw new IllegalArgumentException("WebSocket 心跳超时时间必须大于检查间隔");
+        }
+    }
+
+    /**
+     * 校验时长必须为正数。
+     *
+     * @param duration 待校验时长
+     * @param message 非法时的错误消息
+     */
+    private static void requirePositive(Duration duration, String message) {
+        if (duration == null || duration.toMillis() <= 0) {
+            throw new IllegalArgumentException(message);
+        }
+    }
+
+    /**
+     * 校验数据大小可以安全传入 Spring WebSocket 的整数参数。
+     *
+     * @param dataSize 待校验数据大小
+     * @param message 非法时的错误消息
+     */
+    private static void requireIntBytes(DataSize dataSize, String message) {
+        if (dataSize.toBytes() > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException(message);
+        }
+    }
+
+    /**
+     * 校验对象不能为空。
+     *
+     * @param value 待校验对象
+     * @param message 非法时的错误消息
+     * @param <T> 对象类型
+     * @return 原对象
+     */
+    private static <T> T requireNonNull(T value, String message) {
+        if (value == null) {
+            throw new IllegalArgumentException(message);
+        }
+        return value;
+    }
 
     /**
      * WebSocket 心跳检测配置。
-     *
-     * <p>服务端定期检查客户端心跳，超时未收到心跳的会话将被自动断开，
-     * 用于及时清理网络断开但未发送 close 帧的僵尸连接。</p>
      */
     public static class Heartbeat {
 
-        /** 是否启用心跳检测，默认 true */
         private boolean enabled = true;
+        private Duration interval = Duration.ofSeconds(30);
+        private Duration timeout = Duration.ofSeconds(90);
 
-        /** 心跳检测间隔时间（秒），默认 30 */
-        private int interval = 30;
+        /**
+         * 获取心跳检测启用状态。
+         *
+         * @return 启用时返回 {@code true}
+         */
+        public boolean isEnabled() {
+            return enabled;
+        }
 
-        /** 心跳超时时间（秒），超过此时间未收到心跳视为超时，默认 90 */
-        private int timeout = 90;
+        /**
+         * 设置心跳检测启用状态。
+         *
+         * @param enabled 是否启用心跳检测
+         */
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
 
-        // ---- Getter / Setter ----
+        /**
+         * 获取心跳检查间隔。
+         *
+         * @return 检查间隔
+         */
+        public Duration getInterval() {
+            return interval;
+        }
 
-        public boolean isEnabled() { return enabled; }
+        /**
+         * 设置心跳检查间隔。
+         *
+         * @param interval 检查间隔
+         */
+        public void setInterval(Duration interval) {
+            requirePositive(interval, "WebSocket 心跳检查间隔必须大于 0");
+            this.interval = interval;
+        }
 
-        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        /**
+         * 获取心跳超时时间。
+         *
+         * @return 心跳超时时间
+         */
+        public Duration getTimeout() {
+            return timeout;
+        }
 
-        public int getInterval() { return interval; }
-
-        public void setInterval(int interval) { this.interval = interval; }
-
-        public int getTimeout() { return timeout; }
-
-        public void setTimeout(int timeout) { this.timeout = timeout; }
+        /**
+         * 设置心跳超时时间。
+         *
+         * @param timeout 心跳超时时间
+         */
+        public void setTimeout(Duration timeout) {
+            requirePositive(timeout, "WebSocket 心跳超时时间必须大于 0");
+            this.timeout = timeout;
+        }
     }
 
-    // ======================== 内嵌类：鉴权配置 ========================
-
     /**
-     * WebSocket 连接鉴权配置。
-     *
-     * <p>通过 URL 查询参数传递 Token 进行鉴权，鉴权通过后建立 WsPrincipal 并绑定到会话属性中。
-     * 若 {@code enabled} 为 {@code false}，则允许匿名连接。</p>
+     * WebSocket 握手鉴权配置。
      */
     public static class Auth {
 
-        /** 是否启用连接鉴权，默认 true */
         private boolean enabled = true;
 
-        /** 鉴权 Token 的 URL 查询参数名，默认 token */
-        private String tokenParam = "token";
+        /**
+         * 获取鉴权启用状态。
+         *
+         * @return 启用时返回 {@code true}
+         */
+        public boolean isEnabled() {
+            return enabled;
+        }
 
-        // ---- Getter / Setter ----
-
-        public boolean isEnabled() { return enabled; }
-
-        public void setEnabled(boolean enabled) { this.enabled = enabled; }
-
-        public String getTokenParam() { return tokenParam; }
-
-        public void setTokenParam(String tokenParam) { this.tokenParam = tokenParam; }
+        /**
+         * 设置鉴权启用状态。
+         *
+         * @param enabled 是否启用鉴权
+         */
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
     }
 }

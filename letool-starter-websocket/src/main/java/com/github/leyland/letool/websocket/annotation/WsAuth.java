@@ -27,8 +27,8 @@ import java.lang.annotation.*;
  * public void handlePing(WsSession session, WsMessage message) { ... }
  * }</pre>
  *
- * <p>注意：当前版本中，权限检查主要在 {@code WsHandshakeInterceptor} 握手阶段完成。
- * 此注解留作后续扩展（如基于注解的细粒度方法级权限控制）。</p>
+ * <p>该注解由注解消息路由器在每次方法调用前执行，不满足认证或角色约束的消息不会
+ * 进入业务方法。</p>
  *
  * @author leyland
  * @since 2.0.0
@@ -52,7 +52,7 @@ public @interface WsAuth {
      * 是否必须已认证（已登录）。
      *
      * <p>如果设为 {@code true}，则要求当前会话的 {@code WsPrincipal} 非 {@code null}
-     * 且 userId 不为空。如果设为 {@code false}，则允许匿名用户（未携带 Token）处理该消息。</p>
+     * 且已通过身份认证。如果设为 {@code false}，则允许匿名主体处理该消息。</p>
      *
      * @return {@code true} 如果要求必须认证，默认 {@code true}
      */

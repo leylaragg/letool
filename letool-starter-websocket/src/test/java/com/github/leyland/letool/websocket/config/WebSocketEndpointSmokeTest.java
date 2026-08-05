@@ -1,8 +1,11 @@
 package com.github.leyland.letool.websocket.config;
 
 import com.github.leyland.letool.tool.util.JsonUtil;
+import com.github.leyland.letool.websocket.auth.WsAuthenticator;
 import com.github.leyland.letool.websocket.core.WsMessage;
+import com.github.leyland.letool.websocket.core.WsPrincipal;
 import com.github.leyland.letool.websocket.core.WsSession;
+import com.github.leyland.letool.websocket.core.WsTemplate;
 import com.github.leyland.letool.websocket.handler.WsMessageHandler;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.SpringBootConfiguration;
@@ -17,15 +20,13 @@ import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Network-level smoke tests for the WebSocket starter endpoint.
+ * WebSocket 自动配置端点的真实网络冒烟测试。
  */
 @SpringBootTest(
         classes = WebSocketEndpointSmokeTest.TestApplication.class,
@@ -40,97 +41,91 @@ class WebSocketEndpointSmokeTest {
     private int port;
 
     /**
-     * Verifies the auto-configured endpoint accepts a real WebSocket handshake and sends the welcome frame.
+     * 验证自定义鉴权、真实握手、消息路由和模板回包能够形成完整闭环。
+     *
+     * @throws Exception 连接或收发失败时抛出
      */
     @Test
-    void shouldAcceptHandshakeOnConfiguredEndpoint() throws Exception {
-        CountDownLatch welcomeReceived = new CountDownLatch(1);
-        AtomicReference<WsMessage> welcomeMessage = new AtomicReference<>();
+    void shouldAuthenticateAndDispatchMessageThroughRealEndpoint() throws Exception {
+        CountDownLatch responseReceived = new CountDownLatch(1);
+        AtomicReference<WsMessage> responseMessage = new AtomicReference<>();
         StandardWebSocketClient client = new StandardWebSocketClient();
         WebSocketSession session = client.execute(new TextWebSocketHandler() {
+                    /**
+                     * 接收服务端回包。
+                     *
+                     * @param nativeSession 客户端原生会话
+                     * @param textMessage 文本消息
+                     */
                     @Override
-                    protected void handleTextMessage(WebSocketSession session, TextMessage message) {
-                        WsMessage wsMessage = JsonUtil.parseObject(message.getPayload(), WsMessage.class);
-                        if (WsMessage.TYPE_NOTIFICATION.equals(wsMessage.getType())) {
-                            welcomeMessage.set(wsMessage);
-                            welcomeReceived.countDown();
+                    protected void handleTextMessage(
+                            WebSocketSession nativeSession,
+                            TextMessage textMessage) {
+                        WsMessage message = JsonUtil.parseObject(textMessage.getPayload(), WsMessage.class);
+                        if ("echo-response".equals(message.getType())) {
+                            responseMessage.set(message);
+                            responseReceived.countDown();
                         }
                     }
-                }, "ws://localhost:" + port + "/ws-test?token=smoke-token")
+                }, "ws://localhost:" + port + "/ws-test")
                 .get(3, TimeUnit.SECONDS);
 
         try {
-            assertThat(session.isOpen()).isTrue();
-            assertThat(welcomeReceived.await(3, TimeUnit.SECONDS)).isTrue();
-            assertThat(welcomeMessage.get().getPayload()).isEqualTo("连接成功");
+            session.sendMessage(new TextMessage(JsonUtil.toJsonString(
+                    new WsMessage("echo-request", "hello-endpoint"))));
+
+            assertThat(responseReceived.await(3, TimeUnit.SECONDS)).isTrue();
+            assertThat(responseMessage.get().getPayload()).isEqualTo("hello-endpoint");
         } finally {
             session.close();
         }
     }
 
     /**
-     * Verifies endpoint messages are dispatched to registered {@link WsMessageHandler} beans.
-     */
-    @Test
-    void shouldDispatchEndpointMessageToRegisteredHandler() throws Exception {
-        CountDownLatch echoReceived = new CountDownLatch(1);
-        AtomicReference<WsMessage> echoMessage = new AtomicReference<>();
-        StandardWebSocketClient client = new StandardWebSocketClient();
-        WebSocketSession session = client.execute(new TextWebSocketHandler() {
-                    @Override
-                    protected void handleTextMessage(WebSocketSession session, TextMessage message) {
-                        WsMessage wsMessage = JsonUtil.parseObject(message.getPayload(), WsMessage.class);
-                        if ("echo-response".equals(wsMessage.getType())) {
-                            echoMessage.set(wsMessage);
-                            echoReceived.countDown();
-                        }
-                    }
-                }, "ws://localhost:" + port + "/ws-test?token=smoke-token")
-                .get(3, TimeUnit.SECONDS);
-
-        try {
-            WsMessage request = new WsMessage("echo-request", "hello-endpoint");
-            session.sendMessage(new TextMessage(JsonUtil.toJsonString(request)));
-
-            assertThat(echoReceived.await(3, TimeUnit.SECONDS)).isTrue();
-            assertThat(echoMessage.get().getPayload()).isEqualTo("hello-endpoint");
-        } finally {
-            session.close();
-        }
-    }
-
-    /**
-     * Verifies the endpoint rejects handshakes that do not provide the configured auth token.
-     */
-    @Test
-    void shouldRejectHandshakeWithoutToken() {
-        StandardWebSocketClient client = new StandardWebSocketClient();
-
-        assertThatThrownBy(() -> client.execute(new TextWebSocketHandler() {
-                    }, "ws://localhost:" + port + "/ws-test")
-                .get(3, TimeUnit.SECONDS))
-                .isInstanceOf(ExecutionException.class);
-    }
-
-    /**
-     * Minimal servlet application importing the WebSocket starter auto configuration.
+     * 冒烟测试使用的最小 Servlet 应用。
      */
     @SpringBootConfiguration(proxyBeanMethods = false)
     @EnableAutoConfiguration
     @ImportAutoConfiguration(WebSocketAutoConfiguration.class)
     static class TestApplication {
 
+        /**
+         * 提供业务自定义握手认证器，验证 starter 会正确退让默认实现。
+         *
+         * @return 固定测试主体的认证器
+         */
         @Bean
-        WsMessageHandler echoWsMessageHandler() {
+        WsAuthenticator wsAuthenticator() {
+            return request -> new WsPrincipal("smoke-user");
+        }
+
+        /**
+         * 创建回显消息处理器。
+         *
+         * @param wsTemplate 消息发送模板
+         * @return 回显消息处理器
+         */
+        @Bean
+        WsMessageHandler echoWsMessageHandler(WsTemplate wsTemplate) {
             return new WsMessageHandler() {
+                /**
+                 * 将入站负载回送给当前会话。
+                 *
+                 * @param session 当前会话
+                 * @param message 入站消息
+                 */
                 @Override
                 public void handle(WsSession session, WsMessage message) {
-                    session.sendMessage(WsMessage.builder()
-                            .type("echo-response")
-                            .payload(message.getPayload())
-                            .build());
+                    wsTemplate.sendToSession(
+                            session.getSessionId(),
+                            new WsMessage("echo-response", message.getPayload()));
                 }
 
+                /**
+                 * 获取处理的消息类型。
+                 *
+                 * @return 回显请求类型
+                 */
                 @Override
                 public String getMessageType() {
                     return "echo-request";

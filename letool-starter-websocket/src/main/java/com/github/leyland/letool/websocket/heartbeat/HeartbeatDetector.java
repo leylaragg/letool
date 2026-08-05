@@ -1,143 +1,79 @@
 package com.github.leyland.letool.websocket.heartbeat;
 
 import com.github.leyland.letool.websocket.config.WebSocketProperties;
-import com.github.leyland.letool.websocket.core.WsMessage;
 import com.github.leyland.letool.websocket.core.WsSession;
 import com.github.leyland.letool.websocket.core.WsSessionManager;
+import com.github.leyland.letool.websocket.room.WsRoomManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.TaskScheduler;
+import org.springframework.web.socket.CloseStatus;
 
+import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
+import java.util.Objects;
 import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
 
 /**
- * WebSocket 心跳检测器，负责定期检查所有在线会话的心跳状态，及时发现并清理僵尸连接。
- *
- * <p>工作原理：</p>
- * <ol>
- *   <li>通过 {@link ScheduledExecutorService} 按配置的间隔时间（{@code heartbeat.interval}）定期执行检查</li>
- *   <li>遍历所有在线会话，检查每个会话的 {@code lastHeartbeat} 时间</li>
- *   <li>如果当前时间减去最后心跳时间超过配置的超时时间（{@code heartbeat.timeout}），
- *       则认为该会话已超时</li>
- *   <li>对超时会话执行断开和注销操作</li>
- * </ol>
- *
- * <p>该检测器是可选组件，可通过 {@code letool.websocket.heartbeat.enabled=false} 禁用。</p>
- *
- * <p>使用方式：</p>
- * <pre>{@code
- * // 在应用启动时
- * heartbeatDetector.start();
- *
- * // 在应用关闭时
- * heartbeatDetector.stop();
- * }</pre>
- *
- * @author leyland
- * @since 2.0.0
+ * 使用 Spring {@link TaskScheduler} 检查连接活动时间的心跳检测器。
  */
-public class HeartbeatDetector {
+public final class HeartbeatDetector {
 
     private static final Logger log = LoggerFactory.getLogger(HeartbeatDetector.class);
 
-    // ======================== 字段 ========================
-
-    /** WebSocket 配置属性 */
     private final WebSocketProperties properties;
-
-    /** 会话管理器，用于查询和注销会话 */
     private final WsSessionManager sessionManager;
-
-    /** 定时任务执行器 */
-    private ScheduledExecutorService scheduler;
-
-    /** 定时任务句柄，用于取消任务 */
-    private ScheduledFuture<?> scheduledFuture;
-
-    /** 是否正在运行 */
-    private volatile boolean running = false;
-
-    // ======================== 构造 ========================
+    private final WsRoomManager roomManager;
+    private final TaskScheduler taskScheduler;
+    private volatile ScheduledFuture<?> scheduledFuture;
 
     /**
      * 创建心跳检测器。
      *
-     * @param properties     WebSocket 配置属性
+     * @param properties WebSocket 配置
      * @param sessionManager 会话管理器
+     * @param roomManager 房间管理器
+     * @param taskScheduler Spring 任务调度器
      */
-    public HeartbeatDetector(WebSocketProperties properties, WsSessionManager sessionManager) {
-        this.properties = properties;
-        this.sessionManager = sessionManager;
+    public HeartbeatDetector(
+            WebSocketProperties properties,
+            WsSessionManager sessionManager,
+            WsRoomManager roomManager,
+            TaskScheduler taskScheduler) {
+        this.properties = Objects.requireNonNull(properties, "properties must not be null");
+        this.sessionManager = Objects.requireNonNull(sessionManager, "sessionManager must not be null");
+        this.roomManager = Objects.requireNonNull(roomManager, "roomManager must not be null");
+        this.taskScheduler = Objects.requireNonNull(taskScheduler, "taskScheduler must not be null");
     }
 
-    // ======================== 生命周期 ========================
-
     /**
-     * 启动心跳检测定时任务。
+     * 幂等启动心跳检查任务。
      *
-     * <p>只有当 {@code letool.websocket.heartbeat.enabled=true} 时才会真正启动。
-     * 任务以固定频率执行，间隔时间由 {@code heartbeat.interval} 配置（默认 30 秒）。</p>
-     *
-     * @return {@code true} 如果成功启动，{@code false} 如果心跳检测被禁用或已在运行
+     * @return 实际启动任务时返回 {@code true}
      */
     public synchronized boolean start() {
-        if (!properties.getHeartbeat().isEnabled()) {
-            log.info("Heartbeat detection is disabled");
+        if (!properties.getHeartbeat().isEnabled() || isRunning()) {
             return false;
         }
-        if (running) {
-            log.warn("HeartbeatDetector is already running");
-            return false;
-        }
-        int interval = properties.getHeartbeat().getInterval();
-        scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "ws-heartbeat-detector");
-            t.setDaemon(true);
-            return t;
-        });
-        scheduledFuture = scheduler.scheduleAtFixedRate(
-                this::checkTimeout, interval, interval, TimeUnit.SECONDS);
-        running = true;
-        log.info("HeartbeatDetector started, interval={}s, timeout={}s",
-                properties.getHeartbeat().getInterval(), properties.getHeartbeat().getTimeout());
-        return true;
+        Duration interval = properties.getHeartbeat().getInterval();
+        scheduledFuture = taskScheduler.scheduleAtFixedRate(this::checkTimeout, interval);
+        return scheduledFuture != null;
     }
 
     /**
-     * 停止心跳检测定时任务。
-     *
-     * <p>取消定时任务并关闭线程池。任务取消时会等待当前正在执行的检查完成
-     * （最多等待 5 秒），然后强制中断。</p>
+     * 幂等停止心跳检查任务。
      */
     public synchronized void stop() {
-        if (!running) return;
-        if (scheduledFuture != null) {
-            scheduledFuture.cancel(false);
+        ScheduledFuture<?> future = scheduledFuture;
+        scheduledFuture = null;
+        if (future != null) {
+            future.cancel(false);
         }
-        if (scheduler != null) {
-            scheduler.shutdown();
-            try {
-                if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
-                    scheduler.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                scheduler.shutdownNow();
-                Thread.currentThread().interrupt();
-            }
-        }
-        running = false;
-        log.info("HeartbeatDetector stopped");
     }
 
-    // ======================== 心跳记录 ========================
-
     /**
-     * 记录指定会话的心跳时间（刷新为当前时间）。
+     * 记录指定会话的活动时间。
      *
      * @param sessionId 会话 ID
      */
@@ -148,71 +84,46 @@ public class HeartbeatDetector {
         }
     }
 
-    // ======================== 超时检查 ========================
-
     /**
-     * 执行一轮心跳超时检查。
+     * 检查并清理全部超时连接。
      *
-     * <p>遍历所有在线会话，将最后心跳时间超过配置超时阈值的会话标记为超时并断开。
-     * 对于每个超时会话，执行以下操作：</p>
-     * <ol>
-     *   <li>发送超时通知（如果会话仍可写入）</li>
-     *   <li>从 SessionManager 中移除会话</li>
-     * </ol>
+     * <p>单个连接关闭失败不会中断其他连接的检查。</p>
      */
     public void checkTimeout() {
-        try {
-            List<WsSession> inactive = getInactiveSessions();
-            if (inactive.isEmpty()) return;
-
-            for (WsSession session : inactive) {
-                log.info("Session {} (userId={}) heartbeat timeout, disconnecting",
-                        session.getSessionId(), session.getUserId());
-                try {
-                    session.sendMessage(WsMessage.error("心跳超时，连接已断开"));
-                } catch (Exception ignored) {
-                    // 忽略：会话可能已不可写
-                }
+        for (WsSession session : getInactiveSessions()) {
+            try {
+                session.disconnect(CloseStatus.SESSION_NOT_RELIABLE);
+            } catch (RuntimeException exception) {
+                log.debug("关闭心跳超时连接失败，sessionId={}", session.getSessionId(), exception);
+            } finally {
                 sessionManager.remove(session.getSessionId());
+                roomManager.removeSession(session.getSessionId());
             }
-
-            log.debug("Heartbeat check: total={}, timeout={}",
-                    sessionManager.getSessionCount(), inactive.size());
-        } catch (Exception e) {
-            log.error("Error during heartbeat check: {}", e.getMessage(), e);
         }
     }
 
     /**
-     * 获取当前所有心跳超时的不活跃会话列表。
+     * 获取当前心跳超时会话快照。
      *
-     * <p>心跳超时判断：{@code lastHeartbeat + timeout < 当前时间}</p>
-     *
-     * @return 不活跃会话列表，无线程安全问题（每次返回新列表）
+     * @return 超时会话列表
      */
     public List<WsSession> getInactiveSessions() {
-        int timeout = properties.getHeartbeat().getTimeout();
-        long threshold = System.currentTimeMillis() - timeout * 1000L;
         List<WsSession> inactive = new ArrayList<>();
         for (WsSession session : sessionManager.getAllSessions()) {
-            long lastHb = session.getLastHeartbeat();
-            // treat 0 (never set) as inactive, fallback to connectedAt
-            if (lastHb == 0) {
-                lastHb = session.getConnectedAt();
-            }
-            if (lastHb < threshold) {
+            if (!session.isAlive()) {
                 inactive.add(session);
             }
         }
-        return inactive;
+        return List.copyOf(inactive);
     }
 
     /**
-     * 获取心跳检测器是否正在运行。
+     * 判断检查任务是否正在运行。
      *
-     * @return {@code true} 如果正在运行
+     * @return 任务存在且未取消时返回 {@code true}
      */
     public boolean isRunning() {
-        return running;
+        ScheduledFuture<?> future = scheduledFuture;
+        return future != null && !future.isCancelled() && !future.isDone();
     }
 }

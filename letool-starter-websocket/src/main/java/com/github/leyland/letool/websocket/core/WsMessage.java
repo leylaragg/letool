@@ -1,7 +1,6 @@
 package com.github.leyland.letool.websocket.core;
 
 import com.github.leyland.letool.tool.util.IdUtil;
-import com.github.leyland.letool.tool.util.JsonUtil;
 
 /**
  * WebSocket 消息模型，封装了消息 ID、类型、负载、时间戳和发送者信息。
@@ -18,7 +17,7 @@ import com.github.leyland.letool.tool.util.JsonUtil;
  * <p>推荐使用静态工厂方法或 Builder 模式创建实例：</p>
  * <pre>{@code
  * // 工厂方法
- * WsMessage msg = WsMessage.of("chat", chatPayload);
+ * WsMessage msg = WsMessage.of("chat", jsonPayload);
  *
  * // Builder
  * WsMessage msg = WsMessage.builder()
@@ -69,11 +68,20 @@ public class WsMessage {
 
     // ======================== 构造 ========================
 
+    /**
+     * 创建带默认消息 ID 和当前时间戳的空消息。
+     */
     public WsMessage() {
         this.messageId = IdUtil.simpleUUID();
         this.timestamp = System.currentTimeMillis();
     }
 
+    /**
+     * 创建指定类型和文本负载的消息。
+     *
+     * @param type 消息类型
+     * @param payload 已编码文本负载
+     */
     public WsMessage(String type, String payload) {
         this();
         this.type = type;
@@ -83,19 +91,17 @@ public class WsMessage {
     // ======================== 静态工厂方法 ========================
 
     /**
-     * 创建指定类型和负载的消息。
+     * 创建指定类型和文本负载的消息。
      *
-     * <p>负载对象会自动序列化为 JSON 字符串。</p>
+     * <p>结构化对象应通过注入的 {@link WsMessageCodec#create(String, Object)} 创建，
+     * 以复用应用选择的 JSON 方案。</p>
      *
      * @param type    消息类型标识
-     * @param payload 消息负载对象
-     * @return 包含序列化负载的 WsMessage 实例
+     * @param payload 已编码的文本负载
+     * @return WebSocket 消息
      */
-    public static WsMessage of(String type, Object payload) {
-        WsMessage message = new WsMessage();
-        message.type = type;
-        message.payload = JsonUtil.toJsonString(payload);
-        return message;
+    public static WsMessage of(String type, String payload) {
+        return new WsMessage(type, payload);
     }
 
     /**
@@ -157,21 +163,34 @@ public class WsMessage {
         private String payload;
         private String senderId;
 
+        /**
+         * 设置消息类型。
+         *
+         * @param type 消息类型
+         * @return 当前构建器
+         */
         public Builder type(String type) {
             this.type = type;
             return this;
         }
 
+        /**
+         * 设置已编码的文本负载。
+         *
+         * @param payload 文本负载
+         * @return 当前构建器
+         */
         public Builder payload(String payload) {
             this.payload = payload;
             return this;
         }
 
-        public Builder payload(Object payload) {
-            this.payload = JsonUtil.toJsonString(payload);
-            return this;
-        }
-
+        /**
+         * 设置发送者用户标识。
+         *
+         * @param senderId 发送者用户标识
+         * @return 当前构建器
+         */
         public Builder senderId(String senderId) {
             this.senderId = senderId;
             return this;
@@ -193,38 +212,41 @@ public class WsMessage {
 
     // ======================== Getter / Setter ========================
 
+    /** @return 消息唯一标识 */
     public String getMessageId() { return messageId; }
 
+    /** @param messageId 消息唯一标识 */
     public void setMessageId(String messageId) { this.messageId = messageId; }
 
+    /** @return 消息类型 */
     public String getType() { return type; }
 
+    /** @param type 消息类型 */
     public void setType(String type) { this.type = type; }
 
+    /** @return 已编码文本负载 */
     public String getPayload() { return payload; }
 
+    /** @param payload 已编码文本负载 */
     public void setPayload(String payload) { this.payload = payload; }
 
+    /** @return 消息创建时间戳 */
     public long getTimestamp() { return timestamp; }
 
+    /** @param timestamp 消息创建时间戳 */
     public void setTimestamp(long timestamp) { this.timestamp = timestamp; }
 
+    /** @return 发送者用户标识 */
     public String getSenderId() { return senderId; }
 
+    /** @param senderId 发送者用户标识 */
     public void setSenderId(String senderId) { this.senderId = senderId; }
 
-    // ======================== 工具方法 ========================
-
     /**
-     * 将负载解析为指定类型的对象。
+     * 返回不包含业务负载的安全消息摘要。
      *
-     * @param clazz 目标类型
-     * @param <T>   泛型
-     * @return 反序列化后的对象
+     * @return 消息摘要
      */
-    public <T> T payloadAs(Class<T> clazz) {
-        return JsonUtil.parseObject(payload, clazz);
-    }
 
     @Override
     public String toString() {

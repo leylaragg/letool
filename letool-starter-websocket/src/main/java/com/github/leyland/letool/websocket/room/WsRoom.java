@@ -65,7 +65,7 @@ public class WsRoom {
      * @param sessionId 会话 ID
      * @return {@code true} 如果成员是新加入的，{@code false} 如果已在房间中
      */
-    public boolean addMember(String sessionId) {
+    boolean addMember(String sessionId) {
         return sessionIds.add(sessionId);
     }
 
@@ -75,7 +75,7 @@ public class WsRoom {
      * @param sessionId 会话 ID
      * @return {@code true} 如果成员被成功移除，{@code false} 如果成员本来就不在房间中
      */
-    public boolean removeMember(String sessionId) {
+    boolean removeMember(String sessionId) {
         return sessionIds.remove(sessionId);
     }
 
@@ -112,7 +112,7 @@ public class WsRoom {
      * @return 成员 sessionId 集合
      */
     public Set<String> getMembers() {
-        return Collections.unmodifiableSet(sessionIds);
+        return Set.copyOf(sessionIds);
     }
 
     /**
@@ -154,7 +154,7 @@ public class WsRoom {
      * @return 扩展属性 Map
      */
     public Map<String, Object> getAttributes() {
-        return attributes;
+        return Map.copyOf(attributes);
     }
 
     // ======================== Object 方法 ========================

@@ -1,20 +1,34 @@
 package com.github.leyland.letool.websocket.config;
 
+import com.github.leyland.letool.websocket.annotation.WsMessageMapping;
 import com.github.leyland.letool.websocket.auth.WsHandshakeInterceptor;
+import com.github.leyland.letool.tool.json.JsonCodec;
+import com.github.leyland.letool.websocket.core.WsMessage;
+import com.github.leyland.letool.websocket.core.WsMessageCodec;
+import com.github.leyland.letool.websocket.core.WsSession;
 import com.github.leyland.letool.websocket.core.WsSessionManager;
 import com.github.leyland.letool.websocket.core.WsTemplate;
 import com.github.leyland.letool.websocket.handler.DefaultWsHandler;
+import com.github.leyland.letool.websocket.handler.WsMessageRouter;
 import com.github.leyland.letool.websocket.heartbeat.HeartbeatDetector;
 import com.github.leyland.letool.websocket.room.WsRoomManager;
+import jakarta.websocket.server.ServerContainer;
 import org.junit.jupiter.api.Test;
+import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.context.ConfigurableWebApplicationContext;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * {@link WebSocketAutoConfiguration} 的自动装配契约测试。
@@ -25,6 +39,9 @@ class WebSocketAutoConfigurationTest {
 
     private final WebApplicationContextRunner webContextRunner = new WebApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(WebSocketAutoConfiguration.class))
+            .withInitializer(context -> ((ConfigurableWebApplicationContext) context)
+                    .getServletContext().setAttribute(
+                            ServerContainer.class.getName(), mock(ServerContainer.class)))
             .withPropertyValues("spring.main.allow-bean-definition-overriding=false");
 
     private final ApplicationContextRunner nonWebContextRunner = new ApplicationContextRunner()
@@ -44,6 +61,7 @@ class WebSocketAutoConfigurationTest {
             assertThat(context).hasSingleBean(DefaultWsHandler.class);
             assertThat(context).hasSingleBean(WebSocketConfigurer.class);
             assertThat(context).hasSingleBean(WebSocketProperties.class);
+            assertThat(context).hasBean("&letoolWebSocketContainer");
             assertThat(context.getBean(HeartbeatDetector.class).isRunning()).isTrue();
         });
     }
@@ -111,8 +129,47 @@ class WebSocketAutoConfigurationTest {
                 .run(context -> {
                     assertThat(context).hasSingleBean(WebSocketConfigurer.class);
                     assertThat(context.getBean(WebSocketConfigurer.class))
-                            .isSameAs(context.getBean("webSocketConfigurer"));
+                            .isSameAs(context.getBean("letoolWebSocketConfigurer"));
                 });
+    }
+
+    /**
+     * 验证危险的容量配置会在应用启动阶段直接失败。
+     */
+    @Test
+    void shouldRejectInvalidCapacityConfigurationAtStartup() {
+        webContextRunner
+                .withPropertyValues("letool.websocket.max-frame-size=0")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasRootCauseMessage("WebSocket 最大消息大小必须大于 0 字节");
+                });
+    }
+
+    /**
+     * 验证业务 Bean 上的消息映射会在应用启动阶段自动注册。
+     */
+    @Test
+    void shouldAutoRegisterAnnotatedMessageRoute() {
+        webContextRunner
+                .withUserConfiguration(AnnotatedEndpointConfiguration.class)
+                .run(context -> assertThat(context.getBean(WsMessageRouter.class)
+                        .getRegisteredMessageTypes()).contains("auto-route"));
+    }
+
+    /**
+     * 验证业务提供的 JSON 编解码器会贯穿 WebSocket 结构化负载入口。
+     */
+    @Test
+    void shouldUseApplicationJsonCodecForStructuredPayload() {
+        JsonCodec jsonCodec = mock(JsonCodec.class);
+        when(jsonCodec.write(any())).thenReturn("custom-json");
+
+        webContextRunner
+                .withBean(JsonCodec.class, () -> jsonCodec)
+                .run(context -> assertThat(context.getBean(WsMessageCodec.class)
+                        .create("custom", Map.of("value", 1)).getPayload()).isEqualTo("custom-json"));
     }
 
     /**
@@ -133,10 +190,61 @@ class WebSocketAutoConfigurationTest {
     @Configuration(proxyBeanMethods = false)
     static class UserWebSocketConfigurerConfiguration {
 
-        @Bean
+        @Bean(name = "letoolWebSocketConfigurer")
         WebSocketConfigurer webSocketConfigurer() {
             return registry -> {
             };
+        }
+    }
+
+    /**
+     * 模拟业务项目声明注解消息端点。
+     */
+    @Configuration(proxyBeanMethods = false)
+    static class AnnotatedEndpointConfiguration {
+
+        /**
+         * 创建注解消息端点。
+         *
+         * @return 注解消息端点
+         */
+        @Bean
+        AnnotatedEndpointContract annotatedEndpoint() {
+            ProxyFactory proxyFactory = new ProxyFactory(new AnnotatedEndpoint());
+            proxyFactory.setInterfaces(AnnotatedEndpointContract.class);
+            return (AnnotatedEndpointContract) proxyFactory.getProxy();
+        }
+    }
+
+    /**
+     * 让测试端点通过 JDK 动态代理暴露的业务接口。
+     */
+    interface AnnotatedEndpointContract {
+
+        /**
+         * 处理自动注册测试消息。
+         *
+         * @param session 当前会话
+         * @param message 入站消息
+         */
+        void handle(WsSession session, WsMessage message);
+    }
+
+    /**
+     * 用于验证自动路由扫描的业务端点。
+     */
+    static final class AnnotatedEndpoint implements AnnotatedEndpointContract {
+
+        /**
+         * 处理自动注册测试消息。
+         *
+         * @param session 当前会话
+         * @param message 入站消息
+         */
+        @WsMessageMapping("auto-route")
+        @Override
+        public void handle(WsSession session, WsMessage message) {
+            // 自动装配测试只验证启动期路由注册，无需执行业务逻辑。
         }
     }
 }

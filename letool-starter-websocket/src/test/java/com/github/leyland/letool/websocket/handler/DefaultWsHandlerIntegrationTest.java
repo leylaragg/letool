@@ -1,22 +1,24 @@
 package com.github.leyland.letool.websocket.handler;
 
-import com.github.leyland.letool.tool.util.JsonUtil;
+import com.github.leyland.letool.tool.json.Fastjson2JsonCodec;
+import com.github.leyland.letool.websocket.auth.WsHandshakeInterceptor;
+import com.github.leyland.letool.websocket.config.WebSocketProperties;
 import com.github.leyland.letool.websocket.core.WsMessage;
+import com.github.leyland.letool.websocket.core.WsMessageCodec;
 import com.github.leyland.letool.websocket.core.WsPrincipal;
 import com.github.leyland.letool.websocket.core.WsSession;
 import com.github.leyland.letool.websocket.core.WsSessionManager;
-import com.github.leyland.letool.websocket.room.WsRoom;
 import com.github.leyland.letool.websocket.room.WsRoomManager;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.PongMessage;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
+import org.springframework.util.unit.DataSize;
 
-import java.net.InetSocketAddress;
-import java.util.List;
+import java.nio.ByteBuffer;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.atLeastOnce;
@@ -25,115 +27,158 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Runtime lifecycle tests for {@link DefaultWsHandler}.
+ * {@link DefaultWsHandler} 的协议安全与连接清理集成测试。
  */
 class DefaultWsHandlerIntegrationTest {
 
     /**
-     * Verifies connection establishment registers a principal-bound session and sends a welcome message.
+     * 验证超大消息使用标准状态关闭连接并清理索引。
+     *
+     * @throws Exception 处理器调用失败时抛出
      */
     @Test
-    void shouldRegisterSessionWithPrincipalOnConnection() throws Exception {
-        WsSessionManager sessionManager = new WsSessionManager();
-        WsRoomManager roomManager = new WsRoomManager(sessionManager);
-        DefaultWsHandler handler = new DefaultWsHandler(sessionManager, roomManager, null, List.of());
-        WebSocketSession nativeSession = openNativeSession("native-1",
-                Map.of("principal", new WsPrincipal("user-1", "User One", List.of("admin"))));
+    void shouldCloseOversizedMessageAndCleanSession() throws Exception {
+        Fixture fixture = fixture(4, new DefaultWsMessageRouter());
+        WebSocketSession nativeSession = openNativeSession("session-1", authenticatedPrincipal("user-1"));
+        fixture.handler.afterConnectionEstablished(nativeSession);
 
-        handler.afterConnectionEstablished(nativeSession);
+        fixture.handler.handleTextMessage(nativeSession, new TextMessage("中文"));
 
-        WsSession registered = sessionManager.getAllSessions().iterator().next();
-        assertThat(registered.getUserId()).isEqualTo("user-1");
-        assertThat(registered.<WsPrincipal>getAttribute("principal").getUsername()).isEqualTo("User One");
-        assertSentMessage(nativeSession, WsMessage.TYPE_NOTIFICATION);
+        verify(nativeSession).close(CloseStatus.TOO_BIG_TO_PROCESS);
+        assertThat(fixture.sessionManager.getSession("session-1")).isNull();
     }
 
     /**
-     * Verifies incoming ping messages are answered with pong by the same handler path.
+     * 验证处理器异常只向客户端发送稳定错误码，不泄露底层异常消息。
+     *
+     * @throws Exception 处理器调用失败时抛出
      */
     @Test
-    void shouldReplyPongWhenPingMessageArrives() throws Exception {
-        WsSessionManager sessionManager = new WsSessionManager();
-        WsRoomManager roomManager = new WsRoomManager(sessionManager);
-        DefaultWsHandler handler = new DefaultWsHandler(sessionManager, roomManager, null, List.of());
-        WebSocketSession nativeSession = openNativeSession("native-2", Map.of());
-        handler.afterConnectionEstablished(nativeSession);
-
-        handler.handleTextMessage(nativeSession, new TextMessage(JsonUtil.toJsonString(WsMessage.of(WsMessage.TYPE_PING, ""))));
-
-        assertSentMessage(nativeSession, WsMessage.TYPE_PONG);
-    }
-
-    /**
-     * Verifies business messages are routed to the matching {@link WsMessageHandler}.
-     */
-    @Test
-    void shouldDispatchBusinessMessageToRegisteredHandler() throws Exception {
-        WsSessionManager sessionManager = new WsSessionManager();
-        WsRoomManager roomManager = new WsRoomManager(sessionManager);
-        AtomicReference<WsSession> handledSession = new AtomicReference<>();
-        AtomicReference<WsMessage> handledMessage = new AtomicReference<>();
-        WsMessageHandler messageHandler = new WsMessageHandler() {
+    void shouldSendSanitizedErrorFrameWhenBusinessHandlerFails() throws Exception {
+        DefaultWsMessageRouter router = new DefaultWsMessageRouter();
+        router.register("explode", new WsMessageHandler() {
             @Override
             public void handle(WsSession session, WsMessage message) {
-                handledSession.set(session);
-                handledMessage.set(message);
+                throw new IllegalStateException("database-password");
             }
 
             @Override
             public String getMessageType() {
-                return "chat";
+                return "explode";
             }
-        };
-        DefaultWsHandler handler = new DefaultWsHandler(sessionManager, roomManager, null, List.of(messageHandler));
-        WebSocketSession nativeSession = openNativeSession("native-3",
-                Map.of("principal", new WsPrincipal("user-3")));
-        handler.afterConnectionEstablished(nativeSession);
+        });
+        Fixture fixture = fixture(1024, router);
+        WebSocketSession nativeSession = openNativeSession("session-2", authenticatedPrincipal("user-2"));
+        fixture.handler.afterConnectionEstablished(nativeSession);
 
-        handler.handleTextMessage(nativeSession, new TextMessage(JsonUtil.toJsonString(WsMessage.of("chat", "hello"))));
+        fixture.handler.handleTextMessage(nativeSession,
+                new TextMessage(fixture.codec.encode(WsMessage.of("explode", "payload"))));
 
-        assertThat(handledSession.get()).isNotNull();
-        assertThat(handledSession.get().getUserId()).isEqualTo("user-3");
-        assertThat(handledMessage.get().getType()).isEqualTo("chat");
-        assertThat(handledMessage.get().getSenderId()).isEqualTo("user-3");
+        ArgumentCaptor<TextMessage> captor = ArgumentCaptor.forClass(TextMessage.class);
+        verify(nativeSession, atLeastOnce()).sendMessage(captor.capture());
+        assertThat(captor.getAllValues())
+                .extracting(TextMessage::getPayload)
+                .anySatisfy(payload -> {
+                    assertThat(payload).contains("WS_008");
+                    assertThat(payload).doesNotContain("database-password");
+                });
+        assertThat(fixture.sessionManager.getSession("session-2")).isNotNull();
     }
 
     /**
-     * Verifies closing a connection removes the session from joined rooms and the session registry.
+     * 验证原生 Pong 帧会刷新会话活动时间。
+     *
+     * @throws Exception 处理器调用失败时抛出
+     */
+    @Test
+    void shouldRefreshActivityWhenPongFrameArrives() throws Exception {
+        Fixture fixture = fixture(1024, new DefaultWsMessageRouter());
+        WebSocketSession nativeSession = openNativeSession("session-3", authenticatedPrincipal("user-3"));
+        fixture.handler.afterConnectionEstablished(nativeSession);
+        WsSession session = fixture.sessionManager.getSession("session-3");
+        session.setLastHeartbeat(1L);
+
+        fixture.handler.handlePongMessage(nativeSession, new PongMessage(ByteBuffer.allocate(0)));
+
+        assertThat(session.getLastHeartbeat()).isGreaterThan(1L);
+    }
+
+    /**
+     * 验证正常关闭同步清理会话与房间反向索引。
+     *
+     * @throws Exception 处理器调用失败时抛出
      */
     @Test
     void shouldCleanSessionAndRoomsWhenConnectionCloses() throws Exception {
-        WsSessionManager sessionManager = new WsSessionManager();
-        WsRoomManager roomManager = new WsRoomManager(sessionManager);
-        DefaultWsHandler handler = new DefaultWsHandler(sessionManager, roomManager, null, List.of());
-        WebSocketSession nativeSession = openNativeSession("native-4",
-                Map.of("principal", new WsPrincipal("user-4")));
-        handler.afterConnectionEstablished(nativeSession);
-        WsSession session = sessionManager.getAllSessions().iterator().next();
-        roomManager.create("room-4", "Room 4");
-        roomManager.join("room-4", session);
+        Fixture fixture = fixture(1024, new DefaultWsMessageRouter());
+        WebSocketSession nativeSession = openNativeSession("session-4", authenticatedPrincipal("user-4"));
+        fixture.handler.afterConnectionEstablished(nativeSession);
+        WsSession session = fixture.sessionManager.getSession("session-4");
+        fixture.roomManager.create("room-4", "房间四");
+        fixture.roomManager.join("room-4", session);
 
-        handler.afterConnectionClosed(nativeSession, CloseStatus.NORMAL);
+        fixture.handler.afterConnectionClosed(nativeSession, CloseStatus.NORMAL);
 
-        assertThat(sessionManager.getAllSessions()).isEmpty();
-        assertThat(roomManager.getAllRooms()).extracting(WsRoom::getRoomId).doesNotContain("room-4");
+        assertThat(fixture.sessionManager.getSession("session-4")).isNull();
+        assertThat(fixture.roomManager.getRoom("room-4")).isNull();
     }
 
+    /**
+     * 创建处理器测试夹具。
+     *
+     * @param maxFrameSize 最大消息大小
+     * @param router 消息路由器
+     * @return 测试夹具
+     */
+    private Fixture fixture(int maxFrameSize, WsMessageRouter router) {
+        WebSocketProperties properties = new WebSocketProperties();
+        properties.setMaxFrameSize(DataSize.ofBytes(maxFrameSize));
+        WsMessageCodec codec = new WsMessageCodec(Fastjson2JsonCodec.createDefault());
+        WsSessionManager sessionManager = new WsSessionManager(3);
+        WsRoomManager roomManager = new WsRoomManager(sessionManager, codec);
+        WsErrorHandler errorHandler = new DefaultWsErrorHandler(codec);
+        DefaultWsHandler handler = new DefaultWsHandler(
+                sessionManager, roomManager, null, router, codec, errorHandler, properties);
+        return new Fixture(handler, sessionManager, roomManager, codec);
+    }
+
+    /**
+     * 创建已认证主体属性。
+     *
+     * @param userId 用户标识
+     * @return 原生会话属性
+     */
+    private Map<String, Object> authenticatedPrincipal(String userId) {
+        return Map.of(WsHandshakeInterceptor.PRINCIPAL_ATTRIBUTE, new WsPrincipal(userId));
+    }
+
+    /**
+     * 创建打开状态的原生会话。
+     *
+     * @param sessionId 会话 ID
+     * @param attributes 握手属性
+     * @return 原生会话
+     */
     private WebSocketSession openNativeSession(String sessionId, Map<String, Object> attributes) {
         WebSocketSession session = mock(WebSocketSession.class);
         when(session.getId()).thenReturn(sessionId);
         when(session.isOpen()).thenReturn(true);
         when(session.getAttributes()).thenReturn(attributes);
-        when(session.getRemoteAddress()).thenReturn(new InetSocketAddress("127.0.0.1", 8080));
         return session;
     }
 
-    private void assertSentMessage(WebSocketSession nativeSession, String expectedType) throws Exception {
-        ArgumentCaptor<TextMessage> captor = ArgumentCaptor.forClass(TextMessage.class);
-        verify(nativeSession, atLeastOnce()).sendMessage(captor.capture());
-        assertThat(captor.getAllValues())
-                .extracting(TextMessage::getPayload)
-                .map(payload -> JsonUtil.parseObject(payload, WsMessage.class).getType())
-                .contains(expectedType);
+    /**
+     * 处理器测试夹具。
+     *
+     * @param handler 默认处理器
+     * @param sessionManager 会话管理器
+     * @param roomManager 房间管理器
+     * @param codec 消息编解码器
+     */
+    private record Fixture(
+            DefaultWsHandler handler,
+            WsSessionManager sessionManager,
+            WsRoomManager roomManager,
+            WsMessageCodec codec) {
     }
 }
