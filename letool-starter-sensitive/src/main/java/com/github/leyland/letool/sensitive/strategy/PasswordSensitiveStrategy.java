@@ -16,6 +16,13 @@ import com.github.leyland.letool.sensitive.core.SensitiveStrategy;
  */
 public class PasswordSensitiveStrategy implements SensitiveStrategy<MaskContext> {
 
+    /**
+     * 按当前策略执行单值脱敏。
+     *
+     * @param value 原始字符串，可为 {@code null}
+     * @param context 脱敏上下文，可为 {@code null} 以使用策略默认值
+     * @return 脱敏结果；空值保持不变
+     */
     @Override
     public String mask(String value, MaskContext context) {
         if (value == null || value.isEmpty()) return value;

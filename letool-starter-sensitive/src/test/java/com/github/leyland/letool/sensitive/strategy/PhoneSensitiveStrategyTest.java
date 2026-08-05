@@ -29,17 +29,16 @@ class PhoneSensitiveStrategyTest {
         }
 
         @Test
-        @DisplayName("短号码（<7位）应原样返回")
+        @DisplayName("短号码应完整遮盖")
         void shouldReturnShortNumber() {
-            assertEquals("138123", strategy.mask("138123", MaskContext.DEFAULT));
+            assertEquals("******", strategy.mask("138123", MaskContext.DEFAULT));
         }
 
         @Test
-        @DisplayName("7位号码（边界）")
+        @DisplayName("恰好 7 位时应完整遮盖")
         void shouldMaskExact7Digits() {
-            // 3+4=7, 长度刚好等于保留长度，所以原样返回
             String result = strategy.mask("1381234", MaskContext.DEFAULT);
-            assertEquals("1381234", result);
+            assertEquals("*******", result);
         }
     }
 
@@ -68,7 +67,7 @@ class PhoneSensitiveStrategyTest {
         }
 
         @Test
-        @DisplayName("keepPrefix <= 0 时使用策略默认值 3")
+        @DisplayName("未指定 keepPrefix 时使用策略默认值 3")
         void shouldUseDefaultPrefixWhenZeroOrNegative() {
             MaskContext ctx = new MaskContext().withKeepSuffix(4);
             assertEquals("138****5678", strategy.mask("13812345678", ctx));

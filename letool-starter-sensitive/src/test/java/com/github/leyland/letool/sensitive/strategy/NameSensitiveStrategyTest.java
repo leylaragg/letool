@@ -93,9 +93,9 @@ class NameSensitiveStrategyTest {
         }
 
         @Test
-        @DisplayName("单字姓名应保留加星号")
+        @DisplayName("单字姓名应完整遮盖")
         void shouldMaskSingleCharName() {
-            assertEquals("王*", strategy.mask("王", MaskContext.DEFAULT));
+            assertEquals("*", strategy.mask("王", MaskContext.DEFAULT));
         }
 
         @Test

@@ -16,25 +16,57 @@ import com.github.leyland.letool.sensitive.core.SensitiveStrategy;
  */
 public class PositionSensitiveStrategy implements SensitiveStrategy<MaskContext> {
 
+    /**
+     * 按当前策略执行单值脱敏。
+     *
+     * @param value 原始字符串，可为 {@code null}
+     * @param context 脱敏上下文，可为 {@code null} 以使用策略默认值
+     * @return 脱敏结果；空值保持不变
+     */
     @Override
     public String mask(String value, MaskContext context) {
-        if (value == null || value.isEmpty()) return value;
-
-        // 按逗号分割经纬度
-        String[] parts = value.contains(",") ? value.split(",") : new String[]{value};
-        String replacement = context != null && !context.getReplacement().equals("*") ? context.getReplacement() : "***";
-
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < parts.length; i++) {
-            if (i > 0) sb.append(',');
-            String part = parts[i].trim();
-            if (part.length() > 4) {
-                // 保留到小数点后 1 位，其余小数位 → ***
-                sb.append(part, 0, part.length() - 3).append(replacement);
-            } else {
-                sb.append(part);  // 太短不处理
-            }
+        if (value == null || value.isEmpty()) {
+            return value;
         }
-        return sb.toString();
+
+        String[] parts = value.split(",", -1);
+        if (parts.length > 2) {
+            return MaskingSupport.maskAll(value, MaskingSupport.maskChar(context));
+        }
+        String replacement = MaskingSupport.replacement(context, "***");
+
+        StringBuilder masked = new StringBuilder();
+        for (int i = 0; i < parts.length; i++) {
+            if (i > 0) {
+                masked.append(',');
+            }
+            String part = parts[i].trim();
+            if (!part.matches("[-+]?\\d{1,3}(\\.\\d+)?")) {
+                return MaskingSupport.maskAll(value, MaskingSupport.maskChar(context));
+            }
+            masked.append(maskCoordinate(part, replacement, MaskingSupport.maskChar(context)));
+        }
+        return masked.toString();
+    }
+
+    /**
+     * 保留坐标整数部分和首位小数，并遮盖剩余精度。
+     *
+     * @param coordinate 单个经度或纬度
+     * @param replacement 精度替换字符串
+     * @param maskChar 完全遮盖时使用的字符
+     * @return 脱敏后的单个坐标
+     */
+    private static String maskCoordinate(String coordinate, String replacement, char maskChar) {
+        int decimalPoint = coordinate.indexOf('.');
+        if (decimalPoint < 0) {
+            return MaskingSupport.maskAll(coordinate, maskChar);
+        }
+        String integerPart = coordinate.substring(0, decimalPoint);
+        String decimalPart = coordinate.substring(decimalPoint + 1);
+        if (decimalPart.length() == 1) {
+            return integerPart + "." + replacement;
+        }
+        return integerPart + "." + decimalPart.charAt(0) + replacement;
     }
 }

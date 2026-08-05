@@ -1,142 +1,84 @@
 package com.github.leyland.letool.sensitive.core;
 
 import com.github.leyland.letool.sensitive.annotation.Sensitive;
-import com.github.leyland.letool.sensitive.strategy.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.lang.reflect.Field;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import com.github.leyland.letool.sensitive.exception.SensitiveException;
 
 /**
- * 脱敏处理器 —— 将 {@link SensitiveType} 路由到对应的 {@link SensitiveStrategy}，提供三种粒度的脱敏入口.
+ * 基于策略注册表执行单值脱敏的处理器。
  *
- * <h3>使用层级</h3>
- * <pre>
- *   {@link #mask(String, SensitiveType)}              单值脱敏，使用策略默认参数
- *   {@link #mask(String, SensitiveType, MaskContext)}  单值脱敏，完整控制遮盖规则
- *   {@link #mask(Object)}                              对象脱敏，反射扫描 @Sensitive 字段
- * </pre>
- *
- * <h3>策略注册机制</h3>
- * <p>19 种内置策略在 static 块中注册到 {@link #STRATEGIES}（ConcurrentHashMap）。
- * 第三方可通过 {@link #register(SensitiveType, SensitiveStrategy)} 注册自定义策略，覆盖内置实现。</p>
+ * <p>处理器不维护全局可变状态。策略缺失或执行失败时会抛出结构化异常，
+ * 不会以原始明文作为降级结果。</p>
  */
-public class SensitiveProcessor {
+public final class SensitiveProcessor {
 
-    private static final Logger log = LoggerFactory.getLogger(SensitiveProcessor.class);
-
-    /**
-     * 策略注册表 —— key=SensitiveType 枚举值，value=对应的脱敏策略实现。
-     * ConcurrentHashMap 保证并发注册和查询的线程安全。
-     */
-    private static final Map<SensitiveType, SensitiveStrategy<MaskContext>> STRATEGIES = new ConcurrentHashMap<>();
-
-    static {
-        register(SensitiveType.PHONE, new PhoneSensitiveStrategy());
-        register(SensitiveType.ID_CARD, new IdCardSensitiveStrategy());
-        register(SensitiveType.NAME, new NameSensitiveStrategy());
-        register(SensitiveType.EMAIL, new EmailSensitiveStrategy());
-        register(SensitiveType.BANK_CARD, new BankCardSensitiveStrategy());
-        register(SensitiveType.ADDRESS, new AddressSensitiveStrategy());
-        register(SensitiveType.PASSWORD, new PasswordSensitiveStrategy());
-        register(SensitiveType.CAR_LICENSE, new CarLicenseSensitiveStrategy());
-        register(SensitiveType.FIXED_PHONE, new FixedPhoneSensitiveStrategy());
-        register(SensitiveType.IPV4, new Ipv4SensitiveStrategy());
-        register(SensitiveType.IPV6, new Ipv6SensitiveStrategy());
-        register(SensitiveType.WECHAT, new WechatSensitiveStrategy());
-        register(SensitiveType.QQ, new QqSensitiveStrategy());
-        register(SensitiveType.PASSPORT, new PassportSensitiveStrategy());
-        register(SensitiveType.DOM, new DomSensitiveStrategy());
-        register(SensitiveType.POSITION, new PositionSensitiveStrategy());
-        register(SensitiveType.KEEP_LENGTH, new KeepLengthSensitiveStrategy());
-        register(SensitiveType.TAIL_DISPLAY, new TailDisplaySensitiveStrategy());
-        register(SensitiveType.CUSTOM, new RegexSensitiveStrategy());
-    }
-
-    private SensitiveProcessor() {}
+    private final SensitiveStrategyRegistry registry;
 
     /**
-     * 注册或覆盖策略 —— 支持第三方通过 SPI 或手动调用扩展自定义脱敏规则。
-     * 如果 type 已存在注册，会覆盖旧策略。
-     */
-    public static <C> void register(SensitiveType type, SensitiveStrategy<C> strategy) {
-        @SuppressWarnings("unchecked")
-        SensitiveStrategy<MaskContext> cast = (SensitiveStrategy<MaskContext>) strategy;
-        STRATEGIES.put(type, cast);
-    }
-
-    /** 从 @Sensitive 注解提取参数后脱敏 —— Jackson 序列化器使用此入口. */
-    public static String mask(String value, Sensitive annotation) {
-        if (value == null || value.isEmpty()) return value;
-        SensitiveStrategy<MaskContext> strategy = STRATEGIES.get(annotation.type());
-        if (strategy == null) return value;
-        MaskContext ctx = MaskContext.from(annotation);
-        return strategy.mask(value, ctx);
-    }
-
-    /** 按类型 + 默认参数脱敏 —— 最常见的调用方式. */
-    public static String mask(String value, SensitiveType type) {
-        if (value == null || value.isEmpty()) return value;
-        SensitiveStrategy<MaskContext> strategy = STRATEGIES.get(type);
-        if (strategy == null) return value;
-        return strategy.mask(value, MaskContext.DEFAULT);
-    }
-
-    /** 按类型 + 自定义 Context 脱敏 —— 需要覆盖 keepPrefix/maskChar 等默认值时使用. */
-    public static String mask(String value, SensitiveType type, MaskContext context) {
-        if (value == null || value.isEmpty()) return value;
-        SensitiveStrategy<MaskContext> strategy = STRATEGIES.get(type);
-        if (strategy == null) return value;
-        return strategy.mask(value, context);
-    }
-
-    /**
-     * 反射扫描对象中所有标注 @Sensitive 的 String 字段并脱敏，
-     * 返回克隆后的新对象（不修改原对象）。
+     * 创建脱敏处理器。
      *
-     * <p>注意：要求目标类有无参构造器，否则回退返回原对象。</p>
+     * @param registry 不可变策略注册表
      */
-    @SuppressWarnings("unchecked")
-    public static <T> T mask(T object) {
-        if (object == null) return null;
+    public SensitiveProcessor(SensitiveStrategyRegistry registry) {
+        if (registry == null) {
+            throw SensitiveException.configurationInvalid("策略注册表不能为空");
+        }
+        this.registry = registry;
+    }
+
+    /**
+     * 按字段注解执行脱敏。
+     *
+     * @param value 原始字符串，可为 {@code null}
+     * @param annotation 字段脱敏注解
+     * @return 脱敏结果；空值保持不变
+     */
+    public String mask(String value, Sensitive annotation) {
+        if (annotation == null) {
+            throw SensitiveException.configurationInvalid("Sensitive 注解不能为空");
+        }
+        return mask(value, annotation.type(), MaskContext.from(annotation));
+    }
+
+    /**
+     * 使用策略默认参数执行脱敏。
+     *
+     * @param value 原始字符串，可为 {@code null}
+     * @param type 脱敏类型
+     * @return 脱敏结果；空值保持不变
+     */
+    public String mask(String value, SensitiveType type) {
+        return mask(value, type, MaskContext.DEFAULT);
+    }
+
+    /**
+     * 使用指定上下文执行脱敏。
+     *
+     * @param value 原始字符串，可为 {@code null}
+     * @param type 脱敏类型
+     * @param context 脱敏上下文；为 {@code null} 时使用默认上下文
+     * @return 脱敏结果；空值保持不变
+     */
+    public String mask(String value, SensitiveType type, MaskContext context) {
+        SensitiveStrategy<MaskContext> strategy = registry.getRequired(type);
+        if (value == null || value.isEmpty()) {
+            return value;
+        }
+        MaskContext effectiveContext = context == null ? MaskContext.DEFAULT : context;
         try {
-            // 无参构造克隆对象，避免修改原对象
-            T clone = (T) object.getClass().getDeclaredConstructor().newInstance();
-            // 遍历整个类层次结构，确保父类中的 @Sensitive 字段也会被脱敏
-            Class<?> clazz = object.getClass();
-            while (clazz != null && clazz != Object.class) {
-                for (Field field : clazz.getDeclaredFields()) {
-                    field.setAccessible(true);
-                    Object value = field.get(object);
-                    // 仅处理标注了 @Sensitive 的 String 类型字段
-                    Sensitive annotation = field.getAnnotation(Sensitive.class);
-                    if (annotation != null && value instanceof String) {
-                        value = mask((String) value, annotation);
-                    }
-                    Field cloneField = clazz.getDeclaredField(field.getName());
-                    cloneField.setAccessible(true);
-                    cloneField.set(clone, value);
-                }
-                clazz = clazz.getSuperclass();
-            }
-            return clone;
-        } catch (Exception e) {
-            // 无参构造缺失或字段不可访问时，记录警告后返回原对象
-            log.warn("脱敏失败：无法克隆或反射访问类型 {} 的字段，将返回未脱敏的原对象。"
-                    + "请确保该类有无参构造器且字段可访问。", object.getClass().getName(), e);
-            return object;
+            return strategy.mask(value, effectiveContext);
+        } catch (SensitiveException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw SensitiveException.maskFailed(type, exception);
         }
     }
 
-    /** 获取指定类型的策略实例，可用于运行时判断策略是否已注册. */
-    public static SensitiveStrategy<MaskContext> getStrategy(SensitiveType type) {
-        return STRATEGIES.get(type);
-    }
-
-    /** 返回当前所有已注册策略的不可变快照. */
-    public static Map<SensitiveType, SensitiveStrategy<MaskContext>> getRegisteredStrategies() {
-        return Map.copyOf(STRATEGIES);
+    /**
+     * 获取当前处理器使用的不可变注册表。
+     *
+     * @return 策略注册表
+     */
+    public SensitiveStrategyRegistry getRegistry() {
+        return registry;
     }
 }

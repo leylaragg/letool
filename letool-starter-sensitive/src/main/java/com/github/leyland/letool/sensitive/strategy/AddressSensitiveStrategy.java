@@ -9,7 +9,7 @@ import com.github.leyland.letool.sensitive.core.SensitiveStrategy;
  * <pre>
  *   "北京市海淀区中关村大街1号" → "北京市海淀区****"
  *   "上海市浦东新区陆家嘴环路1000号" → "上海市浦东新区****"
- *   "广东省广州市" → "广东省广州市"（长度不足 3 位不处理）
+ *   "海淀" → "海*"
  * </pre>
  *
  * <p>保留长度默认为总长度的一半（{@code value.length() / 2}），
@@ -18,17 +18,19 @@ import com.github.leyland.letool.sensitive.core.SensitiveStrategy;
  */
 public class AddressSensitiveStrategy implements SensitiveStrategy<MaskContext> {
 
+    /**
+     * 按当前策略执行单值脱敏。
+     *
+     * @param value 原始字符串，可为 {@code null}
+     * @param context 脱敏上下文，可为 {@code null} 以使用策略默认值
+     * @return 脱敏结果；空值保持不变
+     */
     @Override
     public String mask(String value, MaskContext context) {
-        // 长度不足 3 位的不处理
-        if (value == null || value.length() < 3) return value;
-
-        // 保留前半段（默认一半长度，可通过 context 覆盖）
-        int prefix = context != null && context.getKeepPrefix() > 0 ? context.getKeepPrefix() : value.length() / 2;
-        char ch = context != null ? context.getMaskChar() : '*';
-
-        if (value.length() <= prefix) return value;
-        // 前半段保留 + 后半段全部遮盖
-        return value.substring(0, prefix) + String.valueOf(ch).repeat(value.length() - prefix);
+        if (value == null || value.isEmpty()) {
+            return value;
+        }
+        int prefix = MaskingSupport.keepPrefix(context, value.length() / 2);
+        return MaskingSupport.maskMiddle(value, prefix, 0, MaskingSupport.maskChar(context));
     }
 }

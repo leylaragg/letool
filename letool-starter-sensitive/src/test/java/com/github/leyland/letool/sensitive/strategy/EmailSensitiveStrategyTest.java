@@ -35,9 +35,9 @@ class EmailSensitiveStrategyTest {
         }
 
         @Test
-        @DisplayName("1字符用户名（@前仅1位）不处理")
+        @DisplayName("单字符用户名应完整遮盖用户名")
         void shouldNotMask1CharUsername() {
-            assertEquals("a@example.com", strategy.mask("a@example.com", MaskContext.DEFAULT));
+            assertEquals("*@example.com", strategy.mask("a@example.com", MaskContext.DEFAULT));
         }
 
         @Test
@@ -47,9 +47,9 @@ class EmailSensitiveStrategyTest {
         }
 
         @Test
-        @DisplayName("无 @ 符号的字符串应原样返回")
+        @DisplayName("无 @ 符号的字符串应完整遮盖")
         void shouldReturnWithoutAt() {
-            assertEquals("notanemail", strategy.mask("notanemail", MaskContext.DEFAULT));
+            assertEquals("**********", strategy.mask("notanemail", MaskContext.DEFAULT));
         }
     }
 
@@ -82,9 +82,9 @@ class EmailSensitiveStrategyTest {
         }
 
         @Test
-        @DisplayName("@在首位的邮箱")
+        @DisplayName("@ 在首位时应完整遮盖")
         void shouldHandleAtFirst() {
-            assertEquals("@example.com", strategy.mask("@example.com", MaskContext.DEFAULT));
+            assertEquals("************", strategy.mask("@example.com", MaskContext.DEFAULT));
         }
     }
 }

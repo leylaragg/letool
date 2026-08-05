@@ -10,33 +10,40 @@ import com.github.leyland.letool.sensitive.core.SensitiveStrategy;
  *   "test@example.com"    → "t***@example.com"
  *   "hello123@example.com" → "h***@example.com"
  *   "ab@example.com"       → "a*@example.com"（用户名短于等于 2 位时保留首字 + 遮盖剩余）
- *   "a@example.com"        → "a@example.com"（@ 前只有 1 位，不处理）
+ *   "a@example.com"        → "*@example.com"
  * </pre>
  *
  * <p>可通过 {@link MaskContext#getMaskChar()} 覆盖默认遮盖字符.</p>
  */
 public class EmailSensitiveStrategy implements SensitiveStrategy<MaskContext> {
 
+    /**
+     * 按当前策略执行单值脱敏。
+     *
+     * @param value 原始字符串，可为 {@code null}
+     * @param context 脱敏上下文，可为 {@code null} 以使用策略默认值
+     * @return 脱敏结果；空值保持不变
+     */
     @Override
     public String mask(String value, MaskContext context) {
-        if (value == null || value.isEmpty()) return value;
-
-        // 定位 @ 符号位置
-        int atIndex = value.indexOf('@');
-        // @ 前不足 2 位的不处理（无法有效遮盖）
-        if (atIndex <= 1) return value;
-
-        char ch = context != null ? context.getMaskChar() : '*';
-        String namePart = value.substring(0, atIndex);   // @ 前部分
-        String domain = value.substring(atIndex);         // @ 及域名部分
-
-        // 用户名部分的遮盖逻辑：保留首字，其余用 * 替换（最多 3 个 *）
-        String maskedName;
-        if (namePart.length() <= 2) {
-            maskedName = namePart.charAt(0) + String.valueOf(ch).repeat(namePart.length() - 1);
-        } else {
-            maskedName = namePart.charAt(0) + String.valueOf(ch).repeat(Math.min(3, namePart.length() - 1));
+        if (value == null || value.isEmpty()) {
+            return value;
         }
+
+        char maskChar = MaskingSupport.maskChar(context);
+        int atIndex = value.indexOf('@');
+        if (atIndex <= 0 || atIndex != value.lastIndexOf('@') || atIndex == value.length() - 1) {
+            return MaskingSupport.maskAll(value, maskChar);
+        }
+
+        String namePart = value.substring(0, atIndex);
+        String domain = value.substring(atIndex);
+        if (namePart.length() == 1) {
+            return maskChar + domain;
+        }
+
+        int maskLength = Math.min(3, namePart.length() - 1);
+        String maskedName = namePart.charAt(0) + String.valueOf(maskChar).repeat(maskLength);
         return maskedName + domain;
     }
 }

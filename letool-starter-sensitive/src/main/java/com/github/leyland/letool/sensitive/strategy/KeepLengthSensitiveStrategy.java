@@ -11,7 +11,7 @@ import com.github.leyland.letool.sensitive.core.SensitiveStrategy;
  *   "ABCDEF" → "A****F"
  *
  *   // 通过 MaskContext 自定义
- *   context.setKeepPrefix(2); context.setKeepSuffix(3);
+ *   context = context.withKeepPrefix(2).withKeepSuffix(3);
  *   "ABCDEFGH" → "AB***FGH"
  * </pre>
  *
@@ -20,21 +20,17 @@ import com.github.leyland.letool.sensitive.core.SensitiveStrategy;
  */
 public class KeepLengthSensitiveStrategy implements SensitiveStrategy<MaskContext> {
 
+    /**
+     * 按当前策略执行单值脱敏。
+     *
+     * @param value 原始字符串，可为 {@code null}
+     * @param context 脱敏上下文，可为 {@code null} 以使用策略默认值
+     * @return 脱敏结果；空值保持不变
+     */
     @Override
     public String mask(String value, MaskContext context) {
-        if (value == null || value.isEmpty()) return value;
-
-        // 从 context 获取保留长度，context 为 null 或值为 -1 时使用默认值（首尾各 1 位）
-        int prefix = context != null && context.getKeepPrefix() > 0 ? context.getKeepPrefix() : 1;
-        int suffix = context != null && context.getKeepSuffix() > 0 ? context.getKeepSuffix() : 1;
-        char ch = context != null ? context.getMaskChar() : '*';
-
-        // 原始长度不足以保留 → 原样返回
-        if (value.length() <= prefix + suffix) return value;
-
-        // 三部分拼接：前 N 位 + 遮盖区 + 后 M 位
-        return value.substring(0, prefix)
-                + String.valueOf(ch).repeat(value.length() - prefix - suffix)
-                + value.substring(value.length() - suffix);
+        int prefix = MaskingSupport.keepPrefix(context, 1);
+        int suffix = MaskingSupport.keepSuffix(context, 1);
+        return MaskingSupport.maskMiddle(value, prefix, suffix, MaskingSupport.maskChar(context));
     }
 }

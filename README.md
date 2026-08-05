@@ -34,7 +34,7 @@
 |------|------|------|
 | **letool-starter-exception** | 统一异常 —— 错误码、业务/系统异常、MessageSource 国际化解析 | 无 letool 内部依赖 |
 | **letool-starter-tool** | 核心工具 —— 可替换 JsonCodec、HTTP、ID 生成、字符串、集合、树工具；Spring/Redis helper 为可选适配器 | exception |
-| **letool-starter-sensitive** | 数据脱敏 —— 注解驱动，Jackson 序列化 + 日志输出自动脱敏 | tool |
+| [**letool-starter-sensitive**](letool-starter-sensitive/README.md) | 数据脱敏工具 —— 常用策略、字段注解、可扩展注册表与 Jackson 自动脱敏 | exception, Jackson |
 | **letool-starter-log** | 日志封装 —— 请求链路追踪、审计日志、方法日志；异步 MDC 传播可直接搭配 thread | tool, sensitive |
 | **letool-starter-cache** | 二级缓存 —— KV 与 Redis 原生 List/Hash/Set/ZSet，自动降级与恢复 | tool, exception |
 | **letool-starter-cipher-suite** | 加密套件 —— AES/RSA/SM2/SM3/SM4、数字签名 | tool |
@@ -133,10 +133,10 @@ public class User {
     private String idCard;   // "3201**********1234"
 }
 
-// Controller 返回 JSON 自动脱敏，日志输出自动脱敏
+// Controller 返回 JSON 时自动脱敏注解字段
 @GetMapping("/user")
 public R<User> getUser() {
-    return R.ok(user);  // phone/email/idCard 自动脱敏
+    return R.ok(user);  // phone 和 idCard 自动脱敏
 }
 ```
 
@@ -234,8 +234,6 @@ letool:
   sensitive:
     enabled: true
     jackson:
-      enabled: true
-    log:
       enabled: true
   log:
     enabled: true

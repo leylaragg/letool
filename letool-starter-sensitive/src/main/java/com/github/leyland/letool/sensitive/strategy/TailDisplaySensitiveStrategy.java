@@ -16,18 +16,16 @@ import com.github.leyland.letool.sensitive.core.SensitiveStrategy;
  */
 public class TailDisplaySensitiveStrategy implements SensitiveStrategy<MaskContext> {
 
+    /**
+     * 按当前策略执行单值脱敏。
+     *
+     * @param value 原始字符串，可为 {@code null}
+     * @param context 脱敏上下文，可为 {@code null} 以使用策略默认值
+     * @return 脱敏结果；空值保持不变
+     */
     @Override
     public String mask(String value, MaskContext context) {
-        if (value == null || value.isEmpty()) return value;
-
-        // 保留后 suffix 位（默认 4 位）
-        int suffix = context != null && context.getKeepSuffix() > 0 ? context.getKeepSuffix() : 4;
-        char ch = context != null ? context.getMaskChar() : '*';
-
-        // 长度不足 → 原样返回
-        if (value.length() <= suffix) return value;
-
-        // 前缀全部遮盖 + 后 suffix 位明文
-        return String.valueOf(ch).repeat(value.length() - suffix) + value.substring(value.length() - suffix);
+        int suffix = MaskingSupport.keepSuffix(context, 4);
+        return MaskingSupport.maskMiddle(value, 0, suffix, MaskingSupport.maskChar(context));
     }
 }

@@ -35,9 +35,9 @@ class BankCardSensitiveStrategyTest {
         }
 
         @Test
-        @DisplayName("短卡号（<8位）应原样返回")
+        @DisplayName("短卡号应完整遮盖")
         void shouldReturnShort() {
-            assertEquals("622202", strategy.mask("622202", MaskContext.DEFAULT));
+            assertEquals("******", strategy.mask("622202", MaskContext.DEFAULT));
         }
     }
 

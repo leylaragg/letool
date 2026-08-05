@@ -33,21 +33,31 @@ public class NameSensitiveStrategy implements SensitiveStrategy<MaskContext> {
             "百里", "呼延", "东郭", "梁丘", "左丘", "闾丘", "谷梁", "拓跋"
     );
 
+    /**
+     * 按当前策略执行单值脱敏。
+     *
+     * @param value 原始字符串，可为 {@code null}
+     * @param context 脱敏上下文，可为 {@code null} 以使用策略默认值
+     * @return 脱敏结果；空值保持不变
+     */
     @Override
     public String mask(String value, MaskContext context) {
-        if (value == null || value.isEmpty()) return value;
+        if (value == null || value.isEmpty()) {
+            return value;
+        }
 
-        // context 为 null 时使用默认遮盖字符 '*'
-        char ch = context != null ? context.getMaskChar() : '*';
+        char maskChar = MaskingSupport.maskChar(context);
+        if (value.length() == 1) {
+            return String.valueOf(maskChar);
+        }
 
         // 长度 >= 2 时检查前两字是否为复姓
-        if (value.length() >= 2) {
-            String firstTwo = value.substring(0, 2);
-            if (COMPOUND_SURNAMES.contains(firstTwo)) {
-                return firstTwo + ch;          // 欧阳修 → "欧阳*"
-            }
+        String firstTwo = value.substring(0, 2);
+        if (COMPOUND_SURNAMES.contains(firstTwo)) {
+            return value.length() == 2
+                    ? MaskingSupport.maskAll(value, maskChar)
+                    : firstTwo + maskChar;
         }
-        // 单姓：保留第一个字 + 遮盖
-        return value.charAt(0) + String.valueOf(ch);  // 张三 → "张*"
+        return value.charAt(0) + String.valueOf(maskChar);
     }
 }

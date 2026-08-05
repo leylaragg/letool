@@ -2,17 +2,17 @@ package com.github.leyland.letool.sensitive.annotation;
 
 import com.github.leyland.letool.sensitive.core.SensitiveType;
 
-import java.lang.annotation.*;
+import java.lang.annotation.Documented;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 
 /**
- * 字段级脱敏注解 —— 标记在需要脱敏的 String 字段上，Jackson 序列化 / 日志输出时自动生效.
+ * 标记需要在 Jackson 序列化阶段脱敏的字符串字段。
  *
- * <h3>生效时机</h3>
- * <ul>
- *   <li><b>Jackson 序列化</b>：Controller 返回 JSON 时，{@link com.github.leyland.letool.sensitive.jackson.SensitiveJsonSerializer} 自动拦截</li>
- *   <li><b>编程式调用</b>：{@link com.github.leyland.letool.sensitive.core.SensitiveProcessor#mask(Object)} 反射扫描</li>
- *   <li><b>SensitiveUtil</b>：{@link com.github.leyland.letool.sensitive.util.SensitiveUtil#mask(String, SensitiveType)} 静态工具方法</li>
- * </ul>
+ * <p>Spring Boot 自动配置会注册字段级 Jackson 模块。该模块只接管带本注解的
+ * {@link String} 字段，不会覆盖应用为普通字符串配置的序列化器。</p>
  *
  * <h3>配置优先级</h3>
  * <p>{@link #keepPrefix()} / {@link #keepSuffix()} / {@link #maskChar()} 的注解值覆盖策略默认值。
@@ -48,16 +48,16 @@ public @interface Sensitive {
 
     /**
      * 自定义正则表达式 —— 仅 type = CUSTOM 时生效。
-     * 匹配的内容将被 replacement 替换。为空字符串表示不使用自定义正则。
+     * 匹配的内容将被 replacement 替换；CUSTOM 类型必须提供非空表达式。
      * 示例：{@code "(?<=工号)\\d{4}"} 匹配 "工号" 后面的 4 位数字。
      */
     String pattern() default "";
 
     /**
      * 替换字符串 —— 仅 type = CUSTOM 时生效，将 pattern 匹配的内容替换为此值。
-     * 默认 "*" 替换为单个星号，可改为 "****" 替换为四个星号。
+     * 默认空字符串表示使用策略默认值；CUSTOM 类型默认使用单个星号。
      */
-    String replacement() default "*";
+    String replacement() default "";
 
     /**
      * 保留前缀长度 —— 覆盖策略默认保留前缀长度。

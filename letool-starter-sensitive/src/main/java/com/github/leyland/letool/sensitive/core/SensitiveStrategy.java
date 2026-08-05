@@ -1,7 +1,7 @@
 package com.github.leyland.letool.sensitive.core;
 
 /**
- * 脱敏策略接口 —— 定义单一脱敏规则的算法契约，所有内置和自定义脱敏策略必须实现此接口.
+ * 定义单一脱敏规则的算法契约。
  *
  * <h3>契约约定</h3>
  * <ul>
@@ -10,15 +10,10 @@ package com.github.leyland.letool.sensitive.core;
  *   <li><b>幂等</b>：对同一输入多次调用返回相同结果</li>
  * </ul>
  *
- * <h3>生命周期</h3>
- * <ol>
- *   <li>Spring 容器启动时，{@code @Component} 标注的实现类自动注册到 SensitiveProcessor</li>
- *   <li>也可通过 {@code SensitiveProcessor.register(type, strategy)} 手动注册</li>
- *   <li>策略实例全局唯一，注册后不被 GC 回收</li>
- * </ol>
+ * <p>自定义策略通过 {@link SensitiveStrategyRegistry#builder()} 注册，并将构建结果声明为
+ * Spring Bean。策略注册表不可变，因此策略实现本身也应保持无状态和线程安全。</p>
  *
- * @param <C> 上下文类型 —— 内置策略使用 {@link MaskContext}（含 keepPrefix/keepSuffix/maskChar/pattern/replacement），
- *            自定义策略可使用 Void 或自定义上下文类型。
+ * @param <C> 上下文类型；模块注册表使用 {@link MaskContext}
  */
 @FunctionalInterface
 public interface SensitiveStrategy<C> {

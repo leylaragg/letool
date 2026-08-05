@@ -1,6 +1,10 @@
 package com.github.leyland.letool.sensitive.config;
 
+import com.github.leyland.letool.sensitive.core.SensitiveProcessor;
+import com.github.leyland.letool.sensitive.core.SensitiveStrategyRegistry;
+import com.github.leyland.letool.sensitive.core.SensitiveType;
 import com.github.leyland.letool.sensitive.jackson.SensitiveModule;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.FilteredClassLoader;
@@ -11,113 +15,95 @@ import org.springframework.context.annotation.Configuration;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Auto-configuration contract tests for {@link SensitiveAutoConfiguration}.
+ * 脱敏自动配置的关键装配测试。
  */
+@DisplayName("脱敏自动配置")
 class SensitiveAutoConfigurationTest {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(SensitiveAutoConfiguration.class));
 
     /**
-     * Default sensitive integrations should be active in a normal Boot classpath.
+     * 验证默认环境注册可直接使用的核心组件与 Jackson 模块。
      */
     @Test
-    void shouldCreateDefaultSensitiveIntegrationBeans() {
+    @DisplayName("默认应装配生产化脱敏组件")
+    void shouldCreateDefaultSensitiveBeans() {
         contextRunner.run(context -> {
             assertThat(context).hasSingleBean(SensitiveProperties.class);
+            assertThat(context).hasSingleBean(SensitiveStrategyRegistry.class);
+            assertThat(context).hasSingleBean(SensitiveProcessor.class);
             assertThat(context).hasSingleBean(SensitiveModule.class);
-            assertThat(context).hasSingleBean(SensitiveAutoConfiguration.SensitiveLogInitializer.class);
         });
     }
 
     /**
-     * Jackson integration should be optional and independently switchable.
+     * 验证模块总开关和 Jackson 子开关都能真实控制 Bean 装配。
      */
     @Test
-    void shouldDisableJacksonIntegrationOnly() {
+    @DisplayName("配置开关应控制实际组件")
+    void shouldHonorConfigurationSwitches() {
         contextRunner.withPropertyValues("letool.sensitive.jackson.enabled=false")
                 .run(context -> {
-                    assertThat(context).hasSingleBean(SensitiveProperties.class);
+                    assertThat(context).hasSingleBean(SensitiveProcessor.class);
                     assertThat(context).doesNotHaveBean(SensitiveModule.class);
-                    assertThat(context).hasSingleBean(SensitiveAutoConfiguration.SensitiveLogInitializer.class);
                 });
-    }
 
-    /**
-     * Log integration should be optional and independently switchable.
-     */
-    @Test
-    void shouldDisableLogIntegrationOnly() {
-        contextRunner.withPropertyValues("letool.sensitive.log.enabled=false")
-                .run(context -> {
-                    assertThat(context).hasSingleBean(SensitiveProperties.class);
-                    assertThat(context).hasSingleBean(SensitiveModule.class);
-                    assertThat(context).doesNotHaveBean(SensitiveAutoConfiguration.SensitiveLogInitializer.class);
-                });
-    }
-
-    /**
-     * The whole module switch should disable all sensitive runtime beans.
-     */
-    @Test
-    void shouldDisableSensitiveAutoConfiguration() {
         contextRunner.withPropertyValues("letool.sensitive.enabled=false")
                 .run(context -> {
                     assertThat(context).doesNotHaveBean(SensitiveProperties.class);
+                    assertThat(context).doesNotHaveBean(SensitiveStrategyRegistry.class);
+                    assertThat(context).doesNotHaveBean(SensitiveProcessor.class);
                     assertThat(context).doesNotHaveBean(SensitiveModule.class);
-                    assertThat(context).doesNotHaveBean(SensitiveAutoConfiguration.SensitiveLogInitializer.class);
                 });
     }
 
     /**
-     * Jackson integration should stay passive when Jackson is not available.
+     * 验证未引入 Jackson 的应用仍可使用编程式脱敏组件。
      */
     @Test
-    void shouldStayPassiveWithoutJacksonObjectMapper() {
-        contextRunner.withClassLoader(new FilteredClassLoader("com.fasterxml.jackson.databind.ObjectMapper"))
+    @DisplayName("缺少 Jackson 时应保留核心脱敏组件")
+    void shouldKeepCoreBeansWithoutJackson() {
+        contextRunner.withClassLoader(new FilteredClassLoader("com.fasterxml.jackson.databind"))
                 .run(context -> {
-                    assertThat(context).hasSingleBean(SensitiveProperties.class);
+                    assertThat(context).hasSingleBean(SensitiveStrategyRegistry.class);
+                    assertThat(context).hasSingleBean(SensitiveProcessor.class);
                     assertThat(context).doesNotHaveBean(SensitiveModule.class);
-                    assertThat(context).hasSingleBean(SensitiveAutoConfiguration.SensitiveLogInitializer.class);
                 });
     }
 
     /**
-     * User-provided sensitive integration beans should win over starter defaults.
+     * 验证用户提供的策略注册表优先于 Starter 默认实现。
      */
     @Test
-    void shouldBackOffWhenUserProvidesSensitiveIntegrationBeans() {
-        contextRunner.withUserConfiguration(UserSensitiveIntegrationConfiguration.class)
+    @DisplayName("用户策略注册表应覆盖默认实现")
+    void shouldBackOffForUserStrategyRegistry() {
+        contextRunner.withUserConfiguration(UserRegistryConfiguration.class)
                 .run(context -> {
-                    assertThat(context).hasSingleBean(SensitiveModule.class);
-                    assertThat(context).hasSingleBean(SensitiveAutoConfiguration.SensitiveLogInitializer.class);
-                    assertThat(context.getBean(SensitiveModule.class)).isSameAs(context.getBean("userSensitiveModule"));
-                    assertThat(context.getBean(SensitiveAutoConfiguration.SensitiveLogInitializer.class))
-                            .isSameAs(context.getBean("userSensitiveLogInitializer"));
+                    SensitiveStrategyRegistry registry = context.getBean(SensitiveStrategyRegistry.class);
+                    SensitiveProcessor processor = context.getBean(SensitiveProcessor.class);
+
+                    assertThat(registry).isSameAs(context.getBean("userSensitiveStrategyRegistry"));
+                    assertThat(processor.mask("13812345678", SensitiveType.PHONE)).isEqualTo("用户策略");
                 });
     }
 
+    /**
+     * 测试使用的用户扩展配置。
+     */
     @Configuration(proxyBeanMethods = false)
-    static class UserSensitiveIntegrationConfiguration {
+    static class UserRegistryConfiguration {
 
         /**
-         * User-owned Jackson sensitive module.
+         * 创建覆盖手机号规则的用户策略注册表。
          *
-         * @return sensitive module.
+         * @return 用户自定义策略注册表
          */
         @Bean
-        SensitiveModule userSensitiveModule() {
-            return new SensitiveModule();
-        }
-
-        /**
-         * User-owned log integration marker.
-         *
-         * @return log integration marker.
-         */
-        @Bean
-        SensitiveAutoConfiguration.SensitiveLogInitializer userSensitiveLogInitializer() {
-            return new SensitiveAutoConfiguration.SensitiveLogInitializer();
+        SensitiveStrategyRegistry userSensitiveStrategyRegistry() {
+            return SensitiveStrategyRegistry.builder()
+                    .register(SensitiveType.PHONE, (value, context) -> "用户策略")
+                    .build();
         }
     }
 }

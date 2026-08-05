@@ -1,149 +1,111 @@
 package com.github.leyland.letool.sensitive.core;
 
+import com.github.leyland.letool.sensitive.exception.SensitiveErrorCode;
+import com.github.leyland.letool.sensitive.exception.SensitiveException;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.util.Map;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import static org.junit.jupiter.api.Assertions.*;
-
-@DisplayName("SensitiveProcessor 测试")
+/**
+ * 脱敏处理器关键行为测试。
+ */
+@DisplayName("脱敏处理器关键行为")
 class SensitiveProcessorTest {
 
-    @Nested
-    @DisplayName("mask 按类型默认参数")
-    class MaskByTypeTests {
+    /**
+     * 验证默认注册表可以执行内置手机号脱敏策略。
+     */
+    @Test
+    @DisplayName("默认注册表应提供内置脱敏策略")
+    void shouldUseBuiltInStrategy() {
+        SensitiveProcessor processor = new SensitiveProcessor(SensitiveStrategyRegistry.defaults());
 
-        @Test
-        @DisplayName("PHONE 类型脱敏")
-        void shouldMaskPhone() {
-            assertEquals("138****5678", SensitiveProcessor.mask("13812345678", SensitiveType.PHONE));
-        }
+        String masked = processor.mask("13812345678", SensitiveType.PHONE);
 
-        @Test
-        @DisplayName("ID_CARD 类型脱敏")
-        void shouldMaskIdCard() {
-            assertEquals("3201**********1234", SensitiveProcessor.mask("320123199001011234", SensitiveType.ID_CARD));
-        }
-
-        @Test
-        @DisplayName("EMAIL 类型脱敏")
-        void shouldMaskEmail() {
-            assertEquals("t***@example.com", SensitiveProcessor.mask("test@example.com", SensitiveType.EMAIL));
-        }
-
-        @Test
-        @DisplayName("NAME 类型脱敏")
-        void shouldMaskName() {
-            assertEquals("张*", SensitiveProcessor.mask("张三", SensitiveType.NAME));
-        }
-
-        @Test
-        @DisplayName("BANK_CARD 类型脱敏")
-        void shouldMaskBankCard() {
-            assertEquals("6222********7890", SensitiveProcessor.mask("6222021234567890", SensitiveType.BANK_CARD));
-        }
-
-        @Test
-        @DisplayName("PASSWORD 类型脱敏")
-        void shouldMaskPassword() {
-            assertEquals("********", SensitiveProcessor.mask("mySecret123", SensitiveType.PASSWORD));
-        }
-
-        @Test
-        @DisplayName("null 值应原样返回")
-        void shouldReturnNull() {
-            assertNull(SensitiveProcessor.mask(null, SensitiveType.PHONE));
-        }
-
-        @Test
-        @DisplayName("空字符串应原样返回")
-        void shouldReturnEmpty() {
-            assertEquals("", SensitiveProcessor.mask("", SensitiveType.PHONE));
-        }
+        assertThat(masked).isEqualTo("138****5678");
     }
 
-    @Nested
-    @DisplayName("mask 按类型+自定义Context")
-    class MaskWithContextTests {
+    /**
+     * 验证自定义策略只作用于显式使用该注册表的处理器，避免污染全局状态。
+     */
+    @Test
+    @DisplayName("自定义策略应保持实例隔离")
+    void shouldKeepCustomStrategyIsolated() {
+        SensitiveStrategyRegistry registry = SensitiveStrategyRegistry.builder()
+                .register(SensitiveType.PHONE, (value, context) -> "自定义:" + value.substring(value.length() - 4))
+                .build();
+        SensitiveProcessor customProcessor = new SensitiveProcessor(registry);
+        SensitiveProcessor defaultProcessor = new SensitiveProcessor(SensitiveStrategyRegistry.defaults());
 
-        @Test
-        @DisplayName("自定义 Context 脱敏")
-        void shouldMaskWithCustomContext() {
-            MaskContext ctx = new MaskContext().withKeepPrefix(2).withKeepSuffix(2).withMaskChar('#');
-            assertEquals("13#######78", SensitiveProcessor.mask("13812345678", SensitiveType.PHONE, ctx));
-        }
+        assertThat(customProcessor.mask("13812345678", SensitiveType.PHONE)).isEqualTo("自定义:5678");
+        assertThat(defaultProcessor.mask("13812345678", SensitiveType.PHONE)).isEqualTo("138****5678");
     }
 
-    @Nested
-    @DisplayName("mask 对象脱敏")
-    class MaskObjectTests {
+    /**
+     * 验证策略执行失败时抛出结构化异常并保留原因链，禁止静默返回明文。
+     */
+    @Test
+    @DisplayName("策略失败时不应回退返回明文")
+    void shouldFailClosedWhenStrategyFails() {
+        IllegalStateException cause = new IllegalStateException("模拟策略故障");
+        SensitiveStrategyRegistry registry = SensitiveStrategyRegistry.builder()
+                .register(SensitiveType.CUSTOM, (value, context) -> {
+                    throw cause;
+                })
+                .build();
+        SensitiveProcessor processor = new SensitiveProcessor(registry);
 
-        @Test
-        @DisplayName("应克隆对象并脱敏 @Sensitive 字段")
-        void shouldMaskObjectFields() {
-            TestUser user = new TestUser();
-            user.setName("张三");
-            user.setPhone("13812345678");
-            user.setIdCard("320123199001011234");
-
-            TestUser masked = SensitiveProcessor.mask(user);
-
-            assertNotNull(masked);
-            assertNotSame(user, masked);
-            assertEquals("张*", masked.getName());
-            assertEquals("138****5678", masked.getPhone());
-            assertEquals("3201**********1234", masked.getIdCard());
-        }
-
-        @Test
-        @DisplayName("null 对象应返回 null")
-        void shouldReturnNullForNullObject() {
-            assertNull(SensitiveProcessor.mask(null));
-        }
+        assertThatThrownBy(() -> processor.mask("secret", SensitiveType.CUSTOM))
+                .isInstanceOfSatisfying(SensitiveException.class, exception -> {
+                    assertThat(exception.getErrorCode()).isEqualTo(SensitiveErrorCode.MASK_FAILED);
+                    assertThat(exception.getCause()).isSameAs(cause);
+                    assertThat(exception.getMessage()).doesNotContain("secret");
+                });
     }
 
-    @Nested
-    @DisplayName("策略注册表")
-    class StrategyRegistryTests {
+    /**
+     * 验证短值或格式异常值仍会被安全遮盖，禁止策略把非空明文直接返回。
+     */
+    @Test
+    @DisplayName("格式异常时应安全遮盖而不是返回明文")
+    void shouldMaskMalformedValuesInsteadOfReturningPlaintext() {
+        SensitiveProcessor processor = new SensitiveProcessor(SensitiveStrategyRegistry.defaults());
 
-        @Test
-        @DisplayName("getRegisteredStrategies 应返回所有已注册策略")
-        void shouldReturnAllStrategies() {
-            Map<SensitiveType, SensitiveStrategy<MaskContext>> strategies = SensitiveProcessor.getRegisteredStrategies();
-            assertFalse(strategies.isEmpty());
-            assertTrue(strategies.containsKey(SensitiveType.PHONE));
-            assertTrue(strategies.containsKey(SensitiveType.ID_CARD));
-            assertTrue(strategies.containsKey(SensitiveType.EMAIL));
-            assertTrue(strategies.containsKey(SensitiveType.NAME));
-        }
-
-        @Test
-        @DisplayName("getStrategy 应返回指定类型策略")
-        void shouldReturnSpecificStrategy() {
-            SensitiveStrategy<MaskContext> strategy = SensitiveProcessor.getStrategy(SensitiveType.PHONE);
-            assertNotNull(strategy);
-        }
+        assertThat(processor.mask("123", SensitiveType.PHONE)).isEqualTo("***");
+        assertThat(processor.mask("invalid-email", SensitiveType.EMAIL)).isEqualTo("*************");
+        assertThat(processor.mask("not-ip", SensitiveType.IPV4)).isEqualTo("******");
     }
 
-    // ======================== 测试用内部类 ========================
+    /**
+     * 验证自定义正则策略缺少匹配规则时立即失败，避免无配置情况下放行明文。
+     */
+    @Test
+    @DisplayName("自定义策略缺少正则时应拒绝执行")
+    void shouldRejectCustomStrategyWithoutPattern() {
+        SensitiveProcessor processor = new SensitiveProcessor(SensitiveStrategyRegistry.defaults());
 
-    public static class TestUser {
-        @com.github.leyland.letool.sensitive.annotation.Sensitive(type = SensitiveType.NAME)
-        private String name;
+        assertThatThrownBy(() -> processor.mask("secret", SensitiveType.CUSTOM))
+                .isInstanceOfSatisfying(SensitiveException.class, exception ->
+                        assertThat(exception.getErrorCode())
+                                .isEqualTo(SensitiveErrorCode.CONFIGURATION_INVALID));
+    }
 
-        @com.github.leyland.letool.sensitive.annotation.Sensitive(type = SensitiveType.PHONE)
-        private String phone;
+    /**
+     * 验证用户显式指定的替换字符串不会被策略默认值覆盖。
+     */
+    @Test
+    @DisplayName("显式替换字符串应优先于策略默认值")
+    void shouldRespectExplicitReplacement() {
+        SensitiveProcessor processor = new SensitiveProcessor(SensitiveStrategyRegistry.defaults());
+        MaskContext context = MaskContext.DEFAULT.withReplacement("*");
 
-        @com.github.leyland.letool.sensitive.annotation.Sensitive(type = SensitiveType.ID_CARD)
-        private String idCard;
+        String masked = processor.mask(
+                "2001:0db8:85a3:0000:0000:8a2e:0370:7334",
+                SensitiveType.IPV6,
+                context);
 
-        public String getName() { return name; }
-        public void setName(String name) { this.name = name; }
-        public String getPhone() { return phone; }
-        public void setPhone(String phone) { this.phone = phone; }
-        public String getIdCard() { return idCard; }
-        public void setIdCard(String idCard) { this.idCard = idCard; }
+        assertThat(masked).isEqualTo("2001:*:7334");
     }
 }

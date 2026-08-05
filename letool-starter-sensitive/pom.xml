@@ -11,13 +11,13 @@
 
     <artifactId>letool-starter-sensitive</artifactId>
     <name>letool-starter-sensitive</name>
-    <description>letool 数据脱敏模块 —— 注解驱动脱敏，覆盖 JSON 序列化、日志输出、HTTP 响应、数据库字段</description>
+    <description>letool 数据脱敏工具 —— 内置常用策略、字段注解和可扩展的 Jackson 自动脱敏</description>
     <packaging>jar</packaging>
 
     <dependencies>
         <dependency>
             <groupId>com.github.leyland</groupId>
-            <artifactId>letool-starter-tool</artifactId>
+            <artifactId>letool-starter-exception</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -37,11 +37,6 @@
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-api</artifactId>
             <scope>provided</scope>
         </dependency>
         <dependency>

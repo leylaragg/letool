@@ -1,96 +1,188 @@
 package com.github.leyland.letool.sensitive.core;
 
 import com.github.leyland.letool.sensitive.annotation.Sensitive;
+import com.github.leyland.letool.sensitive.exception.SensitiveException;
 
 /**
- * 脱敏上下文 —— 包装单次脱敏操作所需的所有配置参数.
+ * 单次脱敏操作使用的不可变上下文。
  *
- * <h3>字段语义</h3>
- * <pre>
- *   pattern       自定义正则表达式（SensitiveType.CUSTOM 时生效），匹配的部分将被 replacement 替换
- *   replacement   替换字符串（SensitiveType.CUSTOM 时生效），替换掉 pattern 匹配到的内容
- *   keepPrefix    保留前缀长度，-1 表示使用策略默认值。例如手机号 keepPrefix=3 → "138****5678"
- *   keepSuffix    保留后缀长度，-1 表示使用策略默认值。例如身份证 keepSuffix=4 → "3201****1234"
- *   maskChar      遮盖字符，默认 '*'。例如银行卡 maskChar='#' → "6222####7890"
- * </pre>
- *
- * <h3>构造方式</h3>
- * <ul>
- *   <li>{@link #DEFAULT} —— 全部使用策略默认值的静态单例</li>
- *   <li>{@link #from(Sensitive)} —— 从 @Sensitive 注解提取配置</li>
- *   <li>{@code new MaskContext().withKeepPrefix(3).withMaskChar('#')} —— Builder 链式风格</li>
- * </ul>
+ * <p>{@code -1} 表示沿用策略默认保留长度，{@code 0} 表示不保留对应方向的字符。
+ * 所有链式方法都会返回新对象，因此共享的 {@link #DEFAULT} 不会被调用方修改。</p>
  */
-public class MaskContext {
+public final class MaskContext {
 
-    /** 所有字段使用策略默认值的单例（避免频繁创建） */
-    public static final MaskContext DEFAULT = new MaskContext();
+    /** 使用全部策略默认参数的共享上下文。 */
+    public static final MaskContext DEFAULT = new MaskContext(null, null, -1, -1, '*');
 
-    /**
-     * 自定义正则表达式 —— 仅 CUSTOM 类型时生效。
-     * 例如 {@code "(?<=工号)\\d{4}"} 匹配 "工号" 后面的 4 位数字。
-     */
-    private String pattern;
-
-    /**
-     * 替换字符串 —— pattern 匹配到的内容会被替换为此字符串。
-     * 例如 {@code "****"} 将匹配内容替换为四个星号。
-     */
-    private String replacement = "*";
+    private final String pattern;
+    private final String replacement;
+    private final int keepPrefix;
+    private final int keepSuffix;
+    private final char maskChar;
 
     /**
-     * 保留前缀长度 —— 值为 -1 时表示使用策略内置的默认前缀长度。
-     * 例如 {@code keepPrefix=3} 手机号 "13812345678" → "138****5678"（保留前 3 位）。
+     * 创建使用策略默认参数的上下文。
      */
-    private int keepPrefix = -1;
-
-    /**
-     * 保留后缀长度 —— 值为 -1 时表示使用策略内置的默认后缀长度。
-     * 例如 {@code keepSuffix=4} 身份证 "3201**********1234"（保留后 4 位）。
-     */
-    private int keepSuffix = -1;
-
-    /**
-     * 遮盖字符 —— 覆盖策略默认的遮盖字符，默认 '*'。
-     * 例如设置为 '#' 时银行卡 "6222####7890"。
-     */
-    private char maskChar = '*';
-
-    public MaskContext() {}
-
-    /**
-     * 从 @Sensitive 注解提取配置构造 MaskContext ——
-     * pattern 为空字符串时设为 null（表示不使用自定义正则），其余字段直接映射。
-     */
-    public static MaskContext from(Sensitive annotation) {
-        MaskContext ctx = new MaskContext();
-        ctx.pattern = annotation.pattern().isEmpty() ? null : annotation.pattern();
-        ctx.replacement = annotation.replacement();
-        ctx.keepPrefix = annotation.keepPrefix();
-        ctx.keepSuffix = annotation.keepSuffix();
-        ctx.maskChar = annotation.maskChar();
-        return ctx;
+    public MaskContext() {
+        this(null, null, -1, -1, '*');
     }
 
-    public String getPattern() { return pattern; }
-    public void setPattern(String pattern) { this.pattern = pattern; }
-    public String getReplacement() { return replacement; }
-    public void setReplacement(String replacement) { this.replacement = replacement; }
-    public int getKeepPrefix() { return keepPrefix; }
-    public void setKeepPrefix(int keepPrefix) { this.keepPrefix = keepPrefix; }
-    public int getKeepSuffix() { return keepSuffix; }
-    public void setKeepSuffix(int keepSuffix) { this.keepSuffix = keepSuffix; }
-    public char getMaskChar() { return maskChar; }
-    public void setMaskChar(char maskChar) { this.maskChar = maskChar; }
+    /**
+     * 创建不可变脱敏上下文。
+     *
+     * @param pattern 自定义正则表达式，可为 {@code null}
+     * @param replacement 正则替换字符串，可为 {@code null} 以使用策略默认值
+     * @param keepPrefix 前缀保留长度
+     * @param keepSuffix 后缀保留长度
+     * @param maskChar 遮盖字符
+     */
+    private MaskContext(
+            String pattern,
+            String replacement,
+            int keepPrefix,
+            int keepSuffix,
+            char maskChar) {
+        this.pattern = normalizePattern(pattern);
+        this.replacement = replacement;
+        this.keepPrefix = requireKeepLength("keepPrefix", keepPrefix);
+        this.keepSuffix = requireKeepLength("keepSuffix", keepSuffix);
+        this.maskChar = maskChar;
+    }
 
-    /** 链式设置保留前缀长度 */
-    public MaskContext withKeepPrefix(int keepPrefix) { this.keepPrefix = keepPrefix; return this; }
-    /** 链式设置保留后缀长度 */
-    public MaskContext withKeepSuffix(int keepSuffix) { this.keepSuffix = keepSuffix; return this; }
-    /** 链式设置遮盖字符 */
-    public MaskContext withMaskChar(char maskChar) { this.maskChar = maskChar; return this; }
-    /** 链式设置自定义正则 */
-    public MaskContext withPattern(String pattern) { this.pattern = pattern; return this; }
-    /** 链式设置替换字符串 */
-    public MaskContext withReplacement(String replacement) { this.replacement = replacement; return this; }
+    /**
+     * 从字段注解创建不可变上下文。
+     *
+     * @param annotation 脱敏字段注解
+     * @return 与注解参数一致的脱敏上下文
+     */
+    public static MaskContext from(Sensitive annotation) {
+        if (annotation == null) {
+            throw SensitiveException.configurationInvalid("Sensitive 注解不能为空");
+        }
+        return new MaskContext(
+                annotation.pattern(),
+                annotation.replacement().isEmpty() ? null : annotation.replacement(),
+                annotation.keepPrefix(),
+                annotation.keepSuffix(),
+                annotation.maskChar());
+    }
+
+    /**
+     * 获取自定义正则表达式。
+     *
+     * @return 自定义正则表达式，未配置时返回 {@code null}
+     */
+    public String getPattern() {
+        return pattern;
+    }
+
+    /**
+     * 获取正则替换字符串。
+     *
+     * @return 正则替换字符串，未配置时返回 {@code null}
+     */
+    public String getReplacement() {
+        return replacement;
+    }
+
+    /**
+     * 获取前缀保留长度。
+     *
+     * @return 前缀保留长度，{@code -1} 表示使用策略默认值
+     */
+    public int getKeepPrefix() {
+        return keepPrefix;
+    }
+
+    /**
+     * 获取后缀保留长度。
+     *
+     * @return 后缀保留长度，{@code -1} 表示使用策略默认值
+     */
+    public int getKeepSuffix() {
+        return keepSuffix;
+    }
+
+    /**
+     * 获取遮盖字符。
+     *
+     * @return 遮盖字符
+     */
+    public char getMaskChar() {
+        return maskChar;
+    }
+
+    /**
+     * 派生使用指定前缀保留长度的新上下文。
+     *
+     * @param keepPrefix 前缀保留长度，必须为 {@code -1} 或非负数
+     * @return 新的不可变上下文
+     */
+    public MaskContext withKeepPrefix(int keepPrefix) {
+        return new MaskContext(pattern, replacement, keepPrefix, keepSuffix, maskChar);
+    }
+
+    /**
+     * 派生使用指定后缀保留长度的新上下文。
+     *
+     * @param keepSuffix 后缀保留长度，必须为 {@code -1} 或非负数
+     * @return 新的不可变上下文
+     */
+    public MaskContext withKeepSuffix(int keepSuffix) {
+        return new MaskContext(pattern, replacement, keepPrefix, keepSuffix, maskChar);
+    }
+
+    /**
+     * 派生使用指定遮盖字符的新上下文。
+     *
+     * @param maskChar 遮盖字符
+     * @return 新的不可变上下文
+     */
+    public MaskContext withMaskChar(char maskChar) {
+        return new MaskContext(pattern, replacement, keepPrefix, keepSuffix, maskChar);
+    }
+
+    /**
+     * 派生使用指定正则表达式的新上下文。
+     *
+     * @param pattern 自定义正则表达式，空白值表示不配置
+     * @return 新的不可变上下文
+     */
+    public MaskContext withPattern(String pattern) {
+        return new MaskContext(pattern, replacement, keepPrefix, keepSuffix, maskChar);
+    }
+
+    /**
+     * 派生使用指定替换字符串的新上下文。
+     *
+     * @param replacement 正则替换字符串；为 {@code null} 时恢复策略默认值
+     * @return 新的不可变上下文
+     */
+    public MaskContext withReplacement(String replacement) {
+        return new MaskContext(pattern, replacement, keepPrefix, keepSuffix, maskChar);
+    }
+
+    /**
+     * 规范化可选正则表达式。
+     *
+     * @param pattern 原始正则表达式
+     * @return 规范化后的正则表达式
+     */
+    private static String normalizePattern(String pattern) {
+        return pattern == null || pattern.isBlank() ? null : pattern;
+    }
+
+    /**
+     * 校验保留长度。
+     *
+     * @param name 参数名称
+     * @param value 参数值
+     * @return 已校验的参数值
+     */
+    private static int requireKeepLength(String name, int value) {
+        if (value < -1) {
+            throw SensitiveException.configurationInvalid(name + " 必须为 -1 或非负数");
+        }
+        return value;
+    }
 }

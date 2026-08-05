@@ -26,9 +26,9 @@ class AddressPasswordWechatTests {
         }
 
         @Test
-        @DisplayName("短地址（<3位）不处理")
+        @DisplayName("短地址应安全遮盖")
         void shouldNotMaskShortAddress() {
-            assertEquals("海淀", strategy.mask("海淀", MaskContext.DEFAULT));
+            assertEquals("海*", strategy.mask("海淀", MaskContext.DEFAULT));
         }
 
         @Test
@@ -101,9 +101,9 @@ class AddressPasswordWechatTests {
         }
 
         @Test
-        @DisplayName("短微信号（<3位）不处理")
+        @DisplayName("短微信号应完整遮盖")
         void shouldNotMaskShortWechat() {
-            assertEquals("ab", strategy.mask("ab", MaskContext.DEFAULT));
+            assertEquals("**", strategy.mask("ab", MaskContext.DEFAULT));
         }
 
         @Test

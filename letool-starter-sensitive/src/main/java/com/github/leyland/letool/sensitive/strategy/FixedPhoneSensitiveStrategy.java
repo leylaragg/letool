@@ -9,7 +9,7 @@ import com.github.leyland.letool.sensitive.core.SensitiveStrategy;
  * <pre>
  *   "010-12345678"  → "010-****5678"  （有 '-' 分隔符：区号完整保留）
  *   "02187654321"   → "021****4321"   （无分隔符：按比例估算区号位置）
- *   "010-12"        → "010-12"        （长度不足 5 位不处理）
+ *   "010-12"        → "010-**"
  * </pre>
  *
  * <p>优先检测 {@code -} 分隔符来判断区号边界.
@@ -18,28 +18,30 @@ import com.github.leyland.letool.sensitive.core.SensitiveStrategy;
  */
 public class FixedPhoneSensitiveStrategy implements SensitiveStrategy<MaskContext> {
 
+    /**
+     * 按当前策略执行单值脱敏。
+     *
+     * @param value 原始字符串，可为 {@code null}
+     * @param context 脱敏上下文，可为 {@code null} 以使用策略默认值
+     * @return 脱敏结果；空值保持不变
+     */
     @Override
     public String mask(String value, MaskContext context) {
-        // 长度不足 5 位的不处理
-        if (value == null || value.length() < 5) return value;
-
-        char ch = context != null ? context.getMaskChar() : '*';
+        if (value == null || value.isEmpty()) {
+            return value;
+        }
+        char maskChar = MaskingSupport.maskChar(context);
 
         // 分支一：有 '-' 分隔符（如 "010-12345678"）
         int dashIndex = value.indexOf('-');
-        if (dashIndex > 0 && dashIndex < value.length() - 4) {
-            String prefix = value.substring(0, dashIndex + 1);   // "010-"（区号+分隔符完整保留）
-            String rest = value.substring(dashIndex + 1);        // "12345678"（号码部分）
-            if (rest.length() <= 4) return value;                // 号码太短不处理
-            // 号码部分：前段遮盖 + 后 4 位保留
-            String masked = String.valueOf(ch).repeat(rest.length() - 4) + rest.substring(rest.length() - 4);
-            return prefix + masked;
+        if (dashIndex > 0 && dashIndex < value.length() - 1) {
+            String areaCode = value.substring(0, dashIndex + 1);
+            String number = value.substring(dashIndex + 1);
+            return areaCode + MaskingSupport.maskMiddle(number, 0, 4, maskChar);
         }
 
         // 分支二：无分隔符（如 "02187654321"），按比例估算区号长度
-        int prefix = context != null && context.getKeepPrefix() > 0 ? context.getKeepPrefix() : value.length() / 3;
-        if (value.length() <= prefix + 4) return value;
-        return value.substring(0, prefix) + String.valueOf(ch).repeat(value.length() - prefix - 4)
-                + value.substring(value.length() - 4);
+        int prefix = MaskingSupport.keepPrefix(context, Math.max(1, value.length() / 3));
+        return MaskingSupport.maskMiddle(value, prefix, 4, maskChar);
     }
 }

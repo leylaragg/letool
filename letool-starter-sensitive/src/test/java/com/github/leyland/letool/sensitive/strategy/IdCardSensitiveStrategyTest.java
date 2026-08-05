@@ -35,9 +35,9 @@ class IdCardSensitiveStrategyTest {
         }
 
         @Test
-        @DisplayName("短字符串（<8位）应原样返回")
+        @DisplayName("短字符串应完整遮盖")
         void shouldReturnShort() {
-            assertEquals("32012", strategy.mask("32012", MaskContext.DEFAULT));
+            assertEquals("*****", strategy.mask("32012", MaskContext.DEFAULT));
         }
     }
 
@@ -64,10 +64,9 @@ class IdCardSensitiveStrategyTest {
     class EdgeCaseTests {
 
         @Test
-        @DisplayName("恰好 8 位：长度不足以遮盖，原样返回")
+        @DisplayName("恰好 8 位时应完整遮盖")
         void shouldMaskExactly8Digits() {
-            // 4+4=8, length=8, 长度等于保留长度, 原样返回
-            assertEquals("32011234", strategy.mask("32011234", MaskContext.DEFAULT));
+            assertEquals("********", strategy.mask("32011234", MaskContext.DEFAULT));
         }
 
         @Test
