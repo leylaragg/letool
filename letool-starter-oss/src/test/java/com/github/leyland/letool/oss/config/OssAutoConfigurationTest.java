@@ -2,150 +2,173 @@ package com.github.leyland.letool.oss.config;
 
 import com.github.leyland.letool.oss.core.OssProvider;
 import com.github.leyland.letool.oss.core.OssTemplate;
-import com.github.leyland.letool.oss.provider.MinioProvider;
+import com.github.leyland.letool.oss.model.OssObject;
+import com.github.leyland.letool.oss.model.OssUploadRequest;
+import com.github.leyland.letool.oss.model.OssUploadResult;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 
-import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.net.URI;
 import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * {@link OssAutoConfiguration} 的自动装配契约测试。
- *
- * <p>OSS 当前只内置 stub provider。测试要求 stub 必须显式开启，避免业务项目误以为
- * 配置真实 endpoint、bucket 和密钥后就已经接入真实对象存储。</p>
+ * OSS 公共自动配置测试。
  */
 class OssAutoConfigurationTest {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-            .withConfiguration(AutoConfigurations.of(OssAutoConfiguration.class))
-            .withPropertyValues("spring.main.allow-bean-definition-overriding=false");
+            .withConfiguration(AutoConfigurations.of(OssAutoConfiguration.class));
 
     /**
-     * 验证 OSS 默认保持未启用状态，不因引入 starter 就创建 stub provider。
+     * 验证模块默认关闭，不创建任何运行时入口。
      */
     @Test
-    void shouldStayInactiveByDefault() {
+    @DisplayName("OSS 模块默认不启用")
+    void shouldBeDisabledByDefault() {
         contextRunner.run(context -> {
-            assertThat(context).doesNotHaveBean(OssProvider.class);
             assertThat(context).doesNotHaveBean(OssTemplate.class);
+            assertThat(context).doesNotHaveBean(OssProperties.class);
         });
     }
 
     /**
-     * 验证启用 OSS 但未显式允许 stub 时会 fail-fast。
+     * 验证启用模块并提供业务 Provider 后创建模板。
      */
     @Test
-    void shouldFailFastWhenEnabledWithoutStubModeOrCustomProvider() {
-        contextRunner
-                .withPropertyValues("letool.oss.enabled=true")
-                .run(context -> {
-                    assertThat(context).hasFailed();
-                    assertThat(context.getStartupFailure())
-                            .hasMessageContaining("未启用 stub")
-                            .hasMessageContaining("自定义 OssProvider");
-                });
-    }
-
-    /**
-     * 验证显式开启 stub 模式后，才会创建内置 stub provider。
-     */
-    @Test
-    void shouldCreateStubProviderWhenStubModeIsExplicitlyEnabled() {
+    @DisplayName("用户 Provider 应驱动模板自动配置")
+    void shouldCreateTemplateForCustomProvider() {
         contextRunner
                 .withPropertyValues(
                         "letool.oss.enabled=true",
-                        "letool.oss.stub-enabled=true",
-                        "letool.oss.default-provider=minio")
+                        "letool.oss.provider=custom",
+                        "letool.oss.bucket=assets")
+                .withBean(OssProvider.class, TestOssProvider::new)
                 .run(context -> {
-                    assertThat(context).hasSingleBean(OssProvider.class);
-                    assertThat(context.getBean(OssProvider.class)).isInstanceOf(MinioProvider.class);
+                    assertThat(context).hasNotFailed();
                     assertThat(context).hasSingleBean(OssTemplate.class);
+                    assertThat(context.getBean(OssProperties.class).getProvider()).isEqualTo("custom");
+                    assertThat(context.getBean(OssProperties.class).getBucket()).isEqualTo("assets");
                 });
     }
 
     /**
-     * 验证未知 provider 不会静默退回 MinIO stub。
+     * 验证启用模块却没有 Provider 时启动失败，避免静默缺失能力。
      */
     @Test
-    void shouldFailFastWhenProviderIsUnsupported() {
+    @DisplayName("启用 OSS 后缺少 Provider 应启动失败")
+    void shouldFailWhenProviderIsMissing() {
         contextRunner
                 .withPropertyValues(
                         "letool.oss.enabled=true",
-                        "letool.oss.stub-enabled=true",
-                        "letool.oss.default-provider=s3")
+                        "letool.oss.provider=minio",
+                        "letool.oss.bucket=assets")
                 .run(context -> {
                     assertThat(context).hasFailed();
-                    assertThat(context.getStartupFailure())
-                            .hasMessageContaining("s3")
-                            .hasMessageContaining("不支持的 OSS provider");
+                    assertThat(context.getStartupFailure()).hasMessageContaining("OssProvider");
                 });
     }
 
     /**
-     * 验证业务项目提供真实 provider 时，自动配置不会覆盖它。
+     * 验证用户可以覆盖默认模板。
      */
     @Test
-    void shouldBackOffWhenUserProvidesOssProvider() {
+    @DisplayName("用户自定义 OssTemplate 时自动配置应退让")
+    void shouldBackOffForCustomTemplate() {
+        TestOssProvider provider = new TestOssProvider();
+        OssProperties properties = new OssProperties();
+        properties.setProvider("custom");
+        properties.setBucket("assets");
+        OssTemplate customTemplate = new OssTemplate(provider, properties);
+
         contextRunner
                 .withPropertyValues("letool.oss.enabled=true")
-                .withUserConfiguration(UserOssConfiguration.class)
+                .withBean(OssProvider.class, () -> provider)
+                .withBean(OssTemplate.class, () -> customTemplate)
                 .run(context -> {
-                    assertThat(context).hasSingleBean(OssProvider.class);
-                    assertThat(context.getBean(OssProvider.class))
-                            .isSameAs(context.getBean("ossProvider"));
+                    assertThat(context).hasNotFailed();
                     assertThat(context).hasSingleBean(OssTemplate.class);
+                    assertThat(context.getBean(OssTemplate.class)).isSameAs(customTemplate);
                 });
     }
 
     /**
-     * 模拟业务项目自行接入真实 OSS SDK 的 provider。
+     * 最小测试 Provider。
      */
-    @Configuration(proxyBeanMethods = false)
-    static class UserOssConfiguration {
+    private static final class TestOssProvider implements OssProvider {
 
-        @Bean
-        OssProvider ossProvider() {
-            return new TestOssProvider();
-        }
-    }
-
-    /**
-     * 用于自动装配测试的 OSS provider，不访问真实对象存储。
-     */
-    static class TestOssProvider implements OssProvider {
-
+        /**
+         * 返回测试上传结果。
+         *
+         * @param request 上传请求
+         * @return 上传结果
+         */
         @Override
-        public String upload(String bucket, String objectKey, InputStream inputStream, String contentType) {
-            return "test://" + bucket + "/" + objectKey;
+        public OssUploadResult upload(OssUploadRequest request) {
+            return new OssUploadResult("test", request.getBucket(), request.getObjectKey(), null, null);
         }
 
+        /**
+         * 返回空测试对象。
+         *
+         * @param bucket Bucket 名称
+         * @param objectKey 对象键
+         * @return 下载对象
+         */
         @Override
-        public InputStream download(String bucket, String objectKey) {
-            return new ByteArrayInputStream(new byte[0]);
+        public OssObject download(String bucket, String objectKey) {
+            return OssObject.builder()
+                    .bucket(bucket)
+                    .objectKey(objectKey)
+                    .content(InputStream.nullInputStream())
+                    .build();
         }
 
+        /**
+         * 执行幂等删除。
+         *
+         * @param bucket Bucket 名称
+         * @param objectKey 对象键
+         */
         @Override
-        public boolean delete(String bucket, String objectKey) {
-            return true;
+        public void delete(String bucket, String objectKey) {
+            // 测试 Provider 无需访问远程服务。
         }
 
+        /**
+         * 返回对象不存在。
+         *
+         * @param bucket Bucket 名称
+         * @param objectKey 对象键
+         * @return 固定返回 {@code false}
+         */
         @Override
         public boolean exists(String bucket, String objectKey) {
-            return true;
+            return false;
         }
 
+        /**
+         * 返回测试预签名地址。
+         *
+         * @param bucket Bucket 名称
+         * @param objectKey 对象键
+         * @param expiration 有效期
+         * @return 测试 URI
+         */
         @Override
-        public String getPresignedUrl(String bucket, String objectKey, Duration expiration) {
-            return "test://" + bucket + "/" + objectKey + "?expires=" + expiration.getSeconds();
+        public URI getPresignedUrl(String bucket, String objectKey, Duration expiration) {
+            return URI.create("https://example.test/" + objectKey);
         }
 
+        /**
+         * 获取 Provider 标识。
+         *
+         * @return 测试标识
+         */
         @Override
         public String getProviderName() {
             return "test";

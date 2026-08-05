@@ -2,449 +2,282 @@ package com.github.leyland.letool.oss.core;
 
 import com.github.leyland.letool.oss.config.OssProperties;
 import com.github.leyland.letool.oss.exception.OssException;
-import org.junit.jupiter.api.BeforeEach;
+import com.github.leyland.letool.oss.model.OssObject;
+import com.github.leyland.letool.oss.model.OssUploadRequest;
+import com.github.leyland.letool.oss.model.OssUploadResult;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
-import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@DisplayName("OssTemplate 对象存储操作模板测试")
+/**
+ * OSS 便捷模板测试。
+ */
 class OssTemplateTest {
 
-    private OssTemplate ossTemplate;
-    private OssProperties properties;
-    private MockProvider mockProvider;
+    /**
+     * 验证快捷上传会解析默认 Bucket，并使用未知长度与默认内容类型。
+     */
+    @Test
+    @DisplayName("快捷上传应使用默认 Bucket")
+    void shouldUploadWithDefaultBucket() {
+        RecordingProvider provider = new RecordingProvider();
+        OssTemplate template = createTemplate(provider, "assets");
 
-    @BeforeEach
-    void setUp() {
-        properties = new OssProperties();
-        properties.setDefaultProvider("minio");
-        OssProperties.Minio minio = new OssProperties.Minio();
-        minio.setBucket("default-bucket");
-        minio.setEndpoint("http://localhost:9000");
-        properties.setMinio(minio);
-        properties.setAliyun(new OssProperties.Aliyun());
-        properties.setTencentCos(new OssProperties.TencentCos());
+        OssUploadResult result = template.upload(
+                "images/avatar.png",
+                new ByteArrayInputStream(new byte[]{1, 2, 3}));
 
-        mockProvider = new MockProvider();
-        ossTemplate = new OssTemplate(mockProvider, properties);
+        assertThat(result.getBucket()).isEqualTo("assets");
+        assertThat(provider.uploadRequest.getBucket()).isEqualTo("assets");
+        assertThat(provider.uploadRequest.getContentLength()).isEqualTo(-1L);
+        assertThat(provider.uploadRequest.getContentType()).isEqualTo("application/octet-stream");
     }
 
-    @Nested
-    @DisplayName("快速操作（默认 Bucket）测试")
-    class QuickOperationTests {
+    /**
+     * 验证字节数组上传会自动携带准确长度。
+     */
+    @Test
+    @DisplayName("字节数组上传应自动设置内容长度")
+    void shouldUploadByteArrayWithLength() {
+        RecordingProvider provider = new RecordingProvider();
+        OssTemplate template = createTemplate(provider, "assets");
 
-        @Test
-        @DisplayName("upload(objectKey, stream) 应使用默认 bucket 和 octet-stream")
-        void uploadShouldUseDefaultBucket() {
-            InputStream stream = new ByteArrayInputStream("test".getBytes());
-            String result = ossTemplate.upload("photos/avatar.png", stream);
-            assertNotNull(result);
-            assertTrue(mockProvider.lastBucket.contains("default-bucket"));
-            assertEquals("photos/avatar.png", mockProvider.lastObjectKey);
-            assertEquals("application/octet-stream", mockProvider.lastContentType);
-        }
+        template.upload("documents/readme.txt", "hello".getBytes(StandardCharsets.UTF_8), "text/plain");
 
-        @Test
-        @DisplayName("upload(objectKey, stream, contentType) 应使用指定 Content-Type")
-        void uploadWithContentTypeShouldUseSpecifiedType() {
-            InputStream stream = new ByteArrayInputStream("test".getBytes());
-            ossTemplate.upload("report.pdf", stream, "application/pdf");
-            assertEquals("application/pdf", mockProvider.lastContentType);
-        }
+        assertThat(provider.uploadRequest.getContentLength()).isEqualTo(5L);
+        assertThat(provider.uploadRequest.getContentType()).isEqualTo("text/plain");
+    }
 
-        @Test
-        @DisplayName("download(objectKey) 应使用默认 bucket")
-        void downloadShouldUseDefaultBucket() {
-            InputStream stream = ossTemplate.download("data/export.csv");
-            assertNotNull(stream);
-            assertEquals("default-bucket", mockProvider.lastBucket);
-            assertEquals("data/export.csv", mockProvider.lastObjectKey);
-        }
+    /**
+     * 验证文件上传会自动读取长度，并在调用完成后关闭文件流。
+     *
+     * @throws IOException 创建或删除测试文件失败时抛出
+     */
+    @Test
+    @DisplayName("文件上传应自动设置长度并关闭文件流")
+    void shouldUploadPathAndCloseStream() throws IOException {
+        Path directory = Path.of("target", "oss-template-test");
+        Files.createDirectories(directory);
+        Path file = Files.createTempFile(directory, "upload-", ".txt");
+        Files.writeString(file, "hello", StandardCharsets.UTF_8);
+        RecordingProvider provider = new RecordingProvider();
+        OssTemplate template = createTemplate(provider, "assets");
 
-        @Test
-        @DisplayName("delete(objectKey) 应使用默认 bucket")
-        void deleteShouldUseDefaultBucket() {
-            assertTrue(ossTemplate.delete("temp/file.txt"));
-            assertEquals("default-bucket", mockProvider.lastBucket);
-            assertEquals("temp/file.txt", mockProvider.lastObjectKey);
-        }
+        try {
+            template.upload("documents/readme.txt", file);
 
-        @Test
-        @DisplayName("getPresignedUrl(objectKey, expiration) 应使用默认 bucket")
-        void getPresignedUrlShouldUseDefaultBucket() {
-            Duration expiration = Duration.ofHours(2);
-            String url = ossTemplate.getPresignedUrl("data/report.pdf", expiration);
-            assertNotNull(url);
-            assertEquals("default-bucket", mockProvider.lastBucket);
-            assertEquals(expiration, mockProvider.lastExpiration);
-        }
-
-        @Test
-        @DisplayName("exists(objectKey) 应使用默认 bucket")
-        void existsShouldUseDefaultBucket() {
-            assertTrue(ossTemplate.exists("photos/avatar.png"));
-            assertEquals("default-bucket", mockProvider.lastBucket);
-            assertEquals("photos/avatar.png", mockProvider.lastObjectKey);
+            assertThat(provider.uploadRequest.getContentLength()).isEqualTo(5L);
+            assertThatThrownBy(() -> provider.uploadRequest.getInputStream().read())
+                    .isInstanceOf(IOException.class);
+        } finally {
+            Files.deleteIfExists(file);
         }
     }
 
-    @Nested
-    @DisplayName("完整操作（指定 Bucket）测试")
-    class FullOperationTests {
+    /**
+     * 验证高级上传请求会原样交给 Provider。
+     */
+    @Test
+    @DisplayName("高级上传请求应保留元数据")
+    void shouldDelegateAdvancedUploadRequest() {
+        RecordingProvider provider = new RecordingProvider();
+        OssTemplate template = createTemplate(provider, "assets");
+        OssUploadRequest request = OssUploadRequest.builder()
+                .bucket("archive")
+                .objectKey("2026/report.csv")
+                .inputStream(InputStream.nullInputStream())
+                .contentLength(0)
+                .contentType("text/csv")
+                .metadata(Map.of("tenant", "tenant-a"))
+                .build();
 
-        @Test
-        @DisplayName("upload(bucket, objectKey, stream, contentType) 应正确传递参数")
-        void fullUploadShouldPassAllParams() {
-            InputStream stream = new ByteArrayInputStream("test".getBytes());
-            String result = ossTemplate.upload("archive", "2024/doc.pdf", stream, "application/pdf");
-            assertNotNull(result);
-            assertEquals("archive", mockProvider.lastBucket);
-            assertEquals("2024/doc.pdf", mockProvider.lastObjectKey);
-            assertEquals("application/pdf", mockProvider.lastContentType);
-        }
+        template.upload(request);
 
-        @Test
-        @DisplayName("download(bucket, objectKey) 应正确传递参数")
-        void fullDownloadShouldPassAllParams() {
-            ossTemplate.download("archive", "2024/doc.pdf");
-            assertEquals("archive", mockProvider.lastBucket);
-            assertEquals("2024/doc.pdf", mockProvider.lastObjectKey);
-        }
-
-        @Test
-        @DisplayName("delete(bucket, objectKey) 应正确传递参数")
-        void fullDeleteShouldPassAllParams() {
-            ossTemplate.delete("archive", "2024/doc.pdf");
-            assertEquals("archive", mockProvider.lastBucket);
-            assertEquals("2024/doc.pdf", mockProvider.lastObjectKey);
-        }
-
-        @Test
-        @DisplayName("getPresignedUrl(bucket, objectKey, expiration) 应正确传递参数")
-        void fullGetPresignedUrlShouldPassAllParams() {
-            Duration expiration = Duration.ofHours(3);
-            ossTemplate.getPresignedUrl("archive", "2024/doc.pdf", expiration);
-            assertEquals("archive", mockProvider.lastBucket);
-            assertEquals("2024/doc.pdf", mockProvider.lastObjectKey);
-            assertEquals(expiration, mockProvider.lastExpiration);
-        }
-
-        @Test
-        @DisplayName("exists(bucket, objectKey) 应正确传递参数")
-        void fullExistsShouldPassAllParams() {
-            ossTemplate.exists("archive", "2024/doc.pdf");
-            assertEquals("archive", mockProvider.lastBucket);
-            assertEquals("2024/doc.pdf", mockProvider.lastObjectKey);
-        }
+        assertThat(provider.uploadRequest).isSameAs(request);
+        assertThat(provider.uploadRequest.getMetadata()).containsEntry("tenant", "tenant-a");
     }
 
-    @Nested
-    @DisplayName("Builder 模式测试")
-    class BuilderTests {
+    /**
+     * 验证下载、存在性、幂等删除和预签名操作使用默认 Bucket。
+     */
+    @Test
+    @DisplayName("对象操作应委托给 Provider")
+    void shouldDelegateObjectOperations() throws IOException {
+        RecordingProvider provider = new RecordingProvider();
+        OssTemplate template = createTemplate(provider, "assets");
 
-        @Test
-        @DisplayName("builder() 应返回 Builder 实例")
-        void builderShouldReturnBuilder() {
-            assertNotNull(ossTemplate.builder());
+        try (OssObject object = template.download("reports/result.csv")) {
+            assertThat(object.getBucket()).isEqualTo("assets");
         }
-
-        @Test
-        @DisplayName("Builder.upload() 应使用 Builder 中设置的 bucket")
-        void builderUploadShouldUseBuilderBucket() {
-            InputStream stream = new ByteArrayInputStream("test".getBytes());
-            ossTemplate.builder()
-                    .bucket("custom-bucket")
-                    .objectKey("data/file.txt")
-                    .contentType("text/plain")
-                    .upload(stream);
-
-            assertEquals("custom-bucket", mockProvider.lastBucket);
-            assertEquals("data/file.txt", mockProvider.lastObjectKey);
-            assertEquals("text/plain", mockProvider.lastContentType);
-        }
-
-        @Test
-        @DisplayName("Builder 未设置 bucket 时应使用默认 bucket")
-        void builderWithoutBucketShouldUseDefault() {
-            InputStream stream = new ByteArrayInputStream("test".getBytes());
-            ossTemplate.builder()
-                    .objectKey("data/file.txt")
-                    .upload(stream);
-
-            assertTrue(mockProvider.lastBucket.contains("default-bucket"));
-        }
-
-        @Test
-        @DisplayName("Builder 未设置 contentType 时应使用默认值")
-        void builderWithoutContentTypeShouldUseDefault() {
-            InputStream stream = new ByteArrayInputStream("test".getBytes());
-            ossTemplate.builder()
-                    .objectKey("data/file.txt")
-                    .upload(stream);
-
-            assertEquals("application/octet-stream", mockProvider.lastContentType);
-        }
-
-        @Test
-        @DisplayName("Builder.download() 应正确执行下载")
-        void builderDownloadShouldWork() {
-            InputStream result = ossTemplate.builder()
-                    .bucket("download-bucket")
-                    .objectKey("exports/data.csv")
-                    .download();
-
-            assertNotNull(result);
-            assertEquals("download-bucket", mockProvider.lastBucket);
-            assertEquals("exports/data.csv", mockProvider.lastObjectKey);
-        }
-
-        @Test
-        @DisplayName("Builder.delete() 应正确执行删除")
-        void builderDeleteShouldWork() {
-            boolean result = ossTemplate.builder()
-                    .objectKey("temp/remove.txt")
-                    .delete();
-
-            assertTrue(result);
-            assertEquals("temp/remove.txt", mockProvider.lastObjectKey);
-        }
-
-        @Test
-        @DisplayName("Builder.getPresignedUrl(expiration) 应正确生成预签名 URL")
-        void builderGetPresignedUrlShouldWork() {
-            Duration expiration = Duration.ofMinutes(45);
-            String url = ossTemplate.builder()
-                    .objectKey("secure/doc.pdf")
-                    .getPresignedUrl(expiration);
-
-            assertNotNull(url);
-            assertEquals("secure/doc.pdf", mockProvider.lastObjectKey);
-            assertEquals(expiration, mockProvider.lastExpiration);
-        }
-
-        @Test
-        @DisplayName("Builder.exists() 应正确执行存在检查")
-        void builderExistsShouldWork() {
-            boolean result = ossTemplate.builder()
-                    .objectKey("check/here.txt")
-                    .exists();
-
-            assertTrue(result);
-            assertEquals("check/here.txt", mockProvider.lastObjectKey);
-        }
+        assertThat(template.exists("reports/result.csv")).isTrue();
+        template.delete("reports/result.csv");
+        assertThat(template.getPresignedUrl("reports/result.csv", Duration.ofMinutes(15)))
+                .isEqualTo(URI.create("https://example.test/reports/result.csv"));
+        assertThat(provider.deletedBucket).isEqualTo("assets");
+        assertThat(provider.deletedObjectKey).isEqualTo("reports/result.csv");
     }
 
-    @Nested
-    @DisplayName("Builder 链式调用测试")
-    class BuilderChainingTests {
+    /**
+     * 验证缺少默认 Bucket 时快速失败。
+     */
+    @Test
+    @DisplayName("快捷操作应拒绝缺失的默认 Bucket")
+    void shouldRejectMissingDefaultBucket() {
+        OssTemplate template = createTemplate(new RecordingProvider(), " ");
 
-        @Test
-        @DisplayName("所有设置方法应返回 this")
-        void allMethodsShouldReturnThis() {
-            OssTemplate.Builder builder = ossTemplate.builder();
-            assertSame(builder, builder.bucket("my-bucket"));
-            assertSame(builder, builder.objectKey("file.txt"));
-            assertSame(builder, builder.contentType("application/json"));
-        }
+        assertThatThrownBy(() -> template.exists("reports/result.csv"))
+                .isInstanceOf(OssException.class)
+                .extracting("code")
+                .isEqualTo("OSS_CONFIG_INVALID");
     }
 
-    @Nested
-    @DisplayName("Builder 参数校验测试")
-    class BuilderValidationTests {
+    /**
+     * 验证模板包装非 OSS 异常时保留原始原因。
+     */
+    @Test
+    @DisplayName("模板应保留 Provider 异常原因链")
+    void shouldWrapProviderExceptionWithCause() {
+        RecordingProvider provider = new RecordingProvider();
+        provider.uploadFailure = new IllegalStateException("网络不可用");
+        OssTemplate template = createTemplate(provider, "assets");
 
-        @Test
-        @DisplayName("未设置 objectKey 应抛出 IllegalArgumentException")
-        void missingObjectKeyShouldThrow() {
-            InputStream stream = new ByteArrayInputStream("test".getBytes());
-            assertThrows(IllegalArgumentException.class, () ->
-                    ossTemplate.builder()
-                            .bucket("my-bucket")
-                            .upload(stream));
-        }
-
-        @Test
-        @DisplayName("objectKey 为空白应抛出 IllegalArgumentException")
-        void blankObjectKeyShouldThrow() {
-            InputStream stream = new ByteArrayInputStream("test".getBytes());
-            assertThrows(IllegalArgumentException.class, () ->
-                    ossTemplate.builder()
-                            .objectKey("   ")
-                            .upload(stream));
-        }
+        assertThatThrownBy(() -> template.upload("images/avatar.png", InputStream.nullInputStream()))
+                .isInstanceOfSatisfying(OssException.class, exception -> {
+                    assertThat(exception.getCode()).isEqualTo("OSS_UPLOAD_FAILED");
+                    assertThat(exception.getCause()).isSameAs(provider.uploadFailure);
+                });
     }
 
-    @Nested
-    @DisplayName("OssTemplate 异常传播测试")
-    class ExceptionPropagationTests {
+    /**
+     * 验证模板不重复包装 Provider 已经给出的 OSS 异常。
+     */
+    @Test
+    @DisplayName("模板应原样传播 OSS 异常")
+    void shouldPropagateOssException() {
+        RecordingProvider provider = new RecordingProvider();
+        OssException expected = OssException.of(
+                com.github.leyland.letool.oss.exception.OssErrorCode.CONFIGURATION_INVALID,
+                "测试配置错误");
+        provider.uploadFailure = expected;
+        OssTemplate template = createTemplate(provider, "assets");
 
-        @Test
-        @DisplayName("Provider 抛出 OssException 应直接传播")
-        void providerOssExceptionShouldPropagate() {
-            OssTemplate failTemplate = new OssTemplate(new FailingProvider(), properties);
-            OssException ex = assertThrows(OssException.class, () ->
-                    failTemplate.upload("bucket", "key", new ByteArrayInputStream(new byte[0]), "text/plain"));
-            assertTrue(ex.getMessage().contains("stub error"));
-        }
-
-        @Test
-        @DisplayName("Provider 抛出 RuntimeException 应包装为 OssException")
-        void runtimeExceptionShouldWrapAsOssException() {
-            OssTemplate failTemplate = new OssTemplate(new RuntimeFailingProvider(), properties);
-            OssException ex = assertThrows(OssException.class, () ->
-                    failTemplate.upload("bucket", "key", new ByteArrayInputStream(new byte[0]), "text/plain"));
-            assertTrue(ex.getMessage().contains("Failed to upload object"));
-            assertNotNull(ex.getCause());
-        }
+        assertThatThrownBy(() -> template.upload("images/avatar.png", InputStream.nullInputStream()))
+                .isSameAs(expected);
     }
 
-    @Nested
-    @DisplayName("默认 Bucket 解析测试")
-    class DefaultBucketResolutionTests {
-
-        @Test
-        @DisplayName("默认 provider 为 minio 时应解析 MinIO bucket")
-        void minioDefaultShouldUseMinioBucket() {
-            InputStream stream = new ByteArrayInputStream("test".getBytes());
-            ossTemplate.upload("data.txt", stream);
-            assertTrue(mockProvider.lastBucket.contains("default-bucket"));
-        }
-
-        @Test
-        @DisplayName("默认 provider 为 aliyun 时应解析 Aliyun bucket")
-        void aliyunDefaultShouldUseAliyunBucket() {
-            OssProperties aliyunProps = new OssProperties();
-            aliyunProps.setDefaultProvider("aliyun");
-            OssProperties.Aliyun aliyun = new OssProperties.Aliyun();
-            aliyun.setBucket("aliyun-bucket");
-            aliyunProps.setAliyun(aliyun);
-            aliyunProps.setMinio(new OssProperties.Minio());
-            aliyunProps.setTencentCos(new OssProperties.TencentCos());
-
-            MockProvider aliMock = new MockProvider();
-            OssTemplate aliyunTemplate = new OssTemplate(aliMock, aliyunProps);
-            aliyunTemplate.upload("data.txt", new ByteArrayInputStream(new byte[0]));
-            assertEquals("aliyun-bucket", aliMock.lastBucket);
-        }
+    /**
+     * 创建使用指定 Provider 和默认 Bucket 的模板。
+     *
+     * @param provider 测试 Provider
+     * @param bucket 默认 Bucket
+     * @return OSS 模板
+     */
+    private OssTemplate createTemplate(OssProvider provider, String bucket) {
+        OssProperties properties = new OssProperties();
+        properties.setProvider(provider.getProviderName());
+        properties.setBucket(bucket);
+        return new OssTemplate(provider, properties);
     }
 
-    private static class MockProvider implements OssProvider {
-        String lastBucket;
-        String lastObjectKey;
-        String lastContentType;
-        Duration lastExpiration;
+    /**
+     * 记录调用参数的测试 Provider。
+     */
+    private static final class RecordingProvider implements OssProvider {
 
+        private OssUploadRequest uploadRequest;
+        private RuntimeException uploadFailure;
+        private String deletedBucket;
+        private String deletedObjectKey;
+
+        /**
+         * 记录上传请求并返回稳定结果。
+         *
+         * @param request 上传请求
+         * @return 上传结果
+         */
         @Override
-        public String upload(String bucket, String objectKey, InputStream inputStream, String contentType) {
-            this.lastBucket = bucket;
-            this.lastObjectKey = objectKey;
-            this.lastContentType = contentType;
-            return "https://" + bucket + "/" + objectKey;
+        public OssUploadResult upload(OssUploadRequest request) {
+            if (uploadFailure != null) {
+                throw uploadFailure;
+            }
+            this.uploadRequest = request;
+            return new OssUploadResult(
+                    getProviderName(), request.getBucket(), request.getObjectKey(), "etag-1", null);
         }
 
+        /**
+         * 返回测试下载对象。
+         *
+         * @param bucket Bucket 名称
+         * @param objectKey 对象键
+         * @return 下载对象
+         */
         @Override
-        public InputStream download(String bucket, String objectKey) {
-            this.lastBucket = bucket;
-            this.lastObjectKey = objectKey;
-            return new ByteArrayInputStream(new byte[0]);
+        public OssObject download(String bucket, String objectKey) {
+            return OssObject.builder()
+                    .bucket(bucket)
+                    .objectKey(objectKey)
+                    .content(InputStream.nullInputStream())
+                    .build();
         }
 
+        /**
+         * 记录幂等删除参数。
+         *
+         * @param bucket Bucket 名称
+         * @param objectKey 对象键
+         */
         @Override
-        public boolean delete(String bucket, String objectKey) {
-            this.lastBucket = bucket;
-            this.lastObjectKey = objectKey;
+        public void delete(String bucket, String objectKey) {
+            this.deletedBucket = bucket;
+            this.deletedObjectKey = objectKey;
+        }
+
+        /**
+         * 返回对象存在。
+         *
+         * @param bucket Bucket 名称
+         * @param objectKey 对象键
+         * @return 固定返回 {@code true}
+         */
+        @Override
+        public boolean exists(String bucket, String objectKey) {
             return true;
         }
 
+        /**
+         * 返回测试预签名地址。
+         *
+         * @param bucket Bucket 名称
+         * @param objectKey 对象键
+         * @param expiration 有效期
+         * @return 测试 URI
+         */
         @Override
-        public boolean exists(String bucket, String objectKey) {
-            this.lastBucket = bucket;
-            this.lastObjectKey = objectKey;
-            return true;
+        public URI getPresignedUrl(String bucket, String objectKey, Duration expiration) {
+            return URI.create("https://example.test/" + objectKey);
         }
 
-        @Override
-        public String getPresignedUrl(String bucket, String objectKey, Duration expiration) {
-            this.lastBucket = bucket;
-            this.lastObjectKey = objectKey;
-            this.lastExpiration = expiration;
-            return "https://" + bucket + "/" + objectKey + "?expires=" + expiration.getSeconds();
-        }
-
+        /**
+         * 获取测试 Provider 标识。
+         *
+         * @return Provider 标识
+         */
         @Override
         public String getProviderName() {
-            return "mock";
-        }
-    }
-
-    private static class FailingProvider implements OssProvider {
-        @Override
-        public String upload(String bucket, String objectKey, InputStream inputStream, String contentType) {
-            throw new OssException("stub error");
-        }
-
-        @Override
-        public InputStream download(String bucket, String objectKey) {
-            throw new OssException("stub error");
-        }
-
-        @Override
-        public boolean delete(String bucket, String objectKey) {
-            throw new OssException("stub error");
-        }
-
-        @Override
-        public boolean exists(String bucket, String objectKey) {
-            throw new OssException("stub error");
-        }
-
-        @Override
-        public String getPresignedUrl(String bucket, String objectKey, Duration expiration) {
-            throw new OssException("stub error");
-        }
-
-        @Override
-        public String getProviderName() {
-            return "failing";
-        }
-    }
-
-    private static class RuntimeFailingProvider implements OssProvider {
-        @Override
-        public String upload(String bucket, String objectKey, InputStream inputStream, String contentType) {
-            throw new RuntimeException("unexpected");
-        }
-
-        @Override
-        public InputStream download(String bucket, String objectKey) {
-            throw new RuntimeException("unexpected");
-        }
-
-        @Override
-        public boolean delete(String bucket, String objectKey) {
-            throw new RuntimeException("unexpected");
-        }
-
-        @Override
-        public boolean exists(String bucket, String objectKey) {
-            throw new RuntimeException("unexpected");
-        }
-
-        @Override
-        public String getPresignedUrl(String bucket, String objectKey, Duration expiration) {
-            throw new RuntimeException("unexpected");
-        }
-
-        @Override
-        public String getProviderName() {
-            return "runtime-failing";
+            return "recording";
         }
     }
 }

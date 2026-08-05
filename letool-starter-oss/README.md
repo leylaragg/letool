@@ -1,169 +1,130 @@
 # letool-starter-oss
 
-> 对象存储抽象模块，保留阿里云 OSS / 腾讯云 COS / MinIO 的统一 API 入口，支持上传、下载、删除和 URL 签名模型。
+对象存储统一门面。核心模块负责公共契约、默认 Bucket、参数校验、输入类型适配和统一异常；真实网络访问由独立 Provider 模块通过官方 SDK 完成。
 
-> ⚠️ 当前内置的 Aliyun OSS、Tencent COS、MinIO provider 均为 Stub 实现，只记录日志并返回模拟结果，不会访问真实对象存储服务。OSS starter 默认不启用；如需开发演示必须显式设置 `letool.oss.stub-enabled=true`，生产接入请在业务项目中注册真实 `OssProvider`。
+## 模块选择
 
-## Maven 坐标
+业务项目通常只需要引入一个 Provider starter，它会传递引入核心模块：
+
+| 存储服务 | Maven 模块 | Provider 标识 |
+|---|---|---|
+| MinIO 或兼容 S3 的 MinIO 服务 | `letool-starter-oss-minio` | `minio` |
+| 阿里云 OSS | `letool-starter-oss-aliyun` | `aliyun` |
+| 腾讯云 COS | `letool-starter-oss-tencent-cos` | `tencent-cos` |
+
+仅在实现自定义 `OssProvider` 时，才需要单独引入 `letool-starter-oss`。
+
+## 快速开始
+
+以下以 MinIO 为例。
+
+### 1. 添加依赖
 
 ```xml
 <dependency>
     <groupId>com.github.leyland</groupId>
-    <artifactId>letool-starter-oss</artifactId>
+    <artifactId>letool-starter-oss-minio</artifactId>
     <version>${letool.version}</version>
 </dependency>
 ```
 
-## 快速开始（开发 Stub 模式）
-
-### 1. 添加依赖并配置
+### 2. 配置 Provider
 
 ```yaml
 letool:
   oss:
     enabled: true
-    stub-enabled: true
-    default-provider: minio
+    provider: minio
+    bucket: assets
     minio:
       endpoint: http://localhost:9000
       access-key: minioadmin
       secret-key: minioadmin
-      bucket: my-bucket
 ```
 
-### 2. 上传文件
+`letool.oss.enabled` 默认为 `false`。启用后必须存在一个可用的 `OssProvider`；核心模块不会创建模拟实现或伪造成功结果。
+
+### 3. 使用统一门面
 
 ```java
 @Autowired
 private OssTemplate ossTemplate;
 
-// 快捷上传（使用默认 Bucket）
-String url = ossTemplate.upload("photos/avatar.png", inputStream);
+// 上传字节数组
+OssUploadResult result = ossTemplate.upload(
+        "images/avatar.png",
+        imageBytes,
+        "image/png");
+
+// 上传本地文件，文件流由模板负责关闭
+OssUploadResult fileResult = ossTemplate.upload(
+        "reports/annual.pdf",
+        Path.of("annual.pdf"));
+
+// 下载流必须由调用方关闭
+try (OssObject object = ossTemplate.download("reports/annual.pdf")) {
+    object.getContent().transferTo(outputStream);
+}
+
+boolean exists = ossTemplate.exists("reports/annual.pdf");
+URI signedUrl = ossTemplate.getPresignedUrl(
+        "reports/annual.pdf",
+        Duration.ofMinutes(15));
+
+// 删除按对象存储服务的幂等语义执行，无返回值
+ossTemplate.delete("reports/annual.pdf");
 ```
 
-### 3. 下载与预签名 URL
+## 高级上传
+
+需要指定 Bucket、准确长度或用户元数据时，使用不可变请求模型：
 
 ```java
-// 下载文件
-InputStream is = ossTemplate.download("photos/avatar.png");
+OssUploadRequest request = OssUploadRequest.builder()
+        .bucket("archive")
+        .objectKey("2026/report.pdf")
+        .inputStream(inputStream)
+        .contentLength(contentLength)
+        .contentType("application/pdf")
+        .metadata(Map.of("tenant", "tenant-a"))
+        .build();
 
-// 获取预签名 URL（1 小时有效）
-String signedUrl = ossTemplate.getPresignedUrl("photos/avatar.png", Duration.ofHours(1));
-
-// 删除文件
-ossTemplate.delete("photos/avatar.png");
+OssUploadResult result = ossTemplate.upload(request);
 ```
 
-## 配置属性
+输入流的生命周期规则：
+
+- `InputStream` 和 `OssUploadRequest` 上传由调用方关闭输入流。
+- `Path` 上传由 `OssTemplate` 创建并关闭文件流。
+- 下载返回 `OssObject`，调用方必须使用 try-with-resources 关闭。
+
+## 公共配置
 
 | 属性 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `letool.oss.enabled` | boolean | false | 是否启用 OSS 模块 |
-| `letool.oss.stub-enabled` | boolean | false | 是否允许创建内置 Stub provider；生产环境建议关闭并注册真实 OssProvider |
-| `letool.oss.default-provider` | String | minio | 默认 Stub 提供商：aliyun / minio / tencent-cos |
-| `letool.oss.aliyun.endpoint` | String | - | 阿里云 OSS Endpoint |
-| `letool.oss.aliyun.access-key-id` | String | - | AccessKeyId |
-| `letool.oss.aliyun.access-key-secret` | String | - | AccessKeySecret |
-| `letool.oss.aliyun.bucket` | String | - | 默认 Bucket |
-| `letool.oss.minio.endpoint` | String | - | MinIO 服务地址 |
-| `letool.oss.minio.access-key` | String | - | Access Key |
-| `letool.oss.minio.secret-key` | String | - | Secret Key |
-| `letool.oss.minio.bucket` | String | - | 默认 Bucket |
-| `letool.oss.tencent-cos.secret-id` | String | - | 腾讯云 SecretId |
-| `letool.oss.tencent-cos.secret-key` | String | - | 腾讯云 SecretKey |
-| `letool.oss.tencent-cos.region` | String | - | COS 地域（如 ap-guangzhou） |
-| `letool.oss.tencent-cos.bucket` | String | - | 默认 Bucket（含 APPID 后缀） |
+|---|---|---|---|
+| `letool.oss.enabled` | `boolean` | `false` | 是否启用 OSS 自动配置 |
+| `letool.oss.provider` | `String` | `minio` | 选择 `minio`、`aliyun` 或 `tencent-cos` |
+| `letool.oss.bucket` | `String` | 无 | 快捷方法使用的默认 Bucket |
 
-## 核心 API
+厂商凭证、Endpoint、地域和自定义客户端配置见对应 Provider 模块 README。
 
-### 编程式——OssTemplate 快捷操作（使用默认 Bucket）
+## 扩展与覆盖
 
-```java
-@Autowired
-private OssTemplate ossTemplate;
+Provider starter 均遵循 Spring Boot 退让规则：
 
-// 上传（默认 Content-Type）
-String url = ossTemplate.upload("photos/avatar.png", inputStream);
+- 注册官方 SDK 客户端 Bean，可完整接管客户端创建、代理、超时、重试和凭证刷新。
+- 注册厂商凭证或客户端配置 Bean，可保留 Letool Provider，只替换对应底层能力。
+- 注册自定义 `OssProvider` Bean，可接入其他对象存储服务；Letool 仍会创建统一 `OssTemplate`。
+- 注册自定义 `OssTemplate` Bean 时，公共自动配置会退让。
 
-// 上传（指定 Content-Type）
-String url = ossTemplate.upload("documents/report.pdf", inputStream, "application/pdf");
+所有官方 SDK 异常都会保留原因链并转换为稳定的 `OSS_*` 错误码；Letool 不吞掉网络、鉴权或服务端失败。
 
-// 下载
-InputStream is = ossTemplate.download("photos/avatar.png");
+## 破坏性变更
 
-// 删除
-boolean deleted = ossTemplate.delete("photos/avatar.png");
+本轮生产化移除了原有 Stub Provider 及以下配置：
 
-// 获取预签名 URL
-String signedUrl = ossTemplate.getPresignedUrl("photos/avatar.png", Duration.ofHours(2));
+- `letool.oss.stub-enabled`
+- `letool.oss.default-provider`
+- 厂商配置下的独立 `bucket`
 
-// 检查对象是否存在
-boolean exists = ossTemplate.exists("photos/avatar.png");
-```
-
-### 编程式——指定 Bucket 操作
-
-```java
-// 上传到指定 Bucket
-String url = ossTemplate.upload("archive-bucket", "2024/report.pdf",
-        inputStream, "application/pdf");
-
-// 从指定 Bucket 下载
-InputStream is = ossTemplate.download("archive-bucket", "2024/report.pdf");
-
-// 删除指定 Bucket 中的文件
-boolean deleted = ossTemplate.delete("archive-bucket", "2024/report.pdf");
-
-// 指定 Bucket 的预签名 URL
-String signedUrl = ossTemplate.getPresignedUrl("archive-bucket",
-        "2024/report.pdf", Duration.ofMinutes(30));
-```
-
-### 编程式——Builder 模式链式调用
-
-```java
-// 上传
-String url = ossTemplate.builder()
-        .bucket("archive-bucket")
-        .objectKey("2024/report.pdf")
-        .contentType("application/pdf")
-        .upload(inputStream);
-
-// 下载
-InputStream is = ossTemplate.builder()
-        .objectKey("photos/avatar.png")
-        .download();
-
-// 删除
-boolean deleted = ossTemplate.builder()
-        .bucket("my-bucket")
-        .objectKey("temp/log.txt")
-        .delete();
-
-// 获取预签名 URL
-String signedUrl = ossTemplate.builder()
-        .objectKey("private/secret.pdf")
-        .getPresignedUrl(Duration.ofMinutes(15));
-
-// 检查存在性
-boolean exists = ossTemplate.builder()
-        .objectKey("photos/avatar.png")
-        .exists();
-```
-
-### 开发 Stub——通过配置切换多提供商
-
-```yaml
-letool:
-  oss:
-    enabled: true
-    stub-enabled: true
-    default-provider: aliyun   # 切换到阿里云 OSS Stub，无需修改代码
-    aliyun:
-      endpoint: oss-cn-hangzhou.aliyuncs.com
-      access-key-id: your-access-key-id
-      access-key-secret: your-access-key-secret
-      bucket: prod-bucket
-```
-
-模块仅在 `stub-enabled=true` 时根据 `default-provider` 自动创建对应的 Stub `OssProvider` 实现，业务代码中注入的 `OssTemplate` 无需任何改动即可切换模拟存储后端。生产环境请注册自己的真实 `OssProvider` Bean；自动配置会检测到该 Bean 并退让，只创建 `OssTemplate`。
+统一使用 `letool.oss.provider` 选择 Provider，使用 `letool.oss.bucket` 配置默认 Bucket。`upload` 现在返回 `OssUploadResult`，`download` 返回可关闭的 `OssObject`，预签名地址返回 `URI`，`delete` 调整为无返回值的幂等操作。

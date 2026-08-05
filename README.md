@@ -51,7 +51,7 @@
 | **letool-starter-pay** | 支付抽象 —— 默认不启用，内置支付宝/微信支付仅显式 stub 或自定义 provider | tool, web |
 | **letool-starter-mq** | 消息队列 —— 当前内置内存队列，RabbitMQ/RocketMQ/Kafka 需自定义 provider 或后续真实扩展 | tool |
 | **letool-starter-ratelimiter** | 流量保护 —— Sentinel Core 薄封装、命名策略与热点参数限流 | tool, exception |
-| **letool-starter-oss** | 对象存储抽象 —— 默认不启用，内置 OSS/COS/MinIO 仅显式 stub 或自定义 provider | tool, file |
+| [**letool-starter-oss**](letool-starter-oss/README.md) | 对象存储便利门面 —— 统一 API、默认 Bucket 与异常；MinIO、阿里云 OSS、腾讯云 COS 由独立官方 SDK Provider starter 提供 | exception；按需选择一个 Provider 模块 |
 | **letool-starter-sms** | 短信通知抽象 —— 默认不启用，内置阿里云/腾讯云仅显式 mock/stub 或自定义 provider | tool |
 | [**letool-starter-ai**](letool-starter-ai/README.md) | AI 便利门面 —— Spring AI Provider 中立模型路由、默认选择与原生 `ChatClient` 缓存 | exception, Spring AI |
 | **letool-starter-data-structure** | 数据结构 —— 泛型树、决策链（消除 if-else）、链表 | tool |

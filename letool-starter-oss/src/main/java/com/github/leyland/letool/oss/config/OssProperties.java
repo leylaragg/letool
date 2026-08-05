@@ -3,339 +3,74 @@ package com.github.leyland.letool.oss.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * 对象存储（OSS）模块配置属性类，对应 YAML 中的 {@code letool.oss} 前缀。
+ * OSS 公共配置。
  *
- * <p>该配置类聚合了阿里云 OSS、MinIO、腾讯云 COS 三类对象存储连接参数。
- * 当前 starter 内置 provider 均为 stub，不会访问真实对象存储；
- * 生产接入应由业务项目注册真实 {@link com.github.leyland.letool.oss.core.OssProvider}。</p>
- *
- * <p>OSS 模块默认不启用。使用者可在 {@code application.yml} 中按如下结构配置：</p>
- *
- * <pre>{@code
- * letool:
- *   oss:
- *     enabled: true                   # 是否启用 OSS 模块，默认 false
- *     stub-enabled: true              # 是否允许内置 stub provider，默认 false
- *     default-provider: minio         # 默认存储提供商：aliyun / minio / tencent-cos
- *     aliyun:
- *       endpoint: oss-cn-hangzhou.aliyuncs.com
- *       access-key-id: your-access-key-id
- *       access-key-secret: your-access-key-secret
- *       bucket: your-bucket
- *     minio:
- *       endpoint: http://localhost:9000
- *       access-key: minioadmin
- *       secret-key: minioadmin
- *       bucket: your-bucket
- *     tencent-cos:
- *       secret-id: your-secret-id
- *       secret-key: your-secret-key
- *       region: ap-guangzhou
- *       bucket: your-bucket
- * }</pre>
- *
- * @author leyland
- * @since 2.0.0
+ * <p>厂商连接参数由对应 Provider starter 独立管理，公共模块只保存启用开关、当前
+ * Provider 标识和快捷操作使用的默认 Bucket。</p>
  */
 @ConfigurationProperties(prefix = "letool.oss")
 public class OssProperties {
 
-    // ======================== 顶层属性 ========================
+    /** 是否启用 OSS 模块，默认关闭。 */
+    private boolean enabled;
+
+    /** 当前对象存储 Provider，默认使用 MinIO。 */
+    private String provider = "minio";
+
+    /** 快捷操作使用的默认 Bucket。 */
+    private String bucket;
 
     /**
-     * 是否启用 OSS 模块，默认 {@code false}。
+     * 判断是否启用 OSS 模块。
      *
-     * <p>设置为 {@code false} 时，将不会创建任何 OSS 相关 Bean。</p>
+     * @return 启用时返回 {@code true}
      */
-    private boolean enabled = false;
-
-    /**
-     * 是否允许创建内置 stub provider，默认 {@code false}。
-     *
-     * <p>当前 starter 尚未内置真实云厂商 SDK provider。生产环境建议保持关闭，并在业务项目中
-     * 注册自定义 {@link com.github.leyland.letool.oss.core.OssProvider} Bean。</p>
-     */
-    private boolean stubEnabled = false;
-
-    /**
-     * 默认存储提供商标识，默认 {@code "minio"}。
-     *
-     * <p>可选值：
-     * <ul>
-     *   <li>{@code aliyun} — 阿里云 OSS</li>
-     *   <li>{@code minio} — MinIO 对象存储</li>
-     *   <li>{@code tencent-cos} — 腾讯云 COS</li>
-     * </ul>
-     * 该值决定自动配置时创建哪个 {@link com.github.leyland.letool.oss.core.OssProvider} 实现。
-     */
-    private String defaultProvider = "minio";
-
-    /**
-     * 阿里云 OSS 配置。
-     */
-    private Aliyun aliyun = new Aliyun();
-
-    /**
-     * MinIO 配置。
-     */
-    private Minio minio = new Minio();
-
-    /**
-     * 腾讯云 COS 配置。
-     */
-    private TencentCos tencentCos = new TencentCos();
-
-    // ======================== Getter / Setter ========================
-
     public boolean isEnabled() {
         return enabled;
     }
 
+    /**
+     * 设置是否启用 OSS 模块。
+     *
+     * @param enabled 是否启用
+     */
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
     }
 
-    public boolean isStubEnabled() {
-        return stubEnabled;
+    /**
+     * 获取当前 Provider 标识。
+     *
+     * @return Provider 标识
+     */
+    public String getProvider() {
+        return provider;
     }
-
-    public void setStubEnabled(boolean stubEnabled) {
-        this.stubEnabled = stubEnabled;
-    }
-
-    public String getDefaultProvider() {
-        return defaultProvider;
-    }
-
-    public void setDefaultProvider(String defaultProvider) {
-        this.defaultProvider = defaultProvider;
-    }
-
-    public Aliyun getAliyun() {
-        return aliyun;
-    }
-
-    public void setAliyun(Aliyun aliyun) {
-        this.aliyun = aliyun;
-    }
-
-    public Minio getMinio() {
-        return minio;
-    }
-
-    public void setMinio(Minio minio) {
-        this.minio = minio;
-    }
-
-    public TencentCos getTencentCos() {
-        return tencentCos;
-    }
-
-    public void setTencentCos(TencentCos tencentCos) {
-        this.tencentCos = tencentCos;
-    }
-
-    // ======================== 阿里云 OSS 配置 ========================
 
     /**
-     * 阿里云 OSS 对象存储配置。
+     * 设置当前 Provider 标识。
      *
-     * <p>包含阿里云 OSS 服务连接所需的端点、认证密钥及默认 Bucket 名称。
-     * 接入前需在阿里云控制台创建 RAM 用户并授予 OSS 操作权限。</p>
-     *
-     * @author leyland
-     * @since 2.0.0
+     * @param provider Provider 标识
      */
-    public static class Aliyun {
-
-        /**
-         * OSS 服务端点地址，如 {@code oss-cn-hangzhou.aliyuncs.com}。
-         */
-        private String endpoint;
-
-        /**
-         * RAM 用户 AccessKeyId。
-         */
-        private String accessKeyId;
-
-        /**
-         * RAM 用户 AccessKeySecret。
-         */
-        private String accessKeySecret;
-
-        /**
-         * 默认 Bucket 名称。
-         */
-        private String bucket;
-
-        // ---- Getter / Setter ----
-
-        public String getEndpoint() {
-            return endpoint;
-        }
-
-        public void setEndpoint(String endpoint) {
-            this.endpoint = endpoint;
-        }
-
-        public String getAccessKeyId() {
-            return accessKeyId;
-        }
-
-        public void setAccessKeyId(String accessKeyId) {
-            this.accessKeyId = accessKeyId;
-        }
-
-        public String getAccessKeySecret() {
-            return accessKeySecret;
-        }
-
-        public void setAccessKeySecret(String accessKeySecret) {
-            this.accessKeySecret = accessKeySecret;
-        }
-
-        public String getBucket() {
-            return bucket;
-        }
-
-        public void setBucket(String bucket) {
-            this.bucket = bucket;
-        }
+    public void setProvider(String provider) {
+        this.provider = provider;
     }
 
-    // ======================== MinIO 配置 ========================
-
     /**
-     * MinIO 对象存储配置。
+     * 获取默认 Bucket。
      *
-     * <p>MinIO 是一款开源的高性能对象存储服务，兼容 Amazon S3 API。
-     * 配置项包含服务端点、访问密钥及默认 Bucket 名称。</p>
-     *
-     * @author leyland
-     * @since 2.0.0
+     * @return Bucket 名称
      */
-    public static class Minio {
-
-        /**
-         * MinIO 服务端点地址，如 {@code http://localhost:9000}。
-         */
-        private String endpoint;
-
-        /**
-         * 访问密钥（Access Key），对应 MinIO 的 {@code MINIO_ROOT_USER}。
-         */
-        private String accessKey;
-
-        /**
-         * 秘密密钥（Secret Key），对应 MinIO 的 {@code MINIO_ROOT_PASSWORD}。
-         */
-        private String secretKey;
-
-        /**
-         * 默认 Bucket 名称。
-         */
-        private String bucket;
-
-        // ---- Getter / Setter ----
-
-        public String getEndpoint() {
-            return endpoint;
-        }
-
-        public void setEndpoint(String endpoint) {
-            this.endpoint = endpoint;
-        }
-
-        public String getAccessKey() {
-            return accessKey;
-        }
-
-        public void setAccessKey(String accessKey) {
-            this.accessKey = accessKey;
-        }
-
-        public String getSecretKey() {
-            return secretKey;
-        }
-
-        public void setSecretKey(String secretKey) {
-            this.secretKey = secretKey;
-        }
-
-        public String getBucket() {
-            return bucket;
-        }
-
-        public void setBucket(String bucket) {
-            this.bucket = bucket;
-        }
+    public String getBucket() {
+        return bucket;
     }
 
-    // ======================== 腾讯云 COS 配置 ========================
-
     /**
-     * 腾讯云 COS（Cloud Object Storage）对象存储配置。
+     * 设置默认 Bucket。
      *
-     * <p>包含腾讯云 COS 服务连接所需的认证密钥、地域及默认 Bucket 名称。
-     * 接入前需在腾讯云控制台获取 SecretId 和 SecretKey。</p>
-     *
-     * @author leyland
-     * @since 2.0.0
+     * @param bucket Bucket 名称
      */
-    public static class TencentCos {
-
-        /**
-         * 腾讯云 API 密钥 SecretId。
-         */
-        private String secretId;
-
-        /**
-         * 腾讯云 API 密钥 SecretKey。
-         */
-        private String secretKey;
-
-        /**
-         * COS 所在地域，如 {@code ap-guangzhou}、{@code ap-shanghai}。
-         */
-        private String region;
-
-        /**
-         * 默认 Bucket 名称（需包含 APPID 后缀，格式为 {@code BucketName-APPID}）。
-         */
-        private String bucket;
-
-        // ---- Getter / Setter ----
-
-        public String getSecretId() {
-            return secretId;
-        }
-
-        public void setSecretId(String secretId) {
-            this.secretId = secretId;
-        }
-
-        public String getSecretKey() {
-            return secretKey;
-        }
-
-        public void setSecretKey(String secretKey) {
-            this.secretKey = secretKey;
-        }
-
-        public String getRegion() {
-            return region;
-        }
-
-        public void setRegion(String region) {
-            this.region = region;
-        }
-
-        public String getBucket() {
-            return bucket;
-        }
-
-        public void setBucket(String bucket) {
-            this.bucket = bucket;
-        }
+    public void setBucket(String bucket) {
+        this.bucket = bucket;
     }
 }

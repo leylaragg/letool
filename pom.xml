@@ -57,6 +57,9 @@
         <module>letool-starter-mq</module>
         <module>letool-starter-ratelimiter</module>
         <module>letool-starter-oss</module>
+        <module>letool-starter-oss-minio</module>
+        <module>letool-starter-oss-aliyun</module>
+        <module>letool-starter-oss-tencent-cos</module>
         <module>letool-starter-sms</module>
 
         <!-- 阶段 6：增值模块 -->
@@ -128,6 +131,14 @@
 
         <!-- 监控 -->
         <micrometer.version>1.14.0</micrometer.version>
+
+        <!-- 对象存储 -->
+        <minio.version>8.5.17</minio.version>
+        <aliyun-oss.version>3.18.5</aliyun-oss.version>
+        <tencent-cos.version>5.6.269</tencent-cos.version>
+        <javax-jaxb.version>2.3.1</javax-jaxb.version>
+        <javax-activation.version>1.1.1</javax-activation.version>
+        <jaxb-runtime.version>2.3.3</jaxb-runtime.version>
 
         <!-- 测试 -->
         <junit.version>5.11.4</junit.version>
@@ -272,6 +283,21 @@
             <dependency>
                 <groupId>com.github.leyland</groupId>
                 <artifactId>letool-starter-oss</artifactId>
+                <version>${letool.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.leyland</groupId>
+                <artifactId>letool-starter-oss-minio</artifactId>
+                <version>${letool.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.leyland</groupId>
+                <artifactId>letool-starter-oss-aliyun</artifactId>
+                <version>${letool.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.leyland</groupId>
+                <artifactId>letool-starter-oss-tencent-cos</artifactId>
                 <version>${letool.version}</version>
             </dependency>
             <dependency>
@@ -445,6 +471,38 @@
                 <version>${testcontainers.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+
+            <!-- 对象存储官方 SDK -->
+            <dependency>
+                <groupId>io.minio</groupId>
+                <artifactId>minio</artifactId>
+                <version>${minio.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.aliyun.oss</groupId>
+                <artifactId>aliyun-sdk-oss</artifactId>
+                <version>${aliyun-oss.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.qcloud</groupId>
+                <artifactId>cos_api-bundle</artifactId>
+                <version>${tencent-cos.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>javax.xml.bind</groupId>
+                <artifactId>jaxb-api</artifactId>
+                <version>${javax-jaxb.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>javax.activation</groupId>
+                <artifactId>activation</artifactId>
+                <version>${javax-activation.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.glassfish.jaxb</groupId>
+                <artifactId>jaxb-runtime</artifactId>
+                <version>${jaxb-runtime.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

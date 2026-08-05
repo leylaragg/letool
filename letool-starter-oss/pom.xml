@@ -11,18 +11,13 @@
 
     <artifactId>letool-starter-oss</artifactId>
     <name>letool-starter-oss</name>
-    <description>letool 对象存储模块 —— 统一阿里云 OSS/腾讯云 COS/MinIO/S3 API，STS凭证、图片处理、URL签名</description>
+    <description>Letool 对象存储公共模块，提供统一契约、便捷模板和可扩展 Provider SPI</description>
     <packaging>jar</packaging>
 
     <dependencies>
         <dependency>
             <groupId>com.github.leyland</groupId>
-            <artifactId>letool-starter-tool</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.github.leyland</groupId>
-            <artifactId>letool-starter-file</artifactId>
-            <optional>true</optional>
+            <artifactId>letool-starter-exception</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

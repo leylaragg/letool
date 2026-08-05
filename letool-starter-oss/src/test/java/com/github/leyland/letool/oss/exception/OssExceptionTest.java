@@ -1,57 +1,47 @@
 package com.github.leyland.letool.oss.exception;
 
+import com.github.leyland.letool.exception.core.SystemException;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
-@DisplayName("OssException OSS 对象存储异常测试")
+/**
+ * OSS 统一异常测试。
+ */
 class OssExceptionTest {
 
-    @Nested
-    @DisplayName("构造函数测试")
-    class ConstructorTests {
+    /**
+     * 验证 OSS 异常接入统一系统异常体系并保留底层原因。
+     */
+    @Test
+    @DisplayName("OSS 异常应保留结构化错误码和原因链")
+    void shouldKeepErrorCodeAndCause() {
+        IllegalStateException cause = new IllegalStateException("底层连接失败");
 
-        @Test
-        @DisplayName("(message) 构造函数应正确设置消息")
-        void messageConstructorShouldSetMessage() {
-            OssException ex = new OssException("上传失败");
+        OssException exception = OssException.causedBy(
+                OssErrorCode.UPLOAD_FAILED,
+                cause,
+                "minio",
+                "assets",
+                "images/avatar.png");
 
-            assertEquals("上传失败", ex.getMessage());
-            assertNull(ex.getCause());
-        }
-
-        @Test
-        @DisplayName("(message, cause) 构造函数应设置消息和原因")
-        void messageCauseConstructorShouldSetBoth() {
-            Throwable cause = new RuntimeException("网络错误");
-            OssException ex = new OssException("上传失败", cause);
-
-            assertEquals("上传失败", ex.getMessage());
-            assertSame(cause, ex.getCause());
-        }
-
-        @Test
-        @DisplayName("(cause) 构造函数应仅设置原因")
-        void causeConstructorShouldSetCause() {
-            Throwable cause = new RuntimeException("网络错误");
-            OssException ex = new OssException(cause);
-
-            assertEquals("java.lang.RuntimeException: 网络错误", ex.getMessage());
-            assertSame(cause, ex.getCause());
-        }
+        assertThat(exception).isInstanceOf(SystemException.class);
+        assertThat(exception.getCode()).isEqualTo("OSS_UPLOAD_FAILED");
+        assertThat(exception.getCause()).isSameAs(cause);
+        assertThat(exception.getMessageArgs())
+                .containsExactly("minio", "assets", "images/avatar.png");
     }
 
-    @Nested
-    @DisplayName("继承关系测试")
-    class InheritanceTests {
-
-        @Test
-        @DisplayName("应继承 RuntimeException")
-        void shouldExtendRuntimeException() {
-            OssException ex = new OssException("test");
-            assertTrue(ex instanceof RuntimeException);
-        }
+    /**
+     * 验证创建带原因异常时不允许丢失原因对象。
+     */
+    @Test
+    @DisplayName("OSS 异常应拒绝空原因")
+    void shouldRejectNullCause() {
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> OssException.causedBy(OssErrorCode.DOWNLOAD_FAILED, null, "minio", "a", "b"))
+                .withMessageContaining("cause");
     }
 }
