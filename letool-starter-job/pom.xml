@@ -11,23 +11,17 @@
 
     <artifactId>letool-starter-job</artifactId>
     <name>letool-starter-job</name>
-    <description>letool 分布式任务调度模块 —— Cron/固定间隔、任务分片、失败重试、任务日志</description>
+    <description>基于 Spring Boot Quartz 的任务调度便捷封装</description>
     <packaging>jar</packaging>
 
     <dependencies>
         <dependency>
             <groupId>com.github.leyland</groupId>
-            <artifactId>letool-starter-tool</artifactId>
+            <artifactId>letool-starter-exception</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter</artifactId>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-autoconfigure</artifactId>
-            <scope>provided</scope>
+            <artifactId>spring-boot-starter-quartz</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -42,6 +36,16 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

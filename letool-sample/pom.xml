@@ -62,6 +62,10 @@
             <groupId>com.github.leyland</groupId>
             <artifactId>letool-starter-ratelimiter</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.github.leyland</groupId>
+            <artifactId>letool-starter-job</artifactId>
+        </dependency>
 
         <!-- 基础设施 -->
         <dependency>

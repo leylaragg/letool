@@ -1,70 +1,29 @@
 package com.github.leyland.letool.job.exception;
 
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
+import com.github.leyland.letool.exception.core.SystemException;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
-@DisplayName("JobException 任务异常测试")
+/**
+ * {@link JobException} 统一异常契约测试。
+ */
 class JobExceptionTest {
 
-    @Nested
-    @DisplayName("构造函数测试")
-    class ConstructorTests {
+    /**
+     * 验证任务异常继承统一系统异常并保留任务名和底层原因。
+     */
+    @Test
+    void shouldExposeStableErrorCodeAndCause() {
+        IllegalStateException cause = new IllegalStateException("quartz failed");
 
-        @Test
-        @DisplayName("(message, jobName) 构造应正确设置字段")
-        void twoArgConstructorShouldSetFields() {
-            JobException ex = new JobException("任务执行失败", "dailyReport");
+        JobException exception = new JobException(
+                JobErrorCode.SCHEDULER_OPERATION_FAILED, "sync", cause, "暂停");
 
-            assertEquals("任务执行失败", ex.getMessage());
-            assertEquals("dailyReport", ex.getJobName());
-            assertNull(ex.getCause());
-        }
-
-        @Test
-        @DisplayName("(message, jobName, cause) 构造应正确设置所有字段")
-        void threeArgConstructorShouldSetAllFields() {
-            RuntimeException cause = new RuntimeException("root cause");
-            JobException ex = new JobException("Cron解析失败", "syncJob", cause);
-
-            assertEquals("Cron解析失败", ex.getMessage());
-            assertEquals("syncJob", ex.getJobName());
-            assertSame(cause, ex.getCause());
-        }
-    }
-
-    @Nested
-    @DisplayName("继承体系测试")
-    class InheritanceTests {
-
-        @Test
-        @DisplayName("应继承 RuntimeException")
-        void shouldExtendRuntimeException() {
-            JobException ex = new JobException("test", "job1");
-            assertTrue(ex instanceof RuntimeException);
-        }
-    }
-
-    @Nested
-    @DisplayName("getJobName 测试")
-    class GetJobNameTests {
-
-        @Test
-        @DisplayName("应返回构造时传入的 jobName")
-        void shouldReturnConstructedJobName() {
-            JobException ex = new JobException("msg", "myJob");
-            assertEquals("myJob", ex.getJobName());
-        }
-
-        @Test
-        @DisplayName("不同异常实例的 jobName 应独立")
-        void jobNamesShouldBeIndependent() {
-            JobException ex1 = new JobException("msg1", "jobA");
-            JobException ex2 = new JobException("msg2", "jobB");
-            assertEquals("jobA", ex1.getJobName());
-            assertEquals("jobB", ex2.getJobName());
-        }
+        assertThat(exception).isInstanceOf(SystemException.class);
+        assertThat(exception.getCode()).isEqualTo("JOB_006");
+        assertThat(exception.getJobName()).isEqualTo("sync");
+        assertThat(exception.getCause()).isSameAs(cause);
+        assertThat(exception.getMessage()).contains("暂停");
     }
 }

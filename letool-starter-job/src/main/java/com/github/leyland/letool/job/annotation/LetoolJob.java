@@ -1,104 +1,57 @@
 package com.github.leyland.letool.job.annotation;
 
-import java.lang.annotation.*;
+import com.github.leyland.letool.job.core.MisfirePolicy;
+
+import java.lang.annotation.Documented;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 
 /**
- * 任务标记注解——标注在任务类上，声明该类为一个可被调度器发现和管理的任务.
+ * 声明一个由 Letool 注册到 Quartz 的 Spring 任务 Bean。
  *
- * <p>被此注解标记的类会被 Spring 组件扫描发现，并由自动配置类
- * 解析其属性，自动创建 {@link com.github.leyland.letool.job.core.JobDefinition}
- * 并注册到 {@link com.github.leyland.letool.job.core.JobScheduler}.</p>
- *
- * <h3>使用示例</h3>
- * <pre>{@code
- * @LetoolJob(
- *     name = "dailyReportJob",
- *     cron = "0 0 6 * * ?",
- *     description = "每日报表生成任务",
- *     shardTotal = 4,
- *     maxRetries = 3
- * )
- * public class DailyReportJob {
- *
- *     @com.github.leyland.letool.job.annotation.JobHandler
- *     public void execute(JobContext context) {
- *         // 业务逻辑
- *     }
- * }
- * }</pre>
- *
- * <h3>注解属性说明</h3>
- * <ul>
- *   <li>{@link #name} — 任务名称（必填，全局唯一标识）</li>
- *   <li>{@link #cron} — Cron 表达式，为空则不自动调度</li>
- *   <li>{@link #description} — 任务描述文本</li>
- *   <li>{@link #shardTotal} — 总分片数</li>
- *   <li>{@link #maxRetries} — 最大重试次数</li>
- *   <li>{@link #backoffMs} — 退避基础时间（毫秒）</li>
- * </ul>
- *
- * @author leyland
- * @since 2.0.0
- * @see com.github.leyland.letool.job.core.JobScheduler
- * @see com.github.leyland.letool.job.core.JobDefinition
+ * <p>任务类必须是 Spring Bean，并且必须且只能有一个
+ * {@link JobHandler} 处理方法。</p>
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 public @interface LetoolJob {
 
-    // ======================== 注解属性 ========================
-
-    /**
-     * 任务名称（必填，全局唯一标识）.
-     *
-     * @return 任务名称
-     */
+    /** @return 全局唯一逻辑任务名称 */
     String name();
 
-    /**
-     * Cron 表达式.
-     *
-     * <p>支持标准 6 位或 7 位 cron 表达式. 为空字符串时，
-     * 任务不会自动调度，需通过 API 手动触发.</p>
-     *
-     * @return Cron 表达式，默认为空字符串
-     */
+    /** @return Quartz Cron；空字符串表示仅手动触发 */
     String cron() default "";
 
-    /**
-     * 任务描述文本.
-     *
-     * @return 任务描述
-     */
+    /** @return 时区 ID；空字符串表示使用 Quartz 默认时区 */
+    String zone() default "";
+
+    /** @return 任务说明 */
     String description() default "";
 
-    /**
-     * 总分片数.
-     *
-     * <p>当任务数据量大时，将任务拆分为多个分片并行处理.
-     * 默认1表示不分片，每个实例处理全部数据.</p>
-     *
-     * @return 总分片数，默认1
-     */
+    /** @return 分片总数 */
     int shardTotal() default 1;
 
-    /**
-     * 最大重试次数.
-     *
-     * <p>任务执行失败后自动重试的最大次数. 为0表示不重试.
-     * 重试采用指数退避策略（参见 {@link com.github.leyland.letool.job.retry.RetryPolicy}）.</p>
-     *
-     * @return 最大重试次数，默认3
-     */
-    int maxRetries() default 3;
+    /** @return 最大额外重试次数 */
+    int maxRetries() default 0;
 
-    /**
-     * 重试退避基础时间（毫秒）.
-     *
-     * <p>第一次重试等待此毫秒数，后续重试按指数增长.</p>
-     *
-     * @return 基础退避毫秒数，默认1000
-     */
-    long backoffMs() default 1000;
+    /** @return 第一次重试延迟毫秒数 */
+    long backoffMs() default 1_000;
+
+    /** @return 重试退避倍率 */
+    double backoffMultiplier() default 2.0;
+
+    /** @return 单次重试最大延迟毫秒数 */
+    long maxBackoffMs() default 60_000;
+
+    /** @return 是否允许同一分片并发执行 */
+    boolean concurrent() default false;
+
+    /** @return Cron 错过触发策略 */
+    MisfirePolicy misfirePolicy() default MisfirePolicy.DO_NOTHING;
+
+    /** @return 是否请求 Quartz 在节点故障后恢复执行 */
+    boolean requestRecovery() default false;
 }

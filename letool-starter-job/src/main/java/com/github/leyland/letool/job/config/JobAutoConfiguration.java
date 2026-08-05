@@ -1,117 +1,147 @@
 package com.github.leyland.letool.job.config;
 
+import com.github.leyland.letool.job.core.DefaultJobHandlerRegistry;
+import com.github.leyland.letool.job.core.JobHandlerRegistry;
 import com.github.leyland.letool.job.core.JobLogService;
 import com.github.leyland.letool.job.core.JobScheduler;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.github.leyland.letool.job.core.LoggingJobLogService;
+import com.github.leyland.letool.job.quartz.JobRuntime;
+import com.github.leyland.letool.job.quartz.LetoolJobRegistrar;
+import com.github.leyland.letool.job.quartz.QuartzJobMapper;
+import org.quartz.Scheduler;
+import org.quartz.SchedulerException;
+import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.quartz.QuartzAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
-import org.springframework.scheduling.annotation.EnableScheduling;
 
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.List;
 
 /**
- * letool-starter-job 自动配置——激活任务调度模块的所有核心组件.
- *
- * <p>当 {@code letool.job.enabled=true}（默认开启）时自动生效，注册以下 Bean：</p>
- * <ul>
- *   <li>{@link JobScheduler} — 任务调度器（核心）</li>
- *   <li>{@link JobLogService} — 任务日志服务</li>
- *   <li>{@link ScheduledThreadPoolExecutor} — 任务执行线程池</li>
- * </ul>
- *
- * <h3>激活方式</h3>
- * <p>引入 {@code letool-starter-job} 依赖后，通过
- * {@code META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports} 自动注册.
- * 无需额外配置即可使用.</p>
- *
- * <p>可通过以下配置关闭：</p>
- * <pre>{@code
- * letool:
- *   job:
- *     enabled: false
- * }</pre>
- *
- * @author leyland
- * @since 2.0.0
- * @see JobProperties
- * @see JobScheduler
+ * 基于 Spring Boot Quartz 的 Letool Job 自动配置。
  */
-@AutoConfiguration
-@EnableScheduling
-@EnableConfigurationProperties(JobProperties.class)
+@AutoConfiguration(after = QuartzAutoConfiguration.class)
+@ConditionalOnClass(Scheduler.class)
+@ConditionalOnBean(Scheduler.class)
 @ConditionalOnProperty(prefix = "letool.job", name = "enabled", havingValue = "true", matchIfMissing = true)
+@EnableConfigurationProperties(JobProperties.class)
 public class JobAutoConfiguration {
 
-    // ======================== 常量 ========================
-
-    private static final Logger log = LoggerFactory.getLogger(JobAutoConfiguration.class);
-
-    // ======================== Bean 定义 ========================
-
     /**
-     * 创建任务执行线程池.
+     * 创建默认任务处理器注册表。
      *
-     * <p>根据配置的 {@code letool.job.thread-pool-size} 创建固定大小的调度线程池.
-     * 线程以 {@code letool-job-} 为前缀命名.</p>
-     *
-     * @param properties 任务配置属性
-     * @return 调度线程池实例
-     */
-    @Bean(destroyMethod = "shutdown")
-    @ConditionalOnMissingBean(name = "jobScheduledExecutor")
-    public ScheduledThreadPoolExecutor jobScheduledExecutor(JobProperties properties) {
-        int poolSize = properties.getThreadPoolSize();
-        if (poolSize <= 0) {
-            poolSize = 4;
-        }
-        ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(poolSize, new ThreadFactory() {
-            private final AtomicInteger counter = new AtomicInteger(1);
-
-            @Override
-            public Thread newThread(Runnable r) {
-                Thread thread = new Thread(r, "letool-job-" + counter.getAndIncrement());
-                thread.setDaemon(true);
-                return thread;
-            }
-        });
-        log.info("创建任务执行线程池，核心线程数: {}", poolSize);
-        return executor;
-    }
-
-    /**
-     * 创建任务日志服务.
-     *
-     * @return 日志服务实例
+     * @return 默认注册表
      */
     @Bean
-    @ConditionalOnMissingBean(JobLogService.class)
-    public JobLogService jobLogService() {
-        return new JobLogService();
+    @ConditionalOnMissingBean(JobHandlerRegistry.class)
+    public JobHandlerRegistry jobHandlerRegistry() {
+        return new DefaultJobHandlerRegistry();
     }
 
     /**
-     * 创建任务调度器（核心 Bean）.
+     * 创建 Quartz 元数据映射器。
      *
-     * <p>调度器持有已注册任务列表和运行中任务实例，
-     * 负责任务的注册、调度、暂停、恢复和手动触发.</p>
-     *
-     * @param jobScheduledExecutor 任务执行线程池
-     * @param jobLogService        任务日志服务
-     * @param properties           任务配置属性
-     * @return 调度器实例
+     * @param properties Job 配置
+     * @return Quartz 映射器
      */
-    @Bean(destroyMethod = "shutdown")
+    @Bean
+    @ConditionalOnMissingBean(QuartzJobMapper.class)
+    public QuartzJobMapper quartzJobMapper(JobProperties properties) {
+        return new QuartzJobMapper(properties.getGroup());
+    }
+
+    /**
+     * 创建 Quartz 便捷门面。
+     *
+     * @param scheduler 原生 Quartz 调度器
+     * @param mapper Quartz 映射器
+     * @param handlerRegistry 处理器注册表
+     * @param beanFactory Spring Bean 查询入口
+     * @return Job 调度门面
+     */
+    @Bean
     @ConditionalOnMissingBean(JobScheduler.class)
-    public JobScheduler jobScheduler(ScheduledThreadPoolExecutor jobScheduledExecutor,
-                                     JobLogService jobLogService,
-                                     JobProperties properties) {
-        log.info("初始化 letool-starter-job 任务调度模块");
-        return new JobScheduler(jobScheduledExecutor, jobLogService, properties);
+    public JobScheduler jobScheduler(
+            Scheduler scheduler,
+            QuartzJobMapper mapper,
+            JobHandlerRegistry handlerRegistry,
+            ListableBeanFactory beanFactory) {
+        return new JobScheduler(scheduler, mapper, handlerRegistry, beanFactory);
+    }
+
+    /**
+     * 创建默认结构化日志扩展。
+     *
+     * @return 默认日志扩展
+     */
+    @Bean(name = "loggingJobLogService")
+    @ConditionalOnMissingBean(name = "loggingJobLogService")
+    @ConditionalOnProperty(
+            prefix = "letool.job.logging", name = "enabled", havingValue = "true", matchIfMissing = true)
+    public LoggingJobLogService loggingJobLogService() {
+        return new LoggingJobLogService();
+    }
+
+    /**
+     * 创建当前节点任务执行运行时。
+     *
+     * @param handlerRegistry 处理器注册表
+     * @param logServices 用户和默认日志扩展
+     * @param properties Job 配置
+     * @return 任务运行时
+     */
+    @Bean
+    @ConditionalOnMissingBean(JobRuntime.class)
+    public JobRuntime jobRuntime(
+            JobHandlerRegistry handlerRegistry,
+            ObjectProvider<JobLogService> logServices,
+            JobProperties properties) {
+        List<JobLogService> orderedServices = logServices.orderedStream().toList();
+        return new JobRuntime(handlerRegistry, orderedServices, properties);
+    }
+
+    /**
+     * 在 Quartz 启动前把不可持久化运行时放入本地 SchedulerContext。
+     *
+     * @param scheduler 原生 Quartz 调度器
+     * @param runtime 当前节点任务运行时
+     * @return 单例初始化回调
+     */
+    @Bean(name = "letoolJobRuntimeInitializer")
+    @ConditionalOnMissingBean(name = "letoolJobRuntimeInitializer")
+    public SmartInitializingSingleton letoolJobRuntimeInitializer(
+            Scheduler scheduler,
+            JobRuntime runtime) {
+        return () -> {
+            try {
+                scheduler.getContext().put(JobRuntime.SCHEDULER_CONTEXT_KEY, runtime);
+            } catch (SchedulerException exception) {
+                throw new IllegalStateException("初始化 Letool JobRuntime 失败", exception);
+            }
+        };
+    }
+
+    /**
+     * 创建注解任务注册器。
+     *
+     * @param beanFactory Spring Bean 查询入口
+     * @param handlerRegistry 处理器注册表
+     * @param jobScheduler Job 调度门面
+     * @return 注解任务注册器
+     */
+    @Bean
+    @ConditionalOnMissingBean(LetoolJobRegistrar.class)
+    public LetoolJobRegistrar letoolJobRegistrar(
+            ListableBeanFactory beanFactory,
+            JobHandlerRegistry handlerRegistry,
+            JobScheduler jobScheduler) {
+        return new LetoolJobRegistrar(beanFactory, handlerRegistry, jobScheduler::register);
     }
 }

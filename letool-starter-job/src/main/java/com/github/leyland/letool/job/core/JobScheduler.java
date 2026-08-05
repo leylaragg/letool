@@ -1,554 +1,415 @@
 package com.github.leyland.letool.job.core;
 
-import com.github.leyland.letool.job.config.JobProperties;
+import com.github.leyland.letool.job.exception.JobErrorCode;
 import com.github.leyland.letool.job.exception.JobException;
-import com.github.leyland.letool.job.retry.RetryPolicy;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.support.CronExpression;
+import com.github.leyland.letool.job.quartz.QuartzJobMapper;
+import org.quartz.JobDetail;
+import org.quartz.JobExecutionContext;
+import org.quartz.JobKey;
+import org.quartz.ObjectAlreadyExistsException;
+import org.quartz.Scheduler;
+import org.quartz.SchedulerException;
+import org.quartz.Trigger;
+import org.quartz.TriggerKey;
+import org.quartz.impl.matchers.GroupMatcher;
+import org.quartz.simpl.RAMJobStore;
+import org.springframework.beans.factory.ListableBeanFactory;
 
-import java.time.Duration;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.*;
-import java.util.stream.Collectors;
+import java.util.UUID;
 
 /**
- * 任务调度器——任务调度模块的核心组件，负责任务的注册、调度、执行和生命周期管理.
+ * 面向业务代码的 Quartz 任务管理便捷门面。
  *
- * <p>提供完整的任务生命周期管理能力：</p>
- * <ul>
- *   <li><b>任务注册/注销</b> — 支持动态添加和移除任务定义</li>
- *   <li><b>Cron 调度</b> — 基于 Cron 表达式的自动调度执行</li>
- *   <li><b>手动触发</b> — 支持 API 手动触发任务立即执行</li>
- *   <li><b>暂停/恢复</b> — 运行时暂停和恢复任务调度</li>
- *   <li><b>失败重试</b> — 执行失败后自动重试，指数退避</li>
- *   <li><b>状态查询</b> — 查询任务运行状态和执行历史</li>
- * </ul>
- *
- * <h3>线程安全说明</h3>
- * <p>所有操作方法均为线程安全，使用 {@link ConcurrentHashMap}
- * 存储注册信息和运行状态. {@code register} 和 {@code unregister} 等方法
- * 内部使用同步块保证原子性.</p>
- *
- * @author leyland
- * @since 2.0.0
- * @see JobDefinition
- * @see JobHandler
- * @see JobLogService
+ * <p>调度生命周期、线程池、持久化和集群均由 Spring Boot Quartz 管理。</p>
  */
-public class JobScheduler implements AutoCloseable {
+public class JobScheduler {
 
-    // ======================== 日志 ========================
-
-    private static final Logger log = LoggerFactory.getLogger(JobScheduler.class);
-
-    // ======================== 成员变量 ========================
-
-    /**
-     * 已注册的任务定义: 任务名 → JobDefinition.
-     */
-    private final ConcurrentHashMap<String, JobDefinition> jobs = new ConcurrentHashMap<>();
+    private final Scheduler scheduler;
+    private final QuartzJobMapper mapper;
+    private final JobHandlerRegistry handlerRegistry;
+    private final ListableBeanFactory beanFactory;
 
     /**
-     * 正在执行中的任务: 任务名 → Future 集合（用于查询真实执行状态）.
-     */
-    private final ConcurrentHashMap<String, Set<Future<?>>> runningJobs = new ConcurrentHashMap<>();
-
-    /**
-     * 已安排的定时调度: 任务名 → ScheduledFuture（用于取消和暂停 Cron 调度）.
-     */
-    private final ConcurrentHashMap<String, ScheduledFuture<?>> scheduledJobs = new ConcurrentHashMap<>();
-
-    /**
-     * 已暂停的任务名称集合.
-     */
-    private final ConcurrentHashMap<String, Boolean> pausedJobs = new ConcurrentHashMap<>();
-
-    /**
-     * 任务执行线程池.
-     */
-    private final ScheduledThreadPoolExecutor executor;
-
-    /**
-     * 任务日志服务.
-     */
-    private final JobLogService logService;
-
-    /**
-     * 任务配置属性.
-     */
-    private final JobProperties properties;
-
-    // ======================== 构造方法 ========================
-
-    /**
-     * 创建任务调度器.
+     * 创建 Quartz 任务管理门面。
      *
-     * @param executor    任务执行线程池
-     * @param logService  任务日志服务
-     * @param properties  任务配置属性
+     * @param scheduler 原生 Quartz 调度器
+     * @param mapper Quartz 持久化映射器
+     * @param handlerRegistry 当前节点处理器注册表
+     * @param beanFactory Spring Bean 查询入口
      */
-    public JobScheduler(ScheduledThreadPoolExecutor executor, JobLogService logService, JobProperties properties) {
-        this.executor = executor;
-        this.executor.setRemoveOnCancelPolicy(true);
-        this.logService = logService;
-        this.properties = properties;
+    public JobScheduler(
+            Scheduler scheduler,
+            QuartzJobMapper mapper,
+            JobHandlerRegistry handlerRegistry,
+            ListableBeanFactory beanFactory) {
+        this.scheduler = scheduler;
+        this.mapper = mapper;
+        this.handlerRegistry = handlerRegistry;
+        this.beanFactory = beanFactory;
     }
 
-    // ======================== 任务注册/注销 ========================
-
     /**
-     * 注册一个任务定义并启动调度.
+     * 注册引用 Spring Bean 的集群安全任务。
      *
-     * <p>如果任务已存在则抛出 {@link JobException}. 注册成功后，
-     * 如果任务定义了 Cron 表达式，会自动创建定时调度.</p>
-     *
-     * @param job 任务定义
-     * @throws JobException 如果任务名已存在或 Cron 表达式解析失败
+     * @param definition 任务定义
+     * @param handlerBeanName 所有节点都具备的处理器 Bean 名称
      */
-    public void register(JobDefinition job) {
-        String jobName = job.getJobName();
-        JobDefinition existing = jobs.putIfAbsent(jobName, job);
-        if (existing != null) {
-            throw new JobException("任务注册失败：任务名 '" + jobName + "' 已存在", jobName);
-        }
-        log.info("注册任务: {}, cron={}, shardTotal={}, maxRetries={}",
-                jobName, job.getCron(), job.getShardTotal(), job.getMaxRetries());
-
+    public void register(JobDefinition definition, String handlerBeanName) {
+        boolean registeredHere = ensureBeanHandler(definition.getJobName(), handlerBeanName);
         try {
-            // 如果定义了 cron 表达式，则启动定时调度
-            if (job.getCron() != null && !job.getCron().isEmpty()) {
-                scheduleJob(job);
+            registerDefinition(definition, handlerBeanName);
+        } catch (RuntimeException exception) {
+            if (registeredHere) {
+                handlerRegistry.unregister(definition.getJobName());
             }
-        } catch (RuntimeException e) {
-            jobs.remove(jobName, job);
-            throw e;
+            throw exception;
         }
     }
 
     /**
-     * 注销（移除）指定任务.
+     * 仅在 RAMJobStore 中注册当前节点 Lambda 处理器。
      *
-     * <p>注销前先取消正在运行的调度和正在执行的任务.
-     * 如果任务不存在则静默忽略.</p>
+     * @param definition 任务定义
+     * @param handler 本地处理器
+     */
+    public void registerLocal(JobDefinition definition, JobHandler handler) {
+        try {
+            if (scheduler.getMetaData().isJobStoreClustered()
+                    || !RAMJobStore.class.isAssignableFrom(scheduler.getMetaData().getJobStoreClass())) {
+                throw new JobException(JobErrorCode.CLUSTER_UNSAFE_HANDLER,
+                        definition.getJobName(), definition.getJobName());
+            }
+        } catch (SchedulerException exception) {
+            throw schedulerFailure(definition.getJobName(), "检查 JobStore", exception);
+        }
+        handlerRegistry.register(definition.getJobName(), handler);
+        try {
+            registerDefinition(definition, "local:" + definition.getJobName());
+        } catch (RuntimeException exception) {
+            handlerRegistry.unregister(definition.getJobName());
+            throw exception;
+        }
+    }
+
+    /**
+     * 显式替换逻辑任务的全部分片。
      *
-     * @param jobName 任务名称
+     * @param definition 新任务定义
+     * @param handlerBeanName 处理器 Bean 名称
+     */
+    public void replace(JobDefinition definition, String handlerBeanName) {
+        boolean registeredHere = ensureBeanHandler(definition.getJobName(), handlerBeanName);
+        boolean replacementScheduled = false;
+        try {
+            List<JobKey> existingKeys = findJobKeys(definition.getJobName());
+            List<JobKey> replacementKeys = schedule(definition, handlerBeanName, true);
+            replacementScheduled = true;
+            List<JobKey> surplusKeys = existingKeys.stream()
+                    .filter(key -> !replacementKeys.contains(key))
+                    .toList();
+            if (!surplusKeys.isEmpty()) {
+                scheduler.deleteJobs(surplusKeys);
+            }
+        } catch (SchedulerException exception) {
+            if (registeredHere && !replacementScheduled) {
+                handlerRegistry.unregister(definition.getJobName());
+            }
+            throw schedulerFailure(definition.getJobName(), "替换任务", exception);
+        }
+    }
+
+    /**
+     * 手动触发逻辑任务的全部分片。
+     *
+     * @param jobName 逻辑任务名称
+     * @return 每分片一个不可变触发回执
+     */
+    public List<JobTriggerReceipt> trigger(String jobName) {
+        List<JobKey> keys = requiredJobKeys(jobName);
+        List<JobTriggerReceipt> receipts = new ArrayList<>(keys.size());
+        for (JobKey key : keys) {
+            receipts.add(triggerKey(jobName, key));
+        }
+        return List.copyOf(receipts);
+    }
+
+    /**
+     * 手动触发指定分片。
+     *
+     * @param jobName 逻辑任务名称
+     * @param shardIndex 分片索引
+     * @return 不可变触发回执
+     */
+    public JobTriggerReceipt trigger(String jobName, int shardIndex) {
+        JobKey key = mapper.jobKey(jobName, shardIndex);
+        try {
+            if (!scheduler.checkExists(key)) {
+                throw new JobException(JobErrorCode.JOB_NOT_FOUND, jobName, jobName + "#" + shardIndex);
+            }
+        } catch (SchedulerException exception) {
+            throw schedulerFailure(jobName, "检查任务分片", exception);
+        }
+        return triggerKey(jobName, key);
+    }
+
+    /** @param jobName 逻辑任务名称 */
+    public void pause(String jobName) {
+        forEachRequiredJob(jobName, key -> scheduler.pauseJob(key), "暂停任务");
+    }
+
+    /** @param jobName 逻辑任务名称 */
+    public void resume(String jobName) {
+        forEachRequiredJob(jobName, key -> scheduler.resumeJob(key), "恢复任务");
+    }
+
+    /**
+     * 注销逻辑任务及全部分片。
+     *
+     * @param jobName 逻辑任务名称
      */
     public void unregister(String jobName) {
-        // 取消定时调度
-        cancelSchedule(jobName);
-        // 移除记录
-        jobs.remove(jobName);
-        pausedJobs.remove(jobName);
-        log.info("注销任务: {}", jobName);
-    }
-
-    // ======================== 任务控制 ========================
-
-    /**
-     * 手动触发一次任务执行.
-     *
-     * <p>无论任务是否有 Cron 调度，均可手动触发. 已暂停的任务也可手动触发.
-     * 执行结果通过 {@link JobLogService#record(JobResult)} 记录.</p>
-     *
-     * @param jobName 任务名称
-     * @return 本次执行的 JobResult
-     * @throws JobException 如果任务未注册
-     */
-    public JobResult trigger(String jobName) {
-        JobDefinition job = jobs.get(jobName);
-        if (job == null) {
-            throw new JobException("任务 '" + jobName + "' 未注册", jobName);
-        }
-        JobContext context = new JobContext(jobName, job.getShardIndex(), job.getShardTotal(), job.getParams());
-        JobResult result = new JobResult(context);
-        log.info("手动触发任务: {}, executionId={}", jobName, result.getExecutionId());
-
-        submitExecution(job, context, result);
-        return result;
-    }
-
-    /**
-     * 暂停指定任务的调度.
-     *
-     * <p>暂停后，定时调度不再触发，但正在执行中的任务不受影响.
-     * 手动触发（trigger）仍然可用.</p>
-     *
-     * @param jobName 任务名称
-     * @throws JobException 如果任务未注册
-     */
-    public void pause(String jobName) {
-        if (!jobs.containsKey(jobName)) {
-            throw new JobException("任务 '" + jobName + "' 未注册", jobName);
-        }
-        pausedJobs.put(jobName, true);
-        cancelSchedule(jobName);
-        log.info("暂停任务调度: {}", jobName);
-    }
-
-    /**
-     * 恢复指定任务的调度.
-     *
-     * <p>如果任务定义了 Cron 表达式，重新创建定时调度.</p>
-     *
-     * @param jobName 任务名称
-     * @throws JobException 如果任务未注册
-     */
-    public void resume(String jobName) {
-        JobDefinition job = jobs.get(jobName);
-        if (job == null) {
-            throw new JobException("任务 '" + jobName + "' 未注册", jobName);
-        }
-        pausedJobs.remove(jobName);
-        log.info("恢复任务调度: {}", jobName);
-
-        if (job.getCron() != null && !job.getCron().isEmpty()) {
-            scheduleJob(job);
+        try {
+            List<JobKey> keys = findJobKeys(jobName);
+            if (!keys.isEmpty()) {
+                scheduler.deleteJobs(keys);
+            }
+            handlerRegistry.unregister(jobName);
+        } catch (SchedulerException exception) {
+            throw schedulerFailure(jobName, "注销任务", exception);
         }
     }
 
-    // ======================== 状态查询 ========================
-
     /**
-     * 检查指定任务是否正在执行中.
+     * 查询逻辑任务定义。
      *
-     * @param jobName 任务名称
-     * @return {@code true} 如果任务正在执行
+     * @param jobName 逻辑任务名称
+     * @return 存在时返回任务定义
      */
-    public boolean isRunning(String jobName) {
-        Set<Future<?>> futures = runningJobs.get(jobName);
-        return futures != null && futures.stream().anyMatch(this::isActive);
+    public Optional<JobDefinition> getJob(String jobName) {
+        try {
+            List<JobKey> keys = findJobKeys(jobName);
+            return keys.isEmpty() ? Optional.empty()
+                    : Optional.of(mapper.restoreDefinition(scheduler.getJobDetail(keys.get(0))));
+        } catch (SchedulerException exception) {
+            throw schedulerFailure(jobName, "查询任务", exception);
+        }
+    }
+
+    /** @return 所有逻辑任务定义，按名称升序排列 */
+    public List<JobDefinition> getAllJobs() {
+        try {
+            Map<String, JobDefinition> definitions = new LinkedHashMap<>();
+            for (JobKey key : allManagedJobKeys()) {
+                JobDefinition definition = mapper.restoreDefinition(scheduler.getJobDetail(key));
+                definitions.putIfAbsent(definition.getJobName(), definition);
+            }
+            return definitions.values().stream()
+                    .sorted(Comparator.comparing(JobDefinition::getJobName))
+                    .toList();
+        } catch (SchedulerException exception) {
+            throw schedulerFailure(null, "查询全部任务", exception);
+        }
+    }
+
+    /** @return 逻辑任务数量 */
+    public int getJobCount() {
+        return getAllJobs().size();
     }
 
     /**
-     * 检查指定任务是否处于暂停状态.
+     * 判断逻辑任务的全部 Cron Trigger 是否处于暂停状态。
      *
-     * @param jobName 任务名称
-     * @return {@code true} 如果任务已暂停
+     * @param jobName 逻辑任务名称
+     * @return 全部可调度分片已暂停时返回 {@code true}
      */
     public boolean isPaused(String jobName) {
-        return pausedJobs.containsKey(jobName);
-    }
-
-    /**
-     * 获取所有已注册任务的定义列表.
-     *
-     * @return 任务定义列表（拷贝）
-     */
-    public List<JobDefinition> getAllJobs() {
-        return new ArrayList<>(jobs.values());
-    }
-
-    /**
-     * 获取指定任务的定义信息.
-     *
-     * @param jobName 任务名称
-     * @return 任务定义，不存在返回 {@code null}
-     */
-    public JobDefinition getJob(String jobName) {
-        return jobs.get(jobName);
-    }
-
-    /**
-     * 获取当前正在运行的任务名称列表.
-     *
-     * @return 运行中任务名称列表
-     */
-    public List<String> getRunningJobs() {
-        return runningJobs.entrySet().stream()
-                .filter(e -> e.getValue().stream().anyMatch(this::isActive))
-                .map(Map.Entry::getKey)
-                .collect(Collectors.toList());
-    }
-
-    /**
-     * 获取已暂停的任务名称列表.
-     *
-     * @return 已暂停的任务名称列表
-     */
-    public List<String> getPausedJobs() {
-        return new ArrayList<>(pausedJobs.keySet());
-    }
-
-    /**
-     * 获取已注册任务总数.
-     *
-     * @return 任务数量
-     */
-    public int getJobCount() {
-        return jobs.size();
-    }
-
-    /**
-     * 关闭调度器并释放本地调度资源。
-     *
-     * <p>该方法会取消所有 Cron 调度、清理运行状态索引，并关闭底层执行线程池。
-     * 已经进入业务处理器的任务不会被强制中断，适合作为 Spring Bean destroy method
-     * 或独立工具使用时的显式生命周期出口。</p>
-     */
-    public void shutdown() {
-        scheduledJobs.forEach((jobName, future) -> future.cancel(false));
-        scheduledJobs.clear();
-        runningJobs.clear();
-        pausedJobs.clear();
-        executor.shutdown();
-        log.info("任务调度器已关闭");
-    }
-
-    /**
-     * AutoCloseable 适配，便于 try-with-resources 或通用资源关闭流程调用。
-     */
-    @Override
-    public void close() {
-        shutdown();
-    }
-
-    // ======================== 内部方法 - 调度 ========================
-
-    /**
-     * 解析 Cron 表达式并创建定时调度.
-     *
-     * <p>使用简单的 Cron 解析算法：支持 6 位（秒 分 时 日 月 周）和 7 位（秒 分 时 日 月 周 年）格式.
-     * Cron 表达式各字段的取值范围与标准 Cron 一致.</p>
-     *
-     * @param job 任务定义
-     */
-    private void scheduleJob(JobDefinition job) {
-        String cron = job.getCron();
         try {
-            CronSchedule schedule = parseCron(cron);
-            scheduleNextExecution(job, schedule.expression, schedule.initialDelayMs);
-            log.info("任务 '{}' 已调度: cron={}, nextExecutionTime={}, initialDelay={}ms",
-                    job.getJobName(), cron, schedule.nextExecutionTime, schedule.initialDelayMs);
-        } catch (Exception e) {
-            throw new JobException("Cron 表达式解析失败: " + cron, job.getJobName(), e);
-        }
-    }
-
-    /**
-     * 根据 Cron 表达式安排下一次单次触发，并在触发后继续计算后续触发点.
-     *
-     * <p>使用 Spring 的 {@link CronExpression} 负责完整 Cron 语义，避免内置调度器只按固定
-     * period 轮询而错过具体分钟、小时、列表或范围表达式。该方法只维护本地生命周期和重新调度。</p>
-     *
-     * @param job            任务定义
-     * @param cronExpression 已解析的 Cron 表达式
-     * @param delayMs        距离下一次触发的延迟毫秒数
-     */
-    private void scheduleNextExecution(JobDefinition job, CronExpression cronExpression, long delayMs) {
-        ScheduledFuture<?> future = executor.schedule(() -> {
-            scheduledJobs.remove(job.getJobName());
-            if (!jobs.containsKey(job.getJobName()) || pausedJobs.containsKey(job.getJobName())) {
-                return;
-            }
-
-            JobContext context = new JobContext(
-                    job.getJobName(), job.getShardIndex(), job.getShardTotal(), job.getParams());
-            JobResult result = new JobResult(context);
-            submitExecution(job, context, result);
-
-            if (jobs.containsKey(job.getJobName()) && !pausedJobs.containsKey(job.getJobName())
-                    && !executor.isShutdown()) {
-                CronSchedule nextSchedule = createCronSchedule(cronExpression);
-                scheduleNextExecution(job, cronExpression, nextSchedule.initialDelayMs);
-            }
-        }, Math.max(0, delayMs), TimeUnit.MILLISECONDS);
-
-        ScheduledFuture<?> previous = scheduledJobs.put(job.getJobName(), future);
-        if (previous != null) {
-            previous.cancel(false);
-        }
-    }
-
-    /**
-     * 取消指定任务的定时调度.
-     *
-     * @param jobName 任务名称
-     */
-    private void cancelSchedule(String jobName) {
-        ScheduledFuture<?> future = scheduledJobs.remove(jobName);
-        if (future != null) {
-            future.cancel(false);
-            log.debug("取消任务调度: {}", jobName);
-        }
-    }
-
-    // ======================== 内部方法 - 执行 ========================
-
-    /**
-     * 提交一次任务执行并跟踪其运行状态。
-     *
-     * <p>{@code runningJobs} 只保存真实执行中的任务，而 Cron 调度本身保存在
-     * {@code scheduledJobs} 中。这样 {@link #isRunning(String)} 不会把“已安排定时调度”
-     * 误判为“任务正在执行”。</p>
-     *
-     * @param job     任务定义
-     * @param context 执行上下文
-     * @param result  执行结果
-     */
-    private void submitExecution(JobDefinition job, JobContext context, JobResult result) {
-        CompletableFuture<Void> future = new CompletableFuture<>();
-        Runnable task = () -> {
-            try {
-                executeJob(job, context, result);
-                future.complete(null);
-            } catch (RuntimeException | Error ex) {
-                future.completeExceptionally(ex);
-                throw ex;
-            } finally {
-                removeRunningFuture(job.getJobName(), future);
-            }
-        };
-        runningJobs.computeIfAbsent(job.getJobName(), key -> ConcurrentHashMap.newKeySet()).add(future);
-        try {
-            executor.execute(task);
-        } catch (RuntimeException ex) {
-            removeRunningFuture(job.getJobName(), future);
-            future.completeExceptionally(ex);
-            throw ex;
-        }
-    }
-
-    /**
-     * 移除一次已结束或提交失败的执行记录。
-     *
-     * @param jobName 任务名称
-     * @param future  本次执行的 Future
-     */
-    private void removeRunningFuture(String jobName, Future<?> future) {
-        Set<Future<?>> futures = runningJobs.get(jobName);
-        if (futures == null) {
-            return;
-        }
-        futures.remove(future);
-        if (futures.isEmpty()) {
-            runningJobs.remove(jobName, futures);
-        }
-    }
-
-    /**
-     * 判断一次任务执行是否仍处于活动状态。
-     *
-     * @param future 任务执行 Future
-     * @return {@code true} 如果该执行尚未完成且未取消
-     */
-    private boolean isActive(Future<?> future) {
-        return !future.isDone() && !future.isCancelled();
-    }
-
-    /**
-     * 执行任务（含重试逻辑）.
-     *
-     * <p>执行流程：</p>
-     * <ol>
-     *   <li>记录日志（开始执行）</li>
-     *   <li>调用 handler.execute(context)</li>
-     *   <li>如果成功 → 记录成功日志</li>
-     *   <li>如果失败 → 根据重试策略决定是否重试（指数退避）</li>
-     *   <li>重试耗尽 → 记录失败日志</li>
-     * </ol>
-     *
-     * @param job     任务定义
-     * @param context 执行上下文
-     * @param result  执行结果
-     */
-    private void executeJob(JobDefinition job, JobContext context, JobResult result) {
-        int retry = 0;
-        while (true) {
-            try {
-                log.debug("执行任务: {}, executionId={}, retry={}",
-                        job.getJobName(), context.getExecutionId(), retry);
-                job.getHandler().execute(context);
-                result.success("执行成功", retry);
-                log.info("任务执行成功: {}, executionId={}, durationMs={}",
-                        job.getJobName(), result.getExecutionId(), result.getDurationMs());
-                break;
-            } catch (Exception e) {
-                log.error("任务执行失败: {}, executionId={}, retry={}, error={}",
-                        job.getJobName(), context.getExecutionId(), retry, e.getMessage());
-
-                if (RetryPolicy.shouldRetry(retry, job.getMaxRetries())) {
-                    long delay = RetryPolicy.getBackoffDelay(
-                            retry, job.getBackoffMs(), job.getBackoffMultiplier());
-                    retry++;
-                    log.warn("任务 {} 将在 {}ms 后进行第 {} 次重试",
-                            job.getJobName(), delay, retry);
-                    try {
-                        Thread.sleep(delay);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        result.fail("重试被中断: " + ie.getMessage(), retry);
-                        if (properties.getLog().isEnabled()) {
-                            logService.record(result);
-                        }
-                        return;
+            List<JobKey> keys = requiredJobKeys(jobName);
+            boolean hasTrigger = false;
+            for (JobKey key : keys) {
+                for (Trigger trigger : scheduler.getTriggersOfJob(key)) {
+                    hasTrigger = true;
+                    if (scheduler.getTriggerState(trigger.getKey()) != Trigger.TriggerState.PAUSED) {
+                        return false;
                     }
-                } else {
-                    result.fail(e.getMessage(), retry);
-                    log.error("任务执行彻底失败: {}, executionId={}, totalRetries={}",
-                            job.getJobName(), result.getExecutionId(), retry);
-                    break;
                 }
             }
-        }
-
-        // 记录执行日志
-        if (properties.getLog().isEnabled()) {
-            logService.record(result);
-        }
-    }
-
-    // ======================== 内部方法 - Cron 解析 ========================
-
-    /**
-     * Cron 内部调度信息.
-     */
-    private static class CronSchedule {
-        /** 首次执行延迟（毫秒） */
-        long initialDelayMs;
-        /** 下一次触发时间 */
-        LocalDateTime nextExecutionTime;
-        /** Spring Cron 表达式 */
-        CronExpression expression;
-
-        CronSchedule(long initialDelayMs, LocalDateTime nextExecutionTime, CronExpression expression) {
-            this.initialDelayMs = initialDelayMs;
-            this.nextExecutionTime = nextExecutionTime;
-            this.expression = expression;
+            return hasTrigger;
+        } catch (SchedulerException exception) {
+            throw schedulerFailure(jobName, "查询暂停状态", exception);
         }
     }
 
     /**
-     * 解析 Cron 表达式并计算首次触发信息.
+     * 判断逻辑任务是否正在任一节点执行。
      *
-     * <p>这里委托 Spring {@link CronExpression} 处理完整 Cron 语义，支持列表、范围、步进、
-     * 问号占位等标准写法，避免本地调度器自行解析造成语义偏差。</p>
-     *
-     * @param cron Cron 表达式
-     * @return 调度信息
+     * @param jobName 逻辑任务名称
+     * @return 正在执行时返回 {@code true}
      */
-    private CronSchedule parseCron(String cron) {
-        CronExpression expression = CronExpression.parse(cron);
-        return createCronSchedule(expression);
+    public boolean isRunning(String jobName) {
+        return getRunningJobs().contains(jobName);
+    }
+
+    /** @return 当前节点从 Quartz 查询到的运行中逻辑任务名称 */
+    public List<String> getRunningJobs() {
+        try {
+            return scheduler.getCurrentlyExecutingJobs().stream()
+                    .map(JobExecutionContext::getMergedJobDataMap)
+                    .map(mapper::readJobName)
+                    .filter(name -> name != null && !name.isBlank())
+                    .distinct()
+                    .sorted()
+                    .toList();
+        } catch (SchedulerException exception) {
+            throw schedulerFailure(null, "查询运行状态", exception);
+        }
+    }
+
+    private void registerDefinition(JobDefinition definition, String handlerBeanName) {
+        try {
+            List<JobKey> existing = findJobKeys(definition.getJobName());
+            if (!existing.isEmpty()) {
+                if (matchesExisting(definition, handlerBeanName, existing)) {
+                    return;
+                }
+                throw new JobException(JobErrorCode.DEFINITION_CONFLICT,
+                        definition.getJobName(), definition.getJobName());
+            }
+            schedule(definition, handlerBeanName, false);
+        } catch (ObjectAlreadyExistsException exception) {
+            try {
+                if (matchesExisting(definition, handlerBeanName, findJobKeys(definition.getJobName()))) {
+                    return;
+                }
+            } catch (SchedulerException checkException) {
+                exception.addSuppressed(checkException);
+            }
+            throw new JobException(JobErrorCode.DEFINITION_CONFLICT,
+                    definition.getJobName(), exception, definition.getJobName());
+        } catch (SchedulerException exception) {
+            throw schedulerFailure(definition.getJobName(), "注册任务", exception);
+        }
+    }
+
+    private List<JobKey> schedule(
+            JobDefinition definition,
+            String handlerBeanName,
+            boolean replace) throws SchedulerException {
+        List<JobDetail> details = mapper.createJobDetails(definition, handlerBeanName);
+        List<Trigger> triggers = mapper.createTriggers(definition);
+        Map<JobDetail, Set<? extends Trigger>> jobsAndTriggers = new LinkedHashMap<>();
+        for (int index = 0; index < details.size(); index++) {
+            Set<Trigger> triggerSet = index < triggers.size()
+                    ? Set.of(triggers.get(index)) : Set.of();
+            jobsAndTriggers.put(details.get(index), triggerSet);
+        }
+        scheduler.scheduleJobs(jobsAndTriggers, replace);
+        return details.stream().map(JobDetail::getKey).toList();
+    }
+
+    private boolean matchesExisting(
+            JobDefinition definition,
+            String handlerBeanName,
+            List<JobKey> existingKeys) throws SchedulerException {
+        List<JobDetail> expected = mapper.createJobDetails(definition, handlerBeanName);
+        if (existingKeys.size() != expected.size()) {
+            return false;
+        }
+        Map<JobKey, JobDetail> expectedByKey = new LinkedHashMap<>();
+        expected.forEach(detail -> expectedByKey.put(detail.getKey(), detail));
+        for (JobKey key : existingKeys) {
+            JobDetail actual = scheduler.getJobDetail(key);
+            JobDetail expectedDetail = expectedByKey.get(key);
+            if (!mapper.hasSameRegistration(actual, expectedDetail)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private JobTriggerReceipt triggerKey(String jobName, JobKey key) {
+        String executionId = UUID.randomUUID().toString().replace("-", "");
+        try {
+            scheduler.triggerJob(key, mapper.createManualTriggerData(executionId));
+            return new JobTriggerReceipt(executionId, jobName, shardIndex(key), Instant.now());
+        } catch (SchedulerException exception) {
+            throw schedulerFailure(jobName, "手动触发任务", exception);
+        }
+    }
+
+    private boolean ensureBeanHandler(String jobName, String handlerBeanName) {
+        if (handlerRegistry.contains(jobName)) {
+            return false;
+        }
+        if (handlerBeanName == null || handlerBeanName.isBlank() || !beanFactory.containsBean(handlerBeanName)) {
+            throw new JobException(JobErrorCode.INVALID_HANDLER, jobName, handlerBeanName);
+        }
+        Object bean = beanFactory.getBean(handlerBeanName);
+        if (!(bean instanceof JobHandler handler)) {
+            throw new JobException(JobErrorCode.INVALID_HANDLER, jobName, handlerBeanName);
+        }
+        handlerRegistry.register(jobName, handler);
+        return true;
+    }
+
+    private List<JobKey> requiredJobKeys(String jobName) {
+        try {
+            List<JobKey> keys = findJobKeys(jobName);
+            if (keys.isEmpty()) {
+                throw new JobException(JobErrorCode.JOB_NOT_FOUND, jobName, jobName);
+            }
+            return keys;
+        } catch (SchedulerException exception) {
+            throw schedulerFailure(jobName, "查询任务分片", exception);
+        }
+    }
+
+    private List<JobKey> findJobKeys(String jobName) throws SchedulerException {
+        String expectedPrefix = jobName + "#";
+        return allManagedJobKeys().stream()
+                .filter(key -> key.getName().startsWith(expectedPrefix))
+                .sorted(Comparator.comparingInt(this::shardIndex))
+                .toList();
+    }
+
+    private Set<JobKey> allManagedJobKeys() throws SchedulerException {
+        return new LinkedHashSet<>(scheduler.getJobKeys(GroupMatcher.jobGroupEquals(mapper.getGroup())));
+    }
+
+    private int shardIndex(JobKey key) {
+        int separator = key.getName().lastIndexOf('#');
+        return Integer.parseInt(key.getName().substring(separator + 1));
+    }
+
+    private void forEachRequiredJob(String jobName, SchedulerAction action, String operation) {
+        try {
+            for (JobKey key : requiredJobKeys(jobName)) {
+                action.accept(key);
+            }
+        } catch (SchedulerException exception) {
+            throw schedulerFailure(jobName, operation, exception);
+        }
+    }
+
+    private JobException schedulerFailure(String jobName, String operation, Exception cause) {
+        return new JobException(JobErrorCode.SCHEDULER_OPERATION_FAILED, jobName, cause, operation);
     }
 
     /**
-     * 根据已解析 Cron 表达式计算下一次触发信息.
-     *
-     * @param expression 已解析的 Spring Cron 表达式
-     * @return 包含下一次触发时间和延迟的调度信息
+     * 可以抛出 Quartz 检查异常的 JobKey 操作。
      */
-    private CronSchedule createCronSchedule(CronExpression expression) {
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime next = expression.next(now);
-        if (next == null) {
-            throw new IllegalArgumentException("Cron 表达式没有可计算的下一次触发时间");
-        }
-        long initialDelay = Math.max(0, Duration.between(now, next).toMillis());
-        return new CronSchedule(initialDelay, next, expression);
+    @FunctionalInterface
+    private interface SchedulerAction {
+        /** @param key Quartz JobKey @throws SchedulerException 调度操作失败 */
+        void accept(JobKey key) throws SchedulerException;
     }
 }

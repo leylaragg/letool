@@ -1,167 +1,78 @@
 package com.github.leyland.letool.job.core;
 
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.util.HashMap;
+import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
-@DisplayName("JobContext 任务执行上下文测试")
+/**
+ * {@link JobContext} 不可变执行上下文测试。
+ */
 class JobContextTest {
 
-    @Nested
-    @DisplayName("构造函数测试")
-    class ConstructorTests {
+    /**
+     * 验证上下文会防御性复制参数并保留集群执行标识。
+     */
+    @Test
+    void shouldCreateImmutableExecutionContext() {
+        Map<String, String> parameters = new LinkedHashMap<>();
+        parameters.put("tenant", "default");
+        Instant scheduled = Instant.parse("2026-08-05T08:00:00Z");
+        Instant started = Instant.parse("2026-08-05T08:00:01Z");
 
-        @Test
-        @DisplayName("应正确初始化所有字段")
-        void shouldInitializeAllFields() {
-            Map<String, Object> params = new HashMap<>();
-            params.put("batchSize", 100);
+        JobContext context = new JobContext(
+                "execution-1", "sync", 1, 4, 2, JobTriggerType.RETRY,
+                scheduled, started, "fire-1", "node-a", parameters);
+        parameters.put("tenant", "changed");
 
-            JobContext ctx = new JobContext("syncJob", 2, 4, params);
-
-            assertEquals("syncJob", ctx.getJobName());
-            assertNotNull(ctx.getExecutionId());
-            assertFalse(ctx.getExecutionId().isEmpty());
-            assertEquals(2, ctx.getShardIndex());
-            assertEquals(4, ctx.getShardTotal());
-            assertNotNull(ctx.getStartTime());
-        }
-
-        @Test
-        @DisplayName("两次创建的 executionId 应不同")
-        void eachContextShouldHaveUniqueExecutionId() {
-            JobContext ctx1 = new JobContext("job1", 0, 1, null);
-            JobContext ctx2 = new JobContext("job1", 0, 1, null);
-            assertNotEquals(ctx1.getExecutionId(), ctx2.getExecutionId());
-        }
-
-        @Test
-        @DisplayName("shardTotal <= 0 时应设为 1")
-        void shardTotalShouldBeAtLeastOne() {
-            JobContext ctx = new JobContext("job1", 0, 0, null);
-            assertEquals(1, ctx.getShardTotal());
-        }
-
-        @Test
-        @DisplayName("shardTotal 为负数时应设为 1")
-        void negativeShardTotalShouldBeOne() {
-            JobContext ctx = new JobContext("job1", 0, -5, null);
-            assertEquals(1, ctx.getShardTotal());
-        }
-
-        @Test
-        @DisplayName("params 为 null 时应初始化为空 Map")
-        void nullParamsShouldBeEmptyMap() {
-            JobContext ctx = new JobContext("job1", 0, 1, null);
-            assertNotNull(ctx.getParams());
-            assertTrue(ctx.getParams().isEmpty());
-        }
-
-        @Test
-        @DisplayName("params 应不可修改")
-        void paramsShouldBeUnmodifiable() {
-            Map<String, Object> params = new HashMap<>();
-            params.put("key", "value");
-            JobContext ctx = new JobContext("job1", 0, 1, params);
-
-            Map<String, Object> returnedParams = ctx.getParams();
-            assertThrows(UnsupportedOperationException.class, () -> returnedParams.put("new", "val"));
-        }
-
-        @Test
-        @DisplayName("getParams 返回的 Map 应不可修改")
-        void getParamsShouldBeUnmodifiable() {
-            Map<String, Object> original = new HashMap<>();
-            original.put("key", "value");
-            JobContext ctx = new JobContext("job1", 0, 1, original);
-
-            Map<String, Object> returnedParams = ctx.getParams();
-            assertThrows(UnsupportedOperationException.class, () -> returnedParams.put("new", "val"));
-        }
+        assertThat(context.getExecutionId()).isEqualTo("execution-1");
+        assertThat(context.getJobName()).isEqualTo("sync");
+        assertThat(context.getShardIndex()).isEqualTo(1);
+        assertThat(context.getShardTotal()).isEqualTo(4);
+        assertThat(context.getRetryCount()).isEqualTo(2);
+        assertThat(context.getTriggerType()).isEqualTo(JobTriggerType.RETRY);
+        assertThat(context.getScheduledFireTime()).isEqualTo(scheduled);
+        assertThat(context.getStartTime()).isEqualTo(started);
+        assertThat(context.getFireInstanceId()).isEqualTo("fire-1");
+        assertThat(context.getSchedulerInstanceId()).isEqualTo("node-a");
+        assertThat(context.getParam("tenant")).isEqualTo("default");
+        assertThat(context.getParam("tenant", String.class)).contains("default");
+        assertThatExceptionOfType(UnsupportedOperationException.class)
+                .isThrownBy(() -> context.getParams().put("new", "value"));
     }
 
-    @Nested
-    @DisplayName("getParam(key) 测试")
-    class GetParamByKeyTests {
+    /**
+     * 验证非法分片和空白标识不会进入业务处理器。
+     */
+    @Test
+    void shouldRejectInvalidContext() {
+        assertThatIllegalArgumentException().isThrownBy(() -> context("", 0, 1));
+        assertThatIllegalArgumentException().isThrownBy(() -> context("execution", -1, 1));
+        assertThatIllegalArgumentException().isThrownBy(() -> context("execution", 1, 1));
 
-        @Test
-        @DisplayName("存在的 key 应返回对应值")
-        void shouldReturnValueForExistingKey() {
-            Map<String, Object> params = new HashMap<>();
-            params.put("name", "test");
-            JobContext ctx = new JobContext("job1", 0, 1, params);
-
-            assertEquals("test", ctx.getParam("name"));
-        }
-
-        @Test
-        @DisplayName("不存在的 key 应返回 null")
-        void shouldReturnNullForMissingKey() {
-            JobContext ctx = new JobContext("job1", 0, 1, null);
-            assertNull(ctx.getParam("nonexistent"));
-        }
+        Map<String, String> invalidParameters = new LinkedHashMap<>();
+        invalidParameters.put("tenant", null);
+        assertThatIllegalArgumentException().isThrownBy(() -> new JobContext(
+                "execution", "job", 0, 1, 0, JobTriggerType.MANUAL,
+                Instant.now(), Instant.now(), "fire", "node", invalidParameters));
     }
 
-    @Nested
-    @DisplayName("getParam(key, class) 测试")
-    class GetParamWithTypeTests {
-
-        @Test
-        @DisplayName("存在的 key 且类型匹配应返回 Optional.of(value)")
-        void shouldReturnOptionalWithValue() {
-            Map<String, Object> params = new HashMap<>();
-            params.put("count", 100);
-            params.put("name", "test");
-            JobContext ctx = new JobContext("job1", 0, 1, params);
-
-            Optional<Integer> count = ctx.getParam("count", Integer.class);
-            assertTrue(count.isPresent());
-            assertEquals(100, count.get());
-
-            Optional<String> name = ctx.getParam("name", String.class);
-            assertTrue(name.isPresent());
-            assertEquals("test", name.get());
-        }
-
-        @Test
-        @DisplayName("不存在的 key 应返回 Optional.empty()")
-        void shouldReturnEmptyForMissingKey() {
-            JobContext ctx = new JobContext("job1", 0, 1, null);
-            Optional<String> result = ctx.getParam("missing", String.class);
-            assertFalse(result.isPresent());
-        }
-
-        @Test
-        @DisplayName("类型参数仅作为文档提示，不执行运行时类型检查")
-        void classParameterIsDocumentationOnly() {
-            Map<String, Object> params = new HashMap<>();
-            params.put("value", "string_not_integer");
-            JobContext ctx = new JobContext("job1", 0, 1, params);
-
-            // getParam(key, class) 的泛型擦除后不会做运行时类型检查
-            Optional<Integer> result = ctx.getParam("value", Integer.class);
-            assertTrue(result.isPresent());
-        }
-    }
-
-    @Nested
-    @DisplayName("toString 测试")
-    class ToStringTests {
-
-        @Test
-        @DisplayName("toString 应包含关键字段")
-        void toStringShouldContainKeyFields() {
-            JobContext ctx = new JobContext("syncJob", 1, 4, null);
-            String str = ctx.toString();
-            assertTrue(str.contains("syncJob"));
-            assertTrue(str.contains("shardIndex=1"));
-            assertTrue(str.contains("shardTotal=4"));
-        }
+    /**
+     * 创建用于校验的执行上下文。
+     *
+     * @param executionId 执行标识
+     * @param shardIndex 分片索引
+     * @param shardTotal 分片总数
+     * @return 执行上下文
+     */
+    private JobContext context(String executionId, int shardIndex, int shardTotal) {
+        return new JobContext(
+                executionId, "job", shardIndex, shardTotal, 0, JobTriggerType.MANUAL,
+                Instant.now(), Instant.now(), "fire", "node", Map.of());
     }
 }

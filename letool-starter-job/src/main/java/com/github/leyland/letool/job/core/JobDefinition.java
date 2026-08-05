@@ -1,237 +1,232 @@
 package com.github.leyland.letool.job.core;
 
+import org.quartz.CronExpression;
+
+import java.time.ZoneId;
 import java.util.Collections;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 任务定义——描述一个任务的所有静态配置信息.
+ * 描述一个可持久化调度任务的不可变元数据。
  *
- * <p>每个需要调度的任务必须通过 {@code JobDefinition} 定义其元数据，
- * 包括任务名、Cron 表达式、分片配置、重试策略以及实际执行的 {@link JobHandler}.
- * 使用 Builder 模式构建实例.</p>
- *
- * <h3>典型配置示例</h3>
- * <pre>{@code
- * JobDefinition job = JobDefinition.builder()
- *         .jobName("dailyReportJob")
- *         .cron("0 0 6 * * ?")
- *         .description("每日报表生成任务")
- *         .shardTotal(4)
- *         .maxRetries(3)
- *         .backoffMs(1000)
- *         .backoffMultiplier(2.0)
- *         .handler(context -> reportService.generateDailyReport(context))
- *         .param("reportType", "daily")
- *         .build();
- * }</pre>
+ * <p>任务定义只保存能够稳定写入 Quartz JobDataMap 的配置，不保存 Spring Bean、
+ * Lambda 或任意业务对象。任务处理器由调度门面单独关联。</p>
  *
  * @author leyland
  * @since 2.0.0
- * @see JobHandler
- * @see JobScheduler
  */
-public class JobDefinition {
+public final class JobDefinition {
 
-    // ======================== 成员变量 ========================
+    /** Letool 内部 JobDataMap 键的保留前缀。 */
+    public static final String RESERVED_PARAMETER_PREFIX = "letool.internal.";
 
-    /**
-     * 任务名称（全局唯一标识）.
-     */
     private final String jobName;
-
-    /**
-     * Cron 表达式（支持标准7位 cron 表达式）.
-     */
     private final String cron;
-
-    /**
-     * 任务描述文本.
-     */
+    private final String zone;
     private final String description;
-
-    /**
-     * 总分片数（默认1，表示不分片）.
-     */
     private final int shardTotal;
-
-    /**
-     * 分片索引（默认0，通常由调度器动态分配）.
-     */
-    private final int shardIndex;
-
-    /**
-     * 最大重试次数（默认3）.
-     */
     private final int maxRetries;
-
-    /**
-     * 重试基础退避时间（毫秒，默认1000）.
-     */
     private final long backoffMs;
-
-    /**
-     * 退避倍率（默认2.0，即指数退避）.
-     */
     private final double backoffMultiplier;
-
-    /**
-     * 任务处理器（执行核心逻辑）.
-     */
-    private final JobHandler handler;
-
-    /**
-     * 自定义参数（不可变）.
-     */
-    private final Map<String, Object> params;
-
-    // ======================== 私有构造方法 ========================
+    private final long maxBackoffMs;
+    private final boolean concurrent;
+    private final MisfirePolicy misfirePolicy;
+    private final boolean requestRecovery;
+    private final Map<String, String> params;
 
     private JobDefinition(Builder builder) {
-        this.jobName = builder.jobName;
-        this.cron = builder.cron;
-        this.description = builder.description;
-        this.shardTotal = builder.shardTotal > 0 ? builder.shardTotal : 1;
-        this.shardIndex = builder.shardIndex;
-        this.maxRetries = builder.maxRetries;
-        this.backoffMs = builder.backoffMs;
+        this.jobName = requireText(builder.jobName, "jobName 不能为空");
+        this.cron = normalize(builder.cron);
+        validateCron(this.cron);
+        this.zone = normalize(builder.zone);
+        validateZone(this.zone);
+        this.description = builder.description == null ? "" : builder.description;
+        this.shardTotal = requirePositive(builder.shardTotal, "shardTotal 必须大于 0");
+        this.maxRetries = requireNonNegative(builder.maxRetries, "maxRetries 不能小于 0");
+        this.backoffMs = requireNonNegative(builder.backoffMs, "backoffMs 不能小于 0");
+        if (!Double.isFinite(builder.backoffMultiplier) || builder.backoffMultiplier <= 0) {
+            throw new IllegalArgumentException("backoffMultiplier 必须为有限正数");
+        }
         this.backoffMultiplier = builder.backoffMultiplier;
-        this.handler = builder.handler;
-        this.params = Collections.unmodifiableMap(new HashMap<>(builder.params));
-    }
-
-    // ======================== Getter 方法 ========================
-
-    /**
-     * 获取任务名称.
-     *
-     * @return 任务名称
-     */
-    public String getJobName() {
-        return jobName;
+        this.maxBackoffMs = requirePositive(builder.maxBackoffMs, "maxBackoffMs 必须大于 0");
+        this.concurrent = builder.concurrent;
+        this.misfirePolicy = builder.misfirePolicy == null
+                ? MisfirePolicy.DO_NOTHING : builder.misfirePolicy;
+        this.requestRecovery = builder.requestRecovery;
+        this.params = immutableParameters(builder.params);
     }
 
     /**
-     * 获取 Cron 表达式.
+     * 创建任务定义建造器。
      *
-     * @return Cron 表达式
-     */
-    public String getCron() {
-        return cron;
-    }
-
-    /**
-     * 获取任务描述.
-     *
-     * @return 任务描述
-     */
-    public String getDescription() {
-        return description;
-    }
-
-    /**
-     * 获取总分片数.
-     *
-     * @return 总分片数
-     */
-    public int getShardTotal() {
-        return shardTotal;
-    }
-
-    /**
-     * 获取分片索引.
-     *
-     * @return 分片索引
-     */
-    public int getShardIndex() {
-        return shardIndex;
-    }
-
-    /**
-     * 获取最大重试次数.
-     *
-     * @return 最大重试次数
-     */
-    public int getMaxRetries() {
-        return maxRetries;
-    }
-
-    /**
-     * 获取重试基础退避时间（毫秒）.
-     *
-     * @return 基础退避毫秒数
-     */
-    public long getBackoffMs() {
-        return backoffMs;
-    }
-
-    /**
-     * 获取退避倍率.
-     *
-     * @return 退避倍率
-     */
-    public double getBackoffMultiplier() {
-        return backoffMultiplier;
-    }
-
-    /**
-     * 获取任务处理器.
-     *
-     * @return 任务处理器
-     */
-    public JobHandler getHandler() {
-        return handler;
-    }
-
-    /**
-     * 获取自定义参数（不可变Map）.
-     *
-     * @return 自定义参数Map
-     */
-    public Map<String, Object> getParams() {
-        return params;
-    }
-
-    // ======================== Builder ========================
-
-    /**
-     * 创建 Builder 实例.
-     *
-     * @return 新的 Builder 实例
+     * @return 新建造器
      */
     public static Builder builder() {
         return new Builder();
     }
 
+    /** @return 逻辑任务名称 */
+    public String getJobName() {
+        return jobName;
+    }
+
+    /** @return Quartz Cron；手动任务返回 {@code null} */
+    public String getCron() {
+        return cron;
+    }
+
+    /** @return 显式时区 ID；使用默认时区时返回 {@code null} */
+    public String getZone() {
+        return zone;
+    }
+
+    /** @return 任务说明 */
+    public String getDescription() {
+        return description;
+    }
+
+    /** @return 分片总数 */
+    public int getShardTotal() {
+        return shardTotal;
+    }
+
+    /** @return 最大额外重试次数 */
+    public int getMaxRetries() {
+        return maxRetries;
+    }
+
+    /** @return 第一次重试延迟毫秒数 */
+    public long getBackoffMs() {
+        return backoffMs;
+    }
+
+    /** @return 重试退避倍率 */
+    public double getBackoffMultiplier() {
+        return backoffMultiplier;
+    }
+
+    /** @return 单次重试最大延迟毫秒数 */
+    public long getMaxBackoffMs() {
+        return maxBackoffMs;
+    }
+
+    /** @return 是否允许同一分片并发 */
+    public boolean isConcurrent() {
+        return concurrent;
+    }
+
+    /** @return Cron 错过触发策略 */
+    public MisfirePolicy getMisfirePolicy() {
+        return misfirePolicy;
+    }
+
+    /** @return 是否请求 Quartz 节点故障恢复 */
+    public boolean isRequestRecovery() {
+        return requestRecovery;
+    }
+
+    /** @return 不可变字符串参数 */
+    public Map<String, String> getParams() {
+        return params;
+    }
+
+    private static Map<String, String> immutableParameters(Map<String, String> source) {
+        Map<String, String> copy = new LinkedHashMap<>();
+        source.forEach((key, value) -> {
+            String safeKey = requireText(key, "任务参数键不能为空");
+            if (safeKey.startsWith(RESERVED_PARAMETER_PREFIX)) {
+                throw new IllegalArgumentException("任务参数不能使用 Letool 内部保留前缀");
+            }
+            if (value == null) {
+                throw new IllegalArgumentException("任务参数值不能为 null");
+            }
+            copy.put(safeKey, value);
+        });
+        return Collections.unmodifiableMap(copy);
+    }
+
+    private static void validateCron(String cron) {
+        if (cron != null && !CronExpression.isValidExpression(cron)) {
+            throw new IllegalArgumentException("cron 不是有效的 Quartz Cron 表达式");
+        }
+    }
+
+    private static void validateZone(String zone) {
+        if (zone != null) {
+            try {
+                ZoneId.of(zone);
+            } catch (RuntimeException exception) {
+                throw new IllegalArgumentException("zone 不是有效的时区 ID", exception);
+            }
+        }
+    }
+
+    private static String normalize(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private static String requireText(String value, String message) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(message);
+        }
+        return value.trim();
+    }
+
+    private static int requirePositive(int value, String message) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(message);
+        }
+        return value;
+    }
+
+    private static long requirePositive(long value, String message) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(message);
+        }
+        return value;
+    }
+
+    private static int requireNonNegative(int value, String message) {
+        if (value < 0) {
+            throw new IllegalArgumentException(message);
+        }
+        return value;
+    }
+
+    private static long requireNonNegative(long value, String message) {
+        if (value < 0) {
+            throw new IllegalArgumentException(message);
+        }
+        return value;
+    }
+
     /**
-     * {@link JobDefinition} 的建造者.
-     *
-     * <p>提供流式 API 构建 JobDefinition 实例. 默认值如下：</p>
-     * <ul>
-     *   <li>shardTotal: 1</li>
-     *   <li>shardIndex: 0</li>
-     *   <li>maxRetries: 3</li>
-     *   <li>backoffMs: 1000</li>
-     *   <li>backoffMultiplier: 2.0</li>
-     * </ul>
+     * {@link JobDefinition} 建造器。
      */
-    public static class Builder {
+    public static final class Builder {
         private String jobName;
         private String cron;
+        private String zone;
         private String description = "";
         private int shardTotal = 1;
-        private int shardIndex = 0;
-        private int maxRetries = 3;
-        private long backoffMs = 1000;
+        private int maxRetries;
+        private long backoffMs = 1_000;
         private double backoffMultiplier = 2.0;
-        private JobHandler handler;
-        private final Map<String, Object> params = new HashMap<>();
+        private long maxBackoffMs = 60_000;
+        private boolean concurrent;
+        private MisfirePolicy misfirePolicy = MisfirePolicy.DO_NOTHING;
+        private boolean requestRecovery;
+        private final Map<String, String> params = new LinkedHashMap<>();
+
+        private Builder() {
+        }
 
         /**
-         * 设置任务名称（必填）.
+         * 设置逻辑任务名称。
          *
-         * @param jobName 任务名称（全局唯一）
-         * @return 当前 Builder
+         * @param jobName 逻辑任务名称
+         * @return 当前建造器
          */
         public Builder jobName(String jobName) {
             this.jobName = jobName;
@@ -239,10 +234,10 @@ public class JobDefinition {
         }
 
         /**
-         * 设置 Cron 表达式.
+         * 设置 Quartz Cron 表达式。
          *
-         * @param cron Cron 表达式（如 "0 0 6 * * ?"）
-         * @return 当前 Builder
+         * @param cron Quartz Cron；为空时表示仅允许手动触发
+         * @return 当前建造器
          */
         public Builder cron(String cron) {
             this.cron = cron;
@@ -250,10 +245,21 @@ public class JobDefinition {
         }
 
         /**
-         * 设置任务描述.
+         * 设置 Cron 时区。
          *
-         * @param description 任务描述文本
-         * @return 当前 Builder
+         * @param zone 标准时区 ID；为空时使用 Quartz 默认时区
+         * @return 当前建造器
+         */
+        public Builder zone(String zone) {
+            this.zone = zone;
+            return this;
+        }
+
+        /**
+         * 设置任务说明。
+         *
+         * @param description 任务说明
+         * @return 当前建造器
          */
         public Builder description(String description) {
             this.description = description;
@@ -261,10 +267,10 @@ public class JobDefinition {
         }
 
         /**
-         * 设置总分片数.
+         * 设置分片总数。
          *
-         * @param shardTotal 总分片数（&gt;=1）
-         * @return 当前 Builder
+         * @param shardTotal 分片总数
+         * @return 当前建造器
          */
         public Builder shardTotal(int shardTotal) {
             this.shardTotal = shardTotal;
@@ -272,21 +278,10 @@ public class JobDefinition {
         }
 
         /**
-         * 设置分片索引.
+         * 设置最大额外重试次数。
          *
-         * @param shardIndex 分片索引（从0开始）
-         * @return 当前 Builder
-         */
-        public Builder shardIndex(int shardIndex) {
-            this.shardIndex = shardIndex;
-            return this;
-        }
-
-        /**
-         * 设置最大重试次数.
-         *
-         * @param maxRetries 最大重试次数（&gt;=0）
-         * @return 当前 Builder
+         * @param maxRetries 最大额外重试次数
+         * @return 当前建造器
          */
         public Builder maxRetries(int maxRetries) {
             this.maxRetries = maxRetries;
@@ -294,10 +289,10 @@ public class JobDefinition {
         }
 
         /**
-         * 设置重试基础退避时间（毫秒）.
+         * 设置第一次重试延迟。
          *
-         * @param backoffMs 基础退避毫秒数
-         * @return 当前 Builder
+         * @param backoffMs 第一次重试延迟毫秒数
+         * @return 当前建造器
          */
         public Builder backoffMs(long backoffMs) {
             this.backoffMs = backoffMs;
@@ -305,84 +300,93 @@ public class JobDefinition {
         }
 
         /**
-         * 设置退避倍率.
+         * 设置重试退避倍率。
          *
-         * @param backoffMultiplier 退避倍率（如 2.0 表示指数退避）
-         * @return 当前 Builder
+         * @param multiplier 有限正数倍率
+         * @return 当前建造器
          */
-        public Builder backoffMultiplier(double backoffMultiplier) {
-            this.backoffMultiplier = backoffMultiplier;
+        public Builder backoffMultiplier(double multiplier) {
+            this.backoffMultiplier = multiplier;
             return this;
         }
 
         /**
-         * 设置任务处理器（必填）.
+         * 设置单次重试最大延迟。
          *
-         * @param handler 任务处理器
-         * @return 当前 Builder
+         * @param maxBackoffMs 单次重试最大延迟毫秒数
+         * @return 当前建造器
          */
-        public Builder handler(JobHandler handler) {
-            this.handler = handler;
+        public Builder maxBackoffMs(long maxBackoffMs) {
+            this.maxBackoffMs = maxBackoffMs;
             return this;
         }
 
         /**
-         * 添加一个自定义参数.
+         * 设置同一分片是否允许并发执行。
          *
-         * @param key   参数键
+         * @param concurrent 是否允许并发执行
+         * @return 当前建造器
+         */
+        public Builder concurrent(boolean concurrent) {
+            this.concurrent = concurrent;
+            return this;
+        }
+
+        /**
+         * 设置 Cron 错过触发策略。
+         *
+         * @param policy Cron 错过触发策略
+         * @return 当前建造器
+         */
+        public Builder misfirePolicy(MisfirePolicy policy) {
+            this.misfirePolicy = policy;
+            return this;
+        }
+
+        /**
+         * 设置是否请求 Quartz 节点故障恢复。
+         *
+         * @param requestRecovery 是否请求恢复
+         * @return 当前建造器
+         */
+        public Builder requestRecovery(boolean requestRecovery) {
+            this.requestRecovery = requestRecovery;
+            return this;
+        }
+
+        /**
+         * 添加一个可持久化字符串参数。
+         *
+         * @param key 参数键
          * @param value 参数值
-         * @return 当前 Builder
+         * @return 当前建造器
          */
-        public Builder param(String key, Object value) {
+        public Builder param(String key, String value) {
             this.params.put(key, value);
             return this;
         }
 
         /**
-         * 批量添加自定义参数.
+         * 批量添加可持久化字符串参数。
          *
-         * @param params 参数Map
-         * @return 当前 Builder
+         * @param params 字符串参数
+         * @return 当前建造器
          */
-        public Builder params(Map<String, Object> params) {
+        public Builder params(Map<String, String> params) {
+            if (params == null) {
+                throw new IllegalArgumentException("params 不能为 null");
+            }
             this.params.putAll(params);
             return this;
         }
 
         /**
-         * 构建 {@link JobDefinition} 实例.
+         * 校验并创建不可变任务定义。
          *
-         * <p>构建前会校验必填字段 jobName 和 handler 是否已设置.</p>
-         *
-         * @return 新的 JobDefinition 实例
-         * @throws IllegalArgumentException 如果 jobName 或 handler 未设置
+         * @return 校验完成的不可变任务定义
          */
         public JobDefinition build() {
-            if (jobName == null || jobName.trim().isEmpty()) {
-                throw new IllegalArgumentException("jobName 不能为空");
-            }
-            if (handler == null) {
-                throw new IllegalArgumentException("handler 不能为 null");
-            }
-            int effectiveShardTotal = shardTotal > 0 ? shardTotal : 1;
-            if (shardIndex < 0 || shardIndex >= effectiveShardTotal) {
-                throw new IllegalArgumentException("shardIndex 必须在 [0, shardTotal) 范围内");
-            }
             return new JobDefinition(this);
         }
-    }
-
-    // ======================== 标准方法 ========================
-
-    @Override
-    public String toString() {
-        return "JobDefinition{" +
-                "jobName='" + jobName + '\'' +
-                ", cron='" + cron + '\'' +
-                ", description='" + description + '\'' +
-                ", shardTotal=" + shardTotal +
-                ", shardIndex=" + shardIndex +
-                ", maxRetries=" + maxRetries +
-                '}';
     }
 }

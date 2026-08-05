@@ -5,6 +5,11 @@ spring:
     exclude:
       - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
       - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+  quartz:
+    job-store-type: memory
+    wait-for-jobs-to-complete-on-shutdown: true
+    properties:
+      org.quartz.threadPool.threadCount: 4
 
 letool:
   security:
@@ -59,6 +64,9 @@ letool:
         threshold: 5
       user-api:
         threshold: 3
+  job:
+    group: letool-sample
+    error-summary-max-length: 1024
 
 logging:
   level:
