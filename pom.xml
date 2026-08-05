@@ -57,6 +57,9 @@
         <module>letool-starter-pay-alipay</module>
         <module>letool-starter-pay-wechat</module>
         <module>letool-starter-mq</module>
+        <module>letool-starter-mq-rabbit</module>
+        <module>letool-starter-mq-kafka</module>
+        <module>letool-starter-mq-rocketmq</module>
         <module>letool-starter-ratelimiter</module>
         <module>letool-starter-oss</module>
         <module>letool-starter-oss-minio</module>
@@ -93,7 +96,9 @@
         <spring.boot.version>3.5.16</spring.boot.version>
         <spring-ai.version>1.1.8</spring-ai.version>
         <spring.cloud.version>2025.0.3</spring.cloud.version>
+        <spring-cloud-alibaba.version>2025.0.0.0</spring-cloud-alibaba.version>
         <sentinel.version>1.8.9</sentinel.version>
+        <javassist.version>3.31.0-GA</javassist.version>
 
         <!-- 核心工具库 -->
         <hutool.version>5.8.35</hutool.version>
@@ -299,6 +304,21 @@
             </dependency>
             <dependency>
                 <groupId>com.github.leyland</groupId>
+                <artifactId>letool-starter-mq-rabbit</artifactId>
+                <version>${letool.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.leyland</groupId>
+                <artifactId>letool-starter-mq-kafka</artifactId>
+                <version>${letool.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.leyland</groupId>
+                <artifactId>letool-starter-mq-rocketmq</artifactId>
+                <version>${letool.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.leyland</groupId>
                 <artifactId>letool-starter-ratelimiter</artifactId>
                 <version>${letool.version}</version>
             </dependency>
@@ -402,6 +422,18 @@
                 <groupId>com.alibaba.csp</groupId>
                 <artifactId>sentinel-parameter-flow-control</artifactId>
                 <version>${sentinel.version}</version>
+            </dependency>
+
+            <!-- RocketMQ Spring Cloud Stream Binder 及其传递依赖收敛 -->
+            <dependency>
+                <groupId>com.alibaba.cloud</groupId>
+                <artifactId>spring-cloud-starter-stream-rocketmq</artifactId>
+                <version>${spring-cloud-alibaba.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.javassist</groupId>
+                <artifactId>javassist</artifactId>
+                <version>${javassist.version}</version>
             </dependency>
 
             <!-- HTTP 与文件传输客户端 -->

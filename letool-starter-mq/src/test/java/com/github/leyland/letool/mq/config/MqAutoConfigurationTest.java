@@ -1,183 +1,148 @@
 package com.github.leyland.letool.mq.config;
 
-import com.github.leyland.letool.mq.core.Message;
-import com.github.leyland.letool.mq.core.MessageListener;
 import com.github.leyland.letool.mq.core.MqProvider;
 import com.github.leyland.letool.mq.core.MqTemplate;
-import com.github.leyland.letool.mq.provider.InMemoryMqProvider;
+import com.github.leyland.letool.mq.model.MqSendRequest;
+import com.github.leyland.letool.mq.model.MqSendResult;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
+
+import java.time.Instant;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * {@link MqAutoConfiguration} 的自动装配契约测试。
- *
- * <p>重点覆盖当前 starter 只内置内存队列 provider 的边界，避免 RabbitMQ/Kafka/RocketMQ
- * 配置被误认为已经接入真实 broker。</p>
+ * {@link MqAutoConfiguration} 自动配置契约测试。
  */
+@DisplayName("MQ 核心自动配置契约")
 class MqAutoConfigurationTest {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-            .withConfiguration(AutoConfigurations.of(MqAutoConfiguration.class))
-            .withPropertyValues("spring.main.allow-bean-definition-overriding=false");
+            .withConfiguration(AutoConfigurations.of(MqAutoConfiguration.class));
 
     /**
-     * 验证默认配置与当前真实内置能力一致，直接注册内存队列 provider。
+     * 验证核心模块默认关闭，不制造内存 Provider。
      */
     @Test
-    void shouldUseInMemoryProviderByDefault() {
+    @DisplayName("默认关闭时不应创建 MQ Bean")
+    void shouldBeDisabledByDefault() {
         contextRunner.run(context -> {
-            assertThat(context).hasSingleBean(MqProperties.class);
-            assertThat(context.getBean(MqProperties.class).getDefaultType()).isEqualTo("memory");
-            assertThat(context).hasSingleBean(MqProvider.class);
-            assertThat(context.getBean(MqProvider.class)).isInstanceOf(InMemoryMqProvider.class);
-            assertThat(context).hasSingleBean(MqTemplate.class);
+            assertThat(context).doesNotHaveBean(MqTemplate.class);
+            assertThat(context).doesNotHaveBean(MqProvider.class);
         });
     }
 
     /**
-     * 验证关闭 MQ 模块后不会注册运行时消息队列组件。
+     * 验证显式启用且存在 Provider 时创建发送门面。
      */
     @Test
-    void shouldNotCreateRuntimeBeansWhenDisabled() {
+    @DisplayName("启用且存在 Provider 时应创建 MqTemplate")
+    void shouldCreateTemplateWhenEnabledWithProvider() {
         contextRunner
-                .withPropertyValues("letool.mq.enabled=false")
-                .run(context -> {
-                    assertThat(context).hasSingleBean(MqProperties.class);
-                    assertThat(context).doesNotHaveBean(MqProvider.class);
-                    assertThat(context).doesNotHaveBean(MqTemplate.class);
-                });
+                .withPropertyValues("letool.mq.enabled=true")
+                .withBean("rabbitMqProvider", MqProvider.class, () -> new TestProvider("rabbit"))
+                .run(context -> assertThat(context).hasSingleBean(MqTemplate.class));
     }
 
     /**
-     * 验证 MQ 属性绑定覆盖所有预留 provider 和通用生产/消费配置。
+     * 验证启用但没有 Provider 时应用启动失败。
      */
     @Test
-    void shouldBindMqProperties() {
+    @DisplayName("启用但没有 Provider 时应快速失败")
+    void shouldFailFastWhenEnabledWithoutProvider() {
         contextRunner
-                .withPropertyValues(
-                        "letool.mq.default-type=memory",
-                        "letool.mq.rabbitmq.host=10.0.0.8",
-                        "letool.mq.rabbitmq.port=5673",
-                        "letool.mq.rabbitmq.username=admin",
-                        "letool.mq.rabbitmq.password=secret",
-                        "letool.mq.rabbitmq.virtual-host=/letool",
-                        "letool.mq.rocketmq.name-server=10.0.0.9:9876",
-                        "letool.mq.rocketmq.group=rocket-group",
-                        "letool.mq.rocketmq.topic=orders",
-                        "letool.mq.kafka.bootstrap-servers=10.0.0.10:9092",
-                        "letool.mq.kafka.group-id=kafka-group",
-                        "letool.mq.consumer.concurrency=4",
-                        "letool.mq.consumer.max-attempts=6",
-                        "letool.mq.consumer.backoff-initial=2500",
-                        "letool.mq.producer.retry-times=5",
-                        "letool.mq.producer.send-timeout=8000")
-                .run(context -> {
-                    MqProperties properties = context.getBean(MqProperties.class);
-
-                    assertThat(properties.getRabbitMQ().getHost()).isEqualTo("10.0.0.8");
-                    assertThat(properties.getRabbitMQ().getPort()).isEqualTo(5673);
-                    assertThat(properties.getRabbitMQ().getUsername()).isEqualTo("admin");
-                    assertThat(properties.getRabbitMQ().getPassword()).isEqualTo("secret");
-                    assertThat(properties.getRabbitMQ().getVirtualHost()).isEqualTo("/letool");
-                    assertThat(properties.getRocketMQ().getNameServer()).isEqualTo("10.0.0.9:9876");
-                    assertThat(properties.getRocketMQ().getGroup()).isEqualTo("rocket-group");
-                    assertThat(properties.getRocketMQ().getTopic()).isEqualTo("orders");
-                    assertThat(properties.getKafka().getBootstrapServers()).isEqualTo("10.0.0.10:9092");
-                    assertThat(properties.getKafka().getGroupId()).isEqualTo("kafka-group");
-                    assertThat(properties.getConsumer().getConcurrency()).isEqualTo(4);
-                    assertThat(properties.getConsumer().getMaxAttempts()).isEqualTo(6);
-                    assertThat(properties.getConsumer().getBackoffInitial()).isEqualTo(2500L);
-                    assertThat(properties.getProducer().getRetryTimes()).isEqualTo(5);
-                    assertThat(properties.getProducer().getSendTimeout()).isEqualTo(8000L);
-                });
-    }
-
-    /**
-     * 验证未内置真实 provider 的类型会 fail-fast，而不是静默回退到内存队列。
-     */
-    @Test
-    void shouldFailFastWhenConfiguredTypeIsNotImplemented() {
-        contextRunner
-                .withPropertyValues("letool.mq.default-type=kafka")
+                .withPropertyValues("letool.mq.enabled=true")
                 .run(context -> {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure())
-                            .hasMessageContaining("kafka")
-                            .hasMessageContaining("未内置真实 MqProvider")
-                            .hasMessageContaining("自定义 MqProvider");
+                            .hasRootCauseInstanceOf(com.github.leyland.letool.mq.exception.MqException.class)
+                            .hasMessageContaining("MQ_001");
                 });
     }
 
     /**
-     * 验证业务项目提供自定义 provider 时，自动配置不会覆盖它。
+     * 验证用户提供的发送门面优先于自动配置。
      */
     @Test
-    void shouldBackOffWhenUserProvidesMqProvider() {
+    @DisplayName("用户 MqTemplate 应使自动配置退让")
+    void shouldBackOffForUserTemplate() {
+        TestProvider provider = new TestProvider("custom");
+        MqTemplate userTemplate = new MqTemplate(List.of(provider), null);
+
         contextRunner
-                .withUserConfiguration(UserMqConfiguration.class)
-                .run(context -> {
-                    assertThat(context).hasSingleBean(MqProvider.class);
-                    assertThat(context.getBean(MqProvider.class))
-                            .isSameAs(context.getBean("mqProvider"));
-                    assertThat(context).hasSingleBean(MqTemplate.class);
-                });
+                .withPropertyValues("letool.mq.enabled=true")
+                .withBean(MqTemplate.class, () -> userTemplate)
+                .run(context -> assertThat(context.getBean(MqTemplate.class)).isSameAs(userTemplate));
     }
 
     /**
-     * 验证用户自行提供真实 provider 时，预留类型不会触发内置 fail-fast。
+     * 验证禁用状态不会因用户 Provider 而自动开启。
      */
     @Test
-    void shouldAllowReservedTypeWhenUserProvidesMqProvider() {
+    @DisplayName("禁用时用户 Provider 不应触发 MqTemplate")
+    void disabledModuleShouldIgnoreAvailableProvider() {
         contextRunner
-                .withUserConfiguration(UserMqConfiguration.class)
-                .withPropertyValues("letool.mq.default-type=rabbitmq")
+                .withBean("rabbitMqProvider", MqProvider.class, () -> new TestProvider("rabbit"))
+                .run(context -> assertThat(context).doesNotHaveBean(MqTemplate.class));
+    }
+
+    /**
+     * 验证配置属性能够选择多 Provider 默认项。
+     */
+    @Test
+    @DisplayName("default-provider 应选择多 Provider 默认项")
+    void defaultProviderPropertyShouldSelectProvider() {
+        contextRunner
+                .withPropertyValues(
+                        "letool.mq.enabled=true",
+                        "letool.mq.default-provider=kafka")
+                .withBean("rabbitMqProvider", MqProvider.class, () -> new TestProvider("rabbit"))
+                .withBean("kafkaMqProvider", MqProvider.class, () -> new TestProvider("kafka"))
                 .run(context -> {
-                    assertThat(context).hasSingleBean(MqProvider.class);
-                    assertThat(context.getBean(MqProvider.class)).isInstanceOf(TestMqProvider.class);
-                    assertThat(context).hasSingleBean(MqTemplate.class);
+                    MqSendResult result = context.getBean(MqTemplate.class)
+                            .send("order-out-0", "payload");
+                    assertThat(result.provider()).isEqualTo("kafka");
                 });
     }
 
     /**
-     * 模拟业务项目自行接入 RabbitMQ/Kafka/RocketMQ 等真实 provider 的配置。
+     * 自动配置测试使用的最小 Provider。
      */
-    @Configuration(proxyBeanMethods = false)
-    static class UserMqConfiguration {
+    private static final class TestProvider implements MqProvider {
 
-        @Bean
-        MqProvider mqProvider() {
-            return new TestMqProvider();
-        }
-    }
+        private final String name;
 
-    /**
-     * 用于自动装配测试的消息 provider，不访问任何真实消息中间件。
-     */
-    static class TestMqProvider implements MqProvider {
-
-        @Override
-        public void send(String topic, Message message) {
-            // no-op
+        /**
+         * 创建测试 Provider。
+         *
+         * @param name Provider 名称
+         */
+        private TestProvider(String name) {
+            this.name = name;
         }
 
+        /**
+         * 返回 Provider 名称。
+         *
+         * @return Provider 名称
+         */
         @Override
-        public void send(String topic, String tag, Message message) {
-            // no-op
+        public String name() {
+            return name;
         }
 
+        /**
+         * 返回固定接受结果。
+         *
+         * @param request 发送请求
+         * @return 接受结果
+         */
         @Override
-        public void subscribe(String topic, MessageListener listener) {
-            // no-op
-        }
-
-        @Override
-        public void unsubscribe(String topic, MessageListener listener) {
-            // no-op
+        public MqSendResult send(MqSendRequest<?> request) {
+            return new MqSendResult(name, request.bindingName(), true, Instant.now());
         }
     }
 }

@@ -1,41 +1,57 @@
 package com.github.leyland.letool.mq.exception;
 
+import com.github.leyland.letool.exception.core.SystemException;
+
+import java.io.Serial;
+
 /**
- * MQ 消息队列异常 —— 所有 MQ 模块操作异常的基类.
- *
- * <p>继承 {@link RuntimeException}，适用于消息发送失败、序列化错误、订阅异常等场景，
- * 无需强制 try-catch，由全局异常处理器统一拦截.</p>
- *
- * <h3>使用示例</h3>
- * <pre>{@code
- * // 直接抛出
- * throw new MqException("消息发送失败: topic=" + topic);
- *
- * // 保留原始异常链
- * throw new MqException("连接 RabbitMQ 失败", connectionException);
- * }</pre>
+ * MQ 模块统一系统异常。
  *
  * @author leyland
  * @since 2.0.0
  */
-public class MqException extends RuntimeException {
+public final class MqException extends SystemException {
+
+    @Serial
+    private static final long serialVersionUID = 1L;
 
     /**
-     * 创建带错误描述的 MQ 异常.
+     * 创建 MQ 结构化异常。
      *
-     * @param message 错误描述（面向开发者，包含上下文信息如 topic / messageId）
+     * @param errorCode MQ 稳定错误码
+     * @param messageArgs 默认消息模板参数
+     * @param cause 底层异常；没有时传 {@code null}
      */
-    public MqException(String message) {
-        super(message);
+    private MqException(MqErrorCode errorCode, Object[] messageArgs, Throwable cause) {
+        super(errorCode, messageArgs, null, cause);
     }
 
     /**
-     * 创建带错误描述和原始异常的 MQ 异常.
+     * 创建不包含底层原因的 MQ 异常。
      *
-     * @param message 错误描述
-     * @param cause   原始异常（保留完整堆栈信息，用于排查根因）
+     * @param errorCode MQ 稳定错误码
+     * @param messageArgs 默认消息模板参数
+     * @return 结构化 MQ 异常
      */
-    public MqException(String message, Throwable cause) {
-        super(message, cause);
+    public static MqException of(MqErrorCode errorCode, Object... messageArgs) {
+        return new MqException(errorCode, messageArgs, null);
+    }
+
+    /**
+     * 创建保留底层原因链的 MQ 异常。
+     *
+     * @param errorCode MQ 稳定错误码
+     * @param cause 非空底层异常
+     * @param messageArgs 默认消息模板参数
+     * @return 保留原因链的结构化 MQ 异常
+     */
+    public static MqException causedBy(
+            MqErrorCode errorCode,
+            Throwable cause,
+            Object... messageArgs) {
+        if (cause == null) {
+            throw new IllegalArgumentException("cause 不能为空");
+        }
+        return new MqException(errorCode, messageArgs, cause);
     }
 }
