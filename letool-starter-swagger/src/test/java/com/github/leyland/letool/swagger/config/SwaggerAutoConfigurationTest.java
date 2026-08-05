@@ -1,5 +1,7 @@
 package com.github.leyland.letool.swagger.config;
 
+import com.github.leyland.letool.exception.core.SystemException;
+import com.github.leyland.letool.swagger.exception.SwaggerErrorCode;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Contact;
 import io.swagger.v3.oas.models.info.Info;
@@ -13,6 +15,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.NestedExceptionUtils;
 
 import java.util.Map;
 
@@ -66,19 +69,27 @@ class SwaggerAutoConfigurationTest {
     }
 
     /**
-     * 验证默认配置不会声明安全方案或全局安全要求。
+     * 验证默认配置创建名称稳定的 HTTP Bearer JWT 安全方案和全局要求。
      */
     @Test
-    @DisplayName("Bearer 安全方案默认关闭")
-    void shouldDisableBearerSecurityByDefault() {
+    @DisplayName("Bearer 安全方案默认开启")
+    void shouldEnableBearerSecurityByDefault() {
         webContextRunner.run(context -> {
             OpenAPI openAPI = context.getBean(OpenAPI.class);
-            Map<String, SecurityScheme> securitySchemes = openAPI.getComponents() == null
-                    ? null
-                    : openAPI.getComponents().getSecuritySchemes();
+            assertThat(openAPI.getComponents()).isNotNull();
+            assertThat(openAPI.getComponents().getSecuritySchemes())
+                    .containsOnlyKeys("Bearer");
 
-            assertThat(securitySchemes).isNullOrEmpty();
-            assertThat(openAPI.getSecurity()).isNullOrEmpty();
+            SecurityScheme scheme = openAPI.getComponents()
+                    .getSecuritySchemes()
+                    .get("Bearer");
+            assertThat(scheme.getType()).isEqualTo(SecurityScheme.Type.HTTP);
+            assertThat(scheme.getScheme()).isEqualTo("bearer");
+            assertThat(scheme.getBearerFormat()).isEqualTo("JWT");
+            assertThat(openAPI.getSecurity())
+                    .singleElement()
+                    .satisfies(requirement -> assertThat(requirement)
+                            .containsOnlyKeys("Bearer"));
         });
     }
 
@@ -102,33 +113,83 @@ class SwaggerAutoConfigurationTest {
     }
 
     /**
-     * 验证显式开启后创建固定名称的 HTTP Bearer JWT 安全方案和全局要求。
+     * 验证显式关闭后不创建 HTTP Bearer JWT 安全方案和全局要求。
      */
     @Test
-    @DisplayName("显式开启 Bearer 后创建标准安全方案")
-    void shouldCreateBearerSecurityWhenExplicitlyEnabled() {
+    @DisplayName("显式关闭 Bearer 后不创建安全方案")
+    void shouldDisableBearerSecurityWhenExplicitlyDisabled() {
         webContextRunner
-                .withPropertyValues("letool.swagger.security.bearer-token=true")
+                .withPropertyValues("letool.swagger.security.bearer-token=false")
                 .run(context -> {
                     OpenAPI openAPI = context.getBean(OpenAPI.class);
-                    assertThat(openAPI.getComponents()).isNotNull();
-                    assertThat(openAPI.getComponents().getSecuritySchemes())
-                            .containsOnlyKeys("BearerAuth");
+                    Map<String, SecurityScheme> securitySchemes = openAPI.getComponents() == null
+                            ? null
+                            : openAPI.getComponents().getSecuritySchemes();
 
-                    SecurityScheme scheme = openAPI.getComponents()
-                            .getSecuritySchemes()
-                            .get("BearerAuth");
-                    assertThat(scheme.getType()).isEqualTo(SecurityScheme.Type.HTTP);
-                    assertThat(scheme.getScheme()).isEqualTo("bearer");
-                    assertThat(scheme.getBearerFormat()).isEqualTo("JWT");
+                    assertThat(securitySchemes).isNullOrEmpty();
+                    assertThat(openAPI.getSecurity()).isNullOrEmpty();
+                });
+    }
 
-                    assertThat(openAPI.getSecurity())
-                            .singleElement()
-                            .satisfies(requirement -> {
-                                assertThat(requirement).containsOnlyKeys("BearerAuth");
-                                assertThat(requirement.get("BearerAuth")).isEmpty();
+    /**
+     * 验证 Bearer 安全方案名称可以通过配置显式覆盖。
+     */
+    @Test
+    @DisplayName("Bearer 安全方案名称可以显式覆盖")
+    void shouldUseConfiguredBearerSchemeName() {
+        webContextRunner
+                .withPropertyValues("letool.swagger.security.scheme-name=InternalToken")
+                .run(context -> assertThat(context.getBean(OpenAPI.class)
+                        .getComponents()
+                        .getSecuritySchemes())
+                        .containsOnlyKeys("InternalToken"));
+    }
+
+    /**
+     * 验证开启 Bearer 时拒绝空白安全方案名称，避免生成不可用文档。
+     */
+    @Test
+    @DisplayName("开启 Bearer 时拒绝空白安全方案名称")
+    void shouldRejectBlankBearerSchemeName() {
+        webContextRunner
+                .withPropertyValues("letool.swagger.security.scheme-name=   ")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+
+                    Throwable rootCause = NestedExceptionUtils.getMostSpecificCause(
+                            context.getStartupFailure());
+                    assertThat(rootCause)
+                            .isInstanceOfSatisfying(SystemException.class, exception -> {
+                                assertThat(exception.getErrorCode())
+                                        .isEqualTo(SwaggerErrorCode.CONFIGURATION_INVALID);
+                                assertThat(exception.getMessage())
+                                        .contains("letool.swagger.security.scheme-name 不能为空");
                             });
                 });
+    }
+
+    /**
+     * 验证 Bearer 关闭时不校验未使用的安全方案名称。
+     */
+    @Test
+    @DisplayName("Bearer 关闭时允许安全方案名称为空白")
+    void shouldAllowBlankSchemeNameWhenBearerIsDisabled() {
+        webContextRunner
+                .withPropertyValues(
+                        "letool.swagger.security.bearer-token=false",
+                        "letool.swagger.security.scheme-name=   ")
+                .run(context -> assertThat(context).hasNotFailed());
+    }
+
+    /**
+     * 验证关闭 Letool Swagger 后不创建默认 OpenAPI 文档对象。
+     */
+    @Test
+    @DisplayName("关闭 Letool Swagger 后不创建默认 OpenAPI")
+    void shouldDisableLetoolDefaults() {
+        webContextRunner
+                .withPropertyValues("letool.swagger.enabled=false")
+                .run(context -> assertThat(context).doesNotHaveBean(OpenAPI.class));
     }
 
     /**

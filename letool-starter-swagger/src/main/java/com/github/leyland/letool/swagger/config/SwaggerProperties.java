@@ -7,14 +7,17 @@ import java.util.Objects;
 /**
  * Letool OpenAPI 文档便利配置。
  *
- * <p>该配置只负责项目文档信息和可选的 Bearer JWT 安全方案。文档端点、
- * 用户界面、控制器扫描与文档分组等框架能力由 Springdoc 原生配置负责。</p>
+ * <p>该配置负责 Letool 文档入口开关、项目文档信息和 Bearer JWT 安全方案。
+ * OpenAPI 引擎、控制器扫描与文档分组等框架能力仍由 Springdoc 原生配置负责。</p>
  *
  * @author leyland
  * @since 1.0.0
  */
 @ConfigurationProperties(prefix = "letool.swagger")
 public class SwaggerProperties {
+
+    /** 是否启用 Letool API 文档入口。 */
+    private boolean enabled = true;
 
     /** API 文档标题。 */
     private String title = "API Documentation";
@@ -30,6 +33,24 @@ public class SwaggerProperties {
 
     /** API 文档安全方案配置。 */
     private Security security = new Security();
+
+    /**
+     * 判断是否启用 Letool API 文档入口。
+     *
+     * @return {@code true} 表示启用，{@code false} 表示关闭
+     */
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    /**
+     * 设置是否启用 Letool API 文档入口。
+     *
+     * @param enabled {@code true} 表示启用，{@code false} 表示关闭
+     */
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+    }
 
     /**
      * 获取 API 文档标题。
@@ -196,7 +217,10 @@ public class SwaggerProperties {
     public static class Security {
 
         /** 是否启用标准 HTTP Bearer JWT 安全方案。 */
-        private boolean bearerToken;
+        private boolean bearerToken = true;
+
+        /** OpenAPI 安全方案名称。 */
+        private String schemeName = "Bearer";
 
         /**
          * 判断是否启用标准 HTTP Bearer JWT 安全方案。
@@ -214,6 +238,24 @@ public class SwaggerProperties {
          */
         public void setBearerToken(boolean bearerToken) {
             this.bearerToken = bearerToken;
+        }
+
+        /**
+         * 获取 OpenAPI 安全方案名称。
+         *
+         * @return OpenAPI 安全方案名称
+         */
+        public String getSchemeName() {
+            return schemeName;
+        }
+
+        /**
+         * 设置 OpenAPI 安全方案名称。
+         *
+         * @param schemeName OpenAPI 安全方案名称
+         */
+        public void setSchemeName(String schemeName) {
+            this.schemeName = schemeName;
         }
     }
 }

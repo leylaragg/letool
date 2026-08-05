@@ -1,6 +1,12 @@
 {
   "properties": [
     {
+      "name": "letool.swagger.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用 Letool API 文档入口。",
+      "defaultValue": true
+    },
+    {
       "name": "letool.swagger.title",
       "type": "java.lang.String",
       "description": "API 文档标题。",
@@ -37,7 +43,13 @@
       "name": "letool.swagger.security.bearer-token",
       "type": "java.lang.Boolean",
       "description": "是否启用标准 HTTP Bearer JWT 安全方案。",
-      "defaultValue": false
+      "defaultValue": true
+    },
+    {
+      "name": "letool.swagger.security.scheme-name",
+      "type": "java.lang.String",
+      "description": "OpenAPI 安全方案名称。",
+      "defaultValue": "Bearer"
     }
   ]
 }

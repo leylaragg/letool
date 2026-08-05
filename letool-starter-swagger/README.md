@@ -2,9 +2,14 @@
 
 ## 模块定位
 
-`letool-starter-swagger` 是面向 Spring Boot 3.5.x 与 Springdoc 2.8.17 的 WebMVC API 文档薄封装。
-模块直接提供 Springdoc 原生 OpenAPI JSON 与 Swagger UI，只替业务应用组装常用的文档信息和可选
-Bearer JWT 安全方案，不重复实现端点、界面、控制器扫描或文档分组。
+`letool-starter-swagger` 为 Spring Boot 3.5.x 项目提供开箱即用的 API 文档能力：
+
+- Springdoc 2.8.17 负责 OpenAPI 文档生成、Controller 扫描、分组与扩展；
+- Knife4j 4.5.0 纯 UI 提供 `/doc.html` 增强界面；
+- Letool 提供常用文档信息、Bearer JWT 默认方案、用户配置退让和统一关闭开关。
+
+模块不会重写 OpenAPI 引擎，也不会伪造分组。使用者既可以零配置直接使用，也可以通过
+Springdoc 原生配置或自定义 `OpenAPI` Bean 完全接管。
 
 ## Maven 依赖
 
@@ -16,57 +21,80 @@ Bearer JWT 安全方案，不重复实现端点、界面、控制器扫描或文
 </dependency>
 ```
 
-模块直接依赖 `springdoc-openapi-starter-webmvc-ui` 2.8.17 和
-`spring-boot-starter-web`。应用引入本 Starter 后，无需再次声明这两个依赖。
+Starter 已传递提供 Spring MVC、Springdoc WebMVC UI 和 Knife4j 纯 UI，不需要业务项目重复声明。
 
-## 快速开始
+## 零配置使用
 
-在 `application.yml` 中配置项目文档信息：
-
-```yaml
-letool:
-  swagger:
-    title: "项目接口文档"
-    description: "RESTful API 接口文档"
-    version: "1.0.0"
-    contact:
-      name: "开发团队"
-      email: "dev@example.com"
-      url: "https://example.com"
-    security:
-      bearer-token: false
-```
-
-启动 Servlet Web 应用后，可以访问：
+启动 Servlet Web 应用后即可访问：
 
 | 地址 | 说明 |
 |---|---|
+| `/doc.html` | Knife4j 增强文档界面，推荐作为日常入口 |
 | `/v3/api-docs` | OpenAPI 3 JSON 文档 |
-| `/swagger-ui.html` | Swagger UI 兼容入口，会重定向到实际页面 |
-| `/swagger-ui/index.html` | Swagger UI 实际页面 |
+| `/v3/api-docs.yaml` | OpenAPI 3 YAML 文档 |
+| `/swagger-ui.html` | Springdoc Swagger UI 兼容入口 |
+| `/swagger-ui/index.html` | Springdoc Swagger UI 页面 |
 
-## 配置边界
+默认文档标题为 `API Documentation`，版本为 `1.0.0`，并声明名称为 `Bearer` 的标准
+HTTP Bearer JWT 安全方案。
 
-Letool 仅保留 7 项业务便利配置：
+## Letool 配置
+
+模块只保留 9 项真实生效的便利配置：
 
 | 配置 | 默认值 | 说明 |
 |---|---|---|
+| `letool.swagger.enabled` | `true` | 是否启用并开放 API 文档入口 |
 | `letool.swagger.title` | `API Documentation` | 文档标题 |
 | `letool.swagger.description` | 空字符串 | 文档描述 |
 | `letool.swagger.version` | `1.0.0` | 文档版本 |
 | `letool.swagger.contact.name` | `null` | 联系人姓名 |
 | `letool.swagger.contact.email` | `null` | 联系人邮箱 |
 | `letool.swagger.contact.url` | `null` | 联系人主页 |
-| `letool.swagger.security.bearer-token` | `false` | 是否声明全局标准 HTTP Bearer JWT 安全方案 |
+| `letool.swagger.security.bearer-token` | `true` | 是否声明全局 HTTP Bearer JWT 安全方案 |
+| `letool.swagger.security.scheme-name` | `Bearer` | OpenAPI 安全方案名称 |
 
-联系人三个字段全部为空时，不会向最终 OpenAPI 文档写入空联系人对象。
+完整示例：
 
-文档端点、Swagger UI、扫描范围和分组由 Springdoc 原生 `springdoc.*` 配置管理。
-这种边界让业务项目保留开箱即用的文档信息配置，同时直接获得 Springdoc 的完整能力和升级路径。
+```yaml
+letool:
+  swagger:
+    enabled: true
+    title: "订单服务 API"
+    description: "订单查询与履约接口"
+    version: "2.1.0"
+    contact:
+      name: "订单平台团队"
+      email: "order@example.com"
+      url: "https://example.com/order"
+    security:
+      bearer-token: true
+      scheme-name: "Bearer"
+```
 
-## 生产环境关闭文档
+联系人字段全部为空时，不会向最终 OpenAPI 文档写入空联系人对象。开启 Bearer 时，
+`scheme-name` 不能为空白；否则应用启动失败，避免生成不可用的安全契约。关闭 Bearer 后，
+该名称不再参与校验。
 
-生产环境要同时关闭 OpenAPI JSON 端点和 Swagger UI：
+## 关闭 API 文档
+
+生产环境可以使用一个 Letool 开关统一关闭文档入口：
+
+```yaml
+letool:
+  swagger:
+    enabled: false
+```
+
+关闭后，Knife4j、OpenAPI JSON/YAML、Springdoc Swagger UI 及其配置子路径统一返回 404，
+普通业务接口继续正常工作。过滤器能够识别 `server.servlet.context-path` 和
+`spring.mvc.servlet.path`，也会读取 `springdoc.api-docs.path`、`springdoc.swagger-ui.path`
+及真实 `GroupedOpenApi` 分组后精确拦截自定义入口，不会封锁自定义路径下的整个业务子树。
+
+该开关只负责是否开放文档，不替代身份认证和授权。需要在生产环境按用户、角色或网络范围开放
+文档时，应保持文档启用，并通过 Spring Security、API 网关或反向代理配置访问控制。
+
+仍可使用 Springdoc 原生开关单独控制底层能力：
 
 ```yaml
 springdoc:
@@ -76,106 +104,79 @@ springdoc:
     enabled: false
 ```
 
-只关闭其中一个开关不会关闭另一项能力。`springdoc.api-docs.enabled=false` 时，
-Letool 也不会创建默认 `OpenAPI` Bean。
+`springdoc.api-docs.enabled=false` 时，Letool 不创建默认 `OpenAPI` Bean。
 
-## 控制器扫描
+## 扫描范围与真实分组
 
-使用 Springdoc 原生配置限制扫描包：
+使用 Springdoc 原生配置限制扫描范围：
 
 ```yaml
 springdoc:
   packages-to-scan:
     - com.example.user.controller
     - com.example.order.controller
+  paths-to-match:
+    - /users/**
+    - /orders/**
 ```
 
-未配置扫描范围时，Springdoc 按应用上下文和控制器映射生成文档，Letool 不额外限定包路径。
-
-## 多分组
-
-使用 `springdoc.group-configs` 创建真实、相互独立的文档分组：
+使用 `springdoc.group-configs` 创建相互独立的真实文档分组：
 
 ```yaml
 springdoc:
   group-configs:
-    - group: user
-      display-name: 用户接口
+    - group: user-api
       packages-to-scan:
         - com.example.user.controller
-    - group: order
-      display-name: 订单接口
+      paths-to-match:
+        - /users/**
+    - group: order-api
       packages-to-scan:
         - com.example.order.controller
       paths-to-match:
         - /orders/**
 ```
 
-Springdoc 会为每个分组生成独立文档，并在 Swagger UI 中提供分组选择。Letool 不创建默认
-`GroupedOpenApi` Bean，也不会把多个扫描包合并为伪分组。
+Letool 不创建 `GroupedOpenApi` 默认 Bean，也不提供 `letool.swagger.groups` 伪分组配置。
 
-## 接口注解
+## Bearer JWT 安全方案
 
-接口说明直接使用 Swagger OpenAPI 3 注解：
+默认安全方案名称为 `Bearer`。接口注解应引用相同名称：
 
 ```java
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
-import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-@Tag(name = "用户管理", description = "用户查询与维护接口")
-@SecurityRequirement(name = "BearerAuth")
 @RestController
-@RequestMapping("/users")
+@SecurityRequirement(name = "Bearer")
 public class UserController {
 
     @Operation(summary = "查询当前用户")
-    @GetMapping("/current")
+    @GetMapping("/users/me")
     public String currentUser() {
         return "current-user";
     }
 }
 ```
 
-`@Tag` 用于组织接口标签，`@Operation` 用于描述单个操作。全局 Bearer 未开启时，可在需要认证的
-Controller 或接口上使用 `@SecurityRequirement(name = "BearerAuth")`；此时应用还需自行提供同名
-安全方案，或通过自定义 `OpenAPI` Bean / `OpenApiCustomizer` 注册该方案。
-
-## Bearer JWT 安全方案
-
-Bearer 默认关闭：
+如果项目使用其他方案名，可同时修改配置和注解：
 
 ```yaml
 letool:
   swagger:
     security:
-      bearer-token: false
+      scheme-name: InternalToken
 ```
 
-默认情况下 Letool 不声明安全方案，也不为所有接口附加安全要求。显式开启后：
+如果只有部分接口需要认证，或项目要自行维护多个安全方案，可以设置
+`letool.swagger.security.bearer-token=false`，再通过自定义 `OpenAPI` Bean 或 Springdoc
+`OpenApiCustomizer` 注册实际方案。文档声明不会创建 Spring Security 认证链，真实鉴权仍由业务应用负责。
 
-```yaml
-letool:
-  swagger:
-    security:
-      bearer-token: true
-```
+## 扩展与完全接管
 
-Letool 会注册名为 `BearerAuth` 的标准 HTTP Bearer JWT 安全方案，并把它声明为 OpenAPI 全局
-安全要求。Swagger UI 会展示授权入口，并使用标准 `Authorization: Bearer <token>` 请求头。
-这只是文档契约，不会创建 Spring Security 认证链；实际鉴权仍由应用的安全配置负责。
-
-如果只有部分接口需要认证，建议保持全局 Bearer 关闭，并在对应 Controller 或接口上使用
-`@SecurityRequirement(name = "BearerAuth")`，同时由应用注册 `BearerAuth` 安全方案。
-
-## 扩展与接管
-
-### 完全接管 OpenAPI Bean
-
-当应用提供自己的 `OpenAPI` Bean 时，Letool 自动退让，只保留用户 Bean：
+业务应用提供自己的 `OpenAPI` Bean 后，Letool 默认 Bean 按类型自动退让：
 
 ```java
 import io.swagger.v3.oas.models.OpenAPI;
@@ -187,62 +188,33 @@ import org.springframework.context.annotation.Configuration;
 public class OpenApiConfiguration {
 
     @Bean
-    public OpenAPI businessOpenApi() {
+    public OpenAPI projectOpenApi() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("业务接口文档")
-                        .description("由业务应用完全接管")
-                        .version("2.0.0"));
+                        .title("完全自定义文档")
+                        .version("3.0.0"));
     }
 }
 ```
 
-### 增量定制 OpenAPI
+希望保留 Letool 默认信息并增量扩展时，直接注册 Springdoc 原生的 `OpenApiCustomizer`、
+`OperationCustomizer` 或 `GroupedOpenApi` Bean。Springdoc 的扩展点不会被 Letool 屏蔽。
 
-希望保留 Letool 文档信息，只追加服务器、标签或其他模型时，可以注册 Springdoc 原生
-`OpenApiCustomizer`：
+## Knife4j 能力边界
 
-```java
-import io.swagger.v3.oas.models.servers.Server;
-import org.springdoc.core.customizers.OpenApiCustomizer;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
+本模块只引入 `knife4j-openapi3-ui`，用于提供常用的增强文档界面；不会引入绑定较旧 Springdoc
+版本的完整 Knife4j Starter，也不会替用户开启网关聚合、服务端增强、离线文档、页脚或自定义请求头等
+能力。需要这些能力的项目应根据实际架构显式选择 Knife4j 配置，并自行验证版本兼容性。
 
-@Configuration
-public class OpenApiCustomizationConfiguration {
+## 迁移说明
 
-    @Bean
-    public OpenApiCustomizer productionServerCustomizer() {
-        return openApi -> openApi.addServersItem(
-                new Server()
-                        .url("https://api.example.com")
-                        .description("生产环境"));
-    }
-}
-```
+此前 Springdoc-only 调整中的错误方向已纠正：
 
-## Knife4j 边界
+- `/doc.html` 已恢复，由 Knife4j 纯 UI 提供；
+- `letool.swagger.enabled` 已恢复为真实统一开关；
+- Bearer 默认恢复为开启，默认方案名恢复为 `Bearer`，并允许通过配置修改；
+- Springdoc 仍负责 OpenAPI 引擎、扫描、分组和原生扩展。
 
-本模块不内置 Knife4j。业务应用如果确实需要 Knife4j 增强界面，可以自行显式选择对应依赖和配置，
-但必须自行验证其与当前 Spring Boot、Springdoc 版本的兼容性。Letool 不覆盖 Springdoc 版本来适配
-第三方界面，也不承诺 `/doc.html` 可用。
-
-## BREAKING 迁移指南
-
-本次重构删除了未生效或重复封装 Springdoc 的旧配置和 API：
-
-| 旧用法 | 新用法 | 迁移说明 |
-|---|---|---|
-| `/doc.html` | `/swagger-ui.html` 或 `/swagger-ui/index.html` | 改用 Springdoc 原生 Swagger UI |
-| `letool.swagger.enabled` | `springdoc.api-docs.enabled` 与 `springdoc.swagger-ui.enabled` | 需要关闭文档时必须同时关闭两个原生开关 |
-| `letool.swagger.groups` | `springdoc.group-configs` | 使用 Springdoc 创建真实多分组 |
-| `@ApiGroup` | `@Tag`、`@Operation` 或 `springdoc.group-configs` | 删除无人处理的伪分组注解 |
-| Bearer 安全方案默认启用 | `letool.swagger.security.bearer-token=true` | 新版本默认关闭 Bearer；需要全局安全声明的应用必须显式开启 |
-| `@SecurityRequirement(name = "Bearer")` | `@SecurityRequirement(name = "BearerAuth")` | 内置安全方案名统一为 `BearerAuth`，已有注解必须同步改名 |
-| `letool.swagger.security.header-name` | 无 | 标准 HTTP Bearer 固定使用 `Authorization` 请求头 |
-| `letool.swagger.knife4j.offline-docs` | 无 | 删除未实现的离线文档配置 |
-| `letool.swagger.knife4j.enable-footer` | 无 | 删除未实现的页脚配置 |
-| 自动创建 `defaultGroupApi` | `springdoc.packages-to-scan` 或 `springdoc.group-configs` | Letool 不再创建或合并默认分组 |
-| Starter 内置 Knife4j | 应用自行显式引入所需 Knife4j 依赖 | Letool 不再内置 Knife4j；仍需增强界面的应用负责验证其与当前 Spring Boot、Springdoc 版本的兼容性 |
-
-升级后应删除所有旧配置，按本文使用 Springdoc 原生能力完成端点、界面、扫描和分组设置。
+以下无效或重复能力不恢复：`ApiGroup`、`letool.swagger.groups`、自动 `defaultGroupApi`、
+`security.header-name`、`knife4j.offline-docs` 和 `knife4j.enable-footer`。项目应分别使用 OpenAPI 注解、
+`springdoc.group-configs`、标准 `Authorization` Bearer 头或业务自定义扩展完成对应需求。

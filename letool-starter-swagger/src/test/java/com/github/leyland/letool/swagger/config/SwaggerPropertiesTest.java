@@ -33,20 +33,25 @@ class SwaggerPropertiesTest {
                         "letool.swagger.title=绑定测试 API",
                         "letool.swagger.description=绑定测试接口文档",
                         "letool.swagger.version=8.1.0",
+                        "letool.swagger.enabled=false",
                         "letool.swagger.contact.name=测试团队",
                         "letool.swagger.contact.email=test@example.com",
                         "letool.swagger.contact.url=https://example.com/team",
-                        "letool.swagger.security.bearer-token=true")
+                        "letool.swagger.security.bearer-token=false",
+                        "letool.swagger.security.scheme-name=InternalToken")
                 .run(context -> {
                     SwaggerProperties properties = context.getBean(SwaggerProperties.class);
 
+                    assertThat(properties.isEnabled()).isFalse();
                     assertThat(properties.getTitle()).isEqualTo("绑定测试 API");
                     assertThat(properties.getDescription()).isEqualTo("绑定测试接口文档");
                     assertThat(properties.getVersion()).isEqualTo("8.1.0");
                     assertThat(properties.getContact().getName()).isEqualTo("测试团队");
                     assertThat(properties.getContact().getEmail()).isEqualTo("test@example.com");
                     assertThat(properties.getContact().getUrl()).isEqualTo("https://example.com/team");
-                    assertThat(properties.getSecurity().isBearerToken()).isTrue();
+                    assertThat(properties.getSecurity().isBearerToken()).isFalse();
+                    assertThat(properties.getSecurity().getSchemeName())
+                            .isEqualTo("InternalToken");
                 });
     }
 
@@ -61,6 +66,7 @@ class SwaggerPropertiesTest {
         assertThat(properties.getTitle()).isEqualTo("API Documentation");
         assertThat(properties.getDescription()).isEmpty();
         assertThat(properties.getVersion()).isEqualTo("1.0.0");
+        assertThat(properties.isEnabled()).isTrue();
     }
 
     /**
@@ -76,25 +82,27 @@ class SwaggerPropertiesTest {
     }
 
     /**
-     * 验证 Bearer 安全方案需要由使用方显式开启。
+     * 验证 Bearer 安全方案默认开启，满足常见 JWT 项目的开箱即用需求。
      */
     @Test
-    @DisplayName("Bearer 安全方案默认关闭")
-    void shouldDisableBearerByDefault() {
+    @DisplayName("Bearer 安全方案默认开启")
+    void shouldEnableBearerByDefault() {
         SwaggerProperties properties = new SwaggerProperties();
 
-        assertThat(properties.getSecurity().isBearerToken()).isFalse();
+        assertThat(properties.getSecurity().isBearerToken()).isTrue();
+        assertThat(properties.getSecurity().getSchemeName()).isEqualTo("Bearer");
     }
 
     /**
      * 验证主属性不再暴露无效的旧开关与伪配置。
      */
     @Test
-    @DisplayName("主属性删除旧开关和伪配置")
-    void shouldRemoveLegacyTopLevelProperties() {
+    @DisplayName("主属性保留真实开关并删除伪配置")
+    void shouldKeepEffectiveSwitchAndRemoveFakeProperties() {
         assertThat(Arrays.stream(SwaggerProperties.class.getDeclaredFields())
                 .map(Field::getName))
-                .doesNotContain("enabled", "knife4j", "groups");
+                .contains("enabled")
+                .doesNotContain("knife4j", "groups");
     }
 
     /**
@@ -116,6 +124,7 @@ class SwaggerPropertiesTest {
     void shouldRemoveLegacySecurityHeaderName() {
         assertThat(Arrays.stream(SwaggerProperties.Security.class.getDeclaredFields())
                 .map(Field::getName))
+                .contains("schemeName")
                 .doesNotContain("headerName");
     }
 

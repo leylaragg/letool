@@ -67,7 +67,7 @@ class SwaggerHttpIntegrationTest {
 
         JsonNode bearerScheme = body.path("components")
                 .path("securitySchemes")
-                .path("BearerAuth");
+                .path("Bearer");
         assertThat(bearerScheme.isObject()).isTrue();
         assertThat(bearerScheme.path("type").asText()).isEqualTo("http");
         assertThat(bearerScheme.path("scheme").asText()).isEqualTo("bearer");
@@ -76,45 +76,31 @@ class SwaggerHttpIntegrationTest {
         JsonNode globalSecurity = body.path("security");
         assertThat(globalSecurity.isArray()).isTrue();
         assertThat(globalSecurity.size()).isEqualTo(1);
-        assertThat(globalSecurity.path(0).path("BearerAuth").isArray()).isTrue();
-        assertThat(globalSecurity.path(0).path("BearerAuth").isEmpty()).isTrue();
+        assertThat(globalSecurity.path(0).path("Bearer").isArray()).isTrue();
+        assertThat(globalSecurity.path(0).path("Bearer").isEmpty()).isTrue();
     }
 
     /**
-     * 验证 Swagger UI 入口严格重定向到可访问的 HTML 页面。
+     * 验证 Knife4j 增强文档入口可以直接访问。
      *
      * @throws IOException HTTP 请求读写失败时抛出
      * @throws InterruptedException HTTP 请求被中断时抛出
      */
     @Test
-    @DisplayName("Swagger UI 入口重定向到 HTML 页面")
-    void shouldRedirectToSwaggerUiIndex() throws IOException, InterruptedException {
-        HttpClient redirectClient = HttpClient.newBuilder()
-                .followRedirects(HttpClient.Redirect.NEVER)
-                .build();
-        HttpRequest redirectRequest = HttpRequest.newBuilder()
-                .uri(URI.create(url("/swagger-ui.html")))
+    @DisplayName("Knife4j 文档入口返回增强 UI")
+    void shouldExposeKnife4jUi() throws IOException, InterruptedException {
+        HttpClient httpClient = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(url("/doc.html")))
                 .GET()
                 .build();
-        HttpResponse<String> redirectResponse = redirectClient.send(
-                redirectRequest, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = httpClient.send(
+                request, HttpResponse.BodyHandlers.ofString());
 
-        assertThat(redirectResponse.statusCode()).isBetween(300, 399);
-        String locationValue = redirectResponse.headers()
-                .firstValue("Location")
-                .orElse(null);
-        assertThat(locationValue).isNotBlank();
-        URI location = URI.create(locationValue);
-        assertThat(location.getPath()).isEqualTo("/swagger-ui/index.html");
-
-        ResponseEntity<String> pageResponse = restTemplate.getForEntity(
-                resolve(location), String.class);
-
-        assertThat(pageResponse.getStatusCode().is2xxSuccessful()).isTrue();
-        assertThat(pageResponse.getHeaders().getContentType())
-                .matches(contentType -> contentType != null
-                        && MediaType.TEXT_HTML.isCompatibleWith(contentType));
-        assertThat(pageResponse.getBody()).contains("Swagger UI");
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.headers().firstValue("content-type").orElse(""))
+                .contains("text/html");
+        assertThat(response.body()).containsIgnoringCase("knife4j");
     }
 
     /**
@@ -125,16 +111,6 @@ class SwaggerHttpIntegrationTest {
      */
     private String url(String path) {
         return "http://localhost:" + port + path;
-    }
-
-    /**
-     * 将响应中的重定向地址解析为当前测试服务可访问的绝对地址。
-     *
-     * @param location 响应中的重定向地址
-     * @return 可供测试客户端访问的绝对地址
-     */
-    private URI resolve(URI location) {
-        return location.isAbsolute() ? location : URI.create(url(location.toString()));
     }
 
     /**
