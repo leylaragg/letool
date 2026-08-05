@@ -54,6 +54,8 @@
         <module>letool-starter-rule</module>
         <module>letool-starter-net</module>
         <module>letool-starter-pay</module>
+        <module>letool-starter-pay-alipay</module>
+        <module>letool-starter-pay-wechat</module>
         <module>letool-starter-mq</module>
         <module>letool-starter-ratelimiter</module>
         <module>letool-starter-oss</module>
@@ -145,6 +147,10 @@
         <!-- 短信官方 SDK -->
         <aliyun-sms.version>4.6.0</aliyun-sms.version>
         <tencent-sms.version>3.1.1451</tencent-sms.version>
+
+        <!-- 支付官方 SDK -->
+        <alipay-sdk.version>4.40.852.ALL</alipay-sdk.version>
+        <wechatpay-sdk.version>0.2.17</wechatpay-sdk.version>
 
         <!-- 测试 -->
         <junit.version>5.11.4</junit.version>
@@ -274,6 +280,16 @@
             <dependency>
                 <groupId>com.github.leyland</groupId>
                 <artifactId>letool-starter-pay</artifactId>
+                <version>${letool.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.leyland</groupId>
+                <artifactId>letool-starter-pay-alipay</artifactId>
+                <version>${letool.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.leyland</groupId>
+                <artifactId>letool-starter-pay-wechat</artifactId>
                 <version>${letool.version}</version>
             </dependency>
             <dependency>
@@ -515,6 +531,18 @@
                 <groupId>com.tencentcloudapi</groupId>
                 <artifactId>tencentcloud-sdk-java-sms</artifactId>
                 <version>${tencent-sms.version}</version>
+            </dependency>
+
+            <!-- 支付官方 SDK -->
+            <dependency>
+                <groupId>com.alipay.sdk</groupId>
+                <artifactId>alipay-sdk-java</artifactId>
+                <version>${alipay-sdk.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.wechatpay-apiv3</groupId>
+                <artifactId>wechatpay-java</artifactId>
+                <version>${wechatpay-sdk.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.tencentcloudapi</groupId>

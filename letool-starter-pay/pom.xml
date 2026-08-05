@@ -11,18 +11,13 @@
 
     <artifactId>letool-starter-pay</artifactId>
     <name>letool-starter-pay</name>
-    <description>letool 支付集成模块 —— 统一支付宝/微信支付/银联 API，支付下单、回调处理、退款、对账单</description>
+    <description>Letool 支付公共契约、统一路由、回调模型与显式 Mock Provider</description>
     <packaging>jar</packaging>
 
     <dependencies>
         <dependency>
             <groupId>com.github.leyland</groupId>
-            <artifactId>letool-starter-tool</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.github.leyland</groupId>
-            <artifactId>letool-starter-web</artifactId>
-            <optional>true</optional>
+            <artifactId>letool-starter-exception</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

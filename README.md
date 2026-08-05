@@ -48,7 +48,7 @@
 | **letool-starter-distributed-lock** | 分布式锁 —— Redis 后端、`LockTemplate`、`@Lock`/`@Idempotent`；可替换 `DistributedLock` | tool |
 | **letool-starter-rule** | 规则执行 —— LiteFlow 原生能力薄封装、便捷执行与统一异常 | exception |
 | **letool-starter-net** | 网络通信 —— Netty TCP、短连接/持久连接/有界连接池、可扩展分帧和载荷编解码 | exception |
-| **letool-starter-pay** | 支付抽象 —— 默认不启用，内置支付宝/微信支付仅显式 stub 或自定义 provider | tool, web |
+| **letool-starter-pay / pay-alipay / pay-wechat** | 支付统一契约与官方 SDK Provider —— 支持下单、查询、关单、退款及强制回调验签 | exception、支付宝/微信官方 SDK |
 | **letool-starter-mq** | 消息队列 —— 当前内置内存队列，RabbitMQ/RocketMQ/Kafka 需自定义 provider 或后续真实扩展 | tool |
 | **letool-starter-ratelimiter** | 流量保护 —— Sentinel Core 薄封装、命名策略与热点参数限流 | tool, exception |
 | [**letool-starter-oss**](letool-starter-oss/README.md) | 对象存储便利门面 —— 统一 API、默认 Bucket 与异常；MinIO、阿里云 OSS、腾讯云 COS 由独立官方 SDK Provider starter 提供 | exception；按需选择一个 Provider 模块 |

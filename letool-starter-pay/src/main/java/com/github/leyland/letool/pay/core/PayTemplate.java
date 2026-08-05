@@ -1,200 +1,187 @@
 package com.github.leyland.letool.pay.core;
 
 import com.github.leyland.letool.pay.config.PayProperties;
+import com.github.leyland.letool.pay.exception.PayErrorCode;
 import com.github.leyland.letool.pay.exception.PayException;
-import com.github.leyland.letool.pay.model.PayChannel;
-import com.github.leyland.letool.pay.model.PayOrder;
-import com.github.leyland.letool.pay.model.PayResult;
-import com.github.leyland.letool.pay.model.RefundOrder;
+import com.github.leyland.letool.pay.model.PayCloseRequest;
+import com.github.leyland.letool.pay.model.PayNotification;
+import com.github.leyland.letool.pay.model.PayNotificationRequest;
+import com.github.leyland.letool.pay.model.PayQueryRequest;
+import com.github.leyland.letool.pay.model.PayRequest;
+import com.github.leyland.letool.pay.model.PayResponse;
+import com.github.leyland.letool.pay.model.RefundQueryRequest;
+import com.github.leyland.letool.pay.model.RefundRequest;
+import com.github.leyland.letool.pay.model.RefundResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Set;
 
 /**
- * 支付模板类 —— 支付模块的统一入口，对上层业务屏蔽各支付渠道的差异。
+ * 屏蔽支付平台差异的统一便捷入口。
  *
- * <p><b>核心职责：</b></p>
- * <ul>
- *   <li>根据支付订单中的 {@link PayChannel} 路由到对应的 {@link PayProvider}</li>
- *   <li>统一的支付、查询、退款、回调处理 API</li>
- *   <li>回调签名验证（由各 Provider 实现具体的验签算法）</li>
- * </ul>
- *
- * <p><b>典型用法：</b></p>
- * <pre>{@code
- * // 1. 构建支付订单
- * PayOrder order = PayOrder.builder()
- *     .channel(PayChannel.WECHAT)
- *     .outTradeNo("ORD-" + System.currentTimeMillis())
- *     .subject("测试商品")
- *     .totalAmount(new BigDecimal("0.01"))
- *     .build();
- *
- * // 2. 发起支付
- * PayResult result = payTemplate.pay(order);
- *
- * // 3. 查询订单
- * PayResult queryResult = payTemplate.query("ORD-xxx", PayChannel.WECHAT);
- * }</pre>
+ * <p>模板只负责 Provider 注册、确定性路由和标准模型转发，不对资金操作自动重试，
+ * 也不替业务方持久化订单或处理事务幂等。</p>
  *
  * @author leyland
  * @since 2.0.0
  */
-public class PayTemplate {
-
-    // ======================== 日志 ========================
+public final class PayTemplate {
 
     private static final Logger log = LoggerFactory.getLogger(PayTemplate.class);
 
-    // ======================== 字段 ========================
-
-    /** 支付提供者注册表，key 为提供者名称（大写），value 为对应实现 */
-    private final Map<String, PayProvider> providerMap;
-
-    /** 支付模块配置属性 */
-    private final PayProperties properties;
-
-    // ======================== 构造方法 ========================
+    private final Map<String, PayProvider> providers;
+    private final String defaultProvider;
 
     /**
-     * 构造支付模板。
+     * 创建支付模板并校验 Provider 注册表。
      *
-     * <p>接收所有注册的 {@link PayProvider} 实例并索引到内部 Map 中，
-     * 后续根据 {@link PayChannel} 路由到对应实现。</p>
-     *
-     * @param providers  支付提供者 Map（key 为提供者名称）
-     * @param properties 支付模块配置属性
+     * @param providers 容器中的全部支付 Provider
+     * @param properties 支付核心配置
      */
-    public PayTemplate(Map<String, PayProvider> providers, PayProperties properties) {
-        this.providerMap = new ConcurrentHashMap<>(providers);
-        this.properties = properties;
-        log.info("PayTemplate initialized with providers: {}", providerMap.keySet());
-    }
+    public PayTemplate(List<PayProvider> providers, PayProperties properties) {
+        if (providers == null || providers.isEmpty()) {
+            throw PayException.of(PayErrorCode.CONFIGURATION_INVALID, "未注册任何 PayProvider");
+        }
+        if (properties == null) {
+            throw PayException.of(PayErrorCode.CONFIGURATION_INVALID, "PayProperties 不能为空");
+        }
 
-    // ======================== 支付操作 ========================
-
-    /**
-     * 发起支付。
-     *
-     * <p>根据订单中的 {@code channel} 路由到对应的支付提供者。
-     * 若未找到对应渠道的实现，将抛出 {@link PayException}。</p>
-     *
-     * @param order 支付订单
-     * @return 支付结果
-     * @throws PayException 当支付渠道不支持或支付失败时抛出
-     */
-    public PayResult pay(PayOrder order) {
-        PayProvider provider = getProvider(order.getChannel());
-        log.info("PayTemplate.pay → channel={}, outTradeNo={}, amount={}",
-                order.getChannel(), order.getOutTradeNo(), order.getTotalAmount());
-        return provider.pay(order);
+        Map<String, PayProvider> registry = new LinkedHashMap<>();
+        for (PayProvider provider : providers) {
+            if (provider == null) {
+                throw PayException.of(PayErrorCode.CONFIGURATION_INVALID, "PayProvider 列表不能包含 null");
+            }
+            String name = normalizeRequiredProvider(provider.getProviderName());
+            if (registry.putIfAbsent(name, provider) != null) {
+                throw PayException.of(PayErrorCode.DUPLICATE_PROVIDER, name);
+            }
+        }
+        String configuredDefault = normalizeOptionalProvider(properties.getDefaultProvider());
+        if (registry.size() > 1 && configuredDefault == null) {
+            throw PayException.of(PayErrorCode.CONFIGURATION_INVALID,
+                    "注册多个 PayProvider 时必须配置 letool.pay.default-provider");
+        }
+        if (configuredDefault != null && !registry.containsKey(configuredDefault)) {
+            throw PayException.of(PayErrorCode.PROVIDER_NOT_FOUND, configuredDefault);
+        }
+        this.providers = Collections.unmodifiableMap(registry);
+        this.defaultProvider = configuredDefault;
+        log.info("支付模板已加载 Provider：{}，默认 Provider：{}", registry.keySet(), defaultProvider);
     }
 
     /**
-     * 查询订单支付状态。
+     * 创建支付订单。
      *
-     * <p>根据商户订单号和支付渠道查询订单的当前状态。</p>
-     *
-     * @param outTradeNo 商户订单号
-     * @param channel    支付渠道
-     * @return 订单状态查询结果
-     * @throws PayException 当支付渠道不支持时抛出
+     * @param request 支付请求
+     * @return 标准化支付响应
      */
-    public PayResult query(String outTradeNo, PayChannel channel) {
-        PayProvider provider = getProvider(channel);
-        log.info("PayTemplate.query → channel={}, outTradeNo={}", channel, outTradeNo);
-        return provider.query(outTradeNo);
+    public PayResponse create(PayRequest request) {
+        requireRequest(request, "支付请求");
+        return provider(request.getProvider()).create(request);
     }
 
-    // ======================== 退款操作 ========================
+    /**
+     * 查询支付订单。
+     *
+     * @param request 查询请求
+     * @return 标准化支付响应
+     */
+    public PayResponse query(PayQueryRequest request) {
+        requireRequest(request, "支付查询请求");
+        return provider(request.getProvider()).query(request);
+    }
+
+    /**
+     * 关闭支付订单。
+     *
+     * @param request 关闭请求
+     * @return 标准化支付响应
+     */
+    public PayResponse close(PayCloseRequest request) {
+        requireRequest(request, "支付关单请求");
+        return provider(request.getProvider()).close(request);
+    }
 
     /**
      * 发起退款。
      *
-     * <p>根据退款订单中的 {@code channel} 路由到对应的支付提供者。</p>
-     *
-     * @param refundOrder 退款订单
-     * @return 退款结果
-     * @throws PayException 当支付渠道不支持或退款失败时抛出
+     * @param request 退款请求
+     * @return 标准化退款响应
      */
-    public PayResult refund(RefundOrder refundOrder) {
-        PayProvider provider = getProvider(refundOrder.getChannel());
-        log.info("PayTemplate.refund → channel={}, outTradeNo={}, refundNo={}, amount={}",
-                refundOrder.getChannel(), refundOrder.getOutTradeNo(),
-                refundOrder.getOutRefundNo(), refundOrder.getRefundAmount());
-        return provider.refund(refundOrder);
+    public RefundResponse refund(RefundRequest request) {
+        requireRequest(request, "退款请求");
+        return provider(request.getProvider()).refund(request);
     }
 
-    // ======================== 回调处理 ========================
-
     /**
-     * 处理支付平台的异步回调通知。
+     * 查询退款。
      *
-     * <p>处理流程：</p>
-     * <ol>
-     *   <li>根据渠道获取对应的 Provider</li>
-     *   <li>若配置要求验签（{@code letool.pay.verifySign=true}），
-     *       则从参数中提取 sign 字段并调用 Provider 的验签方法</li>
-     *   <li>验签通过后将原始参数传递给上层处理</li>
-     * </ol>
-     *
-     * @param channel 支付渠道
-     * @param params  回调请求参数（所有参数以 key-value 形式传入）
-     * @return 解析后的支付结果
-     * @throws PayException 当验签失败或渠道不支持时抛出
+     * @param request 退款查询请求
+     * @return 标准化退款响应
      */
-    public PayResult handleCallback(PayChannel channel, Map<String, String> params) {
-        PayProvider provider = getProvider(channel);
-        log.info("PayTemplate.handleCallback → channel={}, params={}", channel, params);
-
-        // 验签
-        if (properties.isVerifySign()) {
-            String sign = params.get("sign");
-            if (sign == null || sign.isEmpty()) {
-                log.warn("Callback sign is empty, channel={}", channel);
-                throw new PayException("回调签名缺失", null, channel);
-            }
-            boolean verified = provider.verifySign(params, sign);
-            if (!verified) {
-                log.error("Callback sign verification failed, channel={}", channel);
-                throw new PayException("回调签名验证失败", null, channel);
-            }
-            log.info("Callback sign verified successfully, channel={}", channel);
-        }
-
-        // 返回包含原始参数的支付结果，由上层业务自行解析
-        return PayResult.fromCallback(Collections.unmodifiableMap(params));
+    public RefundResponse queryRefund(RefundQueryRequest request) {
+        requireRequest(request, "退款查询请求");
+        return provider(request.getProvider()).queryRefund(request);
     }
 
-    // ======================== 私有方法 ========================
+    /**
+     * 验签并解析支付平台通知。
+     *
+     * @param request 原始通知请求
+     * @return 标准化支付通知
+     */
+    public PayNotification parseNotification(PayNotificationRequest request) {
+        requireRequest(request, "支付通知请求");
+        return provider(request.getProvider()).parseNotification(request);
+    }
 
     /**
-     * 根据支付渠道获取对应的提供者实现。
+     * 获取已注册 Provider 名称。
      *
-     * @param channel 支付渠道枚举
-     * @return 对应的 PayProvider 实例
-     * @throws PayException 当未注册对应渠道的 Provider 时抛出
+     * @return 不可变 Provider 名称集合
      */
-    private PayProvider getProvider(PayChannel channel) {
-        if (channel == null) {
-            throw new PayException("支付渠道不能为空");
+    public Set<String> getProviderNames() {
+        return providers.keySet();
+    }
+
+    private PayProvider provider(String requestedProvider) {
+        String name = normalizeOptionalProvider(requestedProvider);
+        if (name == null) {
+            name = defaultProvider;
         }
-        PayProvider provider = providerMap.get(channel.name());
+        if (name == null) {
+            throw PayException.of(PayErrorCode.CONFIGURATION_INVALID,
+                    "请求未指定 Provider，且 letool.pay.default-provider 未配置");
+        }
+        PayProvider provider = providers.get(name);
         if (provider == null) {
-            throw new PayException("不支持的支付渠道: " + channel.name(), null, channel);
+            throw PayException.of(PayErrorCode.PROVIDER_NOT_FOUND, name);
         }
         return provider;
     }
 
-    /**
-     * 获取已注册的支付提供者数量。
-     *
-     * @return 提供者数量
-     */
-    public int getProviderCount() {
-        return providerMap.size();
+    private String normalizeRequiredProvider(String provider) {
+        String normalized = normalizeOptionalProvider(provider);
+        if (normalized == null) {
+            throw PayException.of(PayErrorCode.CONFIGURATION_INVALID, "Provider 名称不能为空");
+        }
+        return normalized;
+    }
+
+    private String normalizeOptionalProvider(String provider) {
+        return provider == null || provider.isBlank()
+                ? null : provider.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private void requireRequest(Object request, String requestName) {
+        if (request == null) {
+            throw PayException.of(PayErrorCode.REQUEST_INVALID, requestName + "不能为空");
+        }
     }
 }
