@@ -46,9 +46,10 @@ class FileTypeUtilTest {
     private static final byte[] CLASS_BYTES = {(byte) 0xCA, (byte) 0xFE, (byte) 0xBA, (byte) 0xBE, 0x00};
     // DOC (OLE2): D0 CF 11 E0
     private static final byte[] DOC_BYTES = {(byte) 0xD0, (byte) 0xCF, 0x11, (byte) 0xE0, (byte) 0xA1};
-    // DOCX (ZIP-based but not matching ZIP entries): 50 4B 01 02 + extra bytes
-    // 必须使用未注册在 MAGIC_MAP 中的 504B 变体，否则会先匹配到 ZIP 条目
-    private static final byte[] DOCX_BYTES = {0x50, 0x4B, 0x01, 0x02, 0x14, 0x00, 0x06, 0x00};
+    // 只有 ZIP 中央目录签名，不能据此确认是 DOCX 或完整 ZIP 文件。
+    private static final byte[] ZIP_CENTRAL_DIRECTORY_BYTES = {
+            0x50, 0x4B, 0x01, 0x02, 0x14, 0x00, 0x06, 0x00
+    };
     // XML: 3C 3F 78 6D 6C
     private static final byte[] XML_BYTES = {0x3C, 0x3F, 0x78, 0x6D, 0x6C};
     // Unknown bytes
@@ -133,15 +134,15 @@ class FileTypeUtilTest {
         }
 
         @Test
-        @DisplayName("应检测 DOC (OLE2) 文件")
+        @DisplayName("应将复合文档识别为 OLE2 容器")
         void shouldDetectDocOle2() {
-            assertEquals("DOC", FileTypeUtil.detect(stream(DOC_BYTES)));
+            assertEquals("OLE2", FileTypeUtil.detect(stream(DOC_BYTES)));
         }
 
         @Test
-        @DisplayName("应检测 DOCX 文件（ZIP 格式变体，头长度 > 6）")
-        void shouldDetectDocx() {
-            assertEquals("DOCX", FileTypeUtil.detect(stream(DOCX_BYTES)));
+        @DisplayName("不应仅凭 ZIP 中央目录签名虚假识别 DOCX")
+        void shouldNotClaimDocxFromZipContainerHeader() {
+            assertEquals("UNKNOWN", FileTypeUtil.detect(stream(ZIP_CENTRAL_DIRECTORY_BYTES)));
         }
 
         @Test

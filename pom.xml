@@ -113,7 +113,8 @@
         <!-- HTTP 与文件传输客户端 -->
         <httpclient5.version>5.4.1</httpclient5.version>
         <okhttp.version>4.12.0</okhttp.version>
-        <commons-net.version>3.11.1</commons-net.version>
+        <commons-net.version>3.13.0</commons-net.version>
+        <commons-compress.version>1.28.0</commons-compress.version>
 
         <!-- API 文档 -->
         <springdoc.version>2.8.17</springdoc.version>
@@ -451,6 +452,11 @@
                 <groupId>commons-net</groupId>
                 <artifactId>commons-net</artifactId>
                 <version>${commons-net.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-compress</artifactId>
+                <version>${commons-compress.version}</version>
             </dependency>
             <!-- API 文档 -->
             <dependency>

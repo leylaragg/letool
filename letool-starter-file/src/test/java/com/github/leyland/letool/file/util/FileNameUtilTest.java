@@ -58,11 +58,11 @@ class FileNameUtilTest {
         }
 
         @Test
-        @DisplayName("以点号开头的文件名应提取点号之后的内容作为扩展名")
-        void shouldExtractAfterDotForLeadingDotFiles() {
-            // .gitignore 中的 ".gitignore" -> lastIndexOf('.') = 0 -> substring(1) = "gitignore"
-            assertEquals("gitignore", FileNameUtil.getExtension(".gitignore"));
-            assertEquals("hidden", FileNameUtil.getExtension(".hidden"));
+        @DisplayName("只有一个前导点号的隐藏文件应视为无扩展名")
+        void shouldTreatLeadingDotFilesAsExtensionless() {
+            // 避免把隐藏文件的完整名称误当成扩展名，白名单校验可据此拒绝无扩展名文件。
+            assertEquals("", FileNameUtil.getExtension(".gitignore"));
+            assertEquals("", FileNameUtil.getExtension(".hidden"));
         }
     }
 

@@ -1,192 +1,481 @@
 package com.github.leyland.letool.file.compress;
 
+import com.github.leyland.letool.file.exception.FileErrorCode;
+import com.github.leyland.letool.file.exception.FileException;
+import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
+import org.apache.commons.compress.archivers.zip.ZipFile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.*;
-import java.nio.file.*;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Enumeration;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
 /**
- * ZIP 压缩/解压工具类，提供目录压缩、解压及字节数组压缩功能。
- *
- * <p>基于 JDK 内置的 {@link java.util.zip.ZipOutputStream} 和 {@link java.util.zip.ZipInputStream}，
- * 无需引入第三方依赖。所有方法均为静态方法，工具类不可实例化。</p>
- *
- * <p><b>目录压缩：</b>使用 {@link Files#walkFileTree} 递归遍历目录树，
- * 将每个文件写入 ZIP 条目，并自动处理路径分隔符（统一为 {@code /}）。</p>
- *
- * <p><b>解压：</b>逐条读取 ZIP 条目，按条目名称还原目录结构和文件。</p>
- *
- * <p><b>字节数组压缩：</b>将内存中的字节数据直接写入 ZIP 流，适用于生成下载的压缩包。</p>
- *
- * @author leyland
- * @since 1.0.0
+ * 基于 Apache Commons Compress 中央目录预检的 ZIP 便捷工具。
  */
 public final class ZipUtil {
 
     private static final Logger log = LoggerFactory.getLogger(ZipUtil.class);
+    private static final int BUFFER_SIZE = 16 * 1024;
+    private static final Pattern WINDOWS_ABSOLUTE_PATH = Pattern.compile("^[A-Za-z]:.*");
 
-    private ZipUtil() {}
-
-    // ===== 目录/文件压缩 =====
-
-    /**
-     * 将目录或文件压缩为 ZIP 包（不保留根目录），相当于调用 {@code compress(sourceDir, outputZip, false)}。
-     *
-     * @param sourceDir 待压缩的源目录或文件路径
-     * @param outputZip 输出的 ZIP 文件路径
-     * @throws RuntimeException       源目录不存在时抛出
-     * @throws UncheckedIOException   压缩过程中发生 I/O 错误时抛出
-     */
-    public static void compress(String sourceDir, String outputZip) {
-        compress(sourceDir, outputZip, false);
+    private ZipUtil() {
     }
 
     /**
-     * 将目录或文件压缩为 ZIP 包。
+     * 压缩文件或目录，不保留源目录名称。
      *
-     * <p>若源路径为目录，使用 {@code Files.walkFileTree} 递归遍历；若为文件，直接添加单个条目。</p>
-     *
-     * <p>{@code includeRoot} 参数控制 ZIP 中的条目路径是否包含源目录的父目录名：
-     * <ul>
-     *   <li>{@code false}（默认）— 条目路径相对于源目录，解压后直接得到目录内容</li>
-     *   <li>{@code true} — 条目路径包含源目录的父目录名，解压后多一层父目录</li>
-     * </ul>
-     *
-     * @param sourceDir   待压缩的源目录或文件路径
-     * @param outputZip   输出的 ZIP 文件路径
-     * @param includeRoot 是否在 ZIP 中保留源目录的父目录名
-     * @throws RuntimeException     源目录不存在时抛出
-     * @throws UncheckedIOException 压缩过程中发生 I/O 错误时抛出
+     * @param sourcePath 源文件或目录
+     * @param outputZip 输出 ZIP 文件
      */
-    public static void compress(String sourceDir, String outputZip, boolean includeRoot) {
-        Path sourcePath = Paths.get(sourceDir);
-        if (!Files.exists(sourcePath)) {
-            throw new RuntimeException("Source directory does not exist: " + sourceDir);
-        }
-        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(Paths.get(outputZip)))) {
-            if (Files.isDirectory(sourcePath)) {
-                // 递归遍历目录，每个文件作为一个 ZIP 条目
-                Files.walkFileTree(sourcePath, new SimpleFileVisitor<Path>() {
-                    @Override
-                    public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                        String entryName;
-                        if (includeRoot) {
-                            Path parent = sourcePath.getParent();
-                            String rootDirName = parent != null ? parent.getFileName().toString() : sourcePath.getFileName().toString();
-                            entryName = rootDirName + "/"
-                                    + sourcePath.relativize(file).toString().replace("\\", "/");
-                        } else {
-                            entryName = sourcePath.relativize(file).toString().replace("\\", "/");
-                        }
-                        zos.putNextEntry(new ZipEntry(entryName));
-                        Files.copy(file, zos);
-                        zos.closeEntry();
-                        return FileVisitResult.CONTINUE;
-                    }
-                });
-            } else {
-                // 单个文件直接添加
-                zos.putNextEntry(new ZipEntry(sourcePath.getFileName().toString()));
-                Files.copy(sourcePath, zos);
-                zos.closeEntry();
-            }
-            log.debug("Compressed {} -> {}", sourceDir, outputZip);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Failed to compress: " + sourceDir, e);
-        }
+    public static void compress(String sourcePath, String outputZip) {
+        compress(Path.of(sourcePath), Path.of(outputZip), false);
     }
 
-    // ===== ZIP 解压 =====
+    /**
+     * 压缩文件或目录。
+     *
+     * @param sourcePath 源文件或目录
+     * @param outputZip 输出 ZIP 文件
+     * @param includeRoot 是否保留源目录名称
+     */
+    public static void compress(String sourcePath, String outputZip, boolean includeRoot) {
+        compress(Path.of(sourcePath), Path.of(outputZip), includeRoot);
+    }
 
     /**
-     * 将 ZIP 文件解压到指定目录。
+     * 压缩文件或目录，并通过同目录临时文件避免暴露半成品。
      *
-     * <p>自动创建子目录结构，若目标文件已存在则覆盖。支持包含空目录条目的 ZIP 包。</p>
-     *
-     * @param inputZip  ZIP 文件路径
-     * @param targetDir 解压目标目录，不存在时自动创建
-     * @throws UncheckedIOException 解压过程中发生 I/O 错误时抛出
+     * @param sourcePath 源文件或目录
+     * @param outputZip 输出 ZIP 文件
+     * @param includeRoot 是否保留源目录名称
      */
-    public static void decompress(String inputZip, String targetDir) {
-        Path targetPath = Paths.get(targetDir).toAbsolutePath().normalize();
-        // 防止 zip bomb：单条目最大解压 100 MB，总计最大 1 GB
-        final long MAX_ENTRY_SIZE = 100 * 1024 * 1024;
-        final long MAX_TOTAL_SIZE = 1024 * 1024 * 1024;
-        long totalWritten = 0;
-        try (ZipInputStream zis = new ZipInputStream(Files.newInputStream(Paths.get(inputZip)))) {
-            Files.createDirectories(targetPath);
-            ZipEntry entry;
-            while ((entry = zis.getNextEntry()) != null) {
-                Path filePath = resolveZipEntry(targetPath, entry.getName());
-                if (entry.isDirectory()) {
-                    // 目录条目 — 仅创建目录
-                    Files.createDirectories(filePath);
+    public static void compress(Path sourcePath, Path outputZip, boolean includeRoot) {
+        if (sourcePath == null || outputZip == null) {
+            throw FileException.of(FileErrorCode.ARCHIVE_OPERATION_FAILED, "源路径和输出路径不能为空");
+        }
+        Path source = sourcePath.toAbsolutePath().normalize();
+        Path output = outputZip.toAbsolutePath().normalize();
+        if (!Files.exists(source, LinkOption.NOFOLLOW_LINKS)) {
+            throw FileException.of(FileErrorCode.ARCHIVE_OPERATION_FAILED, "源路径不存在");
+        }
+        if (Files.isSymbolicLink(source)) {
+            throw FileException.of(FileErrorCode.ARCHIVE_OPERATION_FAILED, "源路径不能是符号链接");
+        }
+        if (Files.isDirectory(source, LinkOption.NOFOLLOW_LINKS) && output.startsWith(source)) {
+            throw FileException.of(FileErrorCode.ARCHIVE_OPERATION_FAILED, "输出文件不能位于源目录内部");
+        }
+
+        Path parent = output.getParent();
+        if (parent == null) {
+            throw FileException.of(FileErrorCode.ARCHIVE_OPERATION_FAILED, "输出目录不存在");
+        }
+        Path temporary = parent.resolve("." + output.getFileName() + "."
+                + UUID.randomUUID() + ".tmp");
+        try {
+            verifyNoSymbolicLinkAncestors(parent);
+            Files.createDirectories(parent);
+            try (ZipOutputStream outputStream = new ZipOutputStream(Files.newOutputStream(temporary))) {
+                if (Files.isDirectory(source, LinkOption.NOFOLLOW_LINKS)) {
+                    compressDirectory(source, outputStream, includeRoot);
                 } else {
-                    // 文件条目 — 确保父目录存在后写入文件内容
-                    Files.createDirectories(filePath.getParent());
-                    // zip bomb 防护：检查条目和总量大小
-                    long entrySize = entry.getSize();
-                    if (entrySize > MAX_ENTRY_SIZE || totalWritten + Math.max(entrySize, 0) > MAX_TOTAL_SIZE) {
-                        throw new IOException("Zip entry exceeds size limit: " + entry.getName());
-                    }
-                    Files.copy(zis, filePath, StandardCopyOption.REPLACE_EXISTING);
-                    totalWritten += Files.size(filePath);
+                    writeFileEntry(source, source.getFileName().toString(), outputStream);
                 }
-                zis.closeEntry();
             }
-            log.debug("Decompressed {} -> {}", inputZip, targetDir);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Failed to decompress: " + inputZip, e);
+            moveArchive(temporary, output);
+        } catch (FileException exception) {
+            deleteQuietly(temporary);
+            throw exception;
+        } catch (IOException exception) {
+            deleteQuietly(temporary);
+            throw FileException.causedBy(
+                    FileErrorCode.ARCHIVE_OPERATION_FAILED, exception, "压缩失败");
         }
     }
 
     /**
-     * Resolves a ZIP entry below the extraction target and rejects path traversal entries.
+     * 使用安全默认限制解压 ZIP。
      *
-     * <p>ZIP files may contain entries such as {@code ../evil.txt} or absolute paths. Normalizing
-     * and checking the resolved path before writing prevents those entries from escaping the target
-     * directory during extraction.</p>
-     *
-     * @param targetPath normalized extraction root
-     * @param entryName  entry name read from the ZIP archive
-     * @return normalized path for the entry inside {@code targetPath}
-     * @throws IllegalArgumentException when the entry points outside {@code targetPath}
+     * @param inputZip ZIP 文件
+     * @param targetDirectory 目标目录
      */
-    private static Path resolveZipEntry(Path targetPath, String entryName) {
-        Path filePath = targetPath.resolve(entryName).normalize();
-        if (!filePath.startsWith(targetPath)) {
-            throw new IllegalArgumentException("ZIP entry escapes target directory: " + entryName);
-        }
-        return filePath;
+    public static void decompress(String inputZip, String targetDirectory) {
+        decompress(Path.of(inputZip), Path.of(targetDirectory), ZipLimits.defaults());
     }
 
-    // ===== 内存字节压缩 =====
+    /**
+     * 使用指定限制解压 ZIP。
+     *
+     * @param inputZip ZIP 文件
+     * @param targetDirectory 目标目录
+     * @param limits 安全限制
+     */
+    public static void decompress(Path inputZip, Path targetDirectory, ZipLimits limits) {
+        if (inputZip == null || targetDirectory == null || limits == null) {
+            throw FileException.of(FileErrorCode.ARCHIVE_OPERATION_FAILED, "解压参数不能为空");
+        }
+        Path archive = inputZip.toAbsolutePath().normalize();
+        Path target = targetDirectory.toAbsolutePath().normalize();
+        if (!Files.isRegularFile(archive, LinkOption.NOFOLLOW_LINKS)) {
+            throw FileException.of(FileErrorCode.ARCHIVE_OPERATION_FAILED, "ZIP 文件不存在");
+        }
+        verifyNoSymbolicLinkAncestors(target);
+        if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)
+                && !Files.isDirectory(target, LinkOption.NOFOLLOW_LINKS)) {
+            throw FileException.of(FileErrorCode.ARCHIVE_OPERATION_FAILED, "解压目标必须是目录");
+        }
+        List<Path> createdPaths = new ArrayList<>();
+        try (ZipFile zipFile = ZipFile.builder().setPath(archive).get()) {
+            List<PreparedEntry> entries = preflight(zipFile, target, limits);
+            createDirectory(target, createdPaths);
+            long totalWritten = 0;
+            for (PreparedEntry preparedEntry : entries) {
+                ZipArchiveEntry entry = preparedEntry.entry();
+                Path output = preparedEntry.output();
+                if (entry.isDirectory()) {
+                    createDirectory(output, createdPaths);
+                    continue;
+                }
+                createDirectory(output.getParent(), createdPaths);
+                if (Files.exists(output, LinkOption.NOFOLLOW_LINKS)) {
+                    throw FileException.of(
+                            FileErrorCode.ARCHIVE_OPERATION_FAILED, "目标文件已存在");
+                }
+                Files.createFile(output);
+                createdPaths.add(output);
+                try (InputStream inputStream = zipFile.getInputStream(entry);
+                     var outputStream = Files.newOutputStream(output)) {
+                    long entryWritten = 0;
+                    byte[] buffer = new byte[BUFFER_SIZE];
+                    int read;
+                    while ((read = inputStream.read(buffer)) != -1) {
+                        if (entryWritten + read > limits.maxEntrySize()
+                                || totalWritten + read > limits.maxTotalSize()) {
+                            throw FileException.of(
+                                    FileErrorCode.ARCHIVE_OPERATION_FAILED, "解压实际大小超过限制");
+                        }
+                        outputStream.write(buffer, 0, read);
+                        entryWritten += read;
+                        totalWritten += read;
+                    }
+                }
+            }
+        } catch (FileException exception) {
+            cleanupCreatedPaths(createdPaths);
+            throw exception;
+        } catch (IOException exception) {
+            cleanupCreatedPaths(createdPaths);
+            throw FileException.causedBy(
+                    FileErrorCode.ARCHIVE_OPERATION_FAILED, exception, "解压失败");
+        }
+    }
 
     /**
-     * 将字节数组以指定条目名压缩为 ZIP 字节数组。
+     * 将单个字节数组压缩为 ZIP 字节数组。
      *
-     * <p>适用于在内存中动态生成 ZIP 包（如导出多个文件为一个压缩包）的场景。
-     * 返回的字节数组可直接写入 HTTP 响应输出流供用户下载。</p>
-     *
-     * @param data      待压缩的原始数据
-     * @param entryName ZIP 中的条目名（文件名）
-     * @return 压缩后的 ZIP 字节数组
-     * @throws UncheckedIOException 压缩过程中发生 I/O 错误时抛出
+     * @param data 原始字节数组
+     * @param entryName ZIP 条目名
+     * @return ZIP 字节数组
      */
     public static byte[] compressToBytes(byte[] data, String entryName) {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        try (ZipOutputStream zos = new ZipOutputStream(baos)) {
-            zos.putNextEntry(new ZipEntry(entryName));
-            zos.write(data);
-            zos.closeEntry();
-        } catch (IOException e) {
-            throw new UncheckedIOException("Failed to compress bytes", e);
+        if (data == null || entryName == null || entryName.isBlank()) {
+            throw FileException.of(FileErrorCode.ARCHIVE_OPERATION_FAILED, "压缩参数不能为空");
         }
-        return baos.toByteArray();
+        String normalizedEntryName = normalizeEntryName(entryName);
+        try (ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
+             ZipOutputStream zipStream = new ZipOutputStream(byteStream)) {
+            zipStream.putNextEntry(new ZipEntry(normalizedEntryName));
+            zipStream.write(data);
+            zipStream.closeEntry();
+            zipStream.finish();
+            return byteStream.toByteArray();
+        } catch (IOException exception) {
+            throw FileException.causedBy(
+                    FileErrorCode.ARCHIVE_OPERATION_FAILED, exception, "内存压缩失败");
+        }
+    }
+
+    /**
+     * 预检 ZIP 中央目录。
+     *
+     * @param zipFile ZIP 文件
+     * @param target 解压根目录
+     * @param limits 安全限制
+     * @return 已校验条目
+     */
+    private static List<PreparedEntry> preflight(
+            ZipFile zipFile,
+            Path target,
+            ZipLimits limits) {
+        List<PreparedEntry> entries = new ArrayList<>();
+        Set<String> names = new HashSet<>();
+        long declaredTotal = 0;
+        Enumeration<ZipArchiveEntry> enumeration = zipFile.getEntries();
+        while (enumeration.hasMoreElements()) {
+            ZipArchiveEntry entry = enumeration.nextElement();
+            if (entries.size() >= limits.maxEntries()) {
+                throw FileException.of(
+                        FileErrorCode.ARCHIVE_OPERATION_FAILED, "ZIP 条目数量超过限制");
+            }
+            String normalizedName = normalizeEntryName(entry.getName());
+            if (!names.add(normalizedName.toLowerCase(Locale.ROOT))) {
+                throw FileException.of(
+                        FileErrorCode.ARCHIVE_OPERATION_FAILED, "ZIP 包含重复条目");
+            }
+            if (entry.isUnixSymlink()) {
+                throw FileException.of(
+                        FileErrorCode.ARCHIVE_OPERATION_FAILED, "ZIP 不允许符号链接条目");
+            }
+            long declaredSize = entry.getSize();
+            if (declaredSize > limits.maxEntrySize()) {
+                throw FileException.of(
+                        FileErrorCode.ARCHIVE_OPERATION_FAILED, "ZIP 条目声明大小超过限制");
+            }
+            if (declaredSize > 0) {
+                if (declaredTotal > limits.maxTotalSize() - declaredSize) {
+                    throw FileException.of(
+                            FileErrorCode.ARCHIVE_OPERATION_FAILED, "ZIP 声明总大小超过限制");
+                }
+                declaredTotal += declaredSize;
+            }
+            Path output = target.resolve(normalizedName.replace('/', java.io.File.separatorChar)).normalize();
+            if (!output.startsWith(target)) {
+                throw FileException.of(
+                        FileErrorCode.ARCHIVE_OPERATION_FAILED, "ZIP 条目越过目标目录");
+            }
+            verifyNoSymbolicLink(target, output);
+            entries.add(new PreparedEntry(entry, output));
+        }
+        return List.copyOf(entries);
+    }
+
+    /**
+     * 递归压缩目录并拒绝符号链接。
+     *
+     * @param source 源目录
+     * @param outputStream ZIP 输出流
+     * @param includeRoot 是否保留根目录名
+     * @throws IOException 文件遍历失败时抛出
+     */
+    private static void compressDirectory(
+            Path source,
+            ZipOutputStream outputStream,
+            boolean includeRoot) throws IOException {
+        Files.walkFileTree(source, new java.nio.file.SimpleFileVisitor<>() {
+            @Override
+            public java.nio.file.FileVisitResult preVisitDirectory(
+                    Path directory,
+                    BasicFileAttributes attributes) throws IOException {
+                if (Files.isSymbolicLink(directory)) {
+                    throw new IOException("源目录包含符号链接");
+                }
+                if (!directory.equals(source)) {
+                    String name = entryName(source, directory, includeRoot) + "/";
+                    outputStream.putNextEntry(new ZipEntry(name));
+                    outputStream.closeEntry();
+                }
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public java.nio.file.FileVisitResult visitFile(
+                    Path file,
+                    BasicFileAttributes attributes) throws IOException {
+                if (attributes.isSymbolicLink()) {
+                    throw new IOException("源目录包含符号链接");
+                }
+                writeFileEntry(file, entryName(source, file, includeRoot), outputStream);
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+        });
+    }
+
+    /**
+     * 写入单个 ZIP 文件条目。
+     *
+     * @param file 源文件
+     * @param entryName ZIP 条目名
+     * @param outputStream ZIP 输出流
+     * @throws IOException 文件读取失败时抛出
+     */
+    private static void writeFileEntry(
+            Path file,
+            String entryName,
+            ZipOutputStream outputStream) throws IOException {
+        outputStream.putNextEntry(new ZipEntry(normalizeEntryName(entryName)));
+        Files.copy(file, outputStream);
+        outputStream.closeEntry();
+    }
+
+    /**
+     * 计算源路径对应的 ZIP 条目名称。
+     *
+     * @param source 源根目录
+     * @param path 当前路径
+     * @param includeRoot 是否保留根目录名
+     * @return ZIP 条目名称
+     */
+    private static String entryName(Path source, Path path, boolean includeRoot) {
+        String relative = source.relativize(path).toString().replace('\\', '/');
+        return includeRoot ? source.getFileName() + "/" + relative : relative;
+    }
+
+    /**
+     * 校验并规范化 ZIP 条目名称。
+     *
+     * @param entryName 原始条目名
+     * @return 使用斜杠分隔的安全相对名称
+     */
+    private static String normalizeEntryName(String entryName) {
+        if (entryName == null || entryName.isBlank()) {
+            throw FileException.of(FileErrorCode.ARCHIVE_OPERATION_FAILED, "ZIP 条目名为空");
+        }
+        String candidate = entryName.replace('\\', '/');
+        if (candidate.indexOf('\0') >= 0
+                || candidate.startsWith("/")
+                || WINDOWS_ABSOLUTE_PATH.matcher(candidate).matches()) {
+            throw FileException.of(FileErrorCode.ARCHIVE_OPERATION_FAILED, "ZIP 条目路径不安全");
+        }
+        while (candidate.endsWith("/")) {
+            candidate = candidate.substring(0, candidate.length() - 1);
+        }
+        if (candidate.isBlank()) {
+            throw FileException.of(FileErrorCode.ARCHIVE_OPERATION_FAILED, "ZIP 条目名为空");
+        }
+        Path normalized = Path.of(candidate).normalize();
+        String result = normalized.toString().replace('\\', '/');
+        if (result.isBlank() || result.equals(".")) {
+            throw FileException.of(FileErrorCode.ARCHIVE_OPERATION_FAILED, "ZIP 条目名为空");
+        }
+        if (result.equals("..") || result.startsWith("../")) {
+            throw FileException.of(FileErrorCode.ARCHIVE_OPERATION_FAILED, "ZIP 条目越过目标目录");
+        }
+        return result;
+    }
+
+    /**
+     * 检查目标路径已有祖先中不存在符号链接。
+     *
+     * @param root 解压根目录
+     * @param output 条目目标路径
+     */
+    private static void verifyNoSymbolicLink(Path root, Path output) {
+        Path current = root;
+        if (Files.exists(current, LinkOption.NOFOLLOW_LINKS) && Files.isSymbolicLink(current)) {
+            throw FileException.of(FileErrorCode.ARCHIVE_OPERATION_FAILED, "目标目录不能是符号链接");
+        }
+        for (Path segment : root.relativize(output)) {
+            current = current.resolve(segment);
+            if (Files.exists(current, LinkOption.NOFOLLOW_LINKS) && Files.isSymbolicLink(current)) {
+                throw FileException.of(FileErrorCode.ARCHIVE_OPERATION_FAILED, "目标路径包含符号链接");
+            }
+        }
+    }
+
+    /**
+     * 检查目标路径所有已存在的祖先，避免通过中间符号链接逃逸到其他目录。
+     *
+     * @param target 待创建或使用的目标路径
+     */
+    private static void verifyNoSymbolicLinkAncestors(Path target) {
+        Path absolute = target.toAbsolutePath().normalize();
+        Path current = absolute.getRoot();
+        for (Path segment : absolute) {
+            current = current == null ? segment : current.resolve(segment);
+            if (Files.exists(current, LinkOption.NOFOLLOW_LINKS) && Files.isSymbolicLink(current)) {
+                throw FileException.of(
+                        FileErrorCode.ARCHIVE_OPERATION_FAILED, "目标路径包含符号链接");
+            }
+        }
+    }
+
+    /**
+     * 创建目录并记录本次新建路径。
+     *
+     * @param directory 目标目录
+     * @param createdPaths 本次创建路径集合
+     * @throws IOException 目录创建失败时抛出
+     */
+    private static void createDirectory(Path directory, List<Path> createdPaths) throws IOException {
+        if (directory == null || Files.exists(directory, LinkOption.NOFOLLOW_LINKS)) {
+            return;
+        }
+        Path parent = directory.getParent();
+        if (parent != null) {
+            createDirectory(parent, createdPaths);
+        }
+        Files.createDirectory(directory);
+        createdPaths.add(directory);
+    }
+
+    /**
+     * 清理本次解压创建的文件和空目录。
+     *
+     * @param createdPaths 本次创建路径集合
+     */
+    private static void cleanupCreatedPaths(List<Path> createdPaths) {
+        createdPaths.stream()
+                .sorted(Comparator.comparingInt((Path path) -> path.getNameCount()).reversed())
+                .forEach(ZipUtil::deleteQuietly);
+    }
+
+    /**
+     * 原子移动归档临时文件，平台不支持时使用同目录普通移动。
+     *
+     * @param temporary 临时 ZIP 文件
+     * @param output 最终 ZIP 文件
+     * @throws IOException 移动失败时抛出
+     */
+    private static void moveArchive(Path temporary, Path output) throws IOException {
+        try {
+            Files.move(temporary, output,
+                    StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (AtomicMoveNotSupportedException exception) {
+            Files.move(temporary, output, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    /**
+     * 静默删除清理目标，主异常由调用方保留。
+     *
+     * @param path 待删除路径
+     */
+    private static void deleteQuietly(Path path) {
+        if (path == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException exception) {
+            // 清理失败不覆盖原始归档异常，但保留可观测诊断信息。
+            log.warn("ZIP 临时文件或解压产物清理失败：{}", path, exception);
+        }
+    }
+
+    /**
+     * 已通过中央目录预检的 ZIP 条目。
+     *
+     * @param entry ZIP 条目
+     * @param output 解压目标路径
+     */
+    private record PreparedEntry(ZipArchiveEntry entry, Path output) {
     }
 }

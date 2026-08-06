@@ -11,17 +11,21 @@
 
     <artifactId>letool-starter-file</artifactId>
     <name>letool-starter-file</name>
-    <description>letool 文件操作模块 —— 上传下载、存储抽象（本地/FTP/SFTP/MinIO/OSS）、格式转换、压缩、打印</description>
+    <description>letool 文件操作模块 —— 统一文件门面、本地与 FTP/FTPS 流式存储、安全上传下载和 ZIP 处理</description>
     <packaging>jar</packaging>
 
     <dependencies>
         <dependency>
             <groupId>com.github.leyland</groupId>
-            <artifactId>letool-starter-tool</artifactId>
+            <artifactId>letool-starter-exception</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -36,6 +40,10 @@
         <dependency>
             <groupId>commons-net</groupId>
             <artifactId>commons-net</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-compress</artifactId>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>

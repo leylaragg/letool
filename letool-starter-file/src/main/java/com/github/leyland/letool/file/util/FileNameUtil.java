@@ -1,79 +1,117 @@
 package com.github.leyland.letool.file.util;
 
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 /**
- * 文件名工具类，提供文件扩展名提取、基础名获取、安全清洗、唯一名生成等功能。
- *
- * <p>所有方法均为静态方法，无需实例化。文件名处理统一转为小写以保证一致性。</p>
- *
- * @author leyland
- * @since 1.0.0
+ * 文件名提取、清洗和唯一名称生成工具。
  */
 public final class FileNameUtil {
 
-    private FileNameUtil() {}
+    private static final int MAX_FILE_NAME_LENGTH = 255;
+    private static final Set<String> WINDOWS_RESERVED_NAMES = Set.of(
+            "CON", "PRN", "AUX", "NUL",
+            "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+            "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9");
 
-    // ===== 文件名生成 =====
+    private FileNameUtil() {
+    }
 
     /**
-     * 根据原始文件名生成 UUID 唯一文件名（保留原扩展名）。
+     * 生成保留原扩展名的 UUID 文件名。
      *
-     * <p>生成规则：{@code UUID(32位去横线) + 原扩展名}。例如 {@code report.pdf} 生成类似
-     * {@code a1b2c3d4e5f6789012345678901234ab.pdf} 的文件名。</p>
-     *
-     * <p>用途：上传文件时防止重名覆盖，同时保留扩展名以便后续 MIME 类型识别。</p>
-     *
-     * @param originalName 原始文件名（可能为 null）
-     * @return 唯一文件名，若原始无扩展名则不包含点号
+     * @param originalName 原始文件名
+     * @return 唯一文件名
      */
     public static String generateUniqueName(String originalName) {
-        String ext = getExtension(originalName);
-        return UUID.randomUUID().toString().replace("-", "") + (ext.isEmpty() ? "" : "." + ext);
+        String extension = getExtension(originalName);
+        String identifier = UUID.randomUUID().toString().replace("-", "");
+        return extension.isEmpty() ? identifier : identifier + "." + extension;
     }
 
-    // ===== 扩展名处理 =====
+    /**
+     * 从浏览器上传的路径形式中提取最终文件名。
+     *
+     * @param originalName 客户端原始文件名
+     * @return 不包含客户端目录的文件名；空值原样返回
+     */
+    public static String extractClientFileName(String originalName) {
+        if (originalName == null) {
+            return null;
+        }
+        String normalized = originalName.replace('\\', '/');
+        int index = normalized.lastIndexOf('/');
+        return index < 0 ? normalized : normalized.substring(index + 1);
+    }
 
     /**
-     * 获取文件的扩展名（不含点号，小写）。
+     * 获取小写扩展名，不包含点号。
      *
-     * @param fileName 文件名（可能包含路径）
-     * @return 小写扩展名，若无扩展名或 fileName 为 null 则返回空字符串
+     * @param fileName 文件名或客户端路径
+     * @return 小写扩展名；没有扩展名时返回空字符串
      */
     public static String getExtension(String fileName) {
-        if (fileName == null || !fileName.contains(".")) return "";
-        return fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase();
+        String name = extractClientFileName(fileName);
+        if (name == null) {
+            return "";
+        }
+        int index = name.lastIndexOf('.');
+        if (index <= 0 || index == name.length() - 1) {
+            return "";
+        }
+        return name.substring(index + 1).toLowerCase(Locale.ROOT);
     }
 
     /**
-     * 移除文件名的扩展名部分。
-     *
-     * <p>例如 {@code "photo.jpg"} 返回 {@code "photo"}，
-     * {@code "archive.tar.gz"} 返回 {@code "archive.tar"}（只移除最后一级扩展名）。</p>
+     * 移除最后一级扩展名。
      *
      * @param fileName 文件名
-     * @return 去掉扩展名的基础名，若 fileName 为 null 或无极扩展名则原样返回
+     * @return 不包含最后一级扩展名的文件名
      */
     public static String removeExtension(String fileName) {
-        if (fileName == null || !fileName.contains(".")) return fileName;
-        return fileName.substring(0, fileName.lastIndexOf('.'));
+        if (fileName == null) {
+            return null;
+        }
+        int index = fileName.lastIndexOf('.');
+        return index <= 0 ? fileName : fileName.substring(0, index);
     }
 
-    // ===== 文件名安全 =====
-
     /**
-     * 清洗文件名中的非法字符，替换为下划线。
+     * 将控制字符和跨平台非法字符替换为下划线，并限制文件名长度。
      *
-     * <p>Windows 和 Linux 文件系统不允许的字符包括：{@code \ / : * ? " &lt; &gt; |}，
-     * 这些字符会被替换为 {@code _}。同时去除头尾空格。</p>
-     *
-     * <p>用途：防止用户上传文件名包含非法字符导致存储失败。</p>
-     *
-     * @param fileName 原始文件名（可能为 null）
-     * @return 安全文件名，null 输入返回 null
+     * @param fileName 原始文件名
+     * @return 安全文件名；空值返回空值
      */
     public static String sanitize(String fileName) {
-        if (fileName == null) return null;
-        return fileName.replaceAll("[\\\\/:*?\"<>|]", "_").trim();
+        if (fileName == null) {
+            return null;
+        }
+        String candidate = fileName.strip();
+        StringBuilder builder = new StringBuilder(candidate.length());
+        for (int index = 0; index < candidate.length(); index++) {
+            char character = candidate.charAt(index);
+            if (character < 32 || character == 127 || "\\/:*?\"<>|".indexOf(character) >= 0) {
+                builder.append('_');
+            } else {
+                builder.append(character);
+            }
+        }
+        String sanitized = builder.toString().trim();
+        while (sanitized.endsWith(".") || sanitized.endsWith(" ")) {
+            sanitized = sanitized.substring(0, sanitized.length() - 1);
+        }
+        if (sanitized.length() > MAX_FILE_NAME_LENGTH) {
+            String extension = getExtension(sanitized);
+            int suffixLength = extension.isEmpty() ? 0 : extension.length() + 1;
+            int baseLength = Math.max(1, MAX_FILE_NAME_LENGTH - suffixLength);
+            sanitized = sanitized.substring(0, baseLength)
+                    + (extension.isEmpty() ? "" : "." + extension);
+        }
+        String baseName = removeExtension(sanitized).toUpperCase(Locale.ROOT);
+        if (WINDOWS_RESERVED_NAMES.contains(baseName)) {
+            sanitized = "_" + sanitized;
+        }
+        return sanitized;
     }
 }

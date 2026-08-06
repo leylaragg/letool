@@ -1,9 +1,14 @@
 package com.github.leyland.letool.file.config;
 
-import com.github.leyland.letool.file.download.FileDownloadService;
+import com.github.leyland.letool.file.core.FileTemplate;
+import com.github.leyland.letool.file.model.FileMetadata;
+import com.github.leyland.letool.file.model.FileResource;
+import com.github.leyland.letool.file.model.StorageCapability;
+import com.github.leyland.letool.file.model.StoreRequest;
+import com.github.leyland.letool.file.model.StoredFile;
 import com.github.leyland.letool.file.storage.FileStorageProvider;
+import com.github.leyland.letool.file.storage.FtpFileStorage;
 import com.github.leyland.letool.file.storage.LocalFileStorage;
-import com.github.leyland.letool.file.upload.FileUploadService;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -12,122 +17,138 @@ import org.springframework.context.annotation.Configuration;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * {@link FileAutoConfiguration} 的自动装配契约测试。
- *
- * <p>固定文件 starter 的默认本地存储、模块开关和业务项目自定义文件基础设施退让行为。</p>
+ * 文件 Starter 的关键自动配置契约测试。
  */
 class FileAutoConfigurationTest {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(FileAutoConfiguration.class))
-            .withPropertyValues(
-                    "spring.main.allow-bean-definition-overriding=false",
-                    "letool.file.storage.local.base-path=target/letool-file-test/default");
+            .withPropertyValues("letool.file.storage.local.base-path=target/letool-file-test/default");
 
     /**
-     * 验证默认配置下会注册本地存储、上传服务和下载服务。
+     * 验证默认配置提供本地存储和统一文件门面。
      */
     @Test
-    void shouldCreateDefaultFileBeansWhenEnabled() {
+    void shouldCreateDefaultLocalStorageAndFacade() {
         contextRunner.run(context -> {
             assertThat(context).hasSingleBean(FileStorageProvider.class);
-            assertThat(context).hasSingleBean(FileUploadService.class);
-            assertThat(context).hasSingleBean(FileDownloadService.class);
-            assertThat(context).hasSingleBean(FileProperties.class);
-            assertThat(context.getBean(FileStorageProvider.class))
-                    .isInstanceOf(LocalFileStorage.class);
+            assertThat(context).hasSingleBean(FileTemplate.class);
+            assertThat(context.getBean(FileStorageProvider.class)).isInstanceOf(LocalFileStorage.class);
         });
     }
 
     /**
-     * 验证显式关闭文件模块时不会创建文件基础设施 Bean。
+     * 验证显式关闭模块后不会向业务容器注册文件 Bean。
      */
     @Test
     void shouldNotCreateFileBeansWhenDisabled() {
-        contextRunner
-                .withPropertyValues("letool.file.enabled=false")
+        contextRunner.withPropertyValues("letool.file.enabled=false")
                 .run(context -> {
                     assertThat(context).doesNotHaveBean(FileStorageProvider.class);
-                    assertThat(context).doesNotHaveBean(FileUploadService.class);
-                    assertThat(context).doesNotHaveBean(FileDownloadService.class);
+                    assertThat(context).doesNotHaveBean(FileTemplate.class);
                 });
     }
 
     /**
-     * 验证业务项目自行提供文件基础设施 Bean 时自动配置会退让。
+     * 验证选择 FTPS 时创建安全传输 Provider，且启动阶段不会建立远程连接。
      */
     @Test
-    void shouldBackOffWhenUserProvidesFileInfrastructureBeans() {
-        contextRunner
-                .withUserConfiguration(UserFileConfiguration.class)
+    void shouldCreateSecureFtpsStorage() {
+        contextRunner.withPropertyValues(
+                        "letool.file.storage.type=ftps",
+                        "letool.file.storage.ftp.username=test-user",
+                        "letool.file.storage.ftp.password=test-password")
                 .run(context -> {
-                    assertThat(context).hasSingleBean(FileStorageProvider.class);
-                    assertThat(context).hasSingleBean(FileUploadService.class);
-                    assertThat(context).hasSingleBean(FileDownloadService.class);
-                    assertThat(context.getBean(FileStorageProvider.class))
-                            .isSameAs(context.getBean("fileStorageProvider"));
-                    assertThat(context.getBean(FileUploadService.class))
-                            .isSameAs(context.getBean("fileUploadService"));
-                    assertThat(context.getBean(FileDownloadService.class))
-                            .isSameAs(context.getBean("fileDownloadService"));
+                    FileStorageProvider provider = context.getBean(FileStorageProvider.class);
+                    assertThat(provider).isInstanceOf(FtpFileStorage.class);
+                    assertThat(provider.capabilities()).contains(StorageCapability.SECURE_TRANSPORT);
                 });
     }
 
     /**
-     * 模拟业务项目自行接管文件存储、上传和下载服务。
+     * 验证未知存储类型不能静默回退到本地存储。
+     */
+    @Test
+    void shouldFailFastForUnknownStorageType() {
+        contextRunner.withPropertyValues("letool.file.storage.type=sftp")
+                .run(context -> assertThat(context).hasFailed());
+    }
+
+    /**
+     * 验证用户提供存储实现时默认实现会退让。
+     */
+    @Test
+    void shouldBackOffForUserStorageProvider() {
+        contextRunner.withUserConfiguration(UserStorageConfiguration.class)
+                .run(context -> assertThat(context.getBean(FileStorageProvider.class))
+                        .isSameAs(context.getBean("customFileStorageProvider")));
+    }
+
+    /**
+     * 业务项目自定义存储配置。
      */
     @Configuration(proxyBeanMethods = false)
-    static class UserFileConfiguration {
+    static class UserStorageConfiguration {
 
+        /**
+         * 创建测试自定义存储。
+         *
+         * @return 自定义存储实现
+         */
         @Bean
-        FileStorageProvider fileStorageProvider() {
+        FileStorageProvider customFileStorageProvider() {
             return new TestFileStorageProvider();
-        }
-
-        @Bean
-        FileUploadService fileUploadService(FileStorageProvider fileStorageProvider) {
-            return new FileUploadService(fileStorageProvider, new FileProperties());
-        }
-
-        @Bean
-        FileDownloadService fileDownloadService(FileStorageProvider fileStorageProvider) {
-            return new FileDownloadService(fileStorageProvider);
         }
     }
 
     /**
-     * 用于自动装配测试的内存文件存储实现，不访问真实外部服务。
+     * 用于验证自动配置退让的最小存储实现。
      */
-    static class TestFileStorageProvider implements FileStorageProvider {
+    private static final class TestFileStorageProvider implements FileStorageProvider {
 
         @Override
-        public String upload(InputStream inputStream, String path, String fileName) {
-            return path + "/" + fileName;
+        public StoredFile store(StoreRequest request, InputStream inputStream) {
+            return new StoredFile(request.key(), request.originalName(), "file.txt", 0,
+                    request.contentType(), null, Instant.EPOCH);
         }
 
         @Override
-        public InputStream download(String path) {
-            return new ByteArrayInputStream(new byte[0]);
+        public FileResource open(String key) {
+            FileMetadata metadata = stat(key);
+            return new FileResource(metadata, new ByteArrayInputStream(new byte[0]));
         }
 
         @Override
-        public boolean delete(String path) {
+        public boolean delete(String key) {
             return true;
         }
 
         @Override
-        public boolean exists(String path) {
+        public boolean exists(String key) {
             return true;
         }
 
         @Override
-        public List<FileInfo> list(String path) {
+        public FileMetadata stat(String key) {
+            return new FileMetadata(key, "file.txt", 0, false, Instant.EPOCH,
+                    "application/octet-stream");
+        }
+
+        @Override
+        public List<FileMetadata> list(String directory) {
             return List.of();
+        }
+
+        @Override
+        public Set<com.github.leyland.letool.file.model.StorageCapability> capabilities() {
+            return Set.of();
         }
     }
 }

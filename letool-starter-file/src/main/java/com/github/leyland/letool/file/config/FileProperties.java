@@ -1,253 +1,354 @@
 package com.github.leyland.letool.file.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.util.unit.DataSize;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * 文件模块配置属性类，对应 YAML 中的 {@code letool.file} 前缀。
- *
- * <p>该配置类聚合了上传限制、存储类型、本地文件系统、FTP/SFTP 远程存储等所有配置项。
- * 使用者可在 {@code application.yml} 中按如下结构配置：</p>
- *
- * <pre>{@code
- * letool:
- *   file:
- *     enabled: true           # 是否启用文件模块
- *     upload:
- *       max-size: 10MB        # 上传文件最大体积
- *       allowed-types:        # 允许的文件扩展名
- *         - jpg
- *         - png
- *         - pdf
- *       storage-path: /data/uploads
- *     storage:
- *       type: local           # 存储类型：local / ftp / sftp
- *       local:
- *         base-path: /var/files
- *       ftp:
- *         host: 192.168.1.100
- *         port: 21
- *         username: admin
- *         password: secret
- * }</pre>
- *
- * @author leyland
- * @since 1.0.0
+ * 文件模块强类型配置，对应 {@code letool.file} 前缀。
  */
 @ConfigurationProperties(prefix = "letool.file")
 public class FileProperties {
 
-    // ===== 顶层属性 =====
-
-    /** 上传相关的全局配置 */
-    private Upload upload = new Upload();
-
-    /** 存储类型及各类存储的具体配置 */
-    private Storage storage = new Storage();
-
-    /** 是否启用文件模块，默认 true */
     private boolean enabled = true;
-
-    // ===== Getter / Setter =====
-
-    public Upload getUpload() { return upload; }
-    public void setUpload(Upload upload) { this.upload = upload; }
-
-    public Storage getStorage() { return storage; }
-    public void setStorage(Storage storage) { this.storage = storage; }
-
-    public boolean isEnabled() { return enabled; }
-    public void setEnabled(boolean enabled) { this.enabled = enabled; }
-
-    // ===== 上传配置内嵌类 =====
+    private final Upload upload = new Upload();
+    private final Storage storage = new Storage();
+    private final Archive archive = new Archive();
 
     /**
-     * 文件上传的通用配置。
+     * 判断文件模块是否启用。
      *
-     * <p>控制上传文件的大小上限、允许的扩展名白名单，以及上传后的存储目录。</p>
+     * @return 是否启用
+     */
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    /**
+     * 设置文件模块开关。
+     *
+     * @param enabled 是否启用
+     */
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+    }
+
+    /**
+     * 获取上传配置。
+     *
+     * @return 上传配置
+     */
+    public Upload getUpload() {
+        return upload;
+    }
+
+    /**
+     * 获取存储配置。
+     *
+     * @return 存储配置
+     */
+    public Storage getStorage() {
+        return storage;
+    }
+
+    /**
+     * 获取归档配置。
+     *
+     * @return 归档配置
+     */
+    public Archive getArchive() {
+        return archive;
+    }
+
+    /**
+     * 普通上传的安全限制。
      */
     public static class Upload {
+        private DataSize maxSize = DataSize.ofMegabytes(10);
+        private boolean allowEmpty;
+        private List<String> allowedExtensions = new ArrayList<>();
+        private List<String> allowedContentTypes = new ArrayList<>();
 
-        /** 单文件最大体积，支持 10MB、1GB 等格式，默认 10MB */
-        private String maxSize = "10MB";
+        /**
+         * 获取单文件最大大小。
+         *
+         * @return 最大文件大小
+         */
+        public DataSize getMaxSize() {
+            return maxSize;
+        }
 
-        /** 允许上传的文件扩展名白名单，为空表示不限制 */
-        private String[] allowedTypes;
+        /**
+         * 设置单文件最大大小。
+         *
+         * @param maxSize 最大文件大小
+         */
+        public void setMaxSize(DataSize maxSize) {
+            this.maxSize = maxSize;
+        }
 
-        /** 上传文件的临时/目标存储路径，默认 /data/uploads */
-        private String storagePath = "/data/uploads";
+        /**
+         * 判断是否允许空文件。
+         *
+         * @return 是否允许空文件
+         */
+        public boolean isAllowEmpty() {
+            return allowEmpty;
+        }
 
-        // ---- Getter / Setter ----
+        /**
+         * 设置是否允许空文件。
+         *
+         * @param allowEmpty 是否允许空文件
+         */
+        public void setAllowEmpty(boolean allowEmpty) {
+            this.allowEmpty = allowEmpty;
+        }
 
-        public String getMaxSize() { return maxSize; }
-        public void setMaxSize(String maxSize) { this.maxSize = maxSize; }
+        /**
+         * 获取允许的扩展名列表。
+         *
+         * @return 扩展名列表
+         */
+        public List<String> getAllowedExtensions() {
+            return allowedExtensions;
+        }
 
-        public String[] getAllowedTypes() { return allowedTypes; }
-        public void setAllowedTypes(String[] allowedTypes) { this.allowedTypes = allowedTypes; }
+        /**
+         * 设置允许的扩展名列表。
+         *
+         * @param allowedExtensions 扩展名列表；空值表示不限制
+         */
+        public void setAllowedExtensions(List<String> allowedExtensions) {
+            this.allowedExtensions = allowedExtensions == null
+                    ? new ArrayList<>()
+                    : new ArrayList<>(allowedExtensions);
+        }
 
-        public String getStoragePath() { return storagePath; }
-        public void setStoragePath(String storagePath) { this.storagePath = storagePath; }
+        /**
+         * 获取允许的媒体类型列表。
+         *
+         * @return 媒体类型列表
+         */
+        public List<String> getAllowedContentTypes() {
+            return allowedContentTypes;
+        }
+
+        /**
+         * 设置允许的媒体类型列表。
+         *
+         * @param allowedContentTypes 媒体类型列表；空值表示不限制
+         */
+        public void setAllowedContentTypes(List<String> allowedContentTypes) {
+            this.allowedContentTypes = allowedContentTypes == null
+                    ? new ArrayList<>()
+                    : new ArrayList<>(allowedContentTypes);
+        }
     }
 
-    // ===== 存储配置内嵌类 =====
-
     /**
-     * 存储总配置，包含存储类型及各类存储的参数。
-     *
-     * <p>{@code type} 决定使用哪种存储实现：
-     * <ul>
-     *   <li>{@code local} — 本地文件系统</li>
-     *   <li>{@code ftp} — FTP 远程服务器</li>
-     *   <li>{@code sftp} — SFTP 远程服务器（预留）</li>
-     * </ul>
-     * 同时对每种存储类型提供独立配置子对象，未启用的存储类型可忽略。
+     * 存储类型和协议配置。
      */
     public static class Storage {
-
-        /** 存储类型：local / ftp / sftp，默认 local */
         private String type = "local";
+        private final Local local = new Local();
+        private final Ftp ftp = new Ftp();
 
-        /** 本地存储配置 */
-        private Local local = new Local();
+        /**
+         * 获取存储类型。
+         *
+         * @return {@code local}、{@code ftp} 或 {@code ftps}
+         */
+        public String getType() {
+            return type;
+        }
 
-        /** FTP 存储配置 */
-        private Ftp ftp = new Ftp();
+        /**
+         * 设置存储类型。
+         *
+         * @param type 存储类型
+         */
+        public void setType(String type) {
+            this.type = type;
+        }
 
-        /** SFTP 存储配置（预留） */
-        private Sftp sftp = new Sftp();
+        /**
+         * 获取本地存储配置。
+         *
+         * @return 本地存储配置
+         */
+        public Local getLocal() {
+            return local;
+        }
 
-        /** 扩展属性，用于极少量自定义配置 */
-        private Map<String, String> extra = new HashMap<>();
-
-        // ---- Getter / Setter ----
-
-        public String getType() { return type; }
-        public void setType(String type) { this.type = type; }
-
-        public Local getLocal() { return local; }
-        public void setLocal(Local local) { this.local = local; }
-
-        public Ftp getFtp() { return ftp; }
-        public void setFtp(Ftp ftp) { this.ftp = ftp; }
-
-        public Sftp getSftp() { return sftp; }
-        public void setSftp(Sftp sftp) { this.sftp = sftp; }
-
-        public Map<String, String> getExtra() { return extra; }
-        public void setExtra(Map<String, String> extra) { this.extra = extra; }
+        /**
+         * 获取 FTP 与 FTPS 配置。
+         *
+         * @return FTP 配置
+         */
+        public Ftp getFtp() {
+            return ftp;
+        }
     }
 
-    // ===== 本地存储配置 =====
-
     /**
-     * 本地文件系统存储配置。
-     *
-     * <p>所有文件存储在 {@code basePath} 指定的本地目录下。</p>
+     * 本地文件系统配置。
      */
     public static class Local {
-
-        /** 本地存储根目录，默认 ~/letool/files */
         private String basePath = System.getProperty("user.home") + "/letool/files";
 
-        public String getBasePath() { return basePath; }
-        public void setBasePath(String basePath) { this.basePath = basePath; }
+        /**
+         * 获取本地存储根目录。
+         *
+         * @return 本地存储根目录
+         */
+        public String getBasePath() {
+            return basePath;
+        }
+
+        /**
+         * 设置本地存储根目录。
+         *
+         * @param basePath 本地存储根目录
+         */
+        public void setBasePath(String basePath) {
+            this.basePath = basePath;
+        }
     }
 
-    // ===== FTP 存储配置 =====
-
     /**
-     * FTP 远程存储配置。
-     *
-     * <p>基于 Apache Commons Net 实现，支持主动/被动模式切换和连接超时设置。</p>
+     * FTP 与 FTPS 连接配置。
      */
     public static class Ftp {
-
-        /** FTP 服务器地址，默认 localhost */
         private String host = "localhost";
-
-        /** FTP 端口，默认 21 */
         private int port = 21;
-
-        /** FTP 登录用户名 */
         private String username;
-
-        /** FTP 登录密码 */
         private String password;
-
-        /** 是否使用被动模式，默认 true（适配防火墙环境） */
+        private String basePath = "/";
+        private String charset = "UTF-8";
         private boolean passiveMode = true;
+        private Duration connectTimeout = Duration.ofSeconds(10);
+        private Duration defaultTimeout = Duration.ofSeconds(10);
+        private Duration dataTimeout = Duration.ofSeconds(30);
+        private Duration keepAliveInterval = Duration.ofSeconds(30);
+        private String protocol = "TLS";
+        private boolean implicit;
+        private boolean endpointCheckingEnabled = true;
 
-        /** 连接超时时间（毫秒），默认 10000 */
-        private int connectTimeout = 10000;
-
-        // ---- Getter / Setter ----
-
+        /** @return FTP 服务器地址 */
         public String getHost() { return host; }
+
+        /** @param host FTP 服务器地址 */
         public void setHost(String host) { this.host = host; }
 
+        /** @return FTP 服务器端口 */
         public int getPort() { return port; }
+
+        /** @param port FTP 服务器端口 */
         public void setPort(int port) { this.port = port; }
 
+        /** @return FTP 登录用户名 */
         public String getUsername() { return username; }
+
+        /** @param username FTP 登录用户名 */
         public void setUsername(String username) { this.username = username; }
 
+        /** @return FTP 登录密码 */
         public String getPassword() { return password; }
+
+        /** @param password FTP 登录密码 */
         public void setPassword(String password) { this.password = password; }
 
+        /** @return 远程存储根目录 */
+        public String getBasePath() { return basePath; }
+
+        /** @param basePath 远程存储根目录 */
+        public void setBasePath(String basePath) { this.basePath = basePath; }
+
+        /** @return FTP 控制连接字符集 */
+        public String getCharset() { return charset; }
+
+        /** @param charset FTP 控制连接字符集 */
+        public void setCharset(String charset) { this.charset = charset; }
+
+        /** @return 是否使用被动模式 */
         public boolean isPassiveMode() { return passiveMode; }
+
+        /** @param passiveMode 是否使用被动模式 */
         public void setPassiveMode(boolean passiveMode) { this.passiveMode = passiveMode; }
 
-        public int getConnectTimeout() { return connectTimeout; }
-        public void setConnectTimeout(int connectTimeout) { this.connectTimeout = connectTimeout; }
+        /** @return 建立连接超时 */
+        public Duration getConnectTimeout() { return connectTimeout; }
+
+        /** @param connectTimeout 建立连接超时 */
+        public void setConnectTimeout(Duration connectTimeout) { this.connectTimeout = connectTimeout; }
+
+        /** @return 控制连接默认超时 */
+        public Duration getDefaultTimeout() { return defaultTimeout; }
+
+        /** @param defaultTimeout 控制连接默认超时 */
+        public void setDefaultTimeout(Duration defaultTimeout) { this.defaultTimeout = defaultTimeout; }
+
+        /** @return 数据连接超时 */
+        public Duration getDataTimeout() { return dataTimeout; }
+
+        /** @param dataTimeout 数据连接超时 */
+        public void setDataTimeout(Duration dataTimeout) { this.dataTimeout = dataTimeout; }
+
+        /** @return 控制连接保活间隔 */
+        public Duration getKeepAliveInterval() { return keepAliveInterval; }
+
+        /** @param keepAliveInterval 控制连接保活间隔 */
+        public void setKeepAliveInterval(Duration keepAliveInterval) { this.keepAliveInterval = keepAliveInterval; }
+
+        /** @return FTPS 协议名称 */
+        public String getProtocol() { return protocol; }
+
+        /** @param protocol FTPS 协议名称 */
+        public void setProtocol(String protocol) { this.protocol = protocol; }
+
+        /** @return 是否使用隐式 FTPS */
+        public boolean isImplicit() { return implicit; }
+
+        /** @param implicit 是否使用隐式 FTPS */
+        public void setImplicit(boolean implicit) { this.implicit = implicit; }
+
+        /** @return 是否启用 TLS 端点校验 */
+        public boolean isEndpointCheckingEnabled() { return endpointCheckingEnabled; }
+
+        /** @param endpointCheckingEnabled 是否启用 TLS 端点校验 */
+        public void setEndpointCheckingEnabled(boolean endpointCheckingEnabled) {
+            this.endpointCheckingEnabled = endpointCheckingEnabled;
+        }
     }
 
-    // ===== SFTP 存储配置 =====
-
     /**
-     * SFTP 远程存储配置（预留）。
-     *
-     * <p>支持密码认证或私钥文件认证两种方式。</p>
+     * ZIP 解压安全限制。
      */
-    public static class Sftp {
+    public static class Archive {
+        private int maxEntries = 10_000;
+        private DataSize maxEntrySize = DataSize.ofMegabytes(100);
+        private DataSize maxTotalSize = DataSize.ofGigabytes(1);
 
-        /** SFTP 服务器地址，默认 localhost */
-        private String host = "localhost";
+        /** @return 最大条目数量 */
+        public int getMaxEntries() { return maxEntries; }
 
-        /** SFTP 端口，默认 22 */
-        private int port = 22;
+        /** @param maxEntries 最大条目数量 */
+        public void setMaxEntries(int maxEntries) { this.maxEntries = maxEntries; }
 
-        /** SFTP 登录用户名 */
-        private String username;
+        /** @return 单条目最大解压大小 */
+        public DataSize getMaxEntrySize() { return maxEntrySize; }
 
-        /** SFTP 登录密码（与 privateKeyPath 二选一） */
-        private String password;
+        /** @param maxEntrySize 单条目最大解压大小 */
+        public void setMaxEntrySize(DataSize maxEntrySize) { this.maxEntrySize = maxEntrySize; }
 
-        /** SSH 私钥文件路径（与 password 二选一） */
-        private String privateKeyPath;
+        /** @return 全部条目最大解压大小 */
+        public DataSize getMaxTotalSize() { return maxTotalSize; }
 
-        /** 连接超时时间（毫秒），默认 10000 */
-        private int connectTimeout = 10000;
-
-        // ---- Getter / Setter ----
-
-        public String getHost() { return host; }
-        public void setHost(String host) { this.host = host; }
-
-        public int getPort() { return port; }
-        public void setPort(int port) { this.port = port; }
-
-        public String getUsername() { return username; }
-        public void setUsername(String username) { this.username = username; }
-
-        public String getPassword() { return password; }
-        public void setPassword(String password) { this.password = password; }
-
-        public String getPrivateKeyPath() { return privateKeyPath; }
-        public void setPrivateKeyPath(String privateKeyPath) { this.privateKeyPath = privateKeyPath; }
-
-        public int getConnectTimeout() { return connectTimeout; }
-        public void setConnectTimeout(int connectTimeout) { this.connectTimeout = connectTimeout; }
+        /** @param maxTotalSize 全部条目最大解压大小 */
+        public void setMaxTotalSize(DataSize maxTotalSize) { this.maxTotalSize = maxTotalSize; }
     }
 }

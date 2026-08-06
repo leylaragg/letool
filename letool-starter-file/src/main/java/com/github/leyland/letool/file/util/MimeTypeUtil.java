@@ -1,6 +1,5 @@
 package com.github.leyland.letool.file.util;
 
-import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -19,47 +18,45 @@ public final class MimeTypeUtil {
     /**
      * 文件扩展名（小写） -> MIME 类型的映射表。
      */
-    private static final Map<String, String> EXT_TO_MIME = new HashMap<>();
-
-    static {
+    private static final Map<String, String> EXT_TO_MIME = Map.ofEntries(
         // ---- 图片 ----
-        EXT_TO_MIME.put("jpg", "image/jpeg");
-        EXT_TO_MIME.put("jpeg", "image/jpeg");
-        EXT_TO_MIME.put("png", "image/png");
-        EXT_TO_MIME.put("gif", "image/gif");
-        EXT_TO_MIME.put("bmp", "image/bmp");
-        EXT_TO_MIME.put("svg", "image/svg+xml");
-        EXT_TO_MIME.put("webp", "image/webp");
+        Map.entry("jpg", "image/jpeg"),
+        Map.entry("jpeg", "image/jpeg"),
+        Map.entry("png", "image/png"),
+        Map.entry("gif", "image/gif"),
+        Map.entry("bmp", "image/bmp"),
+        Map.entry("svg", "image/svg+xml"),
+        Map.entry("webp", "image/webp"),
 
         // ---- 文档 ----
-        EXT_TO_MIME.put("pdf", "application/pdf");
-        EXT_TO_MIME.put("doc", "application/msword");
-        EXT_TO_MIME.put("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-        EXT_TO_MIME.put("xls", "application/vnd.ms-excel");
-        EXT_TO_MIME.put("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-        EXT_TO_MIME.put("ppt", "application/vnd.ms-powerpoint");
-        EXT_TO_MIME.put("pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+        Map.entry("pdf", "application/pdf"),
+        Map.entry("doc", "application/msword"),
+        Map.entry("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        Map.entry("xls", "application/vnd.ms-excel"),
+        Map.entry("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        Map.entry("ppt", "application/vnd.ms-powerpoint"),
+        Map.entry("pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
 
         // ---- 文本 ----
-        EXT_TO_MIME.put("txt", "text/plain");
-        EXT_TO_MIME.put("html", "text/html");
-        EXT_TO_MIME.put("css", "text/css");
-        EXT_TO_MIME.put("js", "application/javascript");
-        EXT_TO_MIME.put("json", "application/json");
-        EXT_TO_MIME.put("xml", "application/xml");
+        Map.entry("txt", "text/plain"),
+        Map.entry("html", "text/html"),
+        Map.entry("css", "text/css"),
+        Map.entry("js", "application/javascript"),
+        Map.entry("json", "application/json"),
+        Map.entry("xml", "application/xml"),
 
         // ---- 压缩 ----
-        EXT_TO_MIME.put("zip", "application/zip");
-        EXT_TO_MIME.put("rar", "application/x-rar-compressed");
-        EXT_TO_MIME.put("gz", "application/gzip");
-        EXT_TO_MIME.put("tar", "application/x-tar");
+        Map.entry("zip", "application/zip"),
+        Map.entry("rar", "application/x-rar-compressed"),
+        Map.entry("gz", "application/gzip"),
+        Map.entry("tar", "application/x-tar"),
 
         // ---- 音视频 ----
-        EXT_TO_MIME.put("mp3", "audio/mpeg");
-        EXT_TO_MIME.put("mp4", "video/mp4");
-        EXT_TO_MIME.put("avi", "video/x-msvideo");
-        EXT_TO_MIME.put("mov", "video/quicktime");
-    }
+        Map.entry("mp3", "audio/mpeg"),
+        Map.entry("mp4", "video/mp4"),
+        Map.entry("avi", "video/x-msvideo"),
+        Map.entry("mov", "video/quicktime")
+    );
 
     private MimeTypeUtil() {}
 

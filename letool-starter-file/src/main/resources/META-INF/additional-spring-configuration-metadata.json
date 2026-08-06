@@ -8,99 +8,137 @@
     },
     {
       "name": "letool.file.upload.max-size",
-      "type": "java.lang.String",
-      "description": "单文件最大体积，支持 10MB、1GB 等格式。",
+      "type": "org.springframework.util.unit.DataSize",
+      "description": "单文件最大实际读取大小。",
       "defaultValue": "10MB"
     },
     {
-      "name": "letool.file.upload.allowed-types",
-      "type": "java.lang.String[]",
-      "description": "允许上传的文件扩展名白名单，为空表示不限制。"
+      "name": "letool.file.upload.allow-empty",
+      "type": "java.lang.Boolean",
+      "description": "是否允许上传空文件。",
+      "defaultValue": false
     },
     {
-      "name": "letool.file.upload.storage-path",
-      "type": "java.lang.String",
-      "description": "上传文件的临时/目标存储路径。",
-      "defaultValue": "/data/uploads"
+      "name": "letool.file.upload.allowed-extensions",
+      "type": "java.util.List<java.lang.String>",
+      "description": "允许的文件扩展名白名单；为空时不限制扩展名。"
+    },
+    {
+      "name": "letool.file.upload.allowed-content-types",
+      "type": "java.util.List<java.lang.String>",
+      "description": "允许的声明媒体类型白名单；为空时不限制媒体类型。"
     },
     {
       "name": "letool.file.storage.type",
       "type": "java.lang.String",
-      "description": "存储类型。",
+      "description": "内置存储类型，可选 local、ftp 或 ftps；自定义 Provider 时该值由业务自行约定。",
       "defaultValue": "local"
     },
     {
       "name": "letool.file.storage.local.base-path",
       "type": "java.lang.String",
       "description": "本地文件系统存储根目录。",
-      "defaultValue": "~/letool/files"
+      "defaultValue": "${user.home}/letool/files"
     },
     {
       "name": "letool.file.storage.ftp.host",
       "type": "java.lang.String",
-      "description": "FTP 服务器地址。",
+      "description": "FTP 或 FTPS 服务器地址。",
       "defaultValue": "localhost"
     },
     {
       "name": "letool.file.storage.ftp.port",
       "type": "java.lang.Integer",
-      "description": "FTP 端口。",
+      "description": "FTP 或 FTPS 服务器端口。",
       "defaultValue": 21
     },
     {
       "name": "letool.file.storage.ftp.username",
       "type": "java.lang.String",
-      "description": "FTP 登录用户名。"
+      "description": "FTP 或 FTPS 登录用户名。"
     },
     {
       "name": "letool.file.storage.ftp.password",
       "type": "java.lang.String",
-      "description": "FTP 登录密码。"
+      "description": "FTP 或 FTPS 登录密码。"
+    },
+    {
+      "name": "letool.file.storage.ftp.base-path",
+      "type": "java.lang.String",
+      "description": "远程存储根目录。",
+      "defaultValue": "/"
+    },
+    {
+      "name": "letool.file.storage.ftp.charset",
+      "type": "java.lang.String",
+      "description": "FTP 控制连接字符集。",
+      "defaultValue": "UTF-8"
     },
     {
       "name": "letool.file.storage.ftp.passive-mode",
       "type": "java.lang.Boolean",
-      "description": "是否使用被动模式（适配防火墙环境）。",
+      "description": "是否使用被动模式。",
       "defaultValue": true
     },
     {
       "name": "letool.file.storage.ftp.connect-timeout",
+      "type": "java.time.Duration",
+      "description": "建立连接超时。",
+      "defaultValue": "10s"
+    },
+    {
+      "name": "letool.file.storage.ftp.default-timeout",
+      "type": "java.time.Duration",
+      "description": "控制连接默认超时。",
+      "defaultValue": "10s"
+    },
+    {
+      "name": "letool.file.storage.ftp.data-timeout",
+      "type": "java.time.Duration",
+      "description": "数据连接读写超时。",
+      "defaultValue": "30s"
+    },
+    {
+      "name": "letool.file.storage.ftp.keep-alive-interval",
+      "type": "java.time.Duration",
+      "description": "控制连接保活间隔。",
+      "defaultValue": "30s"
+    },
+    {
+      "name": "letool.file.storage.ftp.protocol",
+      "type": "java.lang.String",
+      "description": "FTPS 使用的 TLS 协议名称。",
+      "defaultValue": "TLS"
+    },
+    {
+      "name": "letool.file.storage.ftp.implicit",
+      "type": "java.lang.Boolean",
+      "description": "是否使用隐式 FTPS。",
+      "defaultValue": false
+    },
+    {
+      "name": "letool.file.storage.ftp.endpoint-checking-enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用 FTPS TLS 端点校验。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.file.archive.max-entries",
       "type": "java.lang.Integer",
-      "description": "FTP 连接超时时间（毫秒）。",
+      "description": "单个 ZIP 允许解压的最大条目数量。",
       "defaultValue": 10000
     },
     {
-      "name": "letool.file.storage.sftp.host",
-      "type": "java.lang.String",
-      "description": "SFTP 服务器地址。",
-      "defaultValue": "localhost"
+      "name": "letool.file.archive.max-entry-size",
+      "type": "org.springframework.util.unit.DataSize",
+      "description": "单个 ZIP 条目的最大实际解压大小。",
+      "defaultValue": "100MB"
     },
     {
-      "name": "letool.file.storage.sftp.port",
-      "type": "java.lang.Integer",
-      "description": "SFTP 端口。",
-      "defaultValue": 22
-    },
-    {
-      "name": "letool.file.storage.sftp.username",
-      "type": "java.lang.String",
-      "description": "SFTP 登录用户名。"
-    },
-    {
-      "name": "letool.file.storage.sftp.password",
-      "type": "java.lang.String",
-      "description": "SFTP 登录密码（与 privateKeyPath 二选一）。"
-    },
-    {
-      "name": "letool.file.storage.sftp.private-key-path",
-      "type": "java.lang.String",
-      "description": "SSH 私钥文件路径（与 password 二选一）。"
-    },
-    {
-      "name": "letool.file.storage.sftp.connect-timeout",
-      "type": "java.lang.Integer",
-      "description": "SFTP 连接超时时间（毫秒）。",
-      "defaultValue": 10000
+      "name": "letool.file.archive.max-total-size",
+      "type": "org.springframework.util.unit.DataSize",
+      "description": "单个 ZIP 全部条目的最大实际解压总量。",
+      "defaultValue": "1GB"
     }
   ],
   "hints": [
@@ -108,8 +146,8 @@
       "name": "letool.file.storage.type",
       "values": [
         { "value": "local", "description": "本地文件系统存储" },
-        { "value": "ftp", "description": "FTP 远程服务器存储" },
-        { "value": "sftp", "description": "SFTP 远程服务器存储（预留）" }
+        { "value": "ftp", "description": "明文 FTP 远程存储" },
+        { "value": "ftps", "description": "TLS 加密的 FTPS 远程存储" }
       ]
     }
   ]

@@ -1,283 +1,712 @@
 package com.github.leyland.letool.file.storage;
 
 import com.github.leyland.letool.file.config.FileProperties;
+import com.github.leyland.letool.file.exception.FileErrorCode;
+import com.github.leyland.letool.file.exception.FileException;
+import com.github.leyland.letool.file.model.FileMetadata;
+import com.github.leyland.letool.file.model.FileResource;
+import com.github.leyland.letool.file.model.OverwritePolicy;
+import com.github.leyland.letool.file.model.StorageCapability;
+import com.github.leyland.letool.file.model.StoreRequest;
+import com.github.leyland.letool.file.model.StoredFile;
+import com.github.leyland.letool.file.util.MimeTypeUtil;
 import org.apache.commons.net.ftp.FTP;
 import org.apache.commons.net.ftp.FTPClient;
 import org.apache.commons.net.ftp.FTPFile;
+import org.apache.commons.net.ftp.FTPReply;
+import org.apache.commons.net.ftp.FTPSClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.*;
+import java.io.FilterInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.Charset;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
 
 /**
- * 基于 Apache Commons Net 的 FTP 文件存储实现。
- *
- * <p>每次操作（上传/下载/删除/列表）都会建立新的 FTP 连接，操作完成后自动断开。
- * 支持被动模式（推荐，可穿透防火墙）和二进制传输，通过 {@link FileProperties.Ftp}
- * 配置连接参数。</p>
- *
- * <p><b>上传流程：</b></p>
- * <ol>
- *   <li>建立 FTP 连接并登录</li>
- *   <li>逐级创建目标目录（若不存在）</li>
- *   <li>设置二进制传输模式</li>
- *   <li>上传文件流</li>
- *   <li>断开连接</li>
- * </ol>
- *
- * <p><b>下载流程：</b></p>
- * <ol>
- *   <li>建立 FTP 连接并登录</li>
- *   <li>设置二进制传输模式</li>
- *   <li>读取远程文件到内存字节数组</li>
- *   <li>返回 ByteArrayInputStream 供调用方使用</li>
- *   <li>断开连接</li>
- * </ol>
- *
- * @author leyland
- * @since 1.0.0
+ * 基于 Apache Commons Net 的流式 FTP 与 FTPS 文件存储。
  */
-public class FtpFileStorage implements FileStorageProvider {
+public final class FtpFileStorage implements FileStorageProvider {
 
     private static final Logger log = LoggerFactory.getLogger(FtpFileStorage.class);
 
-    /** FTP 服务器地址 */
-    private final String host;
-
-    /** FTP 服务器端口 */
-    private final int port;
-
-    /** 登录用户名 */
-    private final String username;
-
-    /** 登录密码 */
-    private final String password;
-
-    /** 是否使用被动模式 */
-    private final boolean passiveMode;
-
-    /** 连接超时时间（毫秒） */
-    private final int connectTimeout;
+    private final FileProperties.Ftp properties;
+    private final FtpClientFactory clientFactory;
+    private final boolean secureTransport;
+    private final String storageType;
+    private final String basePath;
 
     /**
-     * 根据 FTP 配置构造存储实例。
+     * 使用默认客户端工厂创建明文 FTP 存储。
      *
-     * @param ftpProps FTP 配置属性对象
+     * @param properties FTP 配置
      */
-    public FtpFileStorage(FileProperties.Ftp ftpProps) {
-        this.host = ftpProps.getHost();
-        this.port = ftpProps.getPort();
-        this.username = ftpProps.getUsername();
-        this.password = ftpProps.getPassword();
-        this.passiveMode = ftpProps.isPassiveMode();
-        this.connectTimeout = ftpProps.getConnectTimeout();
+    public FtpFileStorage(FileProperties.Ftp properties) {
+        this(properties, FtpFileStorage::createDefaultClient, false);
     }
 
-    // ===== 文件上传 =====
+    /**
+     * 创建可测试、可扩展的 FTP 或 FTPS 存储。
+     *
+     * @param properties FTP 配置
+     * @param clientFactory 客户端创建工厂
+     * @param secureTransport 是否使用 FTPS 安全传输
+     */
+    public FtpFileStorage(
+            FileProperties.Ftp properties,
+            FtpClientFactory clientFactory,
+            boolean secureTransport) {
+        this.properties = Objects.requireNonNull(properties, "properties 不能为空");
+        this.clientFactory = Objects.requireNonNull(clientFactory, "clientFactory 不能为空");
+        this.secureTransport = secureTransport;
+        this.storageType = secureTransport ? "ftps" : "ftp";
+        this.basePath = normalizeBasePath(properties.getBasePath());
+        validateProperties(properties);
+    }
 
     /**
-     * 上传文件到 FTP 服务器。
+     * 使用远程临时文件写入并在成功后重命名。
      *
-     * <p>目标目录不存在时自动创建，使用二进制模式传输以保证文件完整性。</p>
-     *
-     * @param inputStream 文件内容的输入流
-     * @param path        目标远程目录路径
-     * @param fileName    目标文件名
-     * @return 文件在 FTP 服务器上的完整路径
-     * @throws UncheckedIOException 上传失败时抛出
+     * @param request 写入请求
+     * @param inputStream 文件输入流
+     * @return 实际存储结果
      */
     @Override
-    public String upload(InputStream inputStream, String path, String fileName) {
-        FTPClient ftp = connect();
+    public StoredFile store(StoreRequest request, InputStream inputStream) {
+        Objects.requireNonNull(request, "request 不能为空");
+        if (inputStream == null) {
+            throw FileException.of(FileErrorCode.PARAMETER_INVALID, "inputStream");
+        }
+        String key = StorageKey.file(request.key());
+        String target = remotePath(key);
+        String temporary = target + ".upload-" + UUID.randomUUID();
+        FTPClient client = connect();
         try {
-            createDirectories(ftp, path);
-            ftp.setFileType(FTP.BINARY_FILE_TYPE);
-            boolean ok = ftp.storeFile(path + "/" + fileName, inputStream);
-            if (!ok) {
-                throw new IOException("FTP upload failed: " + ftp.getReplyString());
+            ensureDirectories(client, parentPath(target));
+            if (request.overwritePolicy() == OverwritePolicy.FAIL && remoteExists(client, target)) {
+                throw FileException.of(FileErrorCode.UPLOAD_REJECTED, "目标文件已存在");
             }
-            log.debug("File uploaded via FTP: {}/{}", path, fileName);
-            return path + "/" + fileName;
-        } catch (IOException e) {
-            throw new UncheckedIOException("FTP upload failed: " + path + "/" + fileName, e);
-        } finally {
-            disconnect(ftp);
-        }
-    }
-
-    // ===== 文件下载 =====
-
-    /**
-     * 从 FTP 服务器下载文件。
-     *
-     * <p>由于 FTP 连接在方法返回前关闭，文件内容会先读取到内存中再返回。
-     * 对于大文件建议改用流式传输方案。</p>
-     *
-     * @param path 远程文件路径
-     * @return 文件内容的输入流（ByteArrayInputStream）
-     * @throws UncheckedIOException 下载失败时抛出
-     */
-    @Override
-    public InputStream download(String path) {
-        FTPClient ftp = connect();
-        try {
-            ftp.setFileType(FTP.BINARY_FILE_TYPE);
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            boolean ok = ftp.retrieveFile(path, baos);
-            if (!ok) {
-                throw new IOException("FTP download failed: " + ftp.getReplyString());
+            CountingDigestInputStream countingInputStream = new CountingDigestInputStream(inputStream);
+            if (!client.storeFile(temporary, countingInputStream)) {
+                throw protocolFailure("FTP 上传临时文件失败", client);
             }
-            return new ByteArrayInputStream(baos.toByteArray());
-        } catch (IOException e) {
-            throw new UncheckedIOException("FTP download failed: " + path, e);
-        } finally {
-            disconnect(ftp);
-        }
-    }
-
-    // ===== 文件删除 =====
-
-    /**
-     * 删除 FTP 服务器上的指定文件。
-     *
-     * @param path 远程文件路径
-     * @return {@code true} 删除成功，{@code false} 文件不存在或删除失败
-     * @throws UncheckedIOException 删除操作发生 I/O 错误时抛出
-     */
-    @Override
-    public boolean delete(String path) {
-        FTPClient ftp = connect();
-        try {
-            return ftp.deleteFile(path);
-        } catch (IOException e) {
-            throw new UncheckedIOException("FTP delete failed: " + path, e);
-        } finally {
-            disconnect(ftp);
-        }
-    }
-
-    // ===== 存在性检查 =====
-
-    /**
-     * 检查文件是否存在于 FTP 服务器。
-     *
-     * <p>通过列出该路径的父目录并检查返回结果来判断文件是否存在。</p>
-     *
-     * @param path 远程文件路径
-     * @return {@code true} 文件存在，{@code false} 不存在或发生异常
-     */
-    @Override
-    public boolean exists(String path) {
-        FTPClient ftp = connect();
-        try {
-            FTPFile[] files = ftp.listFiles(path);
-            return files != null && files.length > 0;
-        } catch (IOException e) {
-            return false;
-        } finally {
-            disconnect(ftp);
-        }
-    }
-
-    // ===== 目录列表 =====
-
-    /**
-     * 列出 FTP 服务器上指定目录的文件和子目录。
-     *
-     * @param path 远程目录路径
-     * @return 文件/目录信息列表，目录为空时返回空列表
-     * @throws UncheckedIOException 列表读取失败时抛出
-     */
-    @Override
-    public List<FileInfo> list(String path) {
-        List<FileInfo> result = new ArrayList<>();
-        FTPClient ftp = connect();
-        try {
-            FTPFile[] files = ftp.listFiles(path);
-            if (files != null) {
-                for (FTPFile f : files) {
-                    result.add(new FileInfo(
-                            f.getName(), path + "/" + f.getName(),
-                            f.getSize(), f.isDirectory(),
-                            f.getTimestamp().getTimeInMillis()
-                    ));
+            if (request.declaredSize() >= 0 && request.declaredSize() != countingInputStream.count()) {
+                client.deleteFile(temporary);
+                throw FileException.of(FileErrorCode.UPLOAD_REJECTED, "声明大小与实际大小不一致");
+            }
+            if (request.overwritePolicy() == OverwritePolicy.REPLACE && remoteExists(client, target)) {
+                if (!client.deleteFile(target)) {
+                    throw protocolFailure("FTP 无法替换已有文件", client);
                 }
             }
-        } catch (IOException e) {
-            throw new UncheckedIOException("FTP list failed: " + path, e);
+            if (!client.rename(temporary, target)) {
+                throw protocolFailure("FTP 临时文件重命名失败", client);
+            }
+            return new StoredFile(
+                    key,
+                    request.originalName(),
+                    fileName(key),
+                    countingInputStream.count(),
+                    request.contentType(),
+                    countingInputStream.sha256(),
+                    Instant.now());
+        } catch (FileException exception) {
+            deleteRemoteTemporary(client, temporary);
+            throw exception;
+        } catch (IOException exception) {
+            deleteRemoteTemporary(client, temporary);
+            throw FileException.causedBy(FileErrorCode.STORAGE_OPERATION_FAILED, exception);
         } finally {
-            disconnect(ftp);
+            disconnect(client);
         }
-        return result;
     }
 
-    // ===== 内部连接管理 =====
+    /**
+     * 打开与 FTP 连接生命周期绑定的远程输入流。
+     *
+     * @param key 文件逻辑键
+     * @return 可关闭文件资源
+     */
+    @Override
+    public FileResource open(String key) {
+        String normalizedKey = StorageKey.file(key);
+        String remotePath = remotePath(normalizedKey);
+        FTPClient client = connect();
+        try {
+            FileMetadata metadata = readMetadata(client, normalizedKey, remotePath);
+            if (metadata.directory()) {
+                throw FileException.of(FileErrorCode.PARAMETER_INVALID, "key 必须指向文件");
+            }
+            InputStream dataStream = client.retrieveFileStream(remotePath);
+            if (dataStream == null) {
+                throw protocolFailure("FTP 无法打开下载流", client);
+            }
+            return new FileResource(metadata, new CompletingFtpInputStream(dataStream, client));
+        } catch (FileException exception) {
+            disconnect(client);
+            throw exception;
+        } catch (IOException exception) {
+            disconnect(client);
+            throw FileException.causedBy(FileErrorCode.STORAGE_OPERATION_FAILED, exception);
+        }
+    }
 
     /**
-     * 建立 FTP 连接并登录。
+     * 删除远程文件。
      *
-     * <p>连接后根据配置决定是否进入被动模式。</p>
+     * @param key 文件逻辑键
+     * @return 是否成功删除
+     */
+    @Override
+    public boolean delete(String key) {
+        FTPClient client = connect();
+        try {
+            String remotePath = remotePath(StorageKey.file(key));
+            if (!remoteExists(client, remotePath)) {
+                return false;
+            }
+            if (!client.deleteFile(remotePath)) {
+                throw protocolFailure("FTP 删除文件失败", client);
+            }
+            return true;
+        } catch (FileException exception) {
+            throw exception;
+        } catch (IOException exception) {
+            throw FileException.causedBy(FileErrorCode.STORAGE_OPERATION_FAILED, exception);
+        } finally {
+            disconnect(client);
+        }
+    }
+
+    /**
+     * 检查远程文件是否存在。
      *
-     * @return 已登录的 FTPClient 实例
-     * @throws UncheckedIOException 连接或登录失败时抛出
+     * @param key 文件逻辑键
+     * @return 文件是否存在
+     */
+    @Override
+    public boolean exists(String key) {
+        FTPClient client = connect();
+        try {
+            return remoteExists(client, remotePath(StorageKey.file(key)));
+        } catch (IOException exception) {
+            throw FileException.causedBy(FileErrorCode.STORAGE_OPERATION_FAILED, exception);
+        } finally {
+            disconnect(client);
+        }
+    }
+
+    /**
+     * 查询远程文件元数据。
+     *
+     * @param key 文件逻辑键
+     * @return 文件元数据
+     */
+    @Override
+    public FileMetadata stat(String key) {
+        String normalizedKey = StorageKey.file(key);
+        FTPClient client = connect();
+        try {
+            return readMetadata(client, normalizedKey, remotePath(normalizedKey));
+        } catch (IOException exception) {
+            throw FileException.causedBy(FileErrorCode.STORAGE_OPERATION_FAILED, exception);
+        } finally {
+            disconnect(client);
+        }
+    }
+
+    /**
+     * 列出远程目录直接子项。
+     *
+     * @param directory 目录逻辑键
+     * @return 按逻辑键排序的元数据列表
+     */
+    @Override
+    public List<FileMetadata> list(String directory) {
+        String normalizedDirectory = StorageKey.directory(directory);
+        FTPClient client = connect();
+        try {
+            FTPFile[] files = client.listFiles(remotePath(normalizedDirectory));
+            if (files == null) {
+                throw protocolFailure("FTP 列举目录失败", client);
+            }
+            List<FileMetadata> result = new ArrayList<>();
+            for (FTPFile file : files) {
+                if (".".equals(file.getName()) || "..".equals(file.getName())) {
+                    continue;
+                }
+                String childKey = normalizedDirectory.isEmpty()
+                        ? file.getName()
+                        : normalizedDirectory + "/" + file.getName();
+                result.add(toMetadata(childKey, file));
+            }
+            result.sort(Comparator.comparing(FileMetadata::key));
+            return List.copyOf(result);
+        } catch (FileException exception) {
+            throw exception;
+        } catch (IOException exception) {
+            throw FileException.causedBy(FileErrorCode.STORAGE_OPERATION_FAILED, exception);
+        } finally {
+            disconnect(client);
+        }
+    }
+
+    /**
+     * 返回远程存储支持的能力。
+     *
+     * @return FTP 或 FTPS 能力集合
+     */
+    @Override
+    public Set<StorageCapability> capabilities() {
+        return secureTransport
+                ? Set.of(StorageCapability.DIRECTORY_LISTING, StorageCapability.SECURE_TRANSPORT)
+                : Set.of(StorageCapability.DIRECTORY_LISTING);
+    }
+
+    /**
+     * 建立并初始化 FTP 连接。
+     *
+     * @return 已登录客户端
      */
     private FTPClient connect() {
+        FTPClient client = clientFactory.create(storageType, properties);
+        if (client == null) {
+            throw FileException.of(FileErrorCode.CONFIGURATION_INVALID, "ftp.client-factory");
+        }
         try {
-            FTPClient ftp = new FTPClient();
-            ftp.setConnectTimeout(connectTimeout);
-            ftp.connect(host, port);
-            if (!ftp.login(username, password)) {
-                throw new IOException("FTP login failed: " + ftp.getReplyString());
+            configureClient(client);
+            client.connect(properties.getHost(), properties.getPort());
+            if (client.getReplyCode() > 0 && !FTPReply.isPositiveCompletion(client.getReplyCode())) {
+                throw protocolFailure("FTP 服务器拒绝连接", client);
             }
-            if (passiveMode) {
-                ftp.enterLocalPassiveMode();
+            if (!client.login(properties.getUsername(), properties.getPassword())) {
+                throw protocolFailure("FTP 登录失败", client);
             }
-            return ftp;
-        } catch (IOException e) {
-            throw new UncheckedIOException("FTP connect failed: " + host + ":" + port, e);
+            if (client instanceof FTPSClient ftpsClient) {
+                ftpsClient.execPBSZ(0);
+                ftpsClient.execPROT("P");
+            }
+            if (properties.isPassiveMode()) {
+                client.enterLocalPassiveMode();
+            } else {
+                client.enterLocalActiveMode();
+            }
+            if (!client.setFileType(FTP.BINARY_FILE_TYPE)) {
+                throw protocolFailure("FTP 无法启用二进制传输", client);
+            }
+            return client;
+        } catch (FileException exception) {
+            disconnect(client);
+            throw exception;
+        } catch (IOException | RuntimeException exception) {
+            disconnect(client);
+            throw FileException.causedBy(FileErrorCode.STORAGE_OPERATION_FAILED, exception);
         }
     }
 
     /**
-     * 安全断开 FTP 连接，静默处理任何异常。
+     * 应用连接和数据超时配置。
      *
-     * @param ftp 要断开的 FTPClient 实例
+     * @param client 待配置客户端
      */
-    private void disconnect(FTPClient ftp) {
-        try {
-            if (ftp.isConnected()) {
-                ftp.logout();
-                ftp.disconnect();
+    private void configureClient(FTPClient client) {
+        client.setConnectTimeout(toIntMilliseconds(properties.getConnectTimeout(), "ftp.connect-timeout"));
+        client.setDefaultTimeout(toIntMilliseconds(properties.getDefaultTimeout(), "ftp.default-timeout"));
+        client.setDataTimeout(properties.getDataTimeout());
+        client.setControlKeepAliveTimeout(properties.getKeepAliveInterval());
+        client.setCharset(Charset.forName(properties.getCharset()));
+    }
+
+    /**
+     * 读取指定远程路径的元数据。
+     *
+     * @param client 已连接客户端
+     * @param key 逻辑键
+     * @param remotePath 远程绝对路径
+     * @return 文件元数据
+     * @throws IOException FTP 命令失败时抛出
+     */
+    private FileMetadata readMetadata(FTPClient client, String key, String remotePath) throws IOException {
+        FTPFile[] files = client.listFiles(remotePath);
+        if (files == null) {
+            throw protocolFailure("FTP 查询元数据失败", client);
+        }
+        if (files.length == 0) {
+            throw FileException.of(FileErrorCode.FILE_NOT_FOUND);
+        }
+        return toMetadata(key, files[0]);
+    }
+
+    /**
+     * 判断远程绝对路径是否存在。
+     *
+     * @param client 已连接客户端
+     * @param remotePath 远程绝对路径
+     * @return 路径是否存在
+     * @throws IOException FTP 命令失败时抛出
+     */
+    private boolean remoteExists(FTPClient client, String remotePath) throws IOException {
+        FTPFile[] files = client.listFiles(remotePath);
+        if (files == null) {
+            throw protocolFailure("FTP 检查文件存在性失败", client);
+        }
+        return files.length > 0;
+    }
+
+    /**
+     * 逐级创建远程目录并校验每条命令结果。
+     *
+     * @param client 已连接客户端
+     * @param absoluteDirectory 远程绝对目录
+     * @throws IOException FTP 命令失败时抛出
+     */
+    private void ensureDirectories(FTPClient client, String absoluteDirectory) throws IOException {
+        if (!client.changeWorkingDirectory("/")) {
+            throw protocolFailure("FTP 无法进入根目录", client);
+        }
+        for (String segment : absoluteDirectory.split("/")) {
+            if (segment.isBlank()) {
+                continue;
             }
-        } catch (IOException ignored) {
-            // 断开连接时的异常不影响业务逻辑，静默忽略
+            if (!client.changeWorkingDirectory(segment)) {
+                if (!client.makeDirectory(segment) || !client.changeWorkingDirectory(segment)) {
+                    throw protocolFailure("FTP 创建目录失败", client);
+                }
+            }
         }
     }
 
     /**
-     * 在 FTP 服务器上逐级创建目录。
+     * 将 FTP 文件转换为统一元数据。
      *
-     * <p>从根路径开始，依次进入/创建各层级目录，创建完成后回到根目录。</p>
-     *
-     * @param ftp  已连接的 FTPClient 实例
-     * @param path 要创建的目录路径（以 / 分隔）
-     * @throws IOException 目录创建失败时抛出
+     * @param key 逻辑键
+     * @param file FTP 文件信息
+     * @return 统一文件元数据
      */
-    private void createDirectories(FTPClient ftp, String path) throws IOException {
-        for (String dir : path.split("/")) {
-            String trimmed = dir.trim();
-            if (trimmed.isEmpty()) continue;
-            // 拒绝路径遍历攻击：不允许 ".." 或 "." 作为路径段
-            if ("..".equals(trimmed) || ".".equals(trimmed)) {
-                throw new IllegalArgumentException("Invalid path segment: '" + trimmed + "' in path: " + path);
+    private FileMetadata toMetadata(String key, FTPFile file) {
+        boolean directory = file.isDirectory();
+        Instant lastModified = file.getTimestamp() == null
+                ? Instant.EPOCH
+                : file.getTimestamp().toInstant();
+        return new FileMetadata(
+                key,
+                file.getName() == null || file.getName().isBlank() ? fileName(key) : file.getName(),
+                directory ? 0 : Math.max(0, file.getSize()),
+                directory,
+                lastModified,
+                directory ? "application/octet-stream" : MimeTypeUtil.getMimeType(file.getName()));
+    }
+
+    /**
+     * 将逻辑键映射到配置的远程根目录。
+     *
+     * @param key 已规范化逻辑键
+     * @return 远程绝对路径
+     */
+    private String remotePath(String key) {
+        if (key == null || key.isEmpty()) {
+            return basePath;
+        }
+        return "/".equals(basePath) ? "/" + key : basePath + "/" + key;
+    }
+
+    /**
+     * 从远程文件路径提取父目录。
+     *
+     * @param path 远程文件路径
+     * @return 远程父目录
+     */
+    private String parentPath(String path) {
+        int index = path.lastIndexOf('/');
+        return index <= 0 ? "/" : path.substring(0, index);
+    }
+
+    /**
+     * 从逻辑键提取文件名。
+     *
+     * @param key 文件逻辑键
+     * @return 文件名
+     */
+    private String fileName(String key) {
+        int index = key.lastIndexOf('/');
+        return index < 0 ? key : key.substring(index + 1);
+    }
+
+    /**
+     * 创建不向外暴露服务器回复内容的协议异常。
+     *
+     * @param operation 安全诊断描述
+     * @param client FTP 客户端
+     * @return 包含原始回复作为内部 cause 的文件异常
+     */
+    private FileException protocolFailure(String operation, FTPClient client) {
+        IOException cause = new IOException(operation + "，replyCode=" + client.getReplyCode()
+                + "，reply=" + String.valueOf(client.getReplyString()).trim());
+        return FileException.causedBy(FileErrorCode.STORAGE_OPERATION_FAILED, cause);
+    }
+
+    /**
+     * 删除失败写入留下的远程临时文件。
+     *
+     * @param client FTP 客户端
+     * @param temporaryPath 临时文件路径
+     */
+    private void deleteRemoteTemporary(FTPClient client, String temporaryPath) {
+        try {
+            if (client.isConnected() && !client.deleteFile(temporaryPath)) {
+                log.warn("FTP 临时文件清理未成功，replyCode={}", client.getReplyCode());
             }
-            if (!ftp.changeWorkingDirectory(trimmed)) {
-                ftp.makeDirectory(trimmed);
-                ftp.changeWorkingDirectory(trimmed);
+        } catch (IOException exception) {
+            log.warn("FTP 临时文件清理发生异常", exception);
+        }
+    }
+
+    /**
+     * 注销并断开客户端，清理失败只记录诊断信息。
+     *
+     * @param client FTP 客户端
+     */
+    private void disconnect(FTPClient client) {
+        if (client == null || !client.isConnected()) {
+            return;
+        }
+        try {
+            client.logout();
+        } catch (IOException exception) {
+            log.warn("FTP 注销连接失败", exception);
+        }
+        try {
+            client.disconnect();
+        } catch (IOException exception) {
+            log.warn("FTP 断开连接失败", exception);
+        }
+    }
+
+    /**
+     * 创建默认 FTP 或 FTPS 客户端。
+     *
+     * @param storageType 存储类型
+     * @param properties FTP 配置
+     * @return FTP 客户端
+     */
+    private static FTPClient createDefaultClient(String storageType, FileProperties.Ftp properties) {
+        if ("ftps".equalsIgnoreCase(storageType)) {
+            FTPSClient client = new FTPSClient(properties.getProtocol(), properties.isImplicit());
+            client.setEndpointCheckingEnabled(properties.isEndpointCheckingEnabled());
+            return client;
+        }
+        return new FTPClient();
+    }
+
+    /**
+     * 校验 FTP 必填配置和范围。
+     *
+     * @param properties FTP 配置
+     */
+    private static void validateProperties(FileProperties.Ftp properties) {
+        requireText(properties.getHost(), "ftp.host");
+        requireText(properties.getUsername(), "ftp.username");
+        requireText(properties.getPassword(), "ftp.password");
+        requireText(properties.getCharset(), "ftp.charset");
+        if (properties.getPort() < 1 || properties.getPort() > 65_535) {
+            throw FileException.of(FileErrorCode.CONFIGURATION_INVALID, "ftp.port");
+        }
+        requirePositive(properties.getConnectTimeout(), "ftp.connect-timeout");
+        requirePositive(properties.getDefaultTimeout(), "ftp.default-timeout");
+        requirePositive(properties.getDataTimeout(), "ftp.data-timeout");
+        requirePositive(properties.getKeepAliveInterval(), "ftp.keep-alive-interval");
+        try {
+            Charset.forName(properties.getCharset());
+        } catch (RuntimeException exception) {
+            throw FileException.causedBy(FileErrorCode.CONFIGURATION_INVALID, exception, "ftp.charset");
+        }
+    }
+
+    /**
+     * 规范化 FTP 远程根目录。
+     *
+     * @param configuredPath 配置路径
+     * @return 规范化绝对路径
+     */
+    private static String normalizeBasePath(String configuredPath) {
+        if (configuredPath == null || configuredPath.isBlank() || "/".equals(configuredPath.trim())) {
+            return "/";
+        }
+        String candidate = configuredPath.trim().replace('\\', '/');
+        if (!candidate.startsWith("/")) {
+            candidate = "/" + candidate;
+        }
+        while (candidate.endsWith("/")) {
+            candidate = candidate.substring(0, candidate.length() - 1);
+        }
+        for (String segment : candidate.split("/")) {
+            if (".".equals(segment) || "..".equals(segment)) {
+                throw FileException.of(FileErrorCode.CONFIGURATION_INVALID, "ftp.base-path");
             }
         }
-        ftp.changeWorkingDirectory("/");
+        return candidate;
+    }
+
+    /**
+     * 校验非空文本配置。
+     *
+     * @param value 配置值
+     * @param field 安全字段名
+     */
+    private static void requireText(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw FileException.of(FileErrorCode.CONFIGURATION_INVALID, field);
+        }
+    }
+
+    /**
+     * 校验正数时间配置。
+     *
+     * @param duration 时间值
+     * @param field 安全字段名
+     */
+    private static void requirePositive(java.time.Duration duration, String field) {
+        if (duration == null || duration.isZero() || duration.isNegative()) {
+            throw FileException.of(FileErrorCode.CONFIGURATION_INVALID, field);
+        }
+    }
+
+    /**
+     * 将时间安全转换为 Commons Net 使用的毫秒整数。
+     *
+     * @param duration 时间值
+     * @param field 安全字段名
+     * @return 毫秒整数
+     */
+    private static int toIntMilliseconds(java.time.Duration duration, String field) {
+        requirePositive(duration, field);
+        long milliseconds = duration.toMillis();
+        if (milliseconds > Integer.MAX_VALUE) {
+            throw FileException.of(FileErrorCode.CONFIGURATION_INVALID, field);
+        }
+        return (int) milliseconds;
+    }
+
+    /**
+     * 统计实际读取字节并计算 SHA-256 的输入流包装器。
+     */
+    private static final class CountingDigestInputStream extends FilterInputStream {
+        private final MessageDigest digest;
+        private long count;
+
+        /**
+         * 创建统计摘要输入流。
+         *
+         * @param inputStream 上游输入流
+         */
+        private CountingDigestInputStream(InputStream inputStream) {
+            super(inputStream);
+            try {
+                this.digest = MessageDigest.getInstance("SHA-256");
+            } catch (NoSuchAlgorithmException exception) {
+                throw FileException.causedBy(FileErrorCode.STORAGE_OPERATION_FAILED, exception);
+            }
+        }
+
+        @Override
+        public int read() throws IOException {
+            int value = super.read();
+            if (value >= 0) {
+                digest.update((byte) value);
+                count++;
+            }
+            return value;
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) throws IOException {
+            int read = super.read(buffer, offset, length);
+            if (read > 0) {
+                digest.update(buffer, offset, read);
+                count += read;
+            }
+            return read;
+        }
+
+        /** @return 已读取字节数 */
+        private long count() { return count; }
+
+        /** @return SHA-256 十六进制摘要 */
+        private String sha256() { return HexFormat.of().formatHex(digest.digest()); }
+    }
+
+    /**
+     * 关闭时完成 FTP 挂起命令并释放连接的下载流。
+     */
+    private static final class CompletingFtpInputStream extends FilterInputStream {
+        private final FTPClient client;
+        private boolean closed;
+
+        /**
+         * 创建与 FTP 客户端绑定的输入流。
+         *
+         * @param inputStream FTP 数据流
+         * @param client FTP 客户端
+         */
+        private CompletingFtpInputStream(InputStream inputStream, FTPClient client) {
+            super(inputStream);
+            this.client = client;
+        }
+
+        @Override
+        public void close() throws IOException {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            IOException failure = null;
+            try {
+                super.close();
+            } catch (IOException exception) {
+                failure = exception;
+            }
+            try {
+                if (!client.completePendingCommand()) {
+                    IOException exception = new IOException(
+                            "FTP 下载完成命令失败，replyCode=" + client.getReplyCode());
+                    if (failure == null) {
+                        failure = exception;
+                    } else {
+                        failure.addSuppressed(exception);
+                    }
+                }
+            } catch (IOException exception) {
+                if (failure == null) {
+                    failure = exception;
+                } else {
+                    failure.addSuppressed(exception);
+                }
+            }
+            try {
+                if (client.isConnected()) {
+                    client.logout();
+                    client.disconnect();
+                }
+            } catch (IOException exception) {
+                if (failure == null) {
+                    failure = exception;
+                } else {
+                    failure.addSuppressed(exception);
+                }
+            }
+            if (failure != null) {
+                throw failure;
+            }
+        }
     }
 }

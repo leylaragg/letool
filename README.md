@@ -42,7 +42,7 @@
 | **letool-starter-security** | 安全认证 —— Resource Server、JWT 签发、角色与权限映射 | tool, exception |
 | **letool-starter-thread** | 线程管理 —— 动态线程池、MDC 与自定义上下文传播、虚拟线程 | exception |
 | **letool-starter-swagger** | API 文档 —— Springdoc OpenAPI 引擎、Knife4j 增强 UI 与开箱即用默认配置 | exception, Springdoc, Knife4j, Spring Boot Web |
-| **letool-starter-file** | 文件操作 —— 上传下载、FTP/SFTP/MinIO/OSS、魔数检测 | tool |
+| [**letool-starter-file**](letool-starter-file/README.md) | 文件操作便利门面 —— Local/FTP/FTPS 流式存储、上传校验、下载适配与 ZIP 安全处理 | exception |
 | **letool-starter-excel** | Excel 操作 —— EasyExcel 原生能力薄封装、批量读取与轻量校验 | exception |
 | **letool-starter-mail** | 邮件发送 —— 显式启用的 Jakarta Mail、多账户、附件与同步/异步投递 | exception |
 | **letool-starter-distributed-lock** | 分布式锁 —— Redis 后端、`LockTemplate`、`@Lock`/`@Idempotent`；可替换 `DistributedLock` | tool |
