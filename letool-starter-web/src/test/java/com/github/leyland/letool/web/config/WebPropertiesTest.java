@@ -1,114 +1,71 @@
 package com.github.leyland.letool.web.config;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.util.unit.DataSize;
 
+import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@DisplayName("WebProperties 配置属性测试")
+/**
+ * Web 模块配置模型关键行为测试。
+ */
 class WebPropertiesTest {
 
-    private WebProperties properties;
+    /**
+     * 验证无需配置时采用低成本且可直接使用的生产默认值。
+     */
+    @Test
+    void shouldUseSafeProductionDefaults() {
+        WebProperties properties = new WebProperties();
 
-    @BeforeEach
-    void setUp() {
-        properties = new WebProperties();
+        assertThat(properties.isEnabled()).isTrue();
+        assertThat(properties.getResponseWrapper().isEnabled()).isTrue();
+        assertThat(properties.getApiVersion().isEnabled()).isTrue();
+        assertThat(properties.getApiVersion().getHeaderName()).isEqualTo("X-API-Version");
+        assertThat(properties.getApiVersion().getParameterName()).isEqualTo("apiVersion");
+        assertThat(properties.getRepeatableRequest().isEnabled()).isFalse();
+        assertThat(properties.getRepeatableRequest().getMaxBodySize())
+                .isEqualTo(DataSize.ofMegabytes(1));
+        assertThat(properties.getRepeatableRequest().getIncludeMediaTypes())
+                .containsExactly(
+                        "application/json",
+                        "application/*+json",
+                        "application/xml",
+                        "application/*+xml",
+                        "text/*");
     }
 
+    /**
+     * 验证列表配置不会保留调用方的可变引用，也不会向外暴露可变集合。
+     */
     @Test
-    @DisplayName("默认 enabled 为 true")
-    void testDefaultEnabled() {
-        assertTrue(properties.isEnabled());
+    void shouldDefensivelyCopyConfiguredLists() {
+        List<String> paths = new ArrayList<>(List.of("/actuator/**"));
+        WebProperties.ResponseWrapper responseWrapper = new WebProperties.ResponseWrapper();
+
+        responseWrapper.setExcludePaths(paths);
+        paths.add("/changed/**");
+
+        assertThat(responseWrapper.getExcludePaths()).containsExactly("/actuator/**");
+        assertThatThrownBy(() -> responseWrapper.getExcludePaths().add("/other/**"))
+                .isInstanceOf(UnsupportedOperationException.class);
     }
 
+    /**
+     * 验证嵌套配置不能被替换为 {@code null}，避免自动配置阶段出现延迟空指针。
+     */
     @Test
-    @DisplayName("setEnabled")
-    void testSetEnabled() {
-        properties.setEnabled(false);
-        assertFalse(properties.isEnabled());
-    }
+    void shouldRejectNullNestedConfiguration() {
+        WebProperties properties = new WebProperties();
 
-    @Test
-    @DisplayName("ResponseWrapper 默认值")
-    void testResponseWrapperDefaults() {
-        WebProperties.ResponseWrapper rw = properties.getResponseWrapper();
-        assertTrue(rw.isEnabled());
-        assertTrue(rw.getExcludePaths().isEmpty());
-    }
-
-    @Test
-    @DisplayName("ResponseWrapper setter")
-    void testResponseWrapperSetters() {
-        WebProperties.ResponseWrapper rw = new WebProperties.ResponseWrapper();
-        rw.setEnabled(false);
-        rw.setExcludePaths(List.of("/health", "/actuator/**"));
-        assertFalse(rw.isEnabled());
-        assertEquals(2, rw.getExcludePaths().size());
-    }
-
-    @Test
-    @DisplayName("XssFilter 默认值")
-    void testXssFilterDefaults() {
-        WebProperties.XssFilter xssFilter = properties.getXssFilter();
-        assertTrue(xssFilter.isEnabled());
-        assertTrue(xssFilter.getExcludePaths().isEmpty());
-    }
-
-    @Test
-    @DisplayName("XssFilter setter")
-    void testXssFilterSetters() {
-        WebProperties.XssFilter xssFilter = new WebProperties.XssFilter();
-        xssFilter.setEnabled(false);
-        xssFilter.setExcludePaths(List.of("/api/file/**"));
-        assertFalse(xssFilter.isEnabled());
-        assertEquals(1, xssFilter.getExcludePaths().size());
-    }
-
-    @Test
-    @DisplayName("SqlInjectionFilter 默认值")
-    void testSqlInjectionFilterDefaults() {
-        WebProperties.SqlInjectionFilter filter = properties.getSqlInjectionFilter();
-        assertTrue(filter.isEnabled());
-    }
-
-    @Test
-    @DisplayName("SqlInjectionFilter setter")
-    void testSqlInjectionFilterSetter() {
-        WebProperties.SqlInjectionFilter filter = new WebProperties.SqlInjectionFilter();
-        filter.setEnabled(false);
-        assertFalse(filter.isEnabled());
-    }
-
-    @Test
-    @DisplayName("RequestLog 默认值")
-    void testRequestLogDefaults() {
-        WebProperties.RequestLog requestLog = properties.getRequestLog();
-        assertTrue(requestLog.isEnabled());
-        assertFalse(requestLog.isIncludeBody());
-        assertEquals(4096, requestLog.getMaxBodySize());
-    }
-
-    @Test
-    @DisplayName("RequestLog setter")
-    void testRequestLogSetters() {
-        WebProperties.RequestLog requestLog = new WebProperties.RequestLog();
-        requestLog.setEnabled(false);
-        requestLog.setIncludeBody(true);
-        requestLog.setMaxBodySize(8192);
-        assertFalse(requestLog.isEnabled());
-        assertTrue(requestLog.isIncludeBody());
-        assertEquals(8192, requestLog.getMaxBodySize());
-    }
-
-    @Test
-    @DisplayName("所有子配置非空")
-    void testAllSubConfigsNotNull() {
-        assertNotNull(properties.getResponseWrapper());
-        assertNotNull(properties.getXssFilter());
-        assertNotNull(properties.getSqlInjectionFilter());
-        assertNotNull(properties.getRequestLog());
+        assertThatThrownBy(() -> properties.setApiVersion(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("apiVersion");
+        assertThatThrownBy(() -> properties.setRepeatableRequest(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("repeatableRequest");
     }
 }

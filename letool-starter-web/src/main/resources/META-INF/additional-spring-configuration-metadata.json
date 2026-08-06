@@ -3,54 +3,59 @@
     {
       "name": "letool.web.enabled",
       "type": "java.lang.Boolean",
-      "description": "Web 模块总开关。",
-      "defaultValue": "true"
+      "description": "是否启用 Letool Web 模块。",
+      "defaultValue": true
     },
     {
       "name": "letool.web.response-wrapper.enabled",
       "type": "java.lang.Boolean",
-      "description": "是否启用统一响应包装（Controller 返回值自动封装为统一格式）。",
-      "defaultValue": "true"
+      "description": "是否将普通 JSON Controller 返回值包装为 R。",
+      "defaultValue": true
     },
     {
       "name": "letool.web.response-wrapper.exclude-paths",
       "type": "java.util.List<java.lang.String>",
-      "description": "不进行响应包装的 URL 路径列表，支持 Ant 风格通配符。"
+      "description": "不进行统一响应包装的应用内路径，使用 Spring PathPattern 语义。"
     },
     {
-      "name": "letool.web.xss-filter.enabled",
+      "name": "letool.web.api-version.enabled",
       "type": "java.lang.Boolean",
-      "description": "是否启用 XSS 过滤。",
-      "defaultValue": "true"
+      "description": "是否启用 @ApiVersion 主版本路由。",
+      "defaultValue": true
     },
     {
-      "name": "letool.web.xss-filter.exclude-paths",
+      "name": "letool.web.api-version.header-name",
+      "type": "java.lang.String",
+      "description": "客户端传递 API 版本的请求头名称。",
+      "defaultValue": "X-API-Version"
+    },
+    {
+      "name": "letool.web.api-version.parameter-name",
+      "type": "java.lang.String",
+      "description": "客户端传递 API 版本的查询参数名称。",
+      "defaultValue": "apiVersion"
+    },
+    {
+      "name": "letool.web.repeatable-request.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否为允许的文本请求缓存请求体并支持重复读取；默认关闭。",
+      "defaultValue": false
+    },
+    {
+      "name": "letool.web.repeatable-request.max-body-size",
+      "type": "org.springframework.util.unit.DataSize",
+      "description": "单个请求允许缓存的最大请求体大小，必须大于 0 且不超过 16 MiB。",
+      "defaultValue": "1MB"
+    },
+    {
+      "name": "letool.web.repeatable-request.exclude-paths",
       "type": "java.util.List<java.lang.String>",
-      "description": "不进行 XSS 过滤的 URL 路径列表，支持 Ant 风格通配符。"
+      "description": "不缓存请求体的应用内路径，使用 Spring PathPattern 语义。"
     },
     {
-      "name": "letool.web.sql-injection-filter.enabled",
-      "type": "java.lang.Boolean",
-      "description": "是否启用 SQL 注入防御。",
-      "defaultValue": "true"
-    },
-    {
-      "name": "letool.web.request-log.enabled",
-      "type": "java.lang.Boolean",
-      "description": "是否启用请求日志记录。",
-      "defaultValue": "true"
-    },
-    {
-      "name": "letool.web.request-log.include-body",
-      "type": "java.lang.Boolean",
-      "description": "是否记录请求体（可能包含敏感数据）。",
-      "defaultValue": "false"
-    },
-    {
-      "name": "letool.web.request-log.max-body-size",
-      "type": "java.lang.Integer",
-      "description": "请求体最大记录大小（字节），超长截断。",
-      "defaultValue": "4096"
+      "name": "letool.web.repeatable-request.include-media-types",
+      "type": "java.util.List<java.lang.String>",
+      "description": "允许缓存的文本媒体类型表达式；multipart、表单和 application/octet-stream 始终被排除。"
     }
   ]
 }

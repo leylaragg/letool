@@ -6,34 +6,62 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.classic.spi.ThrowableProxyUtil;
 import ch.qos.logback.core.read.ListAppender;
 import com.github.leyland.letool.exception.code.ErrorCode;
-import com.github.leyland.letool.exception.core.BaseException;
 import com.github.leyland.letool.exception.core.BusinessException;
 import com.github.leyland.letool.exception.core.SystemException;
 import com.github.leyland.letool.exception.message.SpringMessageResolver;
 import com.github.leyland.letool.tool.model.R;
+import com.github.leyland.letool.web.exception.RequestBodyTooLargeException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.context.support.StaticMessageSource;
+import org.springframework.core.MethodParameter;
 import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.mock.http.MockHttpInputMessage;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.validation.BeanPropertyBindingResult;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.context.request.ServletWebRequest;
+import org.springframework.web.server.ResponseStatusException;
 
+import java.lang.reflect.Method;
 import java.util.Locale;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
+/**
+ * Web 异常协议的关键状态、错误码和安全边界测试。
+ */
 class GlobalExceptionHandlerTest {
 
+    /** 测试消息源。 */
     private StaticMessageSource messageSource;
+
+    /** 被测全局异常处理器。 */
     private GlobalExceptionHandler handler;
+
+    /** 异常处理器日志对象。 */
     private Logger handlerLogger;
+
+    /** 测试日志收集器。 */
     private ListAppender<ILoggingEvent> logAppender;
+
+    /** 测试前的日志级别。 */
     private Level originalLogLevel;
+
+    /** 测试前的日志传递设置。 */
     private boolean originalAdditive;
 
+    /**
+     * 初始化国际化解析器和隔离的日志收集器。
+     */
     @BeforeEach
     void setUp() {
         messageSource = new StaticMessageSource();
@@ -51,6 +79,9 @@ class GlobalExceptionHandlerTest {
         handlerLogger.addAppender(logAppender);
     }
 
+    /**
+     * 恢复语言环境和日志对象，避免测试间互相污染。
+     */
     @AfterEach
     void restoreTestContext() {
         LocaleContextHolder.resetLocaleContext();
@@ -64,140 +95,203 @@ class GlobalExceptionHandlerTest {
         }
     }
 
+    /**
+     * 验证业务异常保留领域错误码、国际化消息和 HTTP 400。
+     */
     @Test
-    void businessExceptionShouldReturnLocalizedMessageAndCode() throws Exception {
+    void shouldReturnLocalizedBusinessFailure() {
         messageSource.addMessage("BIZ_001", Locale.ENGLISH, "Order {0} not found");
         LocaleContextHolder.setLocale(Locale.ENGLISH);
         BusinessException exception = BusinessException.of(
                 ErrorCode.of("BIZ_001", "订单 {0} 不存在"),
                 "42");
 
-        R<Void> result = handler.handleBusinessException(exception);
+        ResponseEntity<R<Void>> response = handler.handleBusinessException(exception);
 
-        assertThat(result.getCode()).isEqualTo("BIZ_001");
-        assertThat(result.getMessage()).isEqualTo("Order 42 not found");
-        assertThat(responseStatusFor("handleBusinessException", BusinessException.class).value())
-                .isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getCode()).isEqualTo("BIZ_001");
+        assertThat(response.getBody().getMessage()).isEqualTo("Order 42 not found");
     }
 
+    /**
+     * 验证系统异常只向客户端返回安全消息，同时在服务端日志保留完整原因链。
+     */
     @Test
-    void systemExceptionShouldReturnLocalizedSafeMessageWithoutCauseDetails() throws Exception {
-        messageSource.addMessage(
-                "SYS_SAFE",
-                Locale.ENGLISH,
-                "The service is temporarily unavailable");
+    void shouldHideSystemCauseFromResponseAndKeepItInLogs() {
+        messageSource.addMessage("SYS_SAFE", Locale.ENGLISH, "Service unavailable");
         LocaleContextHolder.setLocale(Locale.ENGLISH);
         SystemException exception = SystemException.causedBy(
-                ErrorCode.of("SYS_SAFE", "服务暂时不可用"),
+                ErrorCode.of("SYS_SAFE", "服务暂不可用"),
                 new IllegalStateException("redis password=secret"));
 
-        R<Void> result = handler.handleSystemException(exception);
+        ResponseEntity<R<Void>> response = handler.handleSystemException(exception);
 
-        assertThat(result.getCode()).isEqualTo("SYS_SAFE");
-        assertThat(result.getMessage())
-                .isEqualTo("The service is temporarily unavailable")
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getMessage())
+                .isEqualTo("Service unavailable")
                 .doesNotContain("password", "secret", "redis");
-        assertThat(responseStatusFor("handleSystemException", SystemException.class).value())
-                .isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
-        assertThat(logAppender.list).singleElement().satisfies(event -> {
-            assertThat(event.getThrowableProxy()).isNotNull();
-            assertThat(ThrowableProxyUtil.asString(event.getThrowableProxy()))
-                    .contains(SystemException.class.getName())
-                    .contains("redis password=secret");
-        });
+        assertThat(logAppender.list).singleElement().satisfies(event ->
+                assertThat(ThrowableProxyUtil.asString(event.getThrowableProxy()))
+                        .contains("redis password=secret"));
     }
 
+    /**
+     * 验证常见 Spring MVC 异常映射为稳定错误码和正确 HTTP 状态。
+     *
+     * @throws Exception Spring 异常分派失败时抛出
+     */
     @Test
-    void customBaseExceptionShouldUseGenericCodedHandlerAtInternalServerError() throws Exception {
-        messageSource.addMessage("CUSTOM_001", Locale.ENGLISH, "Localized coded failure");
-        LocaleContextHolder.setLocale(Locale.ENGLISH);
-        BaseException exception = new CustomCodedException(
-                ErrorCode.of("CUSTOM_001", "Coded failure"));
+    void shouldMapCommonMvcExceptionsToStableProtocol() throws Exception {
+        ServletWebRequest request = webRequest();
 
-        R<Void> result = handler.handleBaseException(exception);
-        ResponseStatus responseStatus = GlobalExceptionHandler.class
-                .getMethod("handleBaseException", BaseException.class)
-                .getAnnotation(ResponseStatus.class);
+        ResponseEntity<Object> unreadable = handler.handleException(
+                new HttpMessageNotReadableException(
+                        "password=secret",
+                        new MockHttpInputMessage(new byte[0])),
+                request);
+        assertFailure(unreadable, HttpStatus.BAD_REQUEST, "WEB_400_004", "password", "secret");
 
-        assertThat(result.getCode()).isEqualTo("CUSTOM_001");
-        assertThat(result.getMessage()).isEqualTo("Localized coded failure");
-        assertThat(responseStatus).isNotNull();
-        assertThat(responseStatus.value()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        ResponseEntity<Object> unsupportedMethod = handler.handleException(
+                new HttpRequestMethodNotSupportedException("TRACE"),
+                request);
+        assertFailure(unsupportedMethod, HttpStatus.METHOD_NOT_ALLOWED, "WEB_405_001", "TRACE");
     }
 
+    /**
+     * 验证字段校验只返回稳定字段消息，不返回被拒绝的原始值。
+     *
+     * @throws Exception Spring 异常分派或反射失败时抛出
+     */
     @Test
-    void customBusinessMessageShouldBypassMessageSource() {
-        messageSource.addMessage("BIZ_CUSTOM", Locale.ENGLISH, "Translated message");
-        LocaleContextHolder.setLocale(Locale.ENGLISH);
-        BusinessException exception = BusinessException.custom(
-                ErrorCode.of("BIZ_CUSTOM", "Fallback message"),
-                "Exact custom message");
+    void shouldReturnStableValidationDetailsWithoutRejectedValue() throws Exception {
+        ValidationRequest target = new ValidationRequest("password=secret");
+        BeanPropertyBindingResult bindingResult = new BeanPropertyBindingResult(target, "request");
+        bindingResult.rejectValue("name", "NotBlank", "名称不能为空");
+        Method method = ValidationTarget.class.getDeclaredMethod("create", ValidationRequest.class);
+        MethodArgumentNotValidException exception = new MethodArgumentNotValidException(
+                new MethodParameter(method, 0),
+                bindingResult);
 
-        R<Void> result = handler.handleBusinessException(exception);
+        ResponseEntity<Object> response = handler.handleException(exception, webRequest());
 
-        assertThat(result.getCode()).isEqualTo("BIZ_CUSTOM");
-        assertThat(result.getMessage()).isEqualTo("Exact custom message");
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        R<?> body = responseBody(response);
+        assertThat(body.getCode()).isEqualTo("WEB_400_001");
+        assertThat(body.getData()).isEqualTo(Map.of("name", "名称不能为空"));
+        assertThat(String.valueOf(body.getData())).doesNotContain("password=secret");
     }
 
+    /**
+     * 验证请求体缓存越界返回 HTTP 413，而不是普通业务错误的 HTTP 400。
+     */
     @Test
-    void illegalArgumentExceptionShouldReturnSafeMessageWithoutCauseDetails() {
-        IllegalArgumentException exception = new IllegalArgumentException(
-                new IllegalStateException("password=secret"));
+    void shouldMapRequestBodyLimitToPayloadTooLarge() {
+        ResponseEntity<R<Void>> response = handler.handleRequestBodyTooLarge(
+                new RequestBodyTooLargeException(1025, 1024));
 
-        R<Void> result = handler.handleIllegalArgumentException(exception);
-
-        assertThat(result.getCode()).isEqualTo("ARG_001");
-        assertThat(result.getMessage())
-                .isEqualTo("参数不合法")
-                .doesNotContain("password", "secret", "IllegalStateException");
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.PAYLOAD_TOO_LARGE);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getCode()).isEqualTo("WEB_413_001");
     }
 
+    /**
+     * 验证未单独分类的 Spring 4xx 状态保留 HTTP 状态，但不回显原始原因。
+     *
+     * @throws Exception Spring 异常分派失败时抛出
+     */
     @Test
-    void illegalArgumentExceptionShouldRetainThrowableInLogs() {
-        IllegalArgumentException exception = new IllegalArgumentException(
-                new IllegalStateException("password=secret"));
+    void shouldPreserveUnclassifiedClientStatusWithoutLeakingReason() throws Exception {
+        ResponseEntity<Object> response = handler.handleException(
+                new ResponseStatusException(HttpStatus.CONFLICT, "database password=secret"),
+                webRequest());
 
-        handler.handleIllegalArgumentException(exception);
-
-        assertThat(logAppender.list).singleElement().satisfies(event -> {
-            assertThat(event.getThrowableProxy()).isNotNull();
-            assertThat(ThrowableProxyUtil.asString(event.getThrowableProxy()))
-                    .contains(IllegalArgumentException.class.getName())
-                    .contains(IllegalStateException.class.getName())
-                    .contains("password=secret");
-        });
+        assertFailure(response, HttpStatus.CONFLICT, "WEB_4XX_001", "password", "secret");
     }
 
+    /**
+     * 验证未知异常固定返回安全的 Web 系统错误协议。
+     */
     @Test
-    void genericExceptionShouldReturnSafeGenericMessage() {
-        Exception exception = new Exception("未知错误");
+    void shouldReturnSafeGenericFailure() {
+        ResponseEntity<R<Void>> response = handler.handleGenericException(
+                new Exception("database password=secret"));
 
-        R<Void> result = handler.handleGenericException(exception);
-
-        assertThat(result.getCode()).isEqualTo("SYS_001");
-        assertThat(result.getMessage()).isEqualTo("系统内部错误，请稍后重试");
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getCode()).isEqualTo("WEB_500_001");
+        assertThat(response.getBody().getMessage()).doesNotContain("password", "secret", "database");
     }
 
+    /**
+     * 验证异常处理器拒绝空国际化解析器。
+     */
     @Test
-    void constructorShouldRejectNullMessageResolver() {
+    void shouldRejectNullMessageResolver() {
         assertThatNullPointerException()
                 .isThrownBy(() -> new GlobalExceptionHandler(null))
                 .withMessage("messageResolver");
     }
 
-    private ResponseStatus responseStatusFor(String methodName, Class<?> parameterType)
-            throws NoSuchMethodException {
-        ResponseStatus responseStatus = GlobalExceptionHandler.class
-                .getMethod(methodName, parameterType)
-                .getAnnotation(ResponseStatus.class);
-        assertThat(responseStatus).isNotNull();
-        return responseStatus;
+    /**
+     * 创建当前测试使用的 Servlet Web 请求。
+     *
+     * @return Servlet Web 请求
+     */
+    private ServletWebRequest webRequest() {
+        return new ServletWebRequest(new MockHttpServletRequest());
     }
 
-    private static final class CustomCodedException extends BaseException {
+    /**
+     * 断言统一失败响应的状态、错误码和敏感文本边界。
+     *
+     * @param response Spring MVC 响应
+     * @param status 预期 HTTP 状态
+     * @param code 预期稳定错误码
+     * @param forbiddenTexts 响应中禁止出现的文本
+     */
+    private void assertFailure(
+            ResponseEntity<Object> response,
+            HttpStatus status,
+            String code,
+            String... forbiddenTexts) {
+        assertThat(response.getStatusCode()).isEqualTo(status);
+        R<?> body = responseBody(response);
+        assertThat(body.getCode()).isEqualTo(code);
+        assertThat(body.getMessage()).doesNotContain(forbiddenTexts);
+    }
 
-        private CustomCodedException(ErrorCode errorCode) {
-            super(errorCode, null, null, null);
+    /**
+     * 获取并校验统一响应体类型。
+     *
+     * @param response Spring MVC 响应
+     * @return 统一响应体
+     */
+    private R<?> responseBody(ResponseEntity<Object> response) {
+        assertThat(response.getBody()).isInstanceOf(R.class);
+        return (R<?>) response.getBody();
+    }
+
+    /**
+     * 参数校验测试对象。
+     *
+     * @param name 名称
+     */
+    private record ValidationRequest(String name) {
+    }
+
+    /**
+     * 为构造方法参数描述提供的测试目标。
+     */
+    private static final class ValidationTarget {
+
+        /**
+         * 接收校验请求。
+         *
+         * @param request 校验请求
+         */
+        void create(ValidationRequest request) {
         }
     }
 }
