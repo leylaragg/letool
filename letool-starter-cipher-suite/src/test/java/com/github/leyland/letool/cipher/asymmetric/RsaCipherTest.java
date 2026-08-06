@@ -1,168 +1,106 @@
 package com.github.leyland.letool.cipher.asymmetric;
 
+import com.github.leyland.letool.cipher.exception.CipherException;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import javax.crypto.Cipher;
+import javax.crypto.spec.OAEPParameterSpec;
+import javax.crypto.spec.PSource;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyFactory;
+import java.security.spec.MGF1ParameterSpec;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.util.Base64;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
- * RSA 非对称加密单元测试.
+ * RSA-OAEP 安全契约测试。
  */
-@DisplayName("RSA 非对称加密测试")
 class RsaCipherTest {
 
-    private static RsaCipher.RsaKeyPair keyPair2048;
-    private static RsaCipher.RsaKeyPair otherKeyPair;
+    private static RsaCipher.RsaKeyPair keyPair;
 
+    /**
+     * 生成测试使用的 2048 位 RSA 密钥对。
+     */
     @BeforeAll
-    static void setUpKeys() {
-        keyPair2048 = RsaCipher.generateKeyPair(2048);
-        otherKeyPair = RsaCipher.generateKeyPair(2048);
+    static void setUpKeyPair() {
+        keyPair = RsaCipher.generateKeyPair(2048);
     }
 
-    // ===================== 密钥对生成测试 =====================
+    /**
+     * 验证 OAEP-SHA256 可以处理 UTF-8 小数据往返。
+     */
+    @Test
+    void shouldRoundTripWithOaepSha256() {
+        String encrypted = RsaCipher.encrypt("需要封装的会话密钥", keyPair.getPublicKey());
 
-    @Nested
-    @DisplayName("密钥对生成测试")
-    class KeyPairGenerationTests {
-
-        @Test
-        @DisplayName("生成 2048 位 RSA 密钥对应返回非空公钥和私钥")
-        void shouldGenerateRsa2048KeyPair() {
-            RsaCipher.RsaKeyPair pair = RsaCipher.generateKeyPair(2048);
-            assertNotNull(pair);
-            assertNotNull(pair.getPublicKey());
-            assertFalse(pair.getPublicKey().isEmpty());
-            assertNotNull(pair.getPrivateKey());
-            assertFalse(pair.getPrivateKey().isEmpty());
-        }
-
-        @Test
-        @DisplayName("RsaKeyPair 的公钥和私钥应互不相同")
-        void publicAndPrivateKeyShouldDiffer() {
-            assertNotEquals(keyPair2048.getPublicKey(), keyPair2048.getPrivateKey());
-        }
-
-        @Test
-        @DisplayName("每次生成密钥对应互不相同")
-        void shouldGenerateDifferentKeyPairsEachTime() {
-            RsaCipher.RsaKeyPair pair1 = RsaCipher.generateKeyPair(2048);
-            RsaCipher.RsaKeyPair pair2 = RsaCipher.generateKeyPair(2048);
-            assertNotEquals(pair1.getPublicKey(), pair2.getPublicKey());
-            assertNotEquals(pair1.getPrivateKey(), pair2.getPrivateKey());
-        }
-
-        @Test
-        @DisplayName("生成 1024 位密钥对应成功")
-        void shouldGenerate1024BitKeyPair() {
-            RsaCipher.RsaKeyPair pair = RsaCipher.generateKeyPair(1024);
-            assertNotNull(pair.getPublicKey());
-            assertNotNull(pair.getPrivateKey());
-        }
+        assertEquals("需要封装的会话密钥", RsaCipher.decrypt(encrypted, keyPair.getPrivateKey()));
     }
 
-    // ===================== 加密解密测试 =====================
+    /**
+     * 验证生产 API 拒绝不足 2048 位的 RSA 密钥。
+     */
+    @Test
+    void shouldRejectWeakKeySize() {
+        CipherException exception = assertThrows(
+                CipherException.class,
+                () -> RsaCipher.generateKeyPair(1024));
 
-    @Nested
-    @DisplayName("加密解密测试")
-    class EncryptDecryptTests {
-
-        @Test
-        @DisplayName("公钥加密后私钥解密应恢复原文")
-        void shouldRoundtripRsa() {
-            String plainText = "Hello RSA!";
-            String encrypted = RsaCipher.encrypt(plainText, keyPair2048.getPublicKey());
-            assertNotNull(encrypted);
-            assertNotEquals(plainText, encrypted);
-
-            String decrypted = RsaCipher.decrypt(encrypted, keyPair2048.getPrivateKey());
-            assertEquals(plainText, decrypted);
-        }
-
-        @Test
-        @DisplayName("加密中文文本后解密应恢复原文")
-        void shouldRoundtripChinese() {
-            String plainText = "你好，世界！RSA 非对称加密测试";
-            String encrypted = RsaCipher.encrypt(plainText, keyPair2048.getPublicKey());
-            String decrypted = RsaCipher.decrypt(encrypted, keyPair2048.getPrivateKey());
-            assertEquals(plainText, decrypted);
-        }
-
-        @Test
-        @DisplayName("加密特殊字符文本后解密应恢复原文")
-        void shouldRoundtripSpecialCharacters() {
-            String plainText = "!@#$%^&*()_+-=[]{}|;':\",./<>?`~";
-            String encrypted = RsaCipher.encrypt(plainText, keyPair2048.getPublicKey());
-            String decrypted = RsaCipher.decrypt(encrypted, keyPair2048.getPrivateKey());
-            assertEquals(plainText, decrypted);
-        }
-
-        @Test
-        @DisplayName("使用不同公钥加密同一明文应产生不同密文")
-        void shouldProduceDifferentCiphertextWithDifferentPublicKeys() {
-            String plainText = "Same plaintext";
-            String enc1 = RsaCipher.encrypt(plainText, keyPair2048.getPublicKey());
-            String enc2 = RsaCipher.encrypt(plainText, otherKeyPair.getPublicKey());
-            assertNotEquals(enc1, enc2);
-        }
-
-        @Test
-        @DisplayName("使用同一公钥加密同一明文两次应产生不同密文（随机填充）")
-        void shouldProduceDifferentCiphertextForSameInput() {
-            String plainText = "Same input twice";
-            String enc1 = RsaCipher.encrypt(plainText, keyPair2048.getPublicKey());
-            String enc2 = RsaCipher.encrypt(plainText, keyPair2048.getPublicKey());
-            assertNotEquals(enc1, enc2, "PKCS1随机填充应使每次加密结果不同");
-        }
+        assertEquals("CIPHER_001", exception.getCode());
     }
 
-    // ===================== 异常和错误场景测试 =====================
+    /**
+     * 验证 2048 位 OAEP-SHA256 单块明文上限为 190 字节。
+     */
+    @Test
+    void shouldRejectPlaintextBeyondSingleBlockLimit() {
+        String oversized = "a".repeat(191);
 
-    @Nested
-    @DisplayName("异常和错误场景测试")
-    class ErrorScenarioTests {
+        CipherException exception = assertThrows(
+                CipherException.class,
+                () -> RsaCipher.encrypt(oversized, keyPair.getPublicKey()));
 
-        @Test
-        @DisplayName("用错误私钥解密应抛出异常")
-        void shouldThrowOnWrongPrivateKey() {
-            String encrypted = RsaCipher.encrypt("secret", keyPair2048.getPublicKey());
-            assertThrows(Exception.class,
-                    () -> RsaCipher.decrypt(encrypted, otherKeyPair.getPrivateKey()));
-        }
-
-        @Test
-        @DisplayName("尝试用私钥加密格式的密钥进行加密应抛出异常")
-        void shouldThrowOnInvalidPublicKey() {
-            assertThrows(Exception.class,
-                    () -> RsaCipher.encrypt("test", "invalid-base64-key!!!"));
-        }
-
-        @Test
-        @DisplayName("尝试解密格式错误的密文应抛出异常")
-        void shouldThrowOnInvalidCiphertext() {
-            assertThrows(Exception.class,
-                    () -> RsaCipher.decrypt("not-valid-base64!!!", keyPair2048.getPrivateKey()));
-        }
+        assertEquals("CIPHER_001", exception.getCode());
     }
 
-    // ===================== 边界条件测试 =====================
+    /**
+     * 验证非法公钥不会泄露底层解析细节。
+     */
+    @Test
+    void shouldRejectInvalidPublicKey() {
+        CipherException exception = assertThrows(
+                CipherException.class,
+                () -> RsaCipher.encrypt("payload", "not-a-key"));
 
-    @Nested
-    @DisplayName("边界条件测试")
-    class EdgeCaseTests {
+        assertEquals("CIPHER_002", exception.getCode());
+    }
 
-        @Test
-        @DisplayName("加密 null 明文应返回 null")
-        void shouldReturnNullForNullPlaintext() {
-            assertNull(RsaCipher.encrypt(null, keyPair2048.getPublicKey()));
-        }
+    /**
+     * 验证模块生成的密文可由显式指定 MGF1-SHA256 的独立 JCA 实现解密。
+     *
+     * @throws Exception JCA 互操作初始化失败时由测试框架报告
+     */
+    @Test
+    void shouldInteroperateWithExplicitJcaOaepParameters() throws Exception {
+        String encrypted = RsaCipher.encrypt("session-key", keyPair.getPublicKey());
+        OAEPParameterSpec parameters = new OAEPParameterSpec(
+                "SHA-256",
+                "MGF1",
+                MGF1ParameterSpec.SHA256,
+                PSource.PSpecified.DEFAULT);
+        Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPPadding");
+        cipher.init(
+                Cipher.DECRYPT_MODE,
+                KeyFactory.getInstance("RSA").generatePrivate(new PKCS8EncodedKeySpec(
+                        Base64.getDecoder().decode(keyPair.getPrivateKey()))),
+                parameters);
 
-        @Test
-        @DisplayName("解密 null 密文应返回 null")
-        void shouldReturnNullForNullCiphertext() {
-            assertNull(RsaCipher.decrypt(null, keyPair2048.getPrivateKey()));
-        }
+        assertEquals("session-key", new String(
+                cipher.doFinal(Base64.getDecoder().decode(encrypted)),
+                StandardCharsets.UTF_8));
     }
 }

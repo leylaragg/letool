@@ -1,145 +1,130 @@
 package com.github.leyland.letool.cipher.symmetric;
 
 import com.github.leyland.letool.cipher.exception.CipherException;
-import com.github.leyland.letool.cipher.model.CipherMode;
-import com.github.leyland.letool.tool.util.Base64Util;
+import com.github.leyland.letool.cipher.support.CipherEnvelope;
+import com.github.leyland.letool.cipher.support.CipherSupport;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
-import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
-import java.security.SecureRandom;
-import java.security.spec.AlgorithmParameterSpec;
+import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
+import java.util.Base64;
 
 /**
- * AES 加密 —— 支持 GCM（默认，认证加密）和 CBC 模式.
+ * AES-GCM 认证加密工具。
  *
- * <p>GCM 模式输出格式：Base64(IV[12字节] + 密文)，CBC 模式输出格式：Base64(IV[16字节] + 密文).</p>
+ * <p>密文包含稳定版本和算法标识，解密不会猜测或降级到未认证模式。</p>
  */
 public final class AesCipher {
 
-    private static final String AES_GCM = "AES/GCM/NoPadding";
-    private static final String AES_CBC = "AES/CBC/PKCS5Padding";
-    private static final int GCM_IV_LENGTH = 12;
-    private static final int GCM_TAG_LENGTH = 128;
-    private static final int CBC_IV_LENGTH = 16;
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final String ALGORITHM_ID = "AES_GCM";
+    private static final String TRANSFORMATION = "AES/GCM/NoPadding";
+    private static final int NONCE_LENGTH = 12;
+    private static final int TAG_LENGTH_BITS = 128;
+    private static final int TAG_LENGTH_BYTES = TAG_LENGTH_BITS / Byte.SIZE;
 
-    private AesCipher() {}
+    /** 工具类禁止实例化。 */
+    private AesCipher() {
+    }
 
     /**
-     * 生成 AES 密钥（Base64 编码）.
+     * 生成 AES 密钥。
      *
-     * @param keySize 密钥大小（128 / 192 / 256）
-     * @return Base64 编码的密钥字符串
+     * @param keySize 密钥位数，只允许 128、192 或 256
+     * @return Base64 编码的密钥
      */
     public static String generateKey(int keySize) {
+        if (keySize != 128 && keySize != 192 && keySize != 256) {
+            throw CipherException.invalidParameter("AES 密钥位数只允许 128、192 或 256");
+        }
         try {
-            KeyGenerator kg = KeyGenerator.getInstance("AES");
-            kg.init(keySize, SECURE_RANDOM);
-            return Base64Util.encode(kg.generateKey().getEncoded());
-        } catch (Exception e) {
-            throw new CipherException("Failed to generate AES key", e);
+            KeyGenerator keyGenerator = KeyGenerator.getInstance("AES");
+            keyGenerator.init(keySize);
+            return Base64.getEncoder().encodeToString(keyGenerator.generateKey().getEncoded());
+        } catch (GeneralSecurityException exception) {
+            throw CipherException.operationFailed("AES 密钥生成", exception);
         }
     }
 
     /**
-     * AES 加密（默认 GCM 模式）.
+     * 使用 AES-GCM 加密 UTF-8 文本。
      *
-     * @param plainText 明文
+     * @param plainText 明文，允许为空字符串
      * @param base64Key Base64 编码的 AES 密钥
-     * @return Base64 编码的密文（包含 IV）
+     * @return 版本化认证密文
      */
     public static String encrypt(String plainText, String base64Key) {
-        return encrypt(plainText, base64Key, CipherMode.GCM);
+        return encrypt(plainText, base64Key, (String) null);
     }
 
     /**
-     * AES 加密（指定模式）.
+     * 使用 AES-GCM 和附加认证数据加密 UTF-8 文本。
      *
-     * @param plainText 明文
+     * @param plainText 明文，允许为空字符串
      * @param base64Key Base64 编码的 AES 密钥
-     * @param mode      加密模式
-     * @return Base64 编码的密文（包含 IV）
+     * @param additionalData 附加认证数据，可为 {@code null}
+     * @return 版本化认证密文
      */
-    public static String encrypt(String plainText, String base64Key, CipherMode mode) {
-        if (plainText == null) return null;
+    public static String encrypt(String plainText, String base64Key, String additionalData) {
+        CipherSupport.requireNonNull(plainText, "AES 明文");
+        byte[] keyBytes = CipherSupport.requireAesKey(CipherSupport.decodeKey(base64Key, "AES"));
+        byte[] plainBytes = CipherSupport.requireInMemoryPayload(
+                plainText.getBytes(StandardCharsets.UTF_8),
+                "AES 明文");
+        byte[] nonce = CipherSupport.randomBytes(NONCE_LENGTH);
         try {
-            byte[] keyBytes = Base64Util.decodeToBytes(base64Key);
-            SecretKeySpec keySpec = new SecretKeySpec(keyBytes, "AES");
-
-            byte[] iv;
-            AlgorithmParameterSpec paramSpec;
-
-            if (mode == CipherMode.GCM) {
-                iv = new byte[GCM_IV_LENGTH];
-                SECURE_RANDOM.nextBytes(iv);
-                paramSpec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
-            } else {
-                iv = new byte[CBC_IV_LENGTH];
-                SECURE_RANDOM.nextBytes(iv);
-                paramSpec = new IvParameterSpec(iv);
-            }
-
-            String algorithm = mode == CipherMode.GCM ? AES_GCM : AES_CBC;
-            Cipher cipher = Cipher.getInstance(algorithm);
-            cipher.init(Cipher.ENCRYPT_MODE, keySpec, paramSpec);
-            byte[] cipherText = cipher.doFinal(plainText.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-
-            // 拼接 IV + 密文
-            byte[] combined = new byte[iv.length + cipherText.length];
-            System.arraycopy(iv, 0, combined, 0, iv.length);
-            System.arraycopy(cipherText, 0, combined, iv.length, cipherText.length);
-
-            return Base64Util.encode(combined);
-        } catch (CipherException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new CipherException("AES encrypt failed", e);
+            Cipher cipher = Cipher.getInstance(TRANSFORMATION);
+            cipher.init(
+                    Cipher.ENCRYPT_MODE,
+                    new SecretKeySpec(keyBytes, "AES"),
+                    new GCMParameterSpec(TAG_LENGTH_BITS, nonce));
+            cipher.updateAAD(CipherEnvelope.authenticatedData(ALGORITHM_ID, additionalData));
+            byte[] cipherText = cipher.doFinal(plainBytes);
+            return CipherEnvelope.encode(ALGORITHM_ID, nonce, cipherText);
+        } catch (GeneralSecurityException exception) {
+            throw CipherException.encryptionFailed("AES-GCM", exception);
         }
     }
 
     /**
-     * AES 解密（自动检测 GCM/CBC 模式，从密文中提取 IV）.
+     * 解密 AES-GCM 密文。
      *
-     * @param cipherText Base64 编码的密文（包含 IV）
-     * @param base64Key  Base64 编码的 AES 密钥
-     * @return 明文
+     * @param envelope 版本化认证密文
+     * @param base64Key Base64 编码的 AES 密钥
+     * @return UTF-8 明文
      */
-    public static String decrypt(String cipherText, String base64Key) {
-        if (cipherText == null) return null;
-        try {
-            byte[] keyBytes = Base64Util.decodeToBytes(base64Key);
-            SecretKeySpec keySpec = new SecretKeySpec(keyBytes, "AES");
-            byte[] combined = Base64Util.decodeToBytes(cipherText);
-
-            // GCM: IV=12字节，CBC: IV=16字节。根据密文长度和常见模式优先尝试
-            // 这里默认按 GCM 处理（12 字节 IV），如果失败再试 CBC
-            try {
-                return doDecrypt(combined, keySpec, AES_GCM, GCM_IV_LENGTH,
-                        new GCMParameterSpec(GCM_TAG_LENGTH, combined, 0, GCM_IV_LENGTH));
-            } catch (Exception gcmError) {
-                try {
-                    return doDecrypt(combined, keySpec, AES_CBC, CBC_IV_LENGTH,
-                            new IvParameterSpec(combined, 0, CBC_IV_LENGTH));
-                } catch (Exception cbcError) {
-                    throw new CipherException("AES decrypt failed (tried GCM and CBC)", gcmError);
-                }
-            }
-        } catch (CipherException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new CipherException("AES decrypt failed", e);
-        }
+    public static String decrypt(String envelope, String base64Key) {
+        return decrypt(envelope, base64Key, null);
     }
 
-    private static String doDecrypt(byte[] combined, SecretKeySpec keySpec,
-                                    String algorithm, int ivLength, AlgorithmParameterSpec paramSpec) throws Exception {
-        Cipher cipher = Cipher.getInstance(algorithm);
-        cipher.init(Cipher.DECRYPT_MODE, keySpec, paramSpec);
-        byte[] plainBytes = cipher.doFinal(combined, ivLength, combined.length - ivLength);
-        return new String(plainBytes, java.nio.charset.StandardCharsets.UTF_8);
+    /**
+     * 使用相同附加认证数据解密 AES-GCM 密文。
+     *
+     * @param envelope 版本化认证密文
+     * @param base64Key Base64 编码的 AES 密钥
+     * @param additionalData 加密时使用的附加认证数据，可为 {@code null}
+     * @return UTF-8 明文
+     */
+    public static String decrypt(String envelope, String base64Key, String additionalData) {
+        byte[] keyBytes = CipherSupport.requireAesKey(CipherSupport.decodeKey(base64Key, "AES"));
+        CipherEnvelope.Parsed parsed = CipherEnvelope.parse(
+                envelope,
+                ALGORITHM_ID,
+                NONCE_LENGTH,
+                TAG_LENGTH_BYTES,
+                CipherSupport.MAXIMUM_IN_MEMORY_PAYLOAD_BYTES + TAG_LENGTH_BYTES);
+        try {
+            Cipher cipher = Cipher.getInstance(TRANSFORMATION);
+            cipher.init(
+                    Cipher.DECRYPT_MODE,
+                    new SecretKeySpec(keyBytes, "AES"),
+                    new GCMParameterSpec(TAG_LENGTH_BITS, parsed.nonce()));
+            cipher.updateAAD(CipherEnvelope.authenticatedData(ALGORITHM_ID, additionalData));
+            return new String(cipher.doFinal(parsed.cipherText()), StandardCharsets.UTF_8);
+        } catch (GeneralSecurityException exception) {
+            throw CipherException.decryptionFailed("AES-GCM 认证失败", exception);
+        }
     }
 }

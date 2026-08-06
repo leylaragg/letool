@@ -1,54 +1,48 @@
 package com.github.leyland.letool.cipher.sm;
 
 import com.github.leyland.letool.cipher.exception.CipherException;
-import com.github.leyland.letool.tool.util.HexUtil;
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
-
+import com.github.leyland.letool.cipher.support.BouncyCastleSupport;
+import com.github.leyland.letool.cipher.support.CipherSupport;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
-import java.security.Security;
+import java.util.HexFormat;
 
 /**
- * 国密 SM3 哈希算法 —— 类似 SHA-256.
+ * SM3 摘要工具。
  */
 public final class Sm3Util {
 
-    private static final String SM3 = "SM3";
-
-    static {
-        if (Security.getProvider(BouncyCastleProvider.PROVIDER_NAME) == null) {
-            Security.addProvider(new BouncyCastleProvider());
-        }
+    /** 工具类禁止实例化。 */
+    private Sm3Util() {
     }
 
-    private Sm3Util() {}
-
     /**
-     * 计算 SM3 哈希值.
+     * 计算 UTF-8 字符串的 SM3 摘要。
      *
      * @param input 输入字符串
-     * @return 十六进制哈希值（64 字符）
+     * @return 小写十六进制摘要
      */
     public static String sm3(String input) {
-        if (input == null) return null;
-        try {
-            MessageDigest md = MessageDigest.getInstance(SM3, BouncyCastleProvider.PROVIDER_NAME);
-            return HexUtil.encodeHex(md.digest(input.getBytes(StandardCharsets.UTF_8)));
-        } catch (Exception e) {
-            throw new CipherException("SM3 hash failed", e);
-        }
+        CipherSupport.requireNonNull(input, "SM3 输入");
+        return sm3(input.getBytes(StandardCharsets.UTF_8));
     }
 
     /**
-     * 计算字节数组的 SM3 哈希值.
+     * 计算字节数组的 SM3 摘要。
+     *
+     * @param data 输入字节
+     * @return 小写十六进制摘要
      */
     public static String sm3(byte[] data) {
-        if (data == null) return null;
+        CipherSupport.requireNonNull(data, "SM3 输入");
         try {
-            MessageDigest md = MessageDigest.getInstance(SM3, BouncyCastleProvider.PROVIDER_NAME);
-            return HexUtil.encodeHex(md.digest(data));
-        } catch (Exception e) {
-            throw new CipherException("SM3 hash failed", e);
+            MessageDigest digest = MessageDigest.getInstance(
+                    "SM3",
+                    BouncyCastleSupport.provider());
+            return HexFormat.of().formatHex(digest.digest(data));
+        } catch (GeneralSecurityException exception) {
+            throw CipherException.operationFailed("SM3 摘要", exception);
         }
     }
 }

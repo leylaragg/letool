@@ -1,140 +1,61 @@
 package com.github.leyland.letool.cipher.sm;
 
 import com.github.leyland.letool.cipher.exception.CipherException;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
+import com.github.leyland.letool.cipher.support.BouncyCastleSupport;
+import org.bouncycastle.jce.ECNamedCurveTable;
+import org.bouncycastle.jce.interfaces.ECPublicKey;
 import org.junit.jupiter.api.Test;
 
-import java.security.Security;
+import java.security.KeyFactory;
+import java.security.spec.X509EncodedKeySpec;
+import java.util.Base64;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
- * 国密 SM2 非对称加密单元测试.
+ * SM2 命名曲线和加解密关键契约测试。
  */
-@DisplayName("国密 SM2 非对称加密测试")
 class Sm2UtilTest {
 
-    private static Sm2Util.Sm2KeyPair keyPair;
-    private static Sm2Util.Sm2KeyPair otherKeyPair;
+    /**
+     * 验证生成的公钥明确使用国家标准 SM2 曲线。
+     *
+     * @throws Exception 公钥解析失败时由测试框架报告
+     */
+    @Test
+    void shouldGenerateSm2P256V1KeyPair() throws Exception {
+        Sm2Util.Sm2KeyPair keyPair = Sm2Util.generateKeyPair();
+        ECPublicKey publicKey = (ECPublicKey) KeyFactory
+                .getInstance("EC", BouncyCastleSupport.provider())
+                .generatePublic(new X509EncodedKeySpec(Base64.getDecoder().decode(keyPair.getPublicKey())));
 
-    @BeforeAll
-    static void setUpKeys() {
-        keyPair = Sm2Util.generateKeyPair();
-        otherKeyPair = Sm2Util.generateKeyPair();
+        assertEquals(
+                ECNamedCurveTable.getParameterSpec("sm2p256v1").getCurve(),
+                publicKey.getParameters().getCurve());
     }
 
-    // ===================== 密钥对生成测试 =====================
+    /**
+     * 验证 SM2 公钥加密和私钥解密支持 UTF-8 数据。
+     */
+    @Test
+    void shouldRoundTripUtf8Text() {
+        Sm2Util.Sm2KeyPair keyPair = Sm2Util.generateKeyPair();
 
-    @Nested
-    @DisplayName("密钥对生成测试")
-    class KeyPairGenerationTests {
+        String encrypted = Sm2Util.encrypt("国密短数据", keyPair.getPublicKey());
 
-        @Test
-        @DisplayName("生成 SM2 密钥对应返回非空公钥和私钥")
-        void shouldGenerateSm2KeyPair() {
-            Sm2Util.Sm2KeyPair pair = Sm2Util.generateKeyPair();
-            assertNotNull(pair);
-            assertNotNull(pair.getPublicKey());
-            assertFalse(pair.getPublicKey().isEmpty());
-            assertNotNull(pair.getPrivateKey());
-            assertFalse(pair.getPrivateKey().isEmpty());
-        }
-
-        @Test
-        @DisplayName("SM2 公钥和私钥应互不相同")
-        void publicKeyAndPrivateKeyShouldDiffer() {
-            assertNotEquals(keyPair.getPublicKey(), keyPair.getPrivateKey());
-        }
-
-        @Test
-        @DisplayName("每次生成的 SM2 密钥对应互不相同")
-        void shouldGenerateDifferentKeyPairs() {
-            Sm2Util.Sm2KeyPair pair1 = Sm2Util.generateKeyPair();
-            Sm2Util.Sm2KeyPair pair2 = Sm2Util.generateKeyPair();
-            assertNotEquals(pair1.getPublicKey(), pair2.getPublicKey());
-            assertNotEquals(pair1.getPrivateKey(), pair2.getPrivateKey());
-        }
+        assertEquals("国密短数据", Sm2Util.decrypt(encrypted, keyPair.getPrivateKey()));
     }
 
-    // ===================== 加密解密测试 =====================
+    /**
+     * 验证非法 SM2 公钥使用稳定密钥错误码。
+     */
+    @Test
+    void shouldRejectInvalidPublicKey() {
+        CipherException exception = assertThrows(
+                CipherException.class,
+                () -> Sm2Util.encrypt("payload", "invalid-key"));
 
-    @Nested
-    @DisplayName("加密解密测试")
-    class EncryptDecryptTests {
-
-        @Test
-        @DisplayName("公钥加密后私钥解密应恢复原文")
-        void shouldRoundtripSm2() {
-            String plainText = "Hello SM2!";
-            String encrypted = Sm2Util.encrypt(plainText, keyPair.getPublicKey());
-            assertNotNull(encrypted);
-            assertNotEquals(plainText, encrypted);
-
-            String decrypted = Sm2Util.decrypt(encrypted, keyPair.getPrivateKey());
-            assertEquals(plainText, decrypted);
-        }
-
-        @Test
-        @DisplayName("加密中文文本后解密应恢复原文")
-        void shouldRoundtripChinese() {
-            String plainText = "你好，世界！国密 SM2 非对称加密测试";
-            String encrypted = Sm2Util.encrypt(plainText, keyPair.getPublicKey());
-            String decrypted = Sm2Util.decrypt(encrypted, keyPair.getPrivateKey());
-            assertEquals(plainText, decrypted);
-        }
-
-        @Test
-        @DisplayName("加密特殊字符文本后解密应恢复原文")
-        void shouldRoundtripSpecialCharacters() {
-            String plainText = "!@#$%^&*()_+-=[]{}|;':\",./<>?`~";
-            String encrypted = Sm2Util.encrypt(plainText, keyPair.getPublicKey());
-            String decrypted = Sm2Util.decrypt(encrypted, keyPair.getPrivateKey());
-            assertEquals(plainText, decrypted);
-        }
-
-        @Test
-        @DisplayName("使用不同公钥加密同一明文应产生不同密文")
-        void shouldProduceDifferentCiphertextWithDifferentPublicKeys() {
-            String plainText = "Same plaintext SM2";
-            String enc1 = Sm2Util.encrypt(plainText, keyPair.getPublicKey());
-            String enc2 = Sm2Util.encrypt(plainText, otherKeyPair.getPublicKey());
-            assertNotEquals(enc1, enc2);
-        }
-
-        @Test
-        @DisplayName("使用错误私钥解密应抛出异常")
-        void shouldThrowOnWrongPrivateKey() {
-            String encrypted = Sm2Util.encrypt("secret", keyPair.getPublicKey());
-            assertThrows(Exception.class,
-                    () -> Sm2Util.decrypt(encrypted, otherKeyPair.getPrivateKey()));
-        }
-    }
-
-    // ===================== 边界条件测试 =====================
-
-    @Nested
-    @DisplayName("边界条件测试")
-    class EdgeCaseTests {
-
-        @Test
-        @DisplayName("加密 null 明文应返回 null")
-        void shouldReturnNullForNullPlaintext() {
-            assertNull(Sm2Util.encrypt(null, keyPair.getPublicKey()));
-        }
-
-        @Test
-        @DisplayName("解密 null 密文应返回 null")
-        void shouldReturnNullForNullCiphertext() {
-            assertNull(Sm2Util.decrypt(null, keyPair.getPrivateKey()));
-        }
-
-        @Test
-        @DisplayName("加密空字符串应抛出异常")
-        void shouldThrowOnEmptyString() {
-            assertThrows(CipherException.class,
-                    () -> Sm2Util.encrypt("", keyPair.getPublicKey()));
-        }
+        assertEquals("CIPHER_002", exception.getCode());
     }
 }

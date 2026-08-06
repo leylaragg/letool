@@ -38,11 +38,6 @@ letool:
         l1-ttl: 1h
         l2-ttl: 12h
         null-value-cache: true
-  cipher:
-    provider: software
-    aes:
-      default-mode: GCM
-      default-key-size: 256
   log:
     trace:
       enabled: true

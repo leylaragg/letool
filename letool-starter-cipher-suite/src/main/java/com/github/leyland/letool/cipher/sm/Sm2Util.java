@@ -1,109 +1,224 @@
 package com.github.leyland.letool.cipher.sm;
 
 import com.github.leyland.letool.cipher.exception.CipherException;
-import com.github.leyland.letool.tool.util.Base64Util;
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import com.github.leyland.letool.cipher.support.BouncyCastleSupport;
+import com.github.leyland.letool.cipher.support.CipherSupport;
+import org.bouncycastle.jce.ECNamedCurveTable;
+import org.bouncycastle.jce.interfaces.ECKey;
+import org.bouncycastle.jce.spec.ECParameterSpec;
 
 import javax.crypto.Cipher;
 import java.nio.charset.StandardCharsets;
-import java.security.*;
+import java.security.GeneralSecurityException;
+import java.security.Key;
+import java.security.KeyFactory;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.security.spec.ECGenParameterSpec;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
+import java.util.Base64;
 
 /**
- * 国密 SM2 非对称加密 —— 类似 RSA，基于椭圆曲线.
+ * 基于 {@code sm2p256v1} 命名曲线的 SM2 公钥加解密工具。
  */
 public final class Sm2Util {
 
-    static {
-        if (Security.getProvider(BouncyCastleProvider.PROVIDER_NAME) == null) {
-            Security.addProvider(new BouncyCastleProvider());
-        }
+    private static final String CURVE_NAME = "sm2p256v1";
+    private static final String TRANSFORMATION = "SM2";
+    private static final int MAXIMUM_CIPHER_OVERHEAD_BYTES = 512;
+    private static final int MAXIMUM_CIPHER_BYTES =
+            CipherSupport.MAXIMUM_IN_MEMORY_PAYLOAD_BYTES + MAXIMUM_CIPHER_OVERHEAD_BYTES;
+    private static final int MAXIMUM_CIPHER_BASE64_CHARACTERS =
+            ((MAXIMUM_CIPHER_BYTES + 2) / 3) * 4;
+
+    /** 工具类禁止实例化。 */
+    private Sm2Util() {
     }
 
-    private Sm2Util() {}
-
     /**
-     * 生成 SM2 密钥对.
+     * 生成 SM2 标准曲线密钥对。
      *
-     * @return Base64 编码的密钥对
+     * @return Base64 编码的 X.509 公钥和 PKCS#8 私钥
      */
     public static Sm2KeyPair generateKeyPair() {
         try {
-            KeyPairGenerator generator = KeyPairGenerator.getInstance("EC", BouncyCastleProvider.PROVIDER_NAME);
-            generator.initialize(256, new SecureRandom());
+            KeyPairGenerator generator = KeyPairGenerator.getInstance(
+                    "EC",
+                    BouncyCastleSupport.provider());
+            generator.initialize(new ECGenParameterSpec(CURVE_NAME));
             KeyPair pair = generator.generateKeyPair();
             return new Sm2KeyPair(
-                    Base64Util.encode(pair.getPublic().getEncoded()),
-                    Base64Util.encode(pair.getPrivate().getEncoded()));
-        } catch (Exception e) {
-            throw new CipherException("Failed to generate SM2 key pair", e);
+                    Base64.getEncoder().encodeToString(pair.getPublic().getEncoded()),
+                    Base64.getEncoder().encodeToString(pair.getPrivate().getEncoded()));
+        } catch (GeneralSecurityException exception) {
+            throw CipherException.operationFailed("SM2 密钥生成", exception);
         }
     }
 
     /**
-     * SM2 公钥加密.
+     * 使用 SM2 公钥加密 UTF-8 短数据。
      *
-     * @param plainText       明文
-     * @param base64PublicKey Base64 编码的公钥
-     * @return Base64 编码的密文
+     * @param plainText 明文，允许为空字符串
+     * @param base64PublicKey Base64 编码的 X.509 SM2 公钥
+     * @return Base64 编码的 SM2 密文
      */
     public static String encrypt(String plainText, String base64PublicKey) {
-        if (plainText == null) return null;
+        CipherSupport.requireNonNull(plainText, "SM2 明文");
+        PublicKey publicKey = publicKey(base64PublicKey);
+        byte[] plainBytes = CipherSupport.requireInMemoryPayload(
+                plainText.getBytes(StandardCharsets.UTF_8),
+                "SM2 明文");
         try {
-            byte[] keyBytes = Base64Util.decodeToBytes(base64PublicKey);
-            X509EncodedKeySpec keySpec = new X509EncodedKeySpec(keyBytes);
-            KeyFactory keyFactory = KeyFactory.getInstance("EC", BouncyCastleProvider.PROVIDER_NAME);
-            PublicKey publicKey = keyFactory.generatePublic(keySpec);
-
-            Cipher cipher = Cipher.getInstance("SM2", BouncyCastleProvider.PROVIDER_NAME);
+            Cipher cipher = Cipher.getInstance(TRANSFORMATION, BouncyCastleSupport.provider());
             cipher.init(Cipher.ENCRYPT_MODE, publicKey);
-            return Base64Util.encode(cipher.doFinal(plainText.getBytes(StandardCharsets.UTF_8)));
-        } catch (CipherException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new CipherException("SM2 encrypt failed", e);
+            return Base64.getEncoder().encodeToString(cipher.doFinal(plainBytes));
+        } catch (GeneralSecurityException exception) {
+            throw CipherException.encryptionFailed("SM2", exception);
         }
     }
 
     /**
-     * SM2 私钥解密.
+     * 使用 SM2 私钥解密。
      *
-     * @param cipherText        Base64 编码的密文
-     * @param base64PrivateKey  Base64 编码的私钥
-     * @return 明文
+     * @param cipherText Base64 编码的 SM2 密文
+     * @param base64PrivateKey Base64 编码的 PKCS#8 SM2 私钥
+     * @return UTF-8 明文
      */
     public static String decrypt(String cipherText, String base64PrivateKey) {
-        if (cipherText == null) return null;
+        PrivateKey privateKey = privateKey(base64PrivateKey);
+        byte[] cipherBytes = decodeCipherText(cipherText);
         try {
-            byte[] keyBytes = Base64Util.decodeToBytes(base64PrivateKey);
-            PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(keyBytes);
-            KeyFactory keyFactory = KeyFactory.getInstance("EC", BouncyCastleProvider.PROVIDER_NAME);
-            PrivateKey privateKey = keyFactory.generatePrivate(keySpec);
-
-            Cipher cipher = Cipher.getInstance("SM2", BouncyCastleProvider.PROVIDER_NAME);
+            Cipher cipher = Cipher.getInstance(TRANSFORMATION, BouncyCastleSupport.provider());
             cipher.init(Cipher.DECRYPT_MODE, privateKey);
-            return new String(cipher.doFinal(Base64Util.decodeToBytes(cipherText)), StandardCharsets.UTF_8);
-        } catch (CipherException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new CipherException("SM2 decrypt failed", e);
+            return new String(cipher.doFinal(cipherBytes), StandardCharsets.UTF_8);
+        } catch (GeneralSecurityException exception) {
+            throw CipherException.decryptionFailed("SM2", exception);
         }
     }
 
     /**
-     * SM2 密钥对.
+     * 解析并校验 SM2 公钥。
+     *
+     * @param base64PublicKey Base64 编码的 X.509 公钥
+     * @return SM2 公钥
      */
-    public static class Sm2KeyPair {
+    private static PublicKey publicKey(String base64PublicKey) {
+        byte[] keyBytes = CipherSupport.decodeKey(base64PublicKey, "SM2 公钥");
+        try {
+            PublicKey publicKey = KeyFactory.getInstance("EC", BouncyCastleSupport.provider())
+                    .generatePublic(new X509EncodedKeySpec(keyBytes));
+            requireSm2Curve(publicKey, "SM2 公钥");
+            return publicKey;
+        } catch (CipherException exception) {
+            throw exception;
+        } catch (GeneralSecurityException exception) {
+            throw CipherException.invalidKey("SM2 公钥");
+        }
+    }
+
+    /**
+     * 解析并校验 SM2 私钥。
+     *
+     * @param base64PrivateKey Base64 编码的 PKCS#8 私钥
+     * @return SM2 私钥
+     */
+    private static PrivateKey privateKey(String base64PrivateKey) {
+        byte[] keyBytes = CipherSupport.decodeKey(base64PrivateKey, "SM2 私钥");
+        try {
+            PrivateKey privateKey = KeyFactory.getInstance("EC", BouncyCastleSupport.provider())
+                    .generatePrivate(new PKCS8EncodedKeySpec(keyBytes));
+            requireSm2Curve(privateKey, "SM2 私钥");
+            return privateKey;
+        } catch (CipherException exception) {
+            throw exception;
+        } catch (GeneralSecurityException exception) {
+            throw CipherException.invalidKey("SM2 私钥");
+        }
+    }
+
+    /**
+     * 校验 EC 密钥参数与 SM2 标准曲线一致。
+     *
+     * @param key EC 密钥
+     * @param keyType 密钥类型说明
+     */
+    private static void requireSm2Curve(Key key, String keyType) {
+        if (!(key instanceof ECKey ecKey)) {
+            throw CipherException.invalidKey(keyType);
+        }
+        ECParameterSpec actual = ecKey.getParameters();
+        ECParameterSpec expected = ECNamedCurveTable.getParameterSpec(CURVE_NAME);
+        if (actual == null
+                || !expected.getCurve().equals(actual.getCurve())
+                || !expected.getG().equals(actual.getG())
+                || !expected.getN().equals(actual.getN())
+                || !expected.getH().equals(actual.getH())) {
+            throw CipherException.invalidKey(keyType + "必须使用 sm2p256v1 曲线");
+        }
+    }
+
+    /**
+     * 解码 SM2 密文且不在异常中暴露原值。
+     *
+     * @param cipherText Base64 编码的 SM2 密文
+     * @return 密文字节
+     */
+    private static byte[] decodeCipherText(String cipherText) {
+        if (cipherText == null || cipherText.isBlank()) {
+            throw CipherException.invalidEnvelope("SM2 密文不能为空");
+        }
+        if (cipherText.length() > MAXIMUM_CIPHER_BASE64_CHARACTERS) {
+            throw CipherException.invalidEnvelope("SM2 密文超过内存处理上限");
+        }
+        try {
+            byte[] decoded = Base64.getDecoder().decode(cipherText);
+            if (decoded.length > MAXIMUM_CIPHER_BYTES) {
+                throw CipherException.invalidEnvelope("SM2 密文超过内存处理上限");
+            }
+            return decoded;
+        } catch (IllegalArgumentException exception) {
+            throw CipherException.invalidEnvelope("SM2 密文 Base64 编码不正确");
+        }
+    }
+
+    /**
+     * Base64 编码的 SM2 公私钥对。
+     */
+    public static final class Sm2KeyPair {
+
         private final String publicKey;
         private final String privateKey;
 
+        /**
+         * 创建 SM2 密钥对值对象。
+         *
+         * @param publicKey Base64 编码的 X.509 公钥
+         * @param privateKey Base64 编码的 PKCS#8 私钥
+         */
         public Sm2KeyPair(String publicKey, String privateKey) {
             this.publicKey = publicKey;
             this.privateKey = privateKey;
         }
 
-        public String getPublicKey() { return publicKey; }
-        public String getPrivateKey() { return privateKey; }
+        /**
+         * 获取公钥。
+         *
+         * @return Base64 编码的 X.509 公钥
+         */
+        public String getPublicKey() {
+            return publicKey;
+        }
+
+        /**
+         * 获取私钥。
+         *
+         * @return Base64 编码的 PKCS#8 私钥
+         */
+        public String getPrivateKey() {
+            return privateKey;
+        }
     }
 }

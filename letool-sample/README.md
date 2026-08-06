@@ -76,7 +76,7 @@ letool-sample/src/main/java/com/github/leyland/letool/sample/
 | letool-starter-security | 安全认证 | JWT 登录、Token 刷新、权限校验 |
 | letool-starter-sensitive | 敏感数据脱敏 | Jackson 序列化脱敏、日志脱敏 |
 | letool-starter-cache | 多级缓存 | Caffeine + Redis 双级缓存配置 |
-| letool-starter-cipher | 加解密 | AES/GCM 加密解密 |
+| letool-starter-cipher-suite | 密码工具 | AES/SM4-GCM、RSA-OAEP/PSS、SM2/SM3、HMAC |
 | letool-starter-log | 全链路追踪 | TraceId 生成与传递 |
 | letool-starter-data-structure | 数据结构 | 泛型树构建、决策链、链表 |
 
@@ -113,11 +113,6 @@ letool:
         l1-max-size: 100
         l1-ttl: 1h
         l2-ttl: 12h
-  cipher:
-    provider: software
-    aes:
-      default-mode: GCM
-      default-key-size: 256
   log:
     trace:
       enabled: true

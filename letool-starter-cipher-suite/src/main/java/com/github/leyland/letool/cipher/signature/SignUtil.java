@@ -1,63 +1,52 @@
 package com.github.leyland.letool.cipher.signature;
 
 import com.github.leyland.letool.cipher.exception.CipherException;
-import com.github.leyland.letool.tool.util.Base64Util;
+import com.github.leyland.letool.cipher.support.CipherSupport;
+import com.github.leyland.letool.cipher.support.RsaKeySupport;
 
 import java.nio.charset.StandardCharsets;
-import java.security.PrivateKey;
+import java.security.GeneralSecurityException;
 import java.security.Signature;
-import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.MGF1ParameterSpec;
+import java.security.spec.PSSParameterSpec;
+import java.util.Base64;
 
 /**
- * 数字签名工具 —— 使用私钥对数据进行签名.
+ * RSA-PSS-SHA256 数字签名工具。
  */
 public final class SignUtil {
 
-    private static final String DEFAULT_ALGORITHM = "SHA256withRSA";
+    private static final PSSParameterSpec PSS_PARAMETERS = new PSSParameterSpec(
+            "SHA-256",
+            "MGF1",
+            MGF1ParameterSpec.SHA256,
+            32,
+            1);
 
-    private SignUtil() {}
+    /** 工具类禁止实例化。 */
+    private SignUtil() {
+    }
 
     /**
-     * 使用 RSA 私钥对数据签名（SHA256withRSA）.
+     * 使用 RSA-PSS-SHA256 对 UTF-8 数据签名。
      *
-     * @param data             待签名数据
-     * @param base64PrivateKey Base64 编码的 RSA 私钥
+     * @param data 待签名数据
+     * @param base64PrivateKey Base64 编码的 PKCS#8 RSA 私钥
      * @return Base64 编码的签名
      */
     public static String sign(String data, String base64PrivateKey) {
-        return sign(data, base64PrivateKey, DEFAULT_ALGORITHM);
-    }
-
-    /**
-     * 使用私钥对数据签名（指定算法）.
-     *
-     * @param data             待签名数据
-     * @param base64PrivateKey Base64 编码的私钥
-     * @param algorithm        签名算法（如 SHA256withRSA / SHA256withECDSA）
-     * @return Base64 编码的签名
-     */
-    public static String sign(String data, String base64PrivateKey, String algorithm) {
-        if (data == null || base64PrivateKey == null) return null;
+        CipherSupport.requireNonNull(data, "待签名数据");
         try {
-            byte[] keyBytes = Base64Util.decodeToBytes(base64PrivateKey);
-            PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(keyBytes);
-
-            // Try RSA first, then EC
-            PrivateKey privateKey;
-            try {
-                privateKey = java.security.KeyFactory.getInstance("RSA").generatePrivate(keySpec);
-            } catch (Exception e) {
-                privateKey = java.security.KeyFactory.getInstance("EC").generatePrivate(keySpec);
-            }
-
-            Signature signature = Signature.getInstance(algorithm);
-            signature.initSign(privateKey);
+            Signature signature = Signature.getInstance("RSASSA-PSS");
+            signature.setParameter(PSS_PARAMETERS);
+            signature.initSign(RsaKeySupport.privateKey(base64PrivateKey));
             signature.update(data.getBytes(StandardCharsets.UTF_8));
-            return Base64Util.encode(signature.sign());
-        } catch (CipherException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new CipherException("Sign failed", e);
+            return Base64.getEncoder().encodeToString(signature.sign());
+        } catch (CipherException exception) {
+            throw exception;
+        } catch (GeneralSecurityException exception) {
+            throw CipherException.operationFailed("RSA-PSS-SHA256 签名", exception);
         }
     }
+
 }

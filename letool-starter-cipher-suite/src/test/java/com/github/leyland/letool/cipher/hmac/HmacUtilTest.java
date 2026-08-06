@@ -1,231 +1,94 @@
 package com.github.leyland.letool.cipher.hmac;
 
+import com.github.leyland.letool.cipher.exception.CipherException;
 import com.github.leyland.letool.cipher.key.KeyGenerator;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import java.util.Arrays;
+import java.util.Base64;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * HMAC 消息认证码单元测试.
+ * HMAC 密钥和消息认证关键契约测试。
  */
-@DisplayName("HMAC 消息认证码测试")
 class HmacUtilTest {
 
-    private static String key;
-    private static String otherKey;
+    /**
+     * 验证 RFC 4231 中超长密钥的 HMAC-SHA256 公开向量。
+     */
+    @Test
+    void shouldMatchRfc4231Sha256Vector() {
+        byte[] key = new byte[131];
+        Arrays.fill(key, (byte) 0xaa);
 
-    @BeforeAll
-    static void setUpKeys() {
-        key = "my-secret-hmac-key-32bytes!!";
-        otherKey = "other-secret-hmac-key-32bytes!";
+        String result = HmacUtil.hmacSha256(
+                "Test Using Larger Than Block-Size Key - Hash Key First",
+                key);
+
+        assertEquals("60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54", result);
     }
 
-    // ===================== HMAC-SHA256（十六进制）测试 =====================
+    /**
+     * 验证生成的 Base64 密钥可直接用于字符串 API 和常量时间校验。
+     */
+    @Test
+    void shouldUseGeneratedBase64KeyDirectly() {
+        String key = KeyGenerator.generateHmacKey();
+        String mac = HmacUtil.hmacSha256("payload", key);
 
-    @Nested
-    @DisplayName("HMAC-SHA256（十六进制）测试")
-    class HmacSha256HexTests {
-
-        @Test
-        @DisplayName("HMAC-SHA256 应返回 64 位十六进制字符串")
-        void shouldReturn64HexChars() {
-            String result = HmacUtil.hmacSha256("hello", key);
-            assertNotNull(result);
-            assertEquals(64, result.length(), "HMAC-SHA256 应返回 64 位十六进制字符串");
-        }
-
-        @Test
-        @DisplayName("同一数据和密钥应产生相同 HMAC-SHA256")
-        void shouldBeDeterministic() {
-            String data = "deterministic hmac test";
-            String hmac1 = HmacUtil.hmacSha256(data, key);
-            String hmac2 = HmacUtil.hmacSha256(data, key);
-            assertEquals(hmac1, hmac2);
-        }
-
-        @Test
-        @DisplayName("不同密钥应产生不同 HMAC-SHA256")
-        void shouldProduceDifferentHmacWithDifferentKeys() {
-            String data = "same data";
-            String hmac1 = HmacUtil.hmacSha256(data, key);
-            String hmac2 = HmacUtil.hmacSha256(data, otherKey);
-            assertNotEquals(hmac1, hmac2);
-        }
-
-        @Test
-        @DisplayName("不同数据应产生不同 HMAC-SHA256")
-        void shouldProduceDifferentHmacForDifferentData() {
-            String hmac1 = HmacUtil.hmacSha256("data one", key);
-            String hmac2 = HmacUtil.hmacSha256("data two", key);
-            assertNotEquals(hmac1, hmac2);
-        }
-
-        @Test
-        @DisplayName("HMAC-SHA256 值应仅包含小写十六进制字符")
-        void shouldContainOnlyLowercaseHex() {
-            String result = HmacUtil.hmacSha256("test", key);
-            assertTrue(result.matches("^[0-9a-f]{64}$"),
-                    "HMAC-SHA256 应为小写十六进制字符");
-        }
-
-        @Test
-        @DisplayName("中文数据 HMAC-SHA256 计算应正常")
-        void shouldHashChinese() {
-            String result = HmacUtil.hmacSha256("你好，世界！", key);
-            assertNotNull(result);
-            assertEquals(64, result.length());
-        }
-
-        @Test
-        @DisplayName("null 数据应返回 null")
-        void shouldReturnNullForNullData() {
-            assertNull(HmacUtil.hmacSha256(null, key));
-        }
-
-        @Test
-        @DisplayName("null 密钥应返回 null")
-        void shouldReturnNullForNullKey() {
-            assertNull(HmacUtil.hmacSha256("data", (String) null));
-        }
+        assertTrue(HmacUtil.verifySha256("payload", mac, key));
+        assertFalse(HmacUtil.verifySha256("changed", mac, key));
     }
 
-    // ===================== HMAC-SHA256（Base64）测试 =====================
+    /**
+     * 验证字符串密钥按 Base64 原始字节解释，而不是按 Base64 文本解释。
+     */
+    @Test
+    void shouldDecodeStringKeyAsBase64() {
+        byte[] rawKey = new byte[32];
+        Arrays.fill(rawKey, (byte) 0x5a);
+        String base64Key = Base64.getEncoder().encodeToString(rawKey);
 
-    @Nested
-    @DisplayName("HMAC-SHA256（Base64）测试")
-    class HmacSha256Base64Tests {
-
-        @Test
-        @DisplayName("HMAC-SHA256 Base64 应返回非空字符串")
-        void shouldReturnNonEmptyBase64() {
-            String result = HmacUtil.hmacSha256Base64("hello", key);
-            assertNotNull(result);
-            assertFalse(result.isEmpty());
-        }
-
-        @Test
-        @DisplayName("同一数据和密钥应产生相同 HMAC-SHA256 Base64")
-        void shouldBeDeterministic() {
-            String data = "base64 deterministic test";
-            assertEquals(
-                    HmacUtil.hmacSha256Base64(data, key),
-                    HmacUtil.hmacSha256Base64(data, key));
-        }
-
-        @Test
-        @DisplayName("不同密钥应产生不同 HMAC-SHA256 Base64")
-        void shouldProduceDifferentHmacWithDifferentKeys() {
-            String data = "same data";
-            assertNotEquals(
-                    HmacUtil.hmacSha256Base64(data, key),
-                    HmacUtil.hmacSha256Base64(data, otherKey));
-        }
-
-        @Test
-        @DisplayName("null 数据或 null 密钥应返回 null")
-        void shouldReturnNullForNullInputs() {
-            assertNull(HmacUtil.hmacSha256Base64(null, key));
-            assertNull(HmacUtil.hmacSha256Base64("data", (String) null));
-        }
+        assertEquals(
+                HmacUtil.hmacSha256("payload", rawKey),
+                HmacUtil.hmacSha256("payload", base64Key));
     }
 
-    // ===================== HMAC-SHA512 测试 =====================
+    /**
+     * 验证过短 HMAC 密钥被生产 API 拒绝。
+     */
+    @Test
+    void shouldRejectShortKey() {
+        String shortKey = Base64.getEncoder().encodeToString(new byte[16]);
 
-    @Nested
-    @DisplayName("HMAC-SHA512 测试")
-    class HmacSha512Tests {
+        CipherException exception = assertThrows(
+                CipherException.class,
+                () -> HmacUtil.hmacSha256("payload", shortKey));
 
-        @Test
-        @DisplayName("HMAC-SHA512 应返回 128 位十六进制字符串")
-        void shouldReturn128HexChars() {
-            String result = HmacUtil.hmacSha512("hello", key);
-            assertNotNull(result);
-            assertEquals(128, result.length(), "HMAC-SHA512 应返回 128 位十六进制字符串");
-        }
-
-        @Test
-        @DisplayName("同一数据和密钥应产生相同 HMAC-SHA512")
-        void shouldBeDeterministic() {
-            String data = "sha512 deterministic";
-            assertEquals(
-                    HmacUtil.hmacSha512(data, key),
-                    HmacUtil.hmacSha512(data, key));
-        }
-
-        @Test
-        @DisplayName("HMAC-SHA512 与 HMAC-SHA256 同一输入应产生不同结果")
-        void sha256AndSha512ShouldDiffer() {
-            String data = "compare hmac algorithms";
-            assertNotEquals(
-                    HmacUtil.hmacSha256(data, key),
-                    HmacUtil.hmacSha512(data, key));
-        }
-
-        @Test
-        @DisplayName("null 数据或 null 密钥应返回 null")
-        void shouldReturnNullForNullInputs() {
-            assertNull(HmacUtil.hmacSha512(null, key));
-            assertNull(HmacUtil.hmacSha512("data", (String) null));
-        }
+        assertEquals("CIPHER_002", exception.getCode());
     }
 
-    // ===================== HMAC-SHA512（Base64）测试 =====================
+    /**
+     * 验证 SHA-256 消息认证码必须解码为固定的 32 字节。
+     */
+    @Test
+    void shouldRejectUnexpectedSha256MacLength() {
+        String key = KeyGenerator.generateHmacKey();
+        String oversizedHex = "00".repeat(33);
+        String oversizedBase64 = Base64.getEncoder().encodeToString(new byte[33]);
 
-    @Nested
-    @DisplayName("HMAC-SHA512（Base64）测试")
-    class HmacSha512Base64Tests {
+        CipherException hexException = assertThrows(
+                CipherException.class,
+                () -> HmacUtil.verifySha256("payload", oversizedHex, key));
+        CipherException base64Exception = assertThrows(
+                CipherException.class,
+                () -> HmacUtil.verifySha256Base64("payload", oversizedBase64, key));
 
-        @Test
-        @DisplayName("HMAC-SHA512 Base64 应返回非空字符串")
-        void shouldReturnNonEmptyBase64() {
-            String result = HmacUtil.hmacSha512Base64("hello", key);
-            assertNotNull(result);
-            assertFalse(result.isEmpty());
-        }
-
-        @Test
-        @DisplayName("同一数据和密钥应产生相同 HMAC-SHA512 Base64")
-        void shouldBeDeterministic() {
-            String data = "sha512 base64 deterministic";
-            assertEquals(
-                    HmacUtil.hmacSha512Base64(data, key),
-                    HmacUtil.hmacSha512Base64(data, key));
-        }
-
-        @Test
-        @DisplayName("null 输入应返回 null")
-        void shouldReturnNullForNullInputs() {
-            assertNull(HmacUtil.hmacSha512Base64(null, key));
-            assertNull(HmacUtil.hmacSha512Base64("data", (String) null));
-        }
-    }
-
-    // ===================== 动态密钥测试 =====================
-
-    @Nested
-    @DisplayName("动态密钥测试")
-    class DynamicKeyTests {
-
-        @Test
-        @DisplayName("使用 KeyGenerator 生成的 HMAC 密钥应能正常计算")
-        void shouldWorkWithGeneratedKey() {
-            String generatedKey = KeyGenerator.generateHmacKey();
-            String result = HmacUtil.hmacSha256("test data", generatedKey);
-            assertNotNull(result);
-            assertEquals(64, result.length());
-        }
-
-        @Test
-        @DisplayName("两个随机生成的密钥应产生不同 HMAC")
-        void generatedKeysShouldProduceDifferentHmac() {
-            String keyA = KeyGenerator.generateHmacKey();
-            String keyB = KeyGenerator.generateHmacKey();
-            assertNotEquals(
-                    HmacUtil.hmacSha256("test", keyA),
-                    HmacUtil.hmacSha256("test", keyB));
-        }
+        assertEquals("CIPHER_001", hexException.getCode());
+        assertEquals("CIPHER_001", base64Exception.getCode());
     }
 }

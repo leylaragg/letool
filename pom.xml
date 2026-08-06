@@ -126,7 +126,7 @@
         <liteflow.version>2.12.4</liteflow.version>
 
         <!-- 加密算法 -->
-        <bouncycastle.version>1.78</bouncycastle.version>
+        <bouncycastle.version>1.84</bouncycastle.version>
 
         <!-- JWT -->
         <jjwt.version>0.12.6</jjwt.version>
@@ -477,12 +477,6 @@
                 <artifactId>bcprov-jdk18on</artifactId>
                 <version>${bouncycastle.version}</version>
             </dependency>
-            <dependency>
-                <groupId>org.bouncycastle</groupId>
-                <artifactId>bcpkix-jdk18on</artifactId>
-                <version>${bouncycastle.version}</version>
-            </dependency>
-
             <!-- JWT -->
             <dependency>
                 <groupId>io.jsonwebtoken</groupId>

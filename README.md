@@ -37,7 +37,7 @@
 | [**letool-starter-sensitive**](letool-starter-sensitive/README.md) | 数据脱敏工具 —— 常用策略、字段注解、可扩展注册表与 Jackson 自动脱敏 | exception, Jackson |
 | **letool-starter-log** | 日志封装 —— 请求链路追踪、审计日志、方法日志；异步 MDC 传播可直接搭配 thread | tool, sensitive |
 | **letool-starter-cache** | 二级缓存 —— KV 与 Redis 原生 List/Hash/Set/ZSet，自动降级与恢复 | tool, exception |
-| **letool-starter-cipher-suite** | 加密套件 —— AES/RSA/SM2/SM3/SM4、数字签名 | tool |
+| [**letool-starter-cipher-suite**](letool-starter-cipher-suite/README.md) | 加密工具 —— AES/SM4-GCM、RSA-OAEP/PSS、SM2/SM3、HMAC 与安全密钥生成 | exception, Bouncy Castle |
 | **letool-starter-web** | Web 增强 —— 全局异常处理、响应包装、XSS/SQL 注入防御 | tool, exception |
 | **letool-starter-security** | 安全认证 —— Resource Server、JWT 签发、角色与权限映射 | tool, exception |
 | **letool-starter-thread** | 线程管理 —— 动态线程池、MDC 与自定义上下文传播、虚拟线程 | exception |
@@ -168,18 +168,21 @@ LoginUser currentUser = SecurityUtil.getCurrentUser();
 ### 5. 加解密
 
 ```java
-// AES 对称加密
+// AES-GCM 认证加密；租户标识作为附加认证数据
 String key = CipherUtil.generateAesKey(256);
-String enc = CipherUtil.aesEncrypt("Hello", key);
-String dec = CipherUtil.aesDecrypt(enc, key);
+String enc = CipherUtil.aesEncrypt("Hello", key, "tenant-1001");
+String dec = CipherUtil.aesDecrypt(enc, key, "tenant-1001");
 
 // 国密 SM2
 Sm2Util.Sm2KeyPair pair = CipherUtil.generateSm2KeyPair();
 String sm2Enc = CipherUtil.sm2Encrypt("data", pair.getPublicKey());
 
-// 哈希
+// 摘要与消息认证
 String sha256 = CipherUtil.sha256("hello");
 String sm3 = CipherUtil.sm3("hello");
+String hmacKey = CipherUtil.generateHmacKey();
+String mac = CipherUtil.hmacSha256("payload", hmacKey);
+boolean valid = CipherUtil.verifyHmacSha256("payload", mac, hmacKey);
 ```
 
 ### 6. 二级缓存
@@ -279,10 +282,6 @@ letool:
     exclude-paths:
       - /api/public/**
       - /api/auth/**
-  cipher:
-    provider: software
-    aes:
-      default-mode: GCM
 ```
 
 ## 示例项目

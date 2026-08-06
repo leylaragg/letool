@@ -1,62 +1,82 @@
 package com.github.leyland.letool.cipher.signature;
 
 import com.github.leyland.letool.cipher.exception.CipherException;
-import com.github.leyland.letool.tool.util.Base64Util;
+import com.github.leyland.letool.cipher.support.CipherSupport;
+import com.github.leyland.letool.cipher.support.RsaKeySupport;
 
 import java.nio.charset.StandardCharsets;
-import java.security.PublicKey;
+import java.security.GeneralSecurityException;
 import java.security.Signature;
-import java.security.spec.X509EncodedKeySpec;
+import java.security.interfaces.RSAPublicKey;
+import java.security.spec.MGF1ParameterSpec;
+import java.security.spec.PSSParameterSpec;
+import java.util.Base64;
 
 /**
- * 签名验证工具 —— 使用公钥验证数字签名.
+ * RSA-PSS-SHA256 签名验证工具。
  */
 public final class VerifyUtil {
 
-    private static final String DEFAULT_ALGORITHM = "SHA256withRSA";
+    private static final PSSParameterSpec PSS_PARAMETERS = new PSSParameterSpec(
+            "SHA-256",
+            "MGF1",
+            MGF1ParameterSpec.SHA256,
+            32,
+            1);
 
-    private VerifyUtil() {}
-
-    /**
-     * 使用 RSA 公钥验证签名（SHA256withRSA）.
-     *
-     * @param data             原始数据
-     * @param base64Signature  Base64 编码的签名
-     * @param base64PublicKey  Base64 编码的 RSA 公钥
-     * @return {@code true} 如果签名有效
-     */
-    public static boolean verify(String data, String base64Signature, String base64PublicKey) {
-        return verify(data, base64Signature, base64PublicKey, DEFAULT_ALGORITHM);
+    /** 工具类禁止实例化。 */
+    private VerifyUtil() {
     }
 
     /**
-     * 使用公钥验证签名（指定算法）.
+     * 使用 RSA-PSS-SHA256 验证 UTF-8 数据签名。
      *
-     * @param data             原始数据
-     * @param base64Signature  Base64 编码的签名
-     * @param base64PublicKey  Base64 编码的公钥
-     * @param algorithm        签名算法
-     * @return {@code true} 如果签名有效
+     * @param data 原始数据
+     * @param base64Signature Base64 编码的签名
+     * @param base64PublicKey Base64 编码的 X.509 RSA 公钥
+     * @return 签名匹配时返回 {@code true}，数据或签名被修改时返回 {@code false}
      */
-    public static boolean verify(String data, String base64Signature, String base64PublicKey, String algorithm) {
-        if (data == null || base64Signature == null || base64PublicKey == null) return false;
+    public static boolean verify(String data, String base64Signature, String base64PublicKey) {
+        CipherSupport.requireNonNull(data, "验签数据");
+        RSAPublicKey publicKey = RsaKeySupport.publicKey(base64PublicKey);
+        int expectedLength = (publicKey.getModulus().bitLength() + 7) / Byte.SIZE;
+        byte[] signatureBytes = decodeSignature(base64Signature, expectedLength);
         try {
-            byte[] keyBytes = Base64Util.decodeToBytes(base64PublicKey);
-            X509EncodedKeySpec keySpec = new X509EncodedKeySpec(keyBytes);
-
-            PublicKey publicKey;
-            try {
-                publicKey = java.security.KeyFactory.getInstance("RSA").generatePublic(keySpec);
-            } catch (Exception e) {
-                publicKey = java.security.KeyFactory.getInstance("EC").generatePublic(keySpec);
-            }
-
-            Signature signature = Signature.getInstance(algorithm);
+            Signature signature = Signature.getInstance("RSASSA-PSS");
+            signature.setParameter(PSS_PARAMETERS);
             signature.initVerify(publicKey);
             signature.update(data.getBytes(StandardCharsets.UTF_8));
-            return signature.verify(Base64Util.decodeToBytes(base64Signature));
-        } catch (Exception e) {
-            throw new CipherException("Verify failed", e);
+            return signature.verify(signatureBytes);
+        } catch (CipherException exception) {
+            throw exception;
+        } catch (GeneralSecurityException exception) {
+            throw CipherException.operationFailed("RSA-PSS-SHA256 验签", exception);
+        }
+    }
+
+    /**
+     * 解码签名且不在异常中暴露原值。
+     *
+     * @param base64Signature Base64 编码的签名
+     * @param expectedLength 当前 RSA 模数对应的签名字节长度
+     * @return 固定长度的签名字节
+     */
+    private static byte[] decodeSignature(String base64Signature, int expectedLength) {
+        if (base64Signature == null || base64Signature.isBlank()) {
+            throw CipherException.invalidParameter("签名不能为空");
+        }
+        int maximumEncodedLength = ((expectedLength + 2) / 3) * 4;
+        if (base64Signature.length() > maximumEncodedLength) {
+            throw CipherException.invalidParameter("签名长度与 RSA 密钥不匹配");
+        }
+        try {
+            byte[] decoded = Base64.getDecoder().decode(base64Signature);
+            if (decoded.length != expectedLength) {
+                throw CipherException.invalidParameter("签名长度与 RSA 密钥不匹配");
+            }
+            return decoded;
+        } catch (IllegalArgumentException exception) {
+            throw CipherException.invalidParameter("签名 Base64 编码不正确");
         }
     }
 }

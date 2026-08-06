@@ -1,113 +1,170 @@
 package com.github.leyland.letool.cipher.asymmetric;
 
 import com.github.leyland.letool.cipher.exception.CipherException;
-import com.github.leyland.letool.tool.util.Base64Util;
+import com.github.leyland.letool.cipher.support.CipherSupport;
+import com.github.leyland.letool.cipher.support.RsaKeySupport;
 
 import javax.crypto.Cipher;
+import javax.crypto.spec.OAEPParameterSpec;
+import javax.crypto.spec.PSource;
 import java.nio.charset.StandardCharsets;
-import java.security.*;
-import java.security.spec.PKCS8EncodedKeySpec;
-import java.security.spec.X509EncodedKeySpec;
+import java.security.GeneralSecurityException;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.interfaces.RSAPrivateKey;
+import java.security.interfaces.RSAPublicKey;
+import java.security.spec.MGF1ParameterSpec;
+import java.util.Base64;
 
 /**
- * RSA 非对称加密 —— 公钥加密 / 私钥解密.
+ * RSA-OAEP-SHA256 小数据加解密工具。
  *
- * <p><b>安全警告：</b>默认使用 RSA/ECB/PKCS1Padding，PKCS#1 v1.5 存在 Bleichenbacher 填充预言攻击风险。
- * 生产环境推荐使用 {@link #RSA_ALGORITHM_OAEP} ({@code "RSA/ECB/OAEPWithSHA-256AndMGF1Padding"})。</p>
- *
- * <p>密钥大小 2048 位.</p>
+ * <p>RSA 只适合加密会话密钥等短数据。业务大文本应使用 AES-GCM 或 SM4-GCM，
+ * 再使用 RSA 封装对称密钥。</p>
  */
 public final class RsaCipher {
 
-    /** 默认算法（兼容性保留），注意 PKCS1Padding 存在已知安全缺陷 */
-    private static final String RSA_ALGORITHM = "RSA/ECB/PKCS1Padding";
-    /** 推荐算法：OAEP 填充，抗填充预言攻击 */
-    public static final String RSA_ALGORITHM_OAEP = "RSA/ECB/OAEPWithSHA-256AndMGF1Padding";
+    private static final String TRANSFORMATION = "RSA/ECB/OAEPPadding";
+    private static final int SHA256_LENGTH_BYTES = 32;
+    private static final OAEPParameterSpec OAEP_PARAMETERS = new OAEPParameterSpec(
+            "SHA-256",
+            "MGF1",
+            MGF1ParameterSpec.SHA256,
+            PSource.PSpecified.DEFAULT);
 
-    private RsaCipher() {}
+    /** 工具类禁止实例化。 */
+    private RsaCipher() {
+    }
 
     /**
-     * 生成 RSA 密钥对.
+     * 生成生产可用的 RSA 密钥对。
      *
-     * @param keySize 密钥大小（推荐 2048）
+     * @param keySize 密钥位数，只允许 2048、3072 或 4096
      * @return Base64 编码的密钥对
      */
     public static RsaKeyPair generateKeyPair(int keySize) {
+        if (keySize != 2048 && keySize != 3072 && keySize != 4096) {
+            throw CipherException.invalidParameter("RSA 密钥位数只允许 2048、3072 或 4096");
+        }
         try {
             KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-            generator.initialize(keySize, new SecureRandom());
+            generator.initialize(keySize);
             KeyPair pair = generator.generateKeyPair();
             return new RsaKeyPair(
-                    Base64Util.encode(pair.getPublic().getEncoded()),
-                    Base64Util.encode(pair.getPrivate().getEncoded()));
-        } catch (Exception e) {
-            throw new CipherException("Failed to generate RSA key pair", e);
+                    Base64.getEncoder().encodeToString(pair.getPublic().getEncoded()),
+                    Base64.getEncoder().encodeToString(pair.getPrivate().getEncoded()));
+        } catch (GeneralSecurityException exception) {
+            throw CipherException.operationFailed("RSA 密钥生成", exception);
         }
     }
 
     /**
-     * 公钥加密.
+     * 使用 RSA-OAEP-SHA256 公钥加密短文本。
      *
-     * @param plainText       明文
-     * @param base64PublicKey Base64 编码的公钥
-     * @return Base64 编码的密文
+     * @param plainText UTF-8 明文
+     * @param base64PublicKey Base64 编码的 X.509 RSA 公钥
+     * @return Base64 编码的 RSA 密文
      */
     public static String encrypt(String plainText, String base64PublicKey) {
-        if (plainText == null) return null;
+        CipherSupport.requireNonNull(plainText, "RSA 明文");
+        RSAPublicKey publicKey = RsaKeySupport.publicKey(base64PublicKey);
+        byte[] plainBytes = plainText.getBytes(StandardCharsets.UTF_8);
+        int modulusBytes = (publicKey.getModulus().bitLength() + 7) / Byte.SIZE;
+        int maximumPlaintextLength = modulusBytes - (2 * SHA256_LENGTH_BYTES) - 2;
+        if (plainBytes.length > maximumPlaintextLength) {
+            throw CipherException.invalidParameter(
+                    "RSA-OAEP-SHA256 明文不得超过 " + maximumPlaintextLength + " 字节");
+        }
         try {
-            byte[] keyBytes = Base64Util.decodeToBytes(base64PublicKey);
-            X509EncodedKeySpec keySpec = new X509EncodedKeySpec(keyBytes);
-            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-            PublicKey publicKey = keyFactory.generatePublic(keySpec);
-
-            Cipher cipher = Cipher.getInstance(RSA_ALGORITHM);
-            cipher.init(Cipher.ENCRYPT_MODE, publicKey);
-            return Base64Util.encode(cipher.doFinal(plainText.getBytes(StandardCharsets.UTF_8)));
-        } catch (CipherException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new CipherException("RSA encrypt failed", e);
+            Cipher cipher = Cipher.getInstance(TRANSFORMATION);
+            cipher.init(Cipher.ENCRYPT_MODE, publicKey, OAEP_PARAMETERS);
+            return Base64.getEncoder().encodeToString(cipher.doFinal(plainBytes));
+        } catch (GeneralSecurityException exception) {
+            throw CipherException.encryptionFailed("RSA-OAEP-SHA256", exception);
         }
     }
 
     /**
-     * 私钥解密.
+     * 使用 RSA-OAEP-SHA256 私钥解密。
      *
-     * @param cipherText        Base64 编码的密文
-     * @param base64PrivateKey  Base64 编码的私钥
-     * @return 明文
+     * @param cipherText Base64 编码的 RSA 密文
+     * @param base64PrivateKey Base64 编码的 PKCS#8 RSA 私钥
+     * @return UTF-8 明文
      */
     public static String decrypt(String cipherText, String base64PrivateKey) {
-        if (cipherText == null) return null;
+        RSAPrivateKey privateKey = RsaKeySupport.privateKey(base64PrivateKey);
+        int modulusBytes = (privateKey.getModulus().bitLength() + 7) / Byte.SIZE;
+        byte[] cipherBytes = decodeCipherText(cipherText, modulusBytes);
         try {
-            byte[] keyBytes = Base64Util.decodeToBytes(base64PrivateKey);
-            PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(keyBytes);
-            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-            PrivateKey privateKey = keyFactory.generatePrivate(keySpec);
-
-            Cipher cipher = Cipher.getInstance(RSA_ALGORITHM);
-            cipher.init(Cipher.DECRYPT_MODE, privateKey);
-            return new String(cipher.doFinal(Base64Util.decodeToBytes(cipherText)), StandardCharsets.UTF_8);
-        } catch (CipherException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new CipherException("RSA decrypt failed", e);
+            Cipher cipher = Cipher.getInstance(TRANSFORMATION);
+            cipher.init(Cipher.DECRYPT_MODE, privateKey, OAEP_PARAMETERS);
+            return new String(cipher.doFinal(cipherBytes), StandardCharsets.UTF_8);
+        } catch (GeneralSecurityException exception) {
+            throw CipherException.decryptionFailed("RSA-OAEP-SHA256", exception);
         }
     }
 
     /**
-     * RSA 密钥对 —— 公钥和私钥均为 Base64 编码.
+     * 解码 RSA 密文且不在异常中暴露原值。
+     *
+     * @param cipherText Base64 编码的 RSA 密文
+     * @param expectedLength 当前 RSA 模数对应的密文字节长度
+     * @return 固定长度的密文字节
      */
-    public static class RsaKeyPair {
+    private static byte[] decodeCipherText(String cipherText, int expectedLength) {
+        if (cipherText == null || cipherText.isBlank()) {
+            throw CipherException.invalidEnvelope("RSA 密文不能为空");
+        }
+        int maximumEncodedLength = ((expectedLength + 2) / 3) * 4;
+        if (cipherText.length() > maximumEncodedLength) {
+            throw CipherException.invalidEnvelope("RSA 密文长度与密钥不匹配");
+        }
+        try {
+            byte[] decoded = Base64.getDecoder().decode(cipherText);
+            if (decoded.length != expectedLength) {
+                throw CipherException.invalidEnvelope("RSA 密文长度与密钥不匹配");
+            }
+            return decoded;
+        } catch (IllegalArgumentException exception) {
+            throw CipherException.invalidEnvelope("RSA 密文 Base64 编码不正确");
+        }
+    }
+
+    /**
+     * Base64 编码的 RSA 公私钥对。
+     */
+    public static final class RsaKeyPair {
+
         private final String publicKey;
         private final String privateKey;
 
+        /**
+         * 创建 RSA 密钥对值对象。
+         *
+         * @param publicKey Base64 编码的 X.509 公钥
+         * @param privateKey Base64 编码的 PKCS#8 私钥
+         */
         public RsaKeyPair(String publicKey, String privateKey) {
             this.publicKey = publicKey;
             this.privateKey = privateKey;
         }
 
-        public String getPublicKey() { return publicKey; }
-        public String getPrivateKey() { return privateKey; }
+        /**
+         * 获取公钥。
+         *
+         * @return Base64 编码的 X.509 公钥
+         */
+        public String getPublicKey() {
+            return publicKey;
+        }
+
+        /**
+         * 获取私钥。
+         *
+         * @return Base64 编码的 PKCS#8 私钥
+         */
+        public String getPrivateKey() {
+            return privateKey;
+        }
     }
 }
