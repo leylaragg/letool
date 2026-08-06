@@ -71,20 +71,6 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- Apache HttpClient 5（HTTP 请求引擎） -->
-        <dependency>
-            <groupId>org.apache.httpcomponents.client5</groupId>
-            <artifactId>httpclient5</artifactId>
-            <optional>true</optional>
-        </dependency>
-
-        <!-- OkHttp（HTTP 请求备选引擎） -->
-        <dependency>
-            <groupId>com.squareup.okhttp3</groupId>
-            <artifactId>okhttp</artifactId>
-            <optional>true</optional>
-        </dependency>
-
         <!-- Redis（可选依赖） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

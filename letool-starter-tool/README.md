@@ -169,7 +169,11 @@ class JsonConfiguration {
 
 ### 4. HTTP 工具 HttpUtil
 
-**编程式（便捷方法，适合简单场景）**
+HTTP 便利能力基于 JDK 17 `java.net.http.HttpClient`，连接复用、HTTP/2 和协议处理由 JDK 负责；
+Letool 只封装链式请求、Multipart、拦截器、有界响应、受控重试和统一异常。模块不会再根据
+classpath 假装切换 Apache HttpClient 或 OkHttp。
+
+**静态便捷方法（适合固定默认值的简单调用）**
 
 ```java
 String result = HttpUtil.get("https://api.example.com/user/123");
@@ -178,7 +182,11 @@ String result = HttpUtil.put("https://api.example.com/user/1", jsonBody);
 String result = HttpUtil.delete("https://api.example.com/user/123");
 ```
 
-**编程式（链式 API，适合复杂场景）**
+静态入口使用 5 秒连接超时、30 秒请求总超时、16 MiB 响应上限和不自动跟随重定向的不可变默认配置。
+它不提供可变全局开关，因此并发请求和不同测试之间不会相互污染。实例配置可调整响应上限，但为了
+避免把文件下载误用成内存响应，取值不能超过 256 MiB。
+
+**链式请求**
 
 ```java
 HttpResponse resp = HttpUtil.create()
@@ -187,14 +195,102 @@ HttpResponse resp = HttpUtil.create()
     .header("Authorization", "Bearer " + token)
     .contentType("application/json")
     .body(jsonBody)
-    .connectTimeout(Duration.ofSeconds(5))
-    .readTimeout(Duration.ofSeconds(30))
-    .maxRetry(3)
+    .timeout(Duration.ofSeconds(20))
     .execute();
 
 String body = resp.getBody();
+byte[] bytes = resp.getBodyBytes();
 int status = resp.getStatusCode();
+String traceId = resp.header("X-Trace-Id");
+Duration duration = resp.getDuration();
+int attempts = resp.getAttempts();
 ```
+
+HTTP 4xx 和 5xx 是服务端返回的正常协议响应，不会自动转换为异常；可以使用 `is2xx()`、`is4xx()`、
+`is5xx()` 或状态码自行处理。URL 非法、连接失败、超时、中断、响应越界和拦截器失败才会抛出
+`HttpException`。
+
+**实例化配置与 Spring 注入**
+
+```java
+HttpConfig config = HttpConfig.builder()
+    .connectTimeout(Duration.ofSeconds(3))
+    .requestTimeout(Duration.ofSeconds(15))
+    .maxResponseBytes(4 * 1024 * 1024L)
+    .redirectPolicy(HttpClient.Redirect.NORMAL)
+    .build();
+
+HttpTemplate template = new HttpTemplate(config);
+HttpResponse response = template.create("https://api.example.com/ping")
+    .get()
+    .execute();
+```
+
+Spring 应用默认可以直接注入 `HttpTemplate`。声明自定义 `HttpTemplate` Bean 后，Starter 默认 Bean 会退让。
+需要代理、企业 TLS、认证器或自定义执行器时，应先构造 JDK `HttpClient` 再交给模板：
+
+```java
+@Bean
+HttpTemplate httpTemplate() {
+    HttpClient client = HttpClient.newBuilder()
+        .proxy(ProxySelector.getDefault())
+        .authenticator(companyAuthenticator())
+        .build();
+    return new HttpTemplate(HttpConfig.defaults(), client);
+}
+```
+
+**Multipart 文件上传**
+
+```java
+HttpResponse response = httpTemplate.create("https://api.example.com/files")
+    .post()
+    .formField("folder", "reports")
+    .formFile("file", Path.of("report.xlsx"))
+    .execute();
+```
+
+文件部分使用 JDK `BodyPublisher` 流式发送，不会先把整个文件装入 byte 数组；中文文件名按照常见
+`multipart/form-data` 实现直接以 UTF-8 写入 `filename`，不会写入该媒体类型禁止的 `filename*`。
+大文件下载、断点续传和进度监听仍应使用 `letool-starter-file`，
+不要把 HTTP 工具的内存响应上限调成无界。
+
+**重试安全边界**
+
+```java
+HttpResponse response = httpTemplate.create("https://api.example.com/inventory")
+    .get()
+    .maxRetry(2)
+    .retryOn(429, 502, 503, 504)
+    .retryDelay(Duration.ofMillis(200))
+    .execute();
+```
+
+默认不重试。配置重试后，GET、HEAD、PUT、DELETE 和 OPTIONS 可以自动重试传输失败或显式状态码；
+POST、PATCH 不会被静默重放。只有调用方确认业务具有幂等保障时，才可以显式调用
+`retryNonIdempotent(true)`。
+
+稳定错误码如下：
+
+| 错误码 | 含义 |
+|---|---|
+| `TOOL_HTTP_001` | 请求地址、请求头或请求体配置无效 |
+| `TOOL_HTTP_002` | HTTP 连接或传输失败 |
+| `TOOL_HTTP_003` | 请求总超时 |
+| `TOOL_HTTP_004` | 请求线程被中断 |
+| `TOOL_HTTP_005` | 响应体超过内存读取上限 |
+| `TOOL_HTTP_006` | 用户拦截器执行失败 |
+
+异常默认消息不会包含完整 URL、查询参数、请求体、响应体或请求头；底层原因仍保留在 cause 链中。
+
+**2.0 迁移说明**
+
+- 删除 `HttpUtil.getGlobalConfig()` 和 `setGlobalConfig()`，改为创建或注入 `HttpTemplate`。
+- 请求级 `connectTimeout`、`readTimeout`、`writeTimeout` 收敛为语义明确的 `timeout(Duration)`；连接超时属于模板配置。
+- 删除 `trustAllCerts`。测试环境也应使用受信任证书，特殊 TLS 由用户提供的 JDK `HttpClient` 管理。
+- 删除未生效的连接池数量配置；连接池和 HTTP/2 连接复用由共享 JDK `HttpClient` 管理。
+- `HttpResponse` 改为不可变对象，响应头类型改为 `Map<String, List<String>>`，不再提供 setter。
+- 查询参数和请求头 getter 返回不可修改的多值快照，同名查询参数不会再被覆盖。
 
 ### 5. Redis 工具 RedisUtil
 

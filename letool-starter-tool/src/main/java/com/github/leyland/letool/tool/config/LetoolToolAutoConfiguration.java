@@ -1,5 +1,6 @@
 package com.github.leyland.letool.tool.config;
 
+import com.github.leyland.letool.tool.http.HttpTemplate;
 import com.github.leyland.letool.tool.json.Fastjson2JsonCodec;
 import com.github.leyland.letool.tool.json.JsonCodec;
 import com.github.leyland.letool.tool.redis.FastJson2JsonRedisSerializer;
@@ -53,6 +54,20 @@ public class LetoolToolAutoConfiguration {
     @ConditionalOnMissingBean(SpringUtil.class)
     public SpringUtil springUtil() {
         return new SpringUtil();
+    }
+
+    /**
+     * 注册使用 JDK 共享客户端的默认 HTTP 请求模板。
+     *
+     * <p>应用需要代理、自定义 TLS、认证器或不同请求边界时，可以自行声明 {@link HttpTemplate} Bean，
+     * 默认实现会完整退让。</p>
+     *
+     * @return 可直接注入业务服务的线程安全 HTTP 模板
+     */
+    @Bean
+    @ConditionalOnMissingBean(HttpTemplate.class)
+    public HttpTemplate httpTemplate() {
+        return new HttpTemplate();
     }
 
     /**

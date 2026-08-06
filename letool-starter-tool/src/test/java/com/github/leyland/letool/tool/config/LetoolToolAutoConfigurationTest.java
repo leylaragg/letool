@@ -1,5 +1,6 @@
 package com.github.leyland.letool.tool.config;
 
+import com.github.leyland.letool.tool.http.HttpTemplate;
 import com.github.leyland.letool.tool.redis.RedisUtil;
 import com.github.leyland.letool.tool.redis.RedisMessageQueueUtil;
 import com.github.leyland.letool.tool.redis.FastJson2JsonRedisSerializer;
@@ -151,6 +152,32 @@ class LetoolToolAutoConfigurationTest {
     }
 
     /**
+     * 验证工具 Starter 默认提供可直接注入的 HTTP 请求模板。
+     */
+    @Test
+    void shouldProvideDefaultHttpTemplate() {
+        contextRunner.run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context).hasSingleBean(HttpTemplate.class);
+        });
+    }
+
+    /**
+     * 验证应用提供独立 HTTP 模板时默认模板完整退让。
+     */
+    @Test
+    void shouldBackOffWhenUserProvidesHttpTemplate() {
+        contextRunner
+                .withUserConfiguration(UserHttpTemplateConfiguration.class)
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(HttpTemplate.class);
+                    assertThat(context.getBean(HttpTemplate.class))
+                            .isSameAs(context.getBean("userHttpTemplate"));
+                });
+    }
+
+    /**
      * 用于激活 {@link RedisUtil} 的最小 Redis 基础设施。
      */
     @Configuration(proxyBeanMethods = false)
@@ -195,6 +222,23 @@ class LetoolToolAutoConfigurationTest {
         @Bean
         JsonCodec userJsonCodec() {
             return mock(JsonCodec.class);
+        }
+    }
+
+    /**
+     * 模拟应用自行提供 HTTP 模板。
+     */
+    @Configuration(proxyBeanMethods = false)
+    static class UserHttpTemplateConfiguration {
+
+        /**
+         * 创建应用自定义 HTTP 模板。
+         *
+         * @return 用户管理的 HTTP 模板
+         */
+        @Bean
+        HttpTemplate userHttpTemplate() {
+            return new HttpTemplate();
         }
     }
 

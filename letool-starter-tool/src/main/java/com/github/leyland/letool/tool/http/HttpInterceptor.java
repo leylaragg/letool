@@ -1,57 +1,47 @@
 package com.github.leyland.letool.tool.http;
 
 /**
- * HTTP 拦截器接口——在请求发送前、响应返回后、发生错误时提供切入能力.
+ * HTTP 请求生命周期拦截器。
  *
- * <h3>三个切面</h3>
- * <table>
- *   <tr><th>方法</th><th>调用时机</th><th>典型用途</th></tr>
- *   <tr><td>{@link #beforeRequest(HttpRequest)}</td><td>请求发送前</td><td>统一添加认证头、日志记录</td></tr>
- *   <tr><td>{@link #afterResponse(HttpRequest, HttpResponse)}</td><td>收到响应后</td><td>响应日志、指标采集、签名验证</td></tr>
- *   <tr><td>{@link #onError(HttpRequest, Exception)}</td><td>请求异常时</td><td>异常记录、告警通知</td></tr>
- * </table>
+ * <p>拦截器可用于补充认证请求头、记录请求指标或接收异常通知。所有回调均提供默认空实现，
+ * 调用方只需要覆盖实际关心的生命周期方法。拦截器抛出的异常会被转换为统一的
+ * {@link HttpException}，避免实现异常直接泄漏到业务层。</p>
  *
- * <p>所有方法均为 default 方法，实现类只需覆写需要的切面.</p>
- *
- * <h3>使用示例</h3>
- * <pre>{@code
- * // 日志拦截器
- * HttpInterceptor logInterceptor = new HttpInterceptor() {
- *     public void beforeRequest(HttpRequest req) {
- *         log.info("Request: {} {}", req.getMethod(), req.getUrl());
- *     }
- *     public void afterResponse(HttpRequest req, HttpResponse resp) {
- *         log.info("Response: {} {} ({}ms)", req.getMethod(), resp.getStatusCode(), resp.getDurationMs());
- *     }
- * };
- *
- * HttpUtil.create("https://api.example.com/data")
- *     .interceptor(logInterceptor)
- *     .execute();
- * }</pre>
+ * <p>同一个拦截器实例可能被多个请求线程同时调用，因此实现类不应保存请求级可变状态；
+ * 如确有需要，应自行保证线程安全。</p>
  */
 public interface HttpInterceptor {
 
     /**
-     * 请求发送前调用，可在此修改请求（如添加动态 Header）.
+     * 在请求快照创建前调用，可用于补充动态请求头等请求属性。
      *
-     * @param request 即将发送的请求对象
+     * <p>多个拦截器按照注册顺序执行。此时允许修改传入的请求构建对象，后续发送过程会基于
+     * 拦截后的状态创建不可变快照。</p>
+     *
+     * @param request 即将发送的 HTTP 请求构建对象
      */
-    default void beforeRequest(HttpRequest request) {}
+    default void beforeRequest(HttpRequest request) {
+    }
 
     /**
-     * 收到响应后调用.
+     * 在收到并完整校验响应后调用。
      *
-     * @param request  原始请求对象
-     * @param response 收到的响应对象
+     * <p>多个拦截器按照注册顺序执行。本回调不会改变已经创建的响应对象。</p>
+     *
+     * @param request 已完成发送的 HTTP 请求构建对象
+     * @param response 已完成读取的不可变 HTTP 响应
      */
-    default void afterResponse(HttpRequest request, HttpResponse response) {}
+    default void afterResponse(HttpRequest request, HttpResponse response) {
+    }
 
     /**
-     * 请求过程中发生异常时调用（连接超时、SSL 错误、IO 异常等）.
+     * 在请求执行或其他拦截器回调发生异常时调用。
      *
-     * @param request 原始请求对象
-     * @param e       捕获到的异常
+     * <p>该方法主要用于日志和指标采集，不应在实现中再次抛出异常，以免掩盖原始失败原因。</p>
+     *
+     * @param request 执行失败的 HTTP 请求构建对象
+     * @param exception 请求执行期间捕获到的异常
      */
-    default void onError(HttpRequest request, Exception e) {}
+    default void onError(HttpRequest request, Exception exception) {
+    }
 }

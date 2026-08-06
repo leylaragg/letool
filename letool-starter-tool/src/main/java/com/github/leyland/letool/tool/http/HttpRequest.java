@@ -3,280 +3,731 @@ package com.github.leyland.letool.tool.http;
 import com.github.leyland.letool.tool.enums.HttpMethod;
 
 import java.io.File;
+import java.net.URI;
+import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
 
 /**
- * HTTP 请求构建器——链式 API 构建请求并发送.
+ * 非线程安全的 HTTP 链式请求构建器。
  *
- * <h3>设计理念</h3>
- * <p>通过方法链（Fluent API）逐步构建请求的各个要素，最后调用 {@link #execute()} 发送.
- * 链式调用顺序无限制，可任意组合，最终发送时一次性收集所有配置.</p>
- *
- * <h3>使用示例</h3>
- * <pre>{@code
- * // POST JSON
- * HttpResponse resp = HttpRequest.of("https://api.example.com/order")
- *     .post()
- *     .contentType("application/json")
- *     .header("Authorization", "Bearer " + token)
- *     .body(jsonBody)
- *     .connectTimeout(Duration.ofSeconds(5))
- *     .maxRetry(3)
- *     .retryOn(503, 504)
- *     .execute();
- *
- * // GET 查询
- * String html = HttpRequest.of("https://example.com/search")
- *     .get()
- *     .queryParam("q", "Java")
- *     .queryParam("page", 1)
- *     .execute()
- *     .getBody();
- *
- * // 文件上传
- * HttpRequest.of("https://api.example.com/upload")
- *     .post()
- *     .multipart()
- *     .formField("title", "Report")
- *     .formFile("file", new File("report.pdf"))
- *     .execute();
- * }</pre>
+ * <p>调用 {@link #execute()} 时会先生成不可变请求快照，发送期间继续修改构建器不会改变已经开始的请求。
+ * 同一个构建器不应由多个线程并发修改或执行；需要并发调用时请为每次调用创建独立请求。</p>
  */
-public class HttpRequest {
+public final class HttpRequest {
 
+    /** 默认重试等待时间。 */
+    private static final Duration DEFAULT_RETRY_DELAY = Duration.ofMillis(100);
+
+    /** 实际执行请求的实例化模板。 */
+    private final HttpTemplate template;
+
+    /** 请求地址。 */
     private String url;
-    private HttpMethod method = HttpMethod.GET;
-    private Map<String, String> headers = new LinkedHashMap<>();
-    private Map<String, Object> queryParams = new LinkedHashMap<>();
-    private String body;
-    private byte[] bodyBytes;
-    private Duration connectTimeout;
-    private Duration readTimeout;
-    private Duration writeTimeout;
-    private Charset charset = StandardCharsets.UTF_8;
-    private boolean trustAllCerts = false;
-    private int maxRetries = 0;
-    private Set<Integer> retryOnStatus = new HashSet<>();
-    private List<HttpInterceptor> interceptors = new ArrayList<>();
-    private Map<String, String> formFields = new LinkedHashMap<>();
-    private Map<String, File> formFiles = new LinkedHashMap<>();
 
-    // ======================== 工厂方法 ========================
+    /** HTTP 请求方法。 */
+    private HttpMethod method = HttpMethod.GET;
+
+    /** 请求头，名称对应一个或多个值。 */
+    private final Map<String, List<String>> headers = new LinkedHashMap<>();
+
+    /** 查询参数，名称对应一个或多个值。 */
+    private final Map<String, List<String>> queryParams = new LinkedHashMap<>();
+
+    /** 文本请求体。 */
+    private String body;
+
+    /** 二进制请求体。 */
+    private byte[] bodyBytes;
+
+    /** 请求级总超时。 */
+    private Duration timeout;
+
+    /** 文本请求体与 Multipart 文本字段字符集。 */
+    private Charset charset = StandardCharsets.UTF_8;
+
+    /** 最大重试次数，不包含首次请求。 */
+    private int maxRetries;
+
+    /** 触发重试的 HTTP 状态码。 */
+    private final Set<Integer> retryOnStatus = new LinkedHashSet<>();
+
+    /** 两次尝试之间的固定等待时间。 */
+    private Duration retryDelay = DEFAULT_RETRY_DELAY;
+
+    /** 是否显式允许 POST、PATCH 等非幂等请求重试。 */
+    private boolean retryNonIdempotent;
+
+    /** 请求拦截器。 */
+    private final List<HttpInterceptor> interceptors = new ArrayList<>();
+
+    /** 是否使用 Multipart 请求体。 */
+    private boolean multipart;
+
+    /** Multipart 文本字段。 */
+    private final List<FormField> formFields = new ArrayList<>();
+
+    /** Multipart 文件字段。 */
+    private final List<FormFile> formFiles = new ArrayList<>();
 
     /**
-     * 创建请求构建器（不指定 URL，后续通过 {@link #url(String)} 设置）.
+     * 创建请求构建器。
      *
-     * @param url 请求 URL（可为 {@code null}）
-     * @return 新的 HttpRequest 构建器实例
+     * @param template 执行请求的 HTTP 模板
+     * @param url 初始请求地址，允许稍后通过 {@link #url(String)} 设置
+     */
+    private HttpRequest(HttpTemplate template, String url) {
+        this.template = Objects.requireNonNull(template, "template must not be null");
+        this.url = url;
+    }
+
+    /**
+     * 使用静态默认模板创建请求构建器。
+     *
+     * @param url 请求地址，允许为 {@code null} 并稍后设置
+     * @return 新请求构建器
      */
     public static HttpRequest of(String url) {
-        HttpRequest req = new HttpRequest();
-        req.url = url;
-        return req;
+        return new HttpRequest(HttpUtil.defaultTemplate(), url);
     }
-
-    // ======================== HTTP 方法 ========================
-
-    /** 设置 HTTP 方法 */
-    public HttpRequest method(HttpMethod method) { this.method = method; return this; }
-    /** 设置为 GET 请求 */
-    public HttpRequest get()  { this.method = HttpMethod.GET; return this; }
-    /** 设置为 POST 请求 */
-    public HttpRequest post() { this.method = HttpMethod.POST; return this; }
-    /** 设置为 PUT 请求 */
-    public HttpRequest put()  { this.method = HttpMethod.PUT; return this; }
-    /** 设置为 DELETE 请求 */
-    public HttpRequest delete()  { this.method = HttpMethod.DELETE; return this; }
-    /** 设置为 PATCH 请求 */
-    public HttpRequest patch() { this.method = HttpMethod.PATCH; return this; }
-
-    // ======================== URL / 参数 / 请求头 ========================
-
-    /** 设置请求 URL */
-    public HttpRequest url(String url) { this.url = url; return this; }
 
     /**
-     * 添加 Query 参数（自动拼接到 URL 后面）.
+     * 使用指定模板创建请求构建器。
      *
-     * @param key   参数名
-     * @param value 参数值
+     * @param template 请求执行模板
+     * @param url 初始请求地址
+     * @return 新请求构建器
+     */
+    static HttpRequest of(HttpTemplate template, String url) {
+        return new HttpRequest(template, url);
+    }
+
+    /**
+     * 设置 HTTP 请求方法。
+     *
+     * @param method 请求方法
+     * @return 当前构建器
+     */
+    public HttpRequest method(HttpMethod method) {
+        this.method = Objects.requireNonNull(method, "method must not be null");
+        return this;
+    }
+
+    /** @return 设置为 GET 方法的当前构建器 */
+    public HttpRequest get() {
+        return method(HttpMethod.GET);
+    }
+
+    /** @return 设置为 POST 方法的当前构建器 */
+    public HttpRequest post() {
+        return method(HttpMethod.POST);
+    }
+
+    /** @return 设置为 PUT 方法的当前构建器 */
+    public HttpRequest put() {
+        return method(HttpMethod.PUT);
+    }
+
+    /** @return 设置为 DELETE 方法的当前构建器 */
+    public HttpRequest delete() {
+        return method(HttpMethod.DELETE);
+    }
+
+    /** @return 设置为 PATCH 方法的当前构建器 */
+    public HttpRequest patch() {
+        return method(HttpMethod.PATCH);
+    }
+
+    /**
+     * 设置请求地址。
+     *
+     * @param url HTTP 或 HTTPS 地址
+     * @return 当前构建器
+     */
+    public HttpRequest url(String url) {
+        this.url = url;
+        return this;
+    }
+
+    /**
+     * 追加查询参数；同名参数会按添加顺序保留。
+     *
+     * @param key 参数名称
+     * @param value 参数值，{@code null} 按空字符串处理
+     * @return 当前构建器
      */
     public HttpRequest queryParam(String key, Object value) {
-        this.queryParams.put(key, value);
+        queryParams.computeIfAbsent(key, ignored -> new ArrayList<>())
+                .add(value == null ? "" : String.valueOf(value));
         return this;
     }
 
-    /** 添加请求头 */
+    /**
+     * 设置单值请求头；再次设置同名请求头时替换已有值。
+     *
+     * @param key 请求头名称
+     * @param value 请求头值
+     * @return 当前构建器
+     */
     public HttpRequest header(String key, String value) {
-        this.headers.put(key, value);
+        headers.put(key, new ArrayList<>(List.of(value)));
         return this;
     }
 
-    /** 批量添加请求头 */
-    public HttpRequest headers(Map<String, String> headers) {
-        this.headers.putAll(headers);
+    /**
+     * 追加同名请求头值。
+     *
+     * @param key 请求头名称
+     * @param value 请求头值
+     * @return 当前构建器
+     */
+    public HttpRequest addHeader(String key, String value) {
+        headers.computeIfAbsent(key, ignored -> new ArrayList<>()).add(value);
         return this;
     }
 
-    /** 设置 Content-Type 请求头（快捷方式） */
+    /**
+     * 批量设置单值请求头。
+     *
+     * @param values 请求头映射
+     * @return 当前构建器
+     */
+    public HttpRequest headers(Map<String, String> values) {
+        Objects.requireNonNull(values, "headers must not be null")
+                .forEach(this::header);
+        return this;
+    }
+
+    /**
+     * 设置 Content-Type 请求头。
+     *
+     * @param contentType 媒体类型
+     * @return 当前构建器
+     */
     public HttpRequest contentType(String contentType) {
         return header("Content-Type", contentType);
     }
 
-    /** 设置 Authorization 请求头（原始值） */
+    /**
+     * 设置原始 Authorization 请求头。
+     *
+     * @param value 认证头完整值
+     * @return 当前构建器
+     */
     public HttpRequest authorization(String value) {
         return header("Authorization", value);
     }
 
-    /** 设置 Bearer Token 认证头（自动添加 "Bearer " 前缀） */
+    /**
+     * 设置 Bearer Token 认证头。
+     *
+     * @param token 不包含 Bearer 前缀的令牌
+     * @return 当前构建器
+     */
     public HttpRequest bearerToken(String token) {
         return authorization("Bearer " + token);
     }
 
-    /** 设置请求体（字符串） */
-    public HttpRequest body(String body) { this.body = body; return this; }
-    /** 设置请求体（字节数组） */
-    public HttpRequest body(byte[] bodyBytes) { this.bodyBytes = bodyBytes; return this; }
-
-    // ======================== 超时 ========================
-
     /**
-     * 设置连接超时（覆盖全局配置）.
+     * 设置文本请求体并清除二进制请求体。
      *
-     * @param duration 超时时长
+     * @param body 文本请求体，允许为 {@code null}
+     * @return 当前构建器
      */
-    public HttpRequest connectTimeout(Duration duration) {
-        this.connectTimeout = duration;
+    public HttpRequest body(String body) {
+        this.body = body;
+        this.bodyBytes = null;
         return this;
     }
 
     /**
-     * 设置读取超时（覆盖全局配置）.
+     * 设置二进制请求体并清除文本请求体。
      *
-     * @param millis 超时毫秒数
+     * @param bodyBytes 二进制请求体，允许为 {@code null}
+     * @return 当前构建器
      */
-    public HttpRequest readTimeout(long millis) {
-        this.readTimeout = Duration.ofMillis(millis);
+    public HttpRequest body(byte[] bodyBytes) {
+        this.bodyBytes = bodyBytes == null ? null : bodyBytes.clone();
+        this.body = null;
         return this;
     }
 
     /**
-     * 设置写入超时（覆盖全局配置）.
+     * 设置单次请求总超时。
      *
-     * @param writeTimeout 超时时长
+     * @param timeout 严格大于零的总超时
+     * @return 当前构建器
      */
-    public HttpRequest writeTimeout(Duration writeTimeout) {
-        this.writeTimeout = writeTimeout;
+    public HttpRequest timeout(Duration timeout) {
+        this.timeout = timeout;
         return this;
     }
 
-    // ======================== SSL ========================
-
     /**
-     * 设置是否信任所有 SSL 证书（仅开发环境使用）.
+     * 设置文本请求体和 Multipart 文本字段字符集。
      *
-     * @param trust {@code true} 跳过证书校验
+     * @param charset 字符集
+     * @return 当前构建器
      */
-    public HttpRequest trustAllCerts(boolean trust) { this.trustAllCerts = trust; return this; }
-
-    // ======================== 重试 ========================
+    public HttpRequest charset(Charset charset) {
+        this.charset = Objects.requireNonNull(charset, "charset must not be null");
+        return this;
+    }
 
     /**
-     * 设置最大重试次数.
+     * 设置最大重试次数，不包含首次请求。
      *
-     * @param maxRetries 最大重试次数（0 表示不重试）
+     * @param maxRetries 0 至 10 之间的重试次数
+     * @return 当前构建器
      */
-    public HttpRequest maxRetry(int maxRetries) { this.maxRetries = maxRetries; return this; }
+    public HttpRequest maxRetry(int maxRetries) {
+        this.maxRetries = maxRetries;
+        return this;
+    }
 
     /**
-     * 设置遇到哪些 HTTP 状态码时触发重试.
+     * 设置触发重试的 HTTP 状态码。
      *
-     * @param statusCodes 状态码列表（如 503, 504）
+     * @param statusCodes 100 至 599 之间的状态码
+     * @return 当前构建器
      */
     public HttpRequest retryOn(int... statusCodes) {
-        for (int code : statusCodes) this.retryOnStatus.add(code);
+        if (statusCodes == null) {
+            throw new IllegalArgumentException("statusCodes must not be null");
+        }
+        for (int statusCode : statusCodes) {
+            retryOnStatus.add(statusCode);
+        }
         return this;
     }
 
-    // ======================== 拦截器 ========================
+    /**
+     * 设置两次请求尝试之间的固定等待时间。
+     *
+     * @param retryDelay 非负等待时间
+     * @return 当前构建器
+     */
+    public HttpRequest retryDelay(Duration retryDelay) {
+        this.retryDelay = retryDelay;
+        return this;
+    }
 
     /**
-     * 添加 HTTP 拦截器（按添加顺序执行）.
+     * 显式设置是否允许非幂等请求重试。
      *
-     * @param interceptor 拦截器实例
+     * @param allowed {@code true} 表示调用方承担重复提交风险
+     * @return 当前构建器
+     */
+    public HttpRequest retryNonIdempotent(boolean allowed) {
+        this.retryNonIdempotent = allowed;
+        return this;
+    }
+
+    /**
+     * 添加请求拦截器。
+     *
+     * @param interceptor 请求生命周期拦截器
+     * @return 当前构建器
      */
     public HttpRequest interceptor(HttpInterceptor interceptor) {
-        this.interceptors.add(interceptor);
+        interceptors.add(Objects.requireNonNull(interceptor, "interceptor must not be null"));
         return this;
-    }
-
-    /** 批量添加拦截器 */
-    public HttpRequest interceptors(List<HttpInterceptor> interceptors) {
-        this.interceptors.addAll(interceptors);
-        return this;
-    }
-
-    // ======================== Multipart ========================
-
-    /** 设置为 multipart/form-data 请求（自动设置 Content-Type） */
-    public HttpRequest multipart() {
-        return contentType("multipart/form-data");
     }
 
     /**
-     * 添加表单字段.
+     * 批量添加请求拦截器。
      *
-     * @param name  字段名
+     * @param values 请求生命周期拦截器
+     * @return 当前构建器
+     */
+    public HttpRequest interceptors(List<HttpInterceptor> values) {
+        Objects.requireNonNull(values, "interceptors must not be null").forEach(this::interceptor);
+        return this;
+    }
+
+    /**
+     * 将请求体切换为 Multipart 表单。
+     *
+     * @return 当前构建器
+     */
+    public HttpRequest multipart() {
+        this.multipart = true;
+        return this;
+    }
+
+    /**
+     * 添加 Multipart 文本字段。
+     *
+     * @param name 字段名称
      * @param value 字段值
+     * @return 当前构建器
      */
     public HttpRequest formField(String name, String value) {
-        this.formFields.put(name, value);
+        multipart = true;
+        formFields.add(new FormField(name, value));
         return this;
     }
 
     /**
-     * 添加上传文件.
+     * 添加 Multipart 文件字段。
      *
-     * @param name 表单字段名
-     * @param file 文件对象
+     * @param name 字段名称
+     * @param file 待上传文件
+     * @return 当前构建器
      */
     public HttpRequest formFile(String name, File file) {
-        this.formFiles.put(name, file);
+        Objects.requireNonNull(file, "file must not be null");
+        return formFile(name, file.toPath());
+    }
+
+    /**
+     * 添加 Multipart 文件字段。
+     *
+     * @param name 字段名称
+     * @param path 待上传文件路径
+     * @return 当前构建器
+     */
+    public HttpRequest formFile(String name, Path path) {
+        multipart = true;
+        formFiles.add(new FormFile(name, path));
         return this;
     }
 
-    // ======================== 发送 ========================
-
     /**
-     * 执行 HTTP 请求并返回响应.
+     * 执行请求并返回不可变响应。
      *
-     * <p>实际执行委托给 {@link HttpUtil#execute(HttpRequest)}，由已检测到的 HTTP 引擎处理.</p>
-     *
-     * @return HTTP 响应（包含状态码、响应体、耗时等）
+     * @return HTTP 响应
+     * @throws HttpException 请求配置、传输、超时或响应读取失败时抛出
      */
     public HttpResponse execute() {
-        return HttpUtil.execute(this);
+        return template.execute(this);
     }
 
-    // ======================== getter（由 HttpUtil 和引擎内部使用） ========================
+    /**
+     * 获取请求地址。
+     *
+     * @return 当前请求地址
+     */
+    public String getUrl() {
+        return url;
+    }
 
-    public String getUrl() { return url; }
-    public HttpMethod getMethod() { return method; }
-    public Map<String, String> getHeaders() { return headers; }
-    public Map<String, Object> getQueryParams() { return queryParams; }
-    public String getBody() { return body; }
-    public byte[] getBodyBytes() { return bodyBytes; }
-    public Duration getConnectTimeout() { return connectTimeout; }
-    public Duration getReadTimeout() { return readTimeout; }
-    public Duration getWriteTimeout() { return writeTimeout; }
-    public Charset getCharset() { return charset; }
-    public boolean isTrustAllCerts() { return trustAllCerts; }
-    public int getMaxRetries() { return maxRetries; }
-    public Set<Integer> getRetryOnStatus() { return retryOnStatus; }
-    public List<HttpInterceptor> getInterceptors() { return interceptors; }
-    public Map<String, String> getFormFields() { return formFields; }
-    public Map<String, File> getFormFiles() { return formFiles; }
+    /**
+     * 获取 HTTP 方法。
+     *
+     * @return 当前 HTTP 方法
+     */
+    public HttpMethod getMethod() {
+        return method;
+    }
+
+    /**
+     * 获取请求头的不可变深层副本。
+     *
+     * @return 多值请求头
+     */
+    public Map<String, List<String>> getHeaders() {
+        return immutableMultiMap(headers);
+    }
+
+    /**
+     * 获取查询参数的不可变深层副本。
+     *
+     * @return 多值查询参数
+     */
+    public Map<String, List<String>> getQueryParams() {
+        return immutableMultiMap(queryParams);
+    }
+
+    /**
+     * 获取文本请求体。
+     *
+     * @return 文本请求体
+     */
+    public String getBody() {
+        return body;
+    }
+
+    /**
+     * 获取二进制请求体的防御性副本。
+     *
+     * @return 二进制请求体副本
+     */
+    public byte[] getBodyBytes() {
+        return bodyBytes == null ? null : bodyBytes.clone();
+    }
+
+    /**
+     * 获取本次执行前应调用的拦截器快照。
+     *
+     * @return 不可变拦截器列表
+     */
+    List<HttpInterceptor> interceptorSnapshot() {
+        return List.copyOf(interceptors);
+    }
+
+    /**
+     * 校验当前构建状态并生成不可变请求快照。
+     *
+     * @param config 模板基础配置
+     * @return 可重复发送的请求快照
+     */
+    Snapshot snapshot(HttpConfig config) {
+        try {
+            URI uri = appendQueryParameters(validateUri(url), queryParams, charset);
+            Duration effectiveTimeout = timeout == null ? config.getRequestTimeout() : requirePositive(timeout, "timeout");
+            if (maxRetries < 0 || maxRetries > 10) {
+                throw new IllegalArgumentException("maxRetries must be between 0 and 10");
+            }
+            if (retryDelay == null || retryDelay.isNegative()) {
+                throw new IllegalArgumentException("retryDelay must not be null or negative");
+            }
+            for (Integer statusCode : retryOnStatus) {
+                if (statusCode == null || statusCode < 100 || statusCode > 599) {
+                    throw new IllegalArgumentException("retry status code must be between 100 and 599");
+                }
+            }
+            if (multipart && (body != null || bodyBytes != null)) {
+                throw new IllegalArgumentException("multipart body cannot be combined with text or byte body");
+            }
+            validateNamesAndFiles();
+            return new Snapshot(
+                    uri,
+                    method,
+                    immutableMultiMap(headers),
+                    body,
+                    bodyBytes == null ? null : bodyBytes.clone(),
+                    effectiveTimeout,
+                    charset,
+                    maxRetries,
+                    Set.copyOf(retryOnStatus),
+                    retryDelay,
+                    retryNonIdempotent,
+                    multipart,
+                    List.copyOf(formFields),
+                    List.copyOf(formFiles),
+                    multipart ? "letool-" + UUID.randomUUID() : null
+            );
+        } catch (HttpException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw HttpException.invalidRequest(exception);
+        }
+    }
+
+    /**
+     * 校验请求地址采用 HTTP 或 HTTPS 协议且包含主机。
+     *
+     * @param value 原始请求地址
+     * @return 校验通过的 URI
+     */
+    private static URI validateUri(String value) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("url must not be blank");
+        }
+        URI uri = URI.create(value);
+        String scheme = uri.getScheme();
+        if (scheme == null
+                || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))
+                || uri.getHost() == null) {
+            throw new IllegalArgumentException("url must use http or https and contain a host");
+        }
+        return uri;
+    }
+
+    /**
+     * 将多值查询参数追加到原始 URI，并保留片段部分。
+     *
+     * @param uri 原始 URI
+     * @param parameters 多值查询参数
+     * @param charset 查询参数字符集
+     * @return 带查询参数的新 URI
+     */
+    private static URI appendQueryParameters(URI uri,
+                                             Map<String, List<String>> parameters,
+                                             Charset charset) {
+        if (parameters.isEmpty()) {
+            return uri;
+        }
+        StringBuilder query = new StringBuilder();
+        for (Map.Entry<String, List<String>> entry : parameters.entrySet()) {
+            requireText(entry.getKey(), "query parameter name");
+            for (String value : entry.getValue()) {
+                if (query.length() > 0) {
+                    query.append('&');
+                }
+                query.append(encode(entry.getKey(), charset))
+                        .append('=')
+                        .append(encode(value, charset));
+            }
+        }
+        String rawUri = uri.toASCIIString();
+        int fragmentIndex = rawUri.indexOf('#');
+        String fragment = fragmentIndex < 0 ? "" : rawUri.substring(fragmentIndex);
+        String base = fragmentIndex < 0 ? rawUri : rawUri.substring(0, fragmentIndex);
+        String rawQuery = uri.getRawQuery();
+        String separator = rawQuery == null ? "?" : (rawQuery.isEmpty() ? "" : "&");
+        return URI.create(base + separator + query + fragment);
+    }
+
+    /**
+     * 使用 RFC 3986 兼容的空格表示编码查询参数。
+     *
+     * @param value 原始参数值
+     * @param charset 参数字符集
+     * @return 百分号编码结果
+     */
+    private static String encode(String value, Charset charset) {
+        return URLEncoder.encode(value == null ? "" : value, charset).replace("+", "%20");
+    }
+
+    /**
+     * 校验请求头、Multipart 字段和上传文件。
+     */
+    private void validateNamesAndFiles() {
+        headers.forEach((name, values) -> {
+            requireText(name, "header name");
+            for (String value : values) {
+                requireHeaderValue(value);
+            }
+        });
+        for (FormField field : formFields) {
+            requireSafePartName(field.name());
+            Objects.requireNonNull(field.value(), "form field value must not be null");
+        }
+        for (FormFile file : formFiles) {
+            requireSafePartName(file.name());
+            if (file.path() == null || !Files.isRegularFile(file.path()) || !Files.isReadable(file.path())) {
+                throw new IllegalArgumentException("multipart file must be a readable regular file");
+            }
+            requireSafePartName(file.path().getFileName().toString());
+        }
+    }
+
+    /**
+     * 校验非空白文本。
+     *
+     * @param value 待校验文本
+     * @param name 参数名称
+     */
+    private static void requireText(String value, String name) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(name + " must not be blank");
+        }
+    }
+
+    /**
+     * 校验请求头值不包含换行符，避免请求头注入。
+     *
+     * @param value 请求头值
+     */
+    private static void requireHeaderValue(String value) {
+        if (value == null || value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0) {
+            throw new IllegalArgumentException("header value must not contain line breaks");
+        }
+    }
+
+    /**
+     * 校验 Multipart 字段名称可安全写入 Content-Disposition。
+     *
+     * @param value 字段名称
+     */
+    private static void requireSafePartName(String value) {
+        requireText(value, "multipart part name");
+        if (value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0) {
+            throw new IllegalArgumentException("multipart part name must not contain line breaks");
+        }
+    }
+
+    /**
+     * 校验持续时间严格大于零。
+     *
+     * @param value 待校验持续时间
+     * @param name 参数名称
+     * @return 校验通过的持续时间
+     */
+    private static Duration requirePositive(Duration value, String name) {
+        if (value == null || value.isZero() || value.isNegative()) {
+            throw new IllegalArgumentException(name + " must be greater than 0");
+        }
+        return value;
+    }
+
+    /**
+     * 深层复制多值映射并将其转为不可修改结构。
+     *
+     * @param source 原始多值映射
+     * @return 不可修改的深层副本
+     */
+    private static Map<String, List<String>> immutableMultiMap(Map<String, List<String>> source) {
+        Map<String, List<String>> copy = new LinkedHashMap<>();
+        source.forEach((key, value) -> copy.put(key, List.copyOf(value)));
+        return java.util.Collections.unmodifiableMap(copy);
+    }
+
+    /**
+     * Multipart 文本字段快照。
+     *
+     * @param name 字段名称
+     * @param value 字段值
+     */
+    record FormField(String name, String value) {
+    }
+
+    /**
+     * Multipart 文件字段快照。
+     *
+     * @param name 字段名称
+     * @param path 文件路径
+     */
+    record FormFile(String name, Path path) {
+    }
+
+    /**
+     * 执行阶段使用的不可变请求快照。
+     *
+     * @param uri 完整请求 URI
+     * @param method HTTP 方法
+     * @param headers 多值请求头
+     * @param body 文本请求体
+     * @param bodyBytes 二进制请求体
+     * @param timeout 请求总超时
+     * @param charset 文本字符集
+     * @param maxRetries 最大重试次数
+     * @param retryOnStatus 重试状态码
+     * @param retryDelay 重试等待时间
+     * @param retryNonIdempotent 是否允许非幂等重试
+     * @param multipart 是否使用 Multipart
+     * @param formFields Multipart 文本字段
+     * @param formFiles Multipart 文件字段
+     * @param multipartBoundary Multipart 边界
+     */
+    record Snapshot(
+            URI uri,
+            HttpMethod method,
+            Map<String, List<String>> headers,
+            String body,
+            byte[] bodyBytes,
+            Duration timeout,
+            Charset charset,
+            int maxRetries,
+            Set<Integer> retryOnStatus,
+            Duration retryDelay,
+            boolean retryNonIdempotent,
+            boolean multipart,
+            List<FormField> formFields,
+            List<FormFile> formFiles,
+            String multipartBoundary) {
+    }
 }

@@ -1,7 +1,6 @@
 package com.github.leyland.letool.tool.redis;
 
 import com.github.leyland.letool.tool.util.JsonUtil;
-import org.jetbrains.annotations.NotNull;
 import org.springframework.data.redis.core.BoundHashOperations;
 import org.springframework.data.redis.core.BoundListOperations;
 import org.springframework.data.redis.core.BoundSetOperations;
@@ -646,7 +645,7 @@ public class RedisUtil {
     public List<Object> pipeline(java.util.function.Consumer<RedisOperations<String, Object>> consumer) {
         return redisTemplate.executePipelined(new SessionCallback<>() {
             @Override
-            public <K, V> Object execute(@NotNull RedisOperations<K, V> operations) {
+            public <K, V> Object execute(RedisOperations<K, V> operations) {
                 @SuppressWarnings("unchecked")
                 RedisOperations<String, Object> redisOperations = (RedisOperations<String, Object>) operations;
                 consumer.accept(redisOperations);

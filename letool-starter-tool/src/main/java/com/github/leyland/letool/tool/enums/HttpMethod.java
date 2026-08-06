@@ -1,23 +1,34 @@
 package com.github.leyland.letool.tool.enums;
 
 /**
- * HTTP 请求方法枚举——涵盖 RFC 7231 定义的常用 HTTP 方法.
+ * HTTP 请求方法枚举。
  *
- * <p>用于 {@link com.github.leyland.letool.tool.http.HttpUtil} 的链式 API 和内部引擎路由.</p>
- *
- * <h3>各方法说明</h3>
- * <table>
- *   <tr><th>枚举值</th><th>HTTP 方法</th><th>典型用途</th></tr>
- *   <tr><td>{@code GET}</td>    <td>GET</td>    <td>查询资源</td></tr>
- *   <tr><td>{@code POST}</td>   <td>POST</td>   <td>创建资源</td></tr>
- *   <tr><td>{@code PUT}</td>    <td>PUT</td>    <td>全量更新资源</td></tr>
- *   <tr><td>{@code DELETE}</td> <td>DELETE</td> <td>删除资源</td></tr>
- *   <tr><td>{@code PATCH}</td>  <td>PATCH</td>  <td>部分更新资源</td></tr>
- *   <tr><td>{@code HEAD}</td>   <td>HEAD</td>   <td>获取响应头（无响应体）</td></tr>
- *   <tr><td>{@code OPTIONS}</td><td>OPTIONS</td><td>查询支持的方法</td></tr>
- *   <tr><td>{@code TRACE}</td>  <td>TRACE</td>  <td>诊断/回显请求</td></tr>
- * </table>
+ * <p>供 {@link com.github.leyland.letool.tool.http.HttpRequest} 声明请求语义，并用于限制默认自动重试范围。
+ * 是否允许重试仍需结合具体业务的幂等约束判断。</p>
  */
 public enum HttpMethod {
-    GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, TRACE
+
+    /** 获取资源。 */
+    GET,
+
+    /** 提交或创建资源，默认不自动重试。 */
+    POST,
+
+    /** 创建或完整替换指定资源。 */
+    PUT,
+
+    /** 删除指定资源。 */
+    DELETE,
+
+    /** 部分更新资源，默认不自动重试。 */
+    PATCH,
+
+    /** 仅获取与 GET 相同的响应头信息。 */
+    HEAD,
+
+    /** 查询目标资源支持的通信选项。 */
+    OPTIONS,
+
+    /** 执行协议诊断回显，默认不自动重试。 */
+    TRACE
 }
