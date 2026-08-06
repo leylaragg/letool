@@ -5,6 +5,9 @@ import com.github.leyland.letool.file.config.FileProperties;
 import com.github.leyland.letool.file.exception.FileException;
 import com.github.leyland.letool.file.model.StoredFile;
 import com.github.leyland.letool.file.storage.LocalFileStorage;
+import com.github.leyland.letool.file.transfer.InMemoryTransferProgressMonitor;
+import com.github.leyland.letool.file.transfer.TransferStatus;
+import com.github.leyland.letool.file.validation.MagicNumberFileTypeDetector;
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.WriteListener;
 import org.junit.jupiter.api.Test;
@@ -18,6 +21,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -106,6 +110,41 @@ class FileTemplateTest {
                 .extracting("code")
                 .isEqualTo("FILE_007");
         assertThat(temporaryDirectory.resolve("output")).doesNotExist();
+    }
+
+    /**
+     * 验证调用方指定传输编号后，普通上传和下载都会产生完成进度。
+     *
+     * @throws Exception 文件传输失败时抛出
+     */
+    @Test
+    void shouldTrackNamedUploadAndDownload() throws Exception {
+        InMemoryTransferProgressMonitor monitor = new InMemoryTransferProgressMonitor(
+                Duration.ofMinutes(5), 100, Duration.ZERO, 1, List.of());
+        FileTemplate fileTemplate = new FileTemplate(
+                new LocalFileStorage(temporaryDirectory),
+                properties(DataSize.ofMegabytes(1)),
+                new MagicNumberFileTypeDetector(),
+                List.of(),
+                monitor);
+        MockMultipartFile multipartFile = new MockMultipartFile(
+                "file", "note.txt", "text/plain",
+                "tracked".getBytes(StandardCharsets.UTF_8));
+
+        StoredFile storedFile = fileTemplate.upload(multipartFile, "docs", "upload-1");
+        fileTemplate.download(
+                storedFile.key(), "note.txt", new TrackingResponse(), "download-1");
+
+        assertThat(monitor.find("upload-1"))
+                .hasValueSatisfying(progress -> {
+                    assertThat(progress.status()).isEqualTo(TransferStatus.COMPLETED);
+                    assertThat(progress.transferredBytes()).isEqualTo(storedFile.size());
+                });
+        assertThat(monitor.find("download-1"))
+                .hasValueSatisfying(progress -> {
+                    assertThat(progress.status()).isEqualTo(TransferStatus.COMPLETED);
+                    assertThat(progress.transferredBytes()).isEqualTo(storedFile.size());
+                });
     }
 
     /**

@@ -15,6 +15,8 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
 import java.nio.file.CopyOption;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -142,6 +144,31 @@ public final class LocalFileStorage implements FileStorageProvider {
     }
 
     /**
+     * 使用文件通道定位读取本地文件区间。
+     *
+     * @param key 文件逻辑键
+     * @param start 起始字节位置
+     * @param length 区间长度
+     * @return 可关闭区间资源
+     */
+    @Override
+    public FileResource openRange(String key, long start, long length) {
+        String normalizedKey = StorageKey.file(key);
+        Path target = resolve(normalizedKey);
+        FileMetadata metadata = readMetadata(normalizedKey, target);
+        validateRange(metadata, start, length);
+        try {
+            FileChannel channel = FileChannel.open(target, StandardOpenOption.READ);
+            channel.position(start);
+            return new FileResource(
+                    metadata,
+                    new RangeInputStream(Channels.newInputStream(channel), length));
+        } catch (IOException exception) {
+            throw FileException.causedBy(FileErrorCode.STORAGE_OPERATION_FAILED, exception);
+        }
+    }
+
+    /**
      * 删除本地文件。
      *
      * @param key 文件逻辑键
@@ -223,7 +250,24 @@ public final class LocalFileStorage implements FileStorageProvider {
      */
     @Override
     public Set<StorageCapability> capabilities() {
-        return Set.of(StorageCapability.DIRECTORY_LISTING, StorageCapability.ATOMIC_REPLACE);
+        return Set.of(
+                StorageCapability.DIRECTORY_LISTING,
+                StorageCapability.ATOMIC_REPLACE,
+                StorageCapability.RANGE_READ);
+    }
+
+    /**
+     * 校验区间位于完整文件范围内。
+     *
+     * @param metadata 完整文件元数据
+     * @param start 起始字节位置
+     * @param length 区间长度
+     */
+    private void validateRange(FileMetadata metadata, long start, long length) {
+        if (metadata.directory() || start < 0 || length <= 0
+                || start >= metadata.size() || length > metadata.size() - start) {
+            throw FileException.of(FileErrorCode.PARAMETER_INVALID, "range");
+        }
     }
 
     /**

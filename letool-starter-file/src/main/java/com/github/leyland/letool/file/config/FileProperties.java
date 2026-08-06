@@ -17,6 +17,8 @@ public class FileProperties {
     private final Upload upload = new Upload();
     private final Storage storage = new Storage();
     private final Archive archive = new Archive();
+    private final Progress progress = new Progress();
+    private final Resumable resumable = new Resumable();
 
     /**
      * 判断文件模块是否启用。
@@ -61,6 +63,24 @@ public class FileProperties {
      */
     public Archive getArchive() {
         return archive;
+    }
+
+    /**
+     * 获取传输进度配置。
+     *
+     * @return 传输进度配置
+     */
+    public Progress getProgress() {
+        return progress;
+    }
+
+    /**
+     * 获取断点续传配置。
+     *
+     * @return 断点续传配置
+     */
+    public Resumable getResumable() {
+        return resumable;
     }
 
     /**
@@ -350,5 +370,100 @@ public class FileProperties {
 
         /** @param maxTotalSize 全部条目最大解压大小 */
         public void setMaxTotalSize(DataSize maxTotalSize) { this.maxTotalSize = maxTotalSize; }
+    }
+
+    /**
+     * 有界内存传输进度配置。
+     */
+    public static class Progress {
+        private Duration retention = Duration.ofMinutes(30);
+        private int maxEntries = 10_000;
+        private Duration notificationInterval = Duration.ofMillis(200);
+        private DataSize notificationBytes = DataSize.ofKilobytes(64);
+
+        /** @return 终态进度保留时间 */
+        public Duration getRetention() { return retention; }
+
+        /** @param retention 终态进度保留时间 */
+        public void setRetention(Duration retention) { this.retention = retention; }
+
+        /** @return 最大进度记录数量 */
+        public int getMaxEntries() { return maxEntries; }
+
+        /** @param maxEntries 最大进度记录数量 */
+        public void setMaxEntries(int maxEntries) { this.maxEntries = maxEntries; }
+
+        /** @return 最小进度通知时间间隔 */
+        public Duration getNotificationInterval() { return notificationInterval; }
+
+        /** @param notificationInterval 最小进度通知时间间隔 */
+        public void setNotificationInterval(Duration notificationInterval) {
+            this.notificationInterval = notificationInterval;
+        }
+
+        /** @return 最小进度通知字节增量 */
+        public DataSize getNotificationBytes() { return notificationBytes; }
+
+        /** @param notificationBytes 最小进度通知字节增量 */
+        public void setNotificationBytes(DataSize notificationBytes) {
+            this.notificationBytes = notificationBytes;
+        }
+    }
+
+    /**
+     * 单节点连续分片断点续传配置。
+     */
+    public static class Resumable {
+        private boolean enabled;
+        private String temporaryPath = System.getProperty("java.io.tmpdir")
+                + "/letool/upload-sessions";
+        private Duration sessionTtl = Duration.ofHours(24);
+        private Duration cleanupInterval = Duration.ofMinutes(15);
+        private DataSize maxChunkSize = DataSize.ofMegabytes(10);
+        private DataSize maxFileSize = DataSize.ofGigabytes(10);
+
+        /** @return 是否启用断点续传自动配置 */
+        public boolean isEnabled() { return enabled; }
+
+        /** @param enabled 是否启用断点续传自动配置 */
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+
+        /** @return 会话元数据和临时分片目录 */
+        public String getTemporaryPath() { return temporaryPath; }
+
+        /** @param temporaryPath 会话元数据和临时分片目录 */
+        public void setTemporaryPath(String temporaryPath) {
+            this.temporaryPath = temporaryPath;
+        }
+
+        /** @return 会话无操作过期时间 */
+        public Duration getSessionTtl() { return sessionTtl; }
+
+        /** @param sessionTtl 会话无操作过期时间 */
+        public void setSessionTtl(Duration sessionTtl) { this.sessionTtl = sessionTtl; }
+
+        /** @return 过期会话清理间隔 */
+        public Duration getCleanupInterval() { return cleanupInterval; }
+
+        /** @param cleanupInterval 过期会话清理间隔 */
+        public void setCleanupInterval(Duration cleanupInterval) {
+            this.cleanupInterval = cleanupInterval;
+        }
+
+        /** @return 单个分片最大大小 */
+        public DataSize getMaxChunkSize() { return maxChunkSize; }
+
+        /** @param maxChunkSize 单个分片最大大小 */
+        public void setMaxChunkSize(DataSize maxChunkSize) {
+            this.maxChunkSize = maxChunkSize;
+        }
+
+        /** @return 完整续传文件最大大小 */
+        public DataSize getMaxFileSize() { return maxFileSize; }
+
+        /** @param maxFileSize 完整续传文件最大大小 */
+        public void setMaxFileSize(DataSize maxFileSize) {
+            this.maxFileSize = maxFileSize;
+        }
     }
 }

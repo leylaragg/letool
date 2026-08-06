@@ -1,7 +1,8 @@
 # letool-starter-file
 
 面向业务开发的文件操作便利 Starter。模块提供统一的 `FileTemplate`、流式存储扩展接口、
-Local/FTP/FTPS 内置实现、上传安全限制、下载响应适配和 ZIP 安全压缩解压能力。
+Local/FTP/FTPS 内置实现、上传安全限制、传输进度、HTTP 单区间下载、可恢复连续分片上传
+和 ZIP 安全压缩解压能力。
 
 本模块不会自动暴露 REST 接口，也不包含 SFTP、MinIO 或云 OSS 的伪实现。对象存储请使用
 `letool-starter-oss` 及对应官方 SDK Provider；其他存储协议可以通过
@@ -67,6 +68,74 @@ public class FileController {
 `StoredFile.key()` 是后续下载、查询和删除使用的逻辑键，不会泄露本地绝对路径。
 下载过程中模块不会关闭 Servlet 输出流；FTP/FTPS 下载返回的远程资源连接会随
 `FileResource.close()` 一起释放。
+
+## 传输进度与 HTTP Range
+
+业务可以先生成 `transferId`，再把它随上传或下载请求返回给前端；默认监视器只在当前应用
+实例内有界保留进度，用户可以提供自己的 `TransferProgressMonitor` Bean 替换它：
+
+```java
+String transferId = fileTemplate.generateTransferId();
+StoredFile storedFile = fileTemplate.upload(file, "orders/2026", transferId);
+
+Optional<TransferProgress> progress = progressMonitor.find(transferId);
+```
+
+Range 下载基于 Spring `HttpRange` 解析，但只接受单区间请求。合法请求返回 `206`；非法、
+多区间或越界请求返回 `416`。Provider 必须真实实现并声明 `RANGE_READ`，模块不会读取整文件
+后丢弃前置内容来模拟随机读取：
+
+```java
+@GetMapping("/{key}")
+public void download(
+        @PathVariable String key,
+        @RequestHeader(value = HttpHeaders.RANGE, required = false) String range,
+        HttpServletResponse response) {
+    FileMetadata metadata = fileTemplate.stat(key);
+    fileTemplate.downloadRange(key, metadata.name(), range, response);
+}
+```
+
+鉴权、限速、审计以及 `transferId` 对当前用户的归属校验仍由业务 Controller 负责。
+
+## 连续分片断点续传
+
+断点续传默认关闭。启用后，Starter 会提供 `ResumableUploadService`、本地原子会话仓库和
+过期清理器；它不会自动暴露 REST 接口：
+
+```yaml
+letool:
+  file:
+    resumable:
+      enabled: true
+      temporary-path: /data/application/upload-sessions
+      session-ttl: 24h
+      cleanup-interval: 15m
+      max-chunk-size: 10MB
+      max-file-size: 10GB
+```
+
+```java
+UploadSession session = resumableUploadService.create(
+        new ResumableUploadRequest(
+                "orders/2026", "video.mp4", "video/mp4", totalSize, finalSha256));
+
+UploadProgress progress = resumableUploadService.append(
+        session.uploadId(), offset, chunkLength, chunkSha256, requestInputStream);
+
+StoredFile storedFile = resumableUploadService.complete(session.uploadId());
+UploadSession current = resumableUploadService.status(session.uploadId());
+resumableUploadService.cancel(session.uploadId());
+```
+
+分片必须按连续偏移顺序提交；`append` 成功返回的 `confirmedOffset` 才是客户端可以保存的
+可信断点。分片长度、分片摘要、最终摘要或元数据保存失败时，未确认字节会回滚。完成阶段使用
+创建会话时确定的目标键，进程在存储成功后中断时可通过目标大小和摘要恢复，重复 `complete`
+不会创建第二份文件。
+
+默认仓库适合单应用节点，即使最终 Provider 是 FTP/FTPS，分片临时文件仍写入本机目录。
+多节点部署必须提供共享且具备乐观并发控制的 `UploadSessionRepository`，并让同一 `uploadId`
+固定路由到同一临时文件节点，或提供完整的共享临时文件方案。
 
 常用非 Web API：
 
@@ -185,6 +254,16 @@ Provider 只处理逻辑键、输入流和元数据，不依赖 Multipart、Serv
 | `letool.file.archive.max-entries` | `10000` | ZIP 最大条目数 |
 | `letool.file.archive.max-entry-size` | `100MB` | ZIP 单条目最大实际解压大小 |
 | `letool.file.archive.max-total-size` | `1GB` | ZIP 最大实际解压总量 |
+| `letool.file.progress.retention` | `30m` | 终态进度保留时间 |
+| `letool.file.progress.max-entries` | `10000` | 内存进度最大记录数 |
+| `letool.file.progress.notification-interval` | `200ms` | 监听器最小通知间隔 |
+| `letool.file.progress.notification-bytes` | `64KB` | 监听器最小通知字节增量 |
+| `letool.file.resumable.enabled` | `false` | 是否启用断点续传组件 |
+| `letool.file.resumable.temporary-path` | `${java.io.tmpdir}/letool/upload-sessions` | 本地会话与分片目录 |
+| `letool.file.resumable.session-ttl` | `24h` | 会话无操作过期时间 |
+| `letool.file.resumable.cleanup-interval` | `15m` | 过期清理间隔 |
+| `letool.file.resumable.max-chunk-size` | `10MB` | 单分片最大大小 |
+| `letool.file.resumable.max-file-size` | `10GB` | 完整续传文件最大大小 |
 
 ## 破坏性变更迁移
 

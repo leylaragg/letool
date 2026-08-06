@@ -151,7 +151,39 @@ public final class FtpFileStorage implements FileStorageProvider {
             if (dataStream == null) {
                 throw protocolFailure("FTP 无法打开下载流", client);
             }
-            return new FileResource(metadata, new CompletingFtpInputStream(dataStream, client));
+            return new FileResource(metadata, new CompletingFtpInputStream(dataStream, client, false));
+        } catch (FileException exception) {
+            disconnect(client);
+            throw exception;
+        } catch (IOException exception) {
+            disconnect(client);
+            throw FileException.causedBy(FileErrorCode.STORAGE_OPERATION_FAILED, exception);
+        }
+    }
+
+    /**
+     * 使用 FTP REST 偏移打开固定长度的远程文件区间。
+     *
+     * @param key 文件逻辑键
+     * @param start 起始字节位置
+     * @param length 区间长度
+     * @return 可关闭区间资源
+     */
+    @Override
+    public FileResource openRange(String key, long start, long length) {
+        String normalizedKey = StorageKey.file(key);
+        String remotePath = remotePath(normalizedKey);
+        FTPClient client = connect();
+        try {
+            FileMetadata metadata = readMetadata(client, normalizedKey, remotePath);
+            validateRange(metadata, start, length);
+            client.setRestartOffset(start);
+            InputStream dataStream = client.retrieveFileStream(remotePath);
+            if (dataStream == null) {
+                throw FileException.of(FileErrorCode.CAPABILITY_UNSUPPORTED, "ftp-range-read");
+            }
+            InputStream completing = new CompletingFtpInputStream(dataStream, client, true);
+            return new FileResource(metadata, new RangeInputStream(completing, length));
         } catch (FileException exception) {
             disconnect(client);
             throw exception;
@@ -269,8 +301,25 @@ public final class FtpFileStorage implements FileStorageProvider {
     @Override
     public Set<StorageCapability> capabilities() {
         return secureTransport
-                ? Set.of(StorageCapability.DIRECTORY_LISTING, StorageCapability.SECURE_TRANSPORT)
-                : Set.of(StorageCapability.DIRECTORY_LISTING);
+                ? Set.of(
+                        StorageCapability.DIRECTORY_LISTING,
+                        StorageCapability.RANGE_READ,
+                        StorageCapability.SECURE_TRANSPORT)
+                : Set.of(StorageCapability.DIRECTORY_LISTING, StorageCapability.RANGE_READ);
+    }
+
+    /**
+     * 校验区间位于完整远程文件范围内。
+     *
+     * @param metadata 完整文件元数据
+     * @param start 起始字节位置
+     * @param length 区间长度
+     */
+    private void validateRange(FileMetadata metadata, long start, long length) {
+        if (metadata.directory() || start < 0 || length <= 0
+                || start >= metadata.size() || length > metadata.size() - start) {
+            throw FileException.of(FileErrorCode.PARAMETER_INVALID, "range");
+        }
     }
 
     /**
@@ -650,6 +699,7 @@ public final class FtpFileStorage implements FileStorageProvider {
      */
     private static final class CompletingFtpInputStream extends FilterInputStream {
         private final FTPClient client;
+        private final boolean partialTransfer;
         private boolean closed;
 
         /**
@@ -657,10 +707,15 @@ public final class FtpFileStorage implements FileStorageProvider {
          *
          * @param inputStream FTP 数据流
          * @param client FTP 客户端
+         * @param partialTransfer 是否为主动截断的区间传输
          */
-        private CompletingFtpInputStream(InputStream inputStream, FTPClient client) {
+        private CompletingFtpInputStream(
+                InputStream inputStream,
+                FTPClient client,
+                boolean partialTransfer) {
             super(inputStream);
             this.client = client;
+            this.partialTransfer = partialTransfer;
         }
 
         @Override
@@ -676,7 +731,7 @@ public final class FtpFileStorage implements FileStorageProvider {
                 failure = exception;
             }
             try {
-                if (!client.completePendingCommand()) {
+                if (!client.completePendingCommand() && !partialTransfer) {
                     IOException exception = new IOException(
                             "FTP 下载完成命令失败，replyCode=" + client.getReplyCode());
                     if (failure == null) {
@@ -686,7 +741,9 @@ public final class FtpFileStorage implements FileStorageProvider {
                     }
                 }
             } catch (IOException exception) {
-                if (failure == null) {
+                if (partialTransfer) {
+                    log.debug("FTP 区间传输主动关闭后的完成命令未成功", exception);
+                } else if (failure == null) {
                     failure = exception;
                 } else {
                     failure.addSuppressed(exception);

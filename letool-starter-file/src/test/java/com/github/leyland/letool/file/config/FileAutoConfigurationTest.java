@@ -6,9 +6,14 @@ import com.github.leyland.letool.file.model.FileResource;
 import com.github.leyland.letool.file.model.StorageCapability;
 import com.github.leyland.letool.file.model.StoreRequest;
 import com.github.leyland.letool.file.model.StoredFile;
+import com.github.leyland.letool.file.resumable.LocalUploadSessionRepository;
+import com.github.leyland.letool.file.resumable.ResumableUploadCleaner;
+import com.github.leyland.letool.file.resumable.ResumableUploadService;
+import com.github.leyland.letool.file.resumable.UploadSessionRepository;
 import com.github.leyland.letool.file.storage.FileStorageProvider;
 import com.github.leyland.letool.file.storage.FtpFileStorage;
 import com.github.leyland.letool.file.storage.LocalFileStorage;
+import com.github.leyland.letool.file.transfer.TransferProgressMonitor;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -40,8 +45,27 @@ class FileAutoConfigurationTest {
         contextRunner.run(context -> {
             assertThat(context).hasSingleBean(FileStorageProvider.class);
             assertThat(context).hasSingleBean(FileTemplate.class);
+            assertThat(context).hasSingleBean(TransferProgressMonitor.class);
+            assertThat(context).doesNotHaveBean(ResumableUploadService.class);
             assertThat(context.getBean(FileStorageProvider.class)).isInstanceOf(LocalFileStorage.class);
         });
+    }
+
+    /**
+     * 验证显式启用断点续传后创建默认仓库、服务和可关闭清理器。
+     */
+    @Test
+    void shouldCreateResumableComponentsWhenEnabled() {
+        contextRunner.withPropertyValues(
+                        "letool.file.resumable.enabled=true",
+                        "letool.file.resumable.temporary-path=target/letool-file-test/sessions")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(UploadSessionRepository.class);
+                    assertThat(context.getBean(UploadSessionRepository.class))
+                            .isInstanceOf(LocalUploadSessionRepository.class);
+                    assertThat(context).hasSingleBean(ResumableUploadService.class);
+                    assertThat(context).hasSingleBean(ResumableUploadCleaner.class);
+                });
     }
 
     /**

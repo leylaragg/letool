@@ -35,7 +35,7 @@ public enum FileErrorCode implements ErrorCode {
     CAPABILITY_UNSUPPORTED("FILE_009", "当前文件存储不支持所需能力：{0}"),
 
     /** 断点续传状态发生冲突。 */
-    RESUMABLE_STATE_CONFLICT("FILE_010", "断点续传状态冲突");
+    RESUMABLE_STATE_CONFLICT("FILE_010", "断点续传状态冲突：{0}");
 
     private final String code;
     private final String defaultMessage;

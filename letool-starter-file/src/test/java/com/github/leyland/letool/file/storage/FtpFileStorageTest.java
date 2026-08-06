@@ -3,6 +3,7 @@ package com.github.leyland.letool.file.storage;
 import com.github.leyland.letool.file.config.FileProperties;
 import com.github.leyland.letool.file.exception.FileException;
 import com.github.leyland.letool.file.model.FileResource;
+import com.github.leyland.letool.file.model.StorageCapability;
 import org.apache.commons.net.ftp.FTPClient;
 import org.apache.commons.net.ftp.FTPFile;
 import org.junit.jupiter.api.Test;
@@ -58,6 +59,27 @@ class FtpFileStorageTest {
     }
 
     /**
+     * 验证 FTP 区间读取使用服务端 REST 偏移，并只向调用方暴露请求长度。
+     *
+     * @throws Exception 区间流读取失败时抛出
+     */
+    @Test
+    void shouldUseRestartOffsetForExactFtpRange() throws Exception {
+        TrackingFtpClient client = new TrackingFtpClient();
+        FtpFileStorage storage = new FtpFileStorage(
+                ftpProperties(), (type, properties) -> client, false);
+
+        try (FileResource resource = storage.openRange("docs/note.txt", 4, 3)) {
+            assertThat(resource.inputStream().readAllBytes())
+                    .isEqualTo("con".getBytes(StandardCharsets.UTF_8));
+        }
+
+        assertThat(client.restartOffset).isEqualTo(4);
+        assertThat(client.completePendingCommandCalled).isTrue();
+        assertThat(storage.capabilities()).contains(StorageCapability.RANGE_READ);
+    }
+
+    /**
      * 创建测试使用的 FTP 配置。
      *
      * @return FTP 配置
@@ -77,6 +99,7 @@ class FtpFileStorageTest {
         private boolean disconnected;
         private boolean completePendingCommandCalled;
         private IOException listFailure;
+        private long restartOffset;
 
         @Override
         public void connect(String hostname, int port) {
@@ -112,7 +135,14 @@ class FtpFileStorageTest {
 
         @Override
         public InputStream retrieveFileStream(String remote) {
-            return new ByteArrayInputStream("ftp-content".getBytes(StandardCharsets.UTF_8));
+            byte[] content = "ftp-content".getBytes(StandardCharsets.UTF_8);
+            int offset = Math.toIntExact(Math.min(restartOffset, content.length));
+            return new ByteArrayInputStream(content, offset, content.length - offset);
+        }
+
+        @Override
+        public void setRestartOffset(long offset) {
+            restartOffset = offset;
         }
 
         @Override

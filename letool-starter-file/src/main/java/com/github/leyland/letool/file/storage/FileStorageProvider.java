@@ -36,6 +36,23 @@ public interface FileStorageProvider {
     FileResource open(String key);
 
     /**
+     * 从指定字节位置打开固定长度的文件区间。
+     *
+     * <p>默认实现明确报告能力不支持，Provider 不得通过从文件头读取并丢弃前部数据
+     * 来伪装随机读取能力。</p>
+     *
+     * @param key 文件逻辑键
+     * @param start 起始字节位置，包含该位置
+     * @param length 需要读取的字节数
+     * @return 保留完整文件元数据的可关闭区间资源
+     */
+    default FileResource openRange(String key, long start, long length) {
+        throw com.github.leyland.letool.file.exception.FileException.of(
+                com.github.leyland.letool.file.exception.FileErrorCode.CAPABILITY_UNSUPPORTED,
+                "range-read");
+    }
+
+    /**
      * 删除文件。
      *
      * @param key 文件逻辑键
