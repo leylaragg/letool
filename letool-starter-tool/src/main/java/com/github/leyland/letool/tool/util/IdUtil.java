@@ -1,179 +1,337 @@
 package com.github.leyland.letool.tool.util;
 
+import com.github.leyland.letool.tool.id.IdGenerationException;
+
 import java.lang.management.ManagementFactory;
 import java.net.NetworkInterface;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.util.Enumeration;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
+import java.util.function.LongSupplier;
 
 /**
- * ID 生成工具——提供三种主流分布式 ID 方案.
+ * ID 生成工具，提供 Snowflake、UUID 和 NanoId 三类便捷能力。
  *
- * <h3>三种方案对比</h3>
- * <table>
- *   <tr><th>方案</th><th>类型</th><th>长度</th><th>趋势递增</th><th>适用场景</th></tr>
- *   <tr><td>Snowflake</td><td>Long</td><td>19位</td><td>是</td><td>数据库主键、高性能有序 ID</td></tr>
- *   <tr><td>UUID</td><td>String</td><td>32位</td><td>否</td><td>分布式 TraceId、通用唯一标识</td></tr>
- *   <tr><td>NanoId</td><td>String</td><td>默认21位</td><td>否</td><td>短 URL、文件名、安全随机 ID</td></tr>
- * </table>
- *
- * <p>Snowflake 的 WorkerId 和 DatacenterId 会自动推导（从 PID 和 MAC 地址），无需手动配置.</p>
+ * <p>静态 Snowflake 入口优先读取 JVM 参数 {@code letool.id.worker-id} 和
+ * {@code letool.id.datacenter-id}。未配置时会根据当前进程和网卡尽力推导节点号，
+ * 但自动推导无法替代分布式节点分配；多实例生产环境必须为每个实例配置唯一组合，
+ * 或直接创建显式节点号的 {@link Snowflake} 实例。</p>
  */
 public final class IdUtil {
 
-    private IdUtil() {}
+    /** NanoId 默认字符表。 */
+    private static final char[] NANO_ALPHABET =
+            "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".toCharArray();
 
-    // ======================== Snowflake（雪花算法） ========================
+    /** NanoId 默认长度。 */
+    private static final int NANO_DEFAULT_SIZE = 21;
 
-    /** 默认全局实例，自动推导 WorkerId / DatacenterId */
-    private static final Snowflake SNOWFLAKE = new Snowflake();
+    /** NanoId 允许的最大长度，避免错误参数造成不受控内存分配。 */
+    private static final int NANO_MAX_SIZE = 1024;
+
+    /** NanoId 使用的密码学安全随机源。 */
+    private static final SecureRandom NANO_RANDOM = new SecureRandom();
+
+    /** Snowflake Worker ID 的 JVM 参数名。 */
+    private static final String WORKER_ID_PROPERTY = "letool.id.worker-id";
+
+    /** Snowflake Datacenter ID 的 JVM 参数名。 */
+    private static final String DATACENTER_ID_PROPERTY = "letool.id.datacenter-id";
 
     /**
-     * 生成雪花算法 Long ID.
+     * 禁止创建工具类实例。
+     */
+    private IdUtil() {
+    }
+
+    /**
+     * 生成默认 Snowflake 长整数 ID。
      *
-     * <p>单机每秒可生成约 26 万个不重复 ID，趋势递增，适合作数据库主键.</p>
-     *
-     * @return 19 位长整型 ID
+     * @return 非负且在当前默认实例中单调递增的 ID
+     * @throws IdGenerationException 当节点配置或系统时间不符合生成契约时抛出
      */
     public static long nextId() {
-        return SNOWFLAKE.nextId();
+        return DefaultSnowflakeHolder.INSTANCE.nextId();
     }
 
     /**
-     * 生成雪花算法 String ID.
+     * 生成默认 Snowflake 字符串 ID。
      *
-     * @return 长整型 ID 的字符串形式
+     * @return Snowflake 长整数的十进制字符串
+     * @throws IdGenerationException 当节点配置或系统时间不符合生成契约时抛出
      */
     public static String nextIdStr() {
-        return String.valueOf(SNOWFLAKE.nextId());
+        return Long.toString(nextId());
     }
 
-    // ======================== UUID ========================
-
     /**
-     * 生成不带横线的 32 位 UUID.
+     * 生成不带连字符的 32 位 UUID。
      *
-     * @return {@code d2f3a1b4c5d6e7f8a9b0c1d2e3f4a5b6} 格式
+     * @return 32 位小写十六进制 UUID
      */
     public static String simpleUUID() {
         return UUID.randomUUID().toString().replace("-", "");
     }
 
     /**
-     * 生成标准 36 位 UUID（含横线）.
+     * 生成带连字符的标准 36 位 UUID。
      *
-     * @return {@code d2f3a1b4-c5d6-e7f8-a9b0-c1d2e3f4a5b6} 格式
+     * @return 标准 UUID 字符串
      */
     public static String uuid() {
         return UUID.randomUUID().toString();
     }
 
-    // ======================== NanoId ========================
-
     /**
-     * NanoId 默认使用的字符表（大小写字母 + 数字，共 62 个字符）.
+     * 生成默认 21 位 NanoId。
      *
-     * <p>与 UUID 相比更短更友好，碰撞概率在 21 位长度下几乎为零
-     * （约 1/10²⁴，每秒生成 100 万个，需要约 1 千年才有一次碰撞）.</p>
-     */
-    private static final char[] NANO_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".toCharArray();
-    private static final int NANO_DEFAULT_SIZE = 21;
-    private static final SecureRandom NANO_RANDOM = new SecureRandom();
-
-    /**
-     * 生成默认长度（21 位）的 NanoId.
-     *
-     * @return 21 位随机字符串
+     * @return 使用数字和大小写字母组成的 NanoId
      */
     public static String nanoId() {
         return nanoId(NANO_DEFAULT_SIZE);
     }
 
     /**
-     * 生成指定长度的 NanoId.
+     * 生成指定长度的 NanoId。
      *
-     * @param size 字符个数，建议 &ge; 12 以保证唯一性
-     * @return 指定长度的随机字符串
+     * @param size 字符数量，必须位于 1 到 1024 之间
+     * @return 指定长度的 NanoId
+     * @throws IdGenerationException 当长度不符合契约时抛出
      */
     public static String nanoId(int size) {
-        char[] chars = new char[size];
-        for (int i = 0; i < size; i++) {
-            chars[i] = NANO_ALPHABET[NANO_RANDOM.nextInt(NANO_ALPHABET.length)];
+        if (size <= 0 || size > NANO_MAX_SIZE) {
+            throw IdGenerationException.invalidArgument("size");
         }
-        return new String(chars);
+        char[] result = new char[size];
+        for (int index = 0; index < size; index++) {
+            result[index] = NANO_ALPHABET[NANO_RANDOM.nextInt(NANO_ALPHABET.length)];
+        }
+        return new String(result);
     }
 
-    // ======================== Snowflake 实现 ========================
+    /**
+     * 延迟创建默认 Snowflake，避免错误节点配置影响 UUID 和 NanoId 入口。
+     */
+    private static final class DefaultSnowflakeHolder {
+
+        /** 默认 Snowflake 单例。 */
+        private static final Snowflake INSTANCE = new Snowflake();
+
+        /**
+         * 禁止创建延迟持有类实例。
+         */
+        private DefaultSnowflakeHolder() {
+        }
+    }
 
     /**
-     * 雪花算法标准实现（64 位）.
+     * 线程安全的 64 位 Snowflake ID 生成器。
      *
-     * <pre>
-     * 结构：1位保留 + 41位毫秒戳 + 5位数据中心 + 5位工作节点 + 12位序列号
-     * EPOCH: 2024-01-01 00:00:00
-     * 可用到 2094 年
-     * </pre>
-     *
-     * <p>使用无参构造器时会自动从 PID 和 MAC 地址推导 WorkerId 和 DatacenterId.</p>
+     * <p>位布局为 1 位保留、41 位毫秒差值、5 位数据中心、5 位工作节点和
+     * 12 位毫秒内序列。自定义纪元为北京时间 2024-01-01 00:00:00 对应的时间戳。</p>
      */
-    public static class Snowflake {
-        private static final long EPOCH = 1704038400000L;
-        private static final long WORKER_BITS = 5L;
-        private static final long DATACENTER_BITS = 5L;
-        private static final long SEQUENCE_BITS = 12L;
-        private static final long MAX_WORKER = ~(-1L << WORKER_BITS);
-        private static final long MAX_DATACENTER = ~(-1L << DATACENTER_BITS);
-        private static final long MAX_SEQUENCE = ~(-1L << SEQUENCE_BITS);
-        private static final long WORKER_SHIFT = SEQUENCE_BITS;
-        private static final long DATACENTER_SHIFT = SEQUENCE_BITS + WORKER_BITS;
-        private static final long TIMESTAMP_SHIFT = SEQUENCE_BITS + WORKER_BITS + DATACENTER_BITS;
+    public static final class Snowflake {
 
+        /** 自定义纪元毫秒时间戳。 */
+        private static final long EPOCH = 1_704_038_400_000L;
+
+        /** 工作节点位数。 */
+        private static final long WORKER_BITS = 5L;
+
+        /** 数据中心位数。 */
+        private static final long DATACENTER_BITS = 5L;
+
+        /** 毫秒内序列位数。 */
+        private static final long SEQUENCE_BITS = 12L;
+
+        /** 最大工作节点编号。 */
+        private static final long MAX_WORKER = (1L << WORKER_BITS) - 1;
+
+        /** 最大数据中心编号。 */
+        private static final long MAX_DATACENTER = (1L << DATACENTER_BITS) - 1;
+
+        /** 最大毫秒内序列号。 */
+        private static final long MAX_SEQUENCE = (1L << SEQUENCE_BITS) - 1;
+
+        /** 最大时间差值。 */
+        private static final long MAX_TIMESTAMP_DELTA = (1L << 41) - 1;
+
+        /** 工作节点左移位数。 */
+        private static final long WORKER_SHIFT = SEQUENCE_BITS;
+
+        /** 数据中心左移位数。 */
+        private static final long DATACENTER_SHIFT = SEQUENCE_BITS + WORKER_BITS;
+
+        /** 时间差值左移位数。 */
+        private static final long TIMESTAMP_SHIFT =
+                SEQUENCE_BITS + WORKER_BITS + DATACENTER_BITS;
+
+        /** 默认允许的时钟回拨毫秒数。 */
+        private static final long DEFAULT_MAX_BACKWARD_MILLIS = 5L;
+
+        /** 等待下一毫秒时每次挂起的纳秒数。 */
+        private static final long WAIT_PARK_NANOS = 100_000L;
+
+        /** 工作节点编号。 */
         private final long workerId;
+
+        /** 数据中心编号。 */
         private final long datacenterId;
-        private long sequence = 0L;
+
+        /** 最大容忍时钟回拨毫秒数。 */
+        private final long maxBackwardMillis;
+
+        /** 可替换的毫秒时间源。 */
+        private final LongSupplier timeSource;
+
+        /** 当前毫秒内序列。 */
+        private long sequence;
+
+        /** 上一次参与生成的逻辑毫秒时间。 */
         private long lastTimestamp = -1L;
 
-        /** 自动推导 WorkerId（来自 PID）和 DatacenterId（来自 MAC 地址）. */
+        /**
+         * 使用 JVM 参数或尽力推导的节点号创建 Snowflake。
+         *
+         * @throws IdGenerationException 当 JVM 节点参数不完整或不合法时抛出
+         */
         public Snowflake() {
-            this(deriveWorkerId(), deriveDatacenterId());
+            this(resolveDefaultNodeConfiguration());
         }
 
         /**
-         * 手动指定 WorkerId 和 DatacenterId.
+         * 使用显式节点号和默认 5 毫秒回拨容忍创建 Snowflake。
          *
-         * @param workerId     0..31
-         * @param datacenterId 0..31
+         * @param workerId 工作节点编号，范围为 0 到 31
+         * @param datacenterId 数据中心编号，范围为 0 到 31
+         * @throws IdGenerationException 当节点编号越界时抛出
          */
         public Snowflake(long workerId, long datacenterId) {
-            if (workerId > MAX_WORKER || workerId < 0)
-                throw new IllegalArgumentException("workerId must be 0.." + MAX_WORKER);
-            if (datacenterId > MAX_DATACENTER || datacenterId < 0)
-                throw new IllegalArgumentException("datacenterId must be 0.." + MAX_DATACENTER);
-            this.workerId = workerId;
-            this.datacenterId = datacenterId;
+            this(workerId, datacenterId, DEFAULT_MAX_BACKWARD_MILLIS, System::currentTimeMillis);
         }
 
         /**
-         * 生成下一个 ID（线程安全）.
+         * 使用显式节点号和回拨容忍时间创建 Snowflake。
          *
-         * <p>同一毫秒内最多生成 4096 个 ID，超出则等待下一毫秒.</p>
+         * @param workerId 工作节点编号，范围为 0 到 31
+         * @param datacenterId 数据中心编号，范围为 0 到 31
+         * @param maxBackwardDuration 最大容忍回拨时间，不得为负数
+         * @throws IdGenerationException 当节点编号或回拨时间不合法时抛出
+         */
+        public Snowflake(
+                long workerId,
+                long datacenterId,
+                Duration maxBackwardDuration) {
+            this(
+                    workerId,
+                    datacenterId,
+                    toBackwardMillis(maxBackwardDuration),
+                    System::currentTimeMillis
+            );
+        }
+
+        /**
+         * 使用已解析节点配置创建默认 Snowflake。
          *
-         * @return 唯一 Long ID
-         * @throws RuntimeException 如果系统时钟回拨
+         * @param configuration 节点配置
+         */
+        private Snowflake(NodeConfiguration configuration) {
+            this(
+                    configuration.workerId(),
+                    configuration.datacenterId(),
+                    DEFAULT_MAX_BACKWARD_MILLIS,
+                    System::currentTimeMillis
+            );
+        }
+
+        /**
+         * 使用可控时间源创建 Snowflake，供同包关键时间边界测试使用。
+         *
+         * @param workerId 工作节点编号
+         * @param datacenterId 数据中心编号
+         * @param maxBackwardMillis 最大容忍回拨毫秒数
+         * @param timeSource 毫秒时间源
+         */
+        Snowflake(
+                long workerId,
+                long datacenterId,
+                long maxBackwardMillis,
+                LongSupplier timeSource) {
+            validateNodeId(workerId, MAX_WORKER, "workerId");
+            validateNodeId(datacenterId, MAX_DATACENTER, "datacenterId");
+            if (maxBackwardMillis < 0) {
+                throw IdGenerationException.invalidArgument("maxBackwardDuration");
+            }
+            if (timeSource == null) {
+                throw IdGenerationException.invalidArgument("timeSource");
+            }
+            this.workerId = workerId;
+            this.datacenterId = datacenterId;
+            this.maxBackwardMillis = maxBackwardMillis;
+            this.timeSource = timeSource;
+        }
+
+        /**
+         * 获取工作节点编号。
+         *
+         * @return 0 到 31 之间的节点编号
+         */
+        public long getWorkerId() {
+            return workerId;
+        }
+
+        /**
+         * 获取数据中心编号。
+         *
+         * @return 0 到 31 之间的数据中心编号
+         */
+        public long getDatacenterId() {
+            return datacenterId;
+        }
+
+        /**
+         * 获取最大容忍时钟回拨毫秒数。
+         *
+         * @return 非负毫秒数
+         */
+        public long getMaxBackwardMillis() {
+            return maxBackwardMillis;
+        }
+
+        /**
+         * 生成下一个 Snowflake ID。
+         *
+         * <p>容忍范围内的时钟回拨使用上一次逻辑时间继续递增；超过范围则快速失败。</p>
+         *
+         * @return 当前生成器内唯一且单调递增的长整数 ID
+         * @throws IdGenerationException 当时钟回拨、时间范围或线程中断不符合契约时抛出
          */
         public synchronized long nextId() {
-            long timestamp = System.currentTimeMillis();
-            if (timestamp < lastTimestamp)
-                throw new RuntimeException("Clock moved backwards. Refusing to generate id for "
-                        + (lastTimestamp - timestamp) + "ms");
+            long timestamp = currentTimestamp();
+            validateTimestamp(timestamp);
+
+            if (timestamp < lastTimestamp) {
+                long backwardMillis = lastTimestamp - timestamp;
+                if (backwardMillis > maxBackwardMillis) {
+                    throw IdGenerationException.clockRollback(
+                            new IllegalStateException("Clock rollback exceeds tolerance")
+                    );
+                }
+                timestamp = lastTimestamp;
+            }
+
             if (timestamp == lastTimestamp) {
                 sequence = (sequence + 1) & MAX_SEQUENCE;
                 if (sequence == 0) {
-                    timestamp = tilNextMillis(lastTimestamp);
+                    timestamp = waitUntilNextMillis(lastTimestamp);
                 }
             } else {
                 sequence = 0L;
             }
+
             lastTimestamp = timestamp;
             return ((timestamp - EPOCH) << TIMESTAMP_SHIFT)
                     | (datacenterId << DATACENTER_SHIFT)
@@ -181,35 +339,197 @@ public final class IdUtil {
                     | sequence;
         }
 
-        /** 自旋等待直到下一毫秒 */
-        private long tilNextMillis(long lastTimestamp) {
-            long ts = System.currentTimeMillis();
-            while (ts <= lastTimestamp) ts = System.currentTimeMillis();
-            return ts;
+        /**
+         * 等待物理时间越过上一逻辑毫秒，避免序列回绕后产生重复 ID。
+         *
+         * @param previousTimestamp 上一次逻辑毫秒时间
+         * @return 已越过上一毫秒且处于可用范围的时间
+         */
+        private long waitUntilNextMillis(long previousTimestamp) {
+            long startNanos = System.nanoTime();
+            long waitLimitMillis = maxBackwardMillis == Long.MAX_VALUE
+                    ? Long.MAX_VALUE
+                    : Math.max(1L, maxBackwardMillis + 1L);
+            long waitLimitNanos = TimeUnit.MILLISECONDS.toNanos(waitLimitMillis);
+
+            long timestamp = currentTimestamp();
+            while (timestamp <= previousTimestamp) {
+                if (Thread.currentThread().isInterrupted()) {
+                    Thread.currentThread().interrupt();
+                    throw IdGenerationException.generationInterrupted(
+                            new InterruptedException("Interrupted while waiting for Snowflake clock")
+                    );
+                }
+                if (System.nanoTime() - startNanos >= waitLimitNanos) {
+                    throw IdGenerationException.clockRollback(
+                            new IllegalStateException("Clock did not advance before wait deadline")
+                    );
+                }
+                LockSupport.parkNanos(WAIT_PARK_NANOS);
+                timestamp = currentTimestamp();
+            }
+            validateTimestamp(timestamp);
+            return timestamp;
         }
 
-        /** 从 JVM 进程 PID 推导 WorkerId */
-        private static long deriveWorkerId() {
-            long fallback = Thread.currentThread().getId() & MAX_WORKER;
-            try {
-                String pid = ManagementFactory.getRuntimeMXBean().getName().split("@")[0];
-                return Long.parseLong(pid) & MAX_WORKER;
-            } catch (Exception e) {
-                return fallback;
+        /**
+         * 从时间源读取当前毫秒时间。
+         *
+         * @return 当前毫秒时间
+         */
+        private long currentTimestamp() {
+            return timeSource.getAsLong();
+        }
+
+        /**
+         * 校验当前时间可以放入 41 位时间部分。
+         *
+         * @param timestamp 当前毫秒时间
+         */
+        private static void validateTimestamp(long timestamp) {
+            if (timestamp < EPOCH || timestamp - EPOCH > MAX_TIMESTAMP_DELTA) {
+                throw IdGenerationException.timestampOutOfRange(
+                        new IllegalStateException("Timestamp is outside the Snowflake epoch range")
+                );
             }
         }
 
-        /** 从第一个网卡 MAC 地址推导 DatacenterId */
-        private static long deriveDatacenterId() {
-            try {
-                Enumeration<NetworkInterface> nets = NetworkInterface.getNetworkInterfaces();
-                while (nets.hasMoreElements()) {
-                    NetworkInterface net = nets.nextElement();
-                    byte[] mac = net.getHardwareAddress();
-                    if (mac != null) return ((long) (mac[mac.length - 1] & 0xFF)) & MAX_DATACENTER;
-                }
-            } catch (Exception ignored) {}
-            return 1L;
+        /**
+         * 校验节点编号范围。
+         *
+         * @param nodeId 节点编号
+         * @param maximum 最大允许值
+         * @param configurationName 安全的配置名称
+         */
+        private static void validateNodeId(
+                long nodeId,
+                long maximum,
+                String configurationName) {
+            if (nodeId < 0 || nodeId > maximum) {
+                throw IdGenerationException.invalidNodeConfiguration(configurationName);
+            }
         }
+
+        /**
+         * 将回拨容忍时间转换为毫秒。
+         *
+         * @param duration 回拨容忍时间
+         * @return 非负毫秒数
+         */
+        private static long toBackwardMillis(Duration duration) {
+            if (duration == null || duration.isNegative()) {
+                throw IdGenerationException.invalidArgument("maxBackwardDuration");
+            }
+            try {
+                return duration.toMillis();
+            } catch (ArithmeticException exception) {
+                throw IdGenerationException.invalidArgument("maxBackwardDuration");
+            }
+        }
+
+        /**
+         * 解析默认节点配置。
+         *
+         * @return 显式 JVM 配置或尽力推导的节点组合
+         */
+        private static NodeConfiguration resolveDefaultNodeConfiguration() {
+            String workerProperty;
+            String datacenterProperty;
+            try {
+                workerProperty = System.getProperty(WORKER_ID_PROPERTY);
+                datacenterProperty = System.getProperty(DATACENTER_ID_PROPERTY);
+            } catch (SecurityException exception) {
+                // 受限运行环境无法读取 JVM 参数时，继续使用尽力推导的节点组合。
+                return new NodeConfiguration(deriveWorkerId(), deriveDatacenterId());
+            }
+            boolean workerConfigured = workerProperty != null && !workerProperty.isBlank();
+            boolean datacenterConfigured =
+                    datacenterProperty != null && !datacenterProperty.isBlank();
+
+            if (workerConfigured != datacenterConfigured) {
+                throw IdGenerationException.invalidNodeConfiguration(
+                        "worker-id/datacenter-id"
+                );
+            }
+            if (workerConfigured) {
+                return new NodeConfiguration(
+                        parseNodeProperty(WORKER_ID_PROPERTY, workerProperty, MAX_WORKER),
+                        parseNodeProperty(
+                                DATACENTER_ID_PROPERTY,
+                                datacenterProperty,
+                                MAX_DATACENTER
+                        )
+                );
+            }
+            return new NodeConfiguration(deriveWorkerId(), deriveDatacenterId());
+        }
+
+        /**
+         * 解析并校验 JVM 节点参数。
+         *
+         * @param propertyName JVM 参数名称
+         * @param propertyValue JVM 参数文本
+         * @param maximum 最大允许值
+         * @return 校验通过的节点编号
+         */
+        private static long parseNodeProperty(
+                String propertyName,
+                String propertyValue,
+                long maximum) {
+            try {
+                long value = Long.parseLong(propertyValue);
+                validateNodeId(value, maximum, propertyName);
+                return value;
+            } catch (NumberFormatException exception) {
+                throw IdGenerationException.invalidNodeConfiguration(propertyName, exception);
+            }
+        }
+
+        /**
+         * 根据当前 JVM 进程号尽力推导工作节点编号。
+         *
+         * @return 0 到 31 之间的工作节点编号
+         */
+        private static long deriveWorkerId() {
+            try {
+                return Math.floorMod(ProcessHandle.current().pid(), MAX_WORKER + 1);
+            } catch (RuntimeException exception) {
+                return Math.floorMod(Thread.currentThread().getId(), MAX_WORKER + 1);
+            }
+        }
+
+        /**
+         * 根据可用网卡地址尽力推导数据中心编号。
+         *
+         * @return 0 到 31 之间的数据中心编号
+         */
+        private static long deriveDatacenterId() {
+            long hash = 17L;
+            try {
+                hash = ManagementFactory.getRuntimeMXBean().getName().hashCode();
+                Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+                while (interfaces != null && interfaces.hasMoreElements()) {
+                    byte[] hardwareAddress = interfaces.nextElement().getHardwareAddress();
+                    if (hardwareAddress == null) {
+                        continue;
+                    }
+                    for (byte value : hardwareAddress) {
+                        hash = 31 * hash + (value & 0xff);
+                    }
+                }
+            } catch (Exception ignored) {
+                // 受限运行环境无法读取网卡时，继续使用 JVM 运行标识进行尽力推导。
+            }
+            return Math.floorMod(hash, MAX_DATACENTER + 1);
+        }
+    }
+
+    /**
+     * Snowflake 节点编号组合。
+     *
+     * @param workerId 工作节点编号
+     * @param datacenterId 数据中心编号
+     */
+    private record NodeConfiguration(long workerId, long datacenterId) {
     }
 }

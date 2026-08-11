@@ -317,12 +317,22 @@ String result = redisUtil.executeScript("return redis.call('GET', KEYS[1])",
     List.of("key1"));
 ```
 
-### 6. ID 生成 IdUtil
+### 6. ID、随机数与编码工具组
+
+#### 6.1 ID 生成 IdUtil
 
 ```java
-// Snowflake（趋势递增，19 位，适合数据库主键）
+// 默认 Snowflake：适合单实例或已经配置唯一节点号的应用
 long id = IdUtil.nextId();
 String idStr = IdUtil.nextIdStr();
+
+// 多实例生产环境：显式创建唯一节点组合
+IdUtil.Snowflake snowflake = new IdUtil.Snowflake(
+    3,
+    12,
+    Duration.ofMillis(5)
+);
+long configuredId = snowflake.nextId();
 
 // UUID（32 位无横线）
 String uuid = IdUtil.simpleUUID();
@@ -331,6 +341,71 @@ String uuid = IdUtil.simpleUUID();
 String nano = IdUtil.nanoId();
 String shortNano = IdUtil.nanoId(12);
 ```
+
+默认静态 Snowflake 会优先读取以下 JVM 参数：
+
+```text
+-Dletool.id.worker-id=3 -Dletool.id.datacenter-id=12
+```
+
+> 两个参数必须同时配置，范围均为 0 到 31。
+> 未配置时工具会根据 PID 和网卡尽力推导，但该模式无法承诺多实例节点号绝不冲突，不能替代生产节点分配。
+
+Snowflake 默认容忍 5 毫秒时钟回拨：容忍范围内使用逻辑时间继续递增，超过范围以
+`TOOL_ID_003` 快速失败。NanoId 长度必须位于 1 到 1024 之间。
+
+#### 6.2 安全随机 RandomUtil
+
+```java
+int codeNumber = RandomUtil.nextInt(100000, 999999); // 闭区间
+long sequence = RandomUtil.nextLong(1L, Long.MAX_VALUE);
+String code = RandomUtil.randomCode(6);
+String tokenPart = RandomUtil.randomString(32);
+String custom = RandomUtil.randomString("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 8);
+```
+
+整数和长整数使用闭区间，浮点数使用左闭右开区间。反向范围、非有限浮点边界、负长度或空字符表
+都会抛出稳定的 `RandomOperationException`；零长度字符串返回空字符串。
+
+#### 6.3 Base64 与 Hex 编解码
+
+```java
+String standard = Base64Util.encode("Letool");
+String text = Base64Util.decode(standard);
+
+// 兼容旧入口：URL 安全编码保留填充字符
+String padded = Base64Util.encodeUrlSafe("Letool");
+String unpadded = Base64Util.encodeUrlSafeWithoutPadding("Letool");
+byte[] bytes = Base64Util.decodeUrlSafeToBytes(unpadded);
+
+String hex = HexUtil.encodeHex("Letool");
+String original = HexUtil.decodeHexToStr(hex);
+```
+
+Base64 和 Hex 非法文本统一抛出 `EncodingOperationException`，公开消息不会携带原始输入。
+`HexUtil` 继续保留 `null -> null` 兼容契约，非空文本必须为偶数长度且只包含十六进制字符。
+
+| 错误码 | 含义 |
+|---|---|
+| `TOOL_ENCODING_001` | 编码必填参数无效 |
+| `TOOL_ENCODING_002` | 标准或 URL 安全 Base64 解码失败 |
+| `TOOL_ENCODING_003` | 十六进制文本解码失败 |
+| `TOOL_RANDOM_001` | 随机数范围无效 |
+| `TOOL_RANDOM_002` | 随机字符串长度无效 |
+| `TOOL_RANDOM_003` | 随机字符表无效 |
+| `TOOL_ID_001` | ID 参数无效 |
+| `TOOL_ID_002` | Snowflake 节点配置无效 |
+| `TOOL_ID_003` | Snowflake 时钟回拨超过容忍范围 |
+| `TOOL_ID_004` | Snowflake 时间戳超出可用范围 |
+| `TOOL_ID_005` | Snowflake 等待下一毫秒时被中断 |
+
+**2.0 迁移说明**
+
+- `Base64Util.encodeUrlSafe(...)` 明确保留填充字符；需要无填充结果时改用 `encodeUrlSafeWithoutPadding(...)`。
+- Base64、Hex 非法文本不再泄漏 JDK 异常，统一转换为 `EncodingOperationException`。
+- 随机工具不再接受负长度、反向范围、非有限浮点边界和空字符表。
+- Snowflake 节点越界、时钟回拨和时间戳越界统一转换为 `IdGenerationException`。
+- 多实例生产环境必须显式分配 Snowflake 节点号，不能依赖 PID/MAC 自动推导保证唯一性。
 
 ### 7. 树形工具 TreeUtil
 

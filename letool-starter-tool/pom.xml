@@ -58,13 +58,6 @@
             <artifactId>fastjson2</artifactId>
         </dependency>
 
-        <!-- Guava 扩展（Preconditions、Cache 等） -->
-        <dependency>
-            <groupId>com.google.guava</groupId>
-            <artifactId>guava</artifactId>
-            <optional>true</optional>
-        </dependency>
-
         <!-- 同步重试引擎：Letool 仅提供便捷策略和统一异常门面 -->
         <dependency>
             <groupId>io.github.resilience4j</groupId>
