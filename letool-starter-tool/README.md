@@ -376,22 +376,56 @@ List<List<User>> chunks = CollUtil.partition(users, 100);
 
 ### 10. 日期工具 DateUtil
 
+日期工具直接封装 JDK 17 `java.time` 的高频组合，不引入额外日期框架。公共格式器不可变且线程安全；
+严格入口不会再把空值转换为 `null` 或 `0`，需要容错时应显式使用 `tryParse`。
+
 ```java
-// 格式化
-DateUtil.formatDate(LocalDate.now());         // "2025-01-15"
-DateUtil.formatDateTime(LocalDateTime.now()); // "2025-01-15 14:30:00"
-
-// 解析
+// 格式化与严格解析
+String dateText = DateUtil.formatDate(LocalDate.of(2025, 1, 15));
 LocalDate date = DateUtil.parseDate("2025-01-15");
-LocalDateTime dt = DateUtil.parseDateTime("2025-01-15 14:30:00");
+LocalDateTime dateTime = DateUtil.parseDateTime("2025-01-15 14:30:00");
 
-// 差值
-long days = DateUtil.betweenDays(start, end);
+// 外部输入不合法时不抛异常
+Optional<LocalDate> optionalDate = DateUtil.tryParseDate(request.getDate());
 
-// 时间边界
-LocalDateTime start = DateUtil.startOfDay(LocalDate.now());
-LocalDateTime end = DateUtil.endOfDay(LocalDate.now());
+// 固定业务时钟，测试和定时业务不会依赖机器当前时间
+Clock businessClock = Clock.system(ZoneId.of("Asia/Shanghai"));
+LocalDate businessDate = DateUtil.today(businessClock);
+
+// 显式时区转换
+Instant instant = DateUtil.toInstant(dateTime, ZoneId.of("Asia/Shanghai"));
+long epochMilli = DateUtil.toEpochMilli(dateTime, ZoneId.of("Asia/Shanghai"));
+
+// 数据库查询使用左闭右开范围：[当天开始, 次日开始)
+DateTimeRange range = DateUtil.dayRange(businessDate);
+query.ge("created_at", range.startInclusive())
+     .lt("created_at", range.endExclusive());
 ```
+
+带时区的日边界使用真实时区规则计算，不会把一天固定视为 24 小时：
+
+```java
+ZoneId zoneId = ZoneId.of("America/New_York");
+ZonedDateTime start = DateUtil.startOfDay(date, zoneId);
+ZonedDateTime endExclusive = DateUtil.startOfNextDay(date, zoneId);
+```
+
+稳定错误码如下：
+
+| 错误码 | 含义 |
+|---|---|
+| `TOOL_DATE_001` | 必填日期时间参数无效 |
+| `TOOL_DATE_002` | 日期时间严格解析失败 |
+| `TOOL_DATE_003` | 日期时间格式化失败 |
+| `TOOL_DATE_004` | 日期时间或时区转换失败 |
+
+**2.0 迁移说明**
+
+- 必填参数为空时不再返回 `null` 或 `0`，统一抛出 `DateOperationException`。
+- 标准格式器使用 `uuuu` 和严格公历解析，`2024-02-30` 等非法日期不会被自动修正。
+- `endOfDay(date)` 现在返回 `23:59:59.999999999`；范围查询应迁移到 `dayRange(date)` 或
+  `[startOfDay(date), startOfNextDay(date))`。
+- 无时区的 Date、时间戳转换仍使用系统默认时区；跨系统业务应迁移到带 `ZoneId` 的重载。
 
 ### 11. Bean 拷贝 BeanUtil
 
