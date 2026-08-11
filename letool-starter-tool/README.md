@@ -3,7 +3,7 @@
 ## 模块简介
 
 `letool-starter-tool` 是 letool 的通用工具模块，为其他模块提供 JSON 序列化、HTTP 请求、
-Redis 操作、分布式 ID、树形结构、字符串、集合、日期时间、Bean 拷贝、反射访问、类扫描、
+Redis 操作、分布式 ID、树形结构、字符串、集合、业务枚举、常用校验、日期时间、Bean 拷贝、反射访问、类扫描、
 Lambda 属性解析、统一响应体、分页模型及 Spring 容器辅助能力。统一异常和国际化由独立的
 [`letool-starter-exception`](../letool-starter-exception/README.md) 模块提供；tool 模块依赖该基础模块，
 但不再自行维护异常体系。
@@ -433,10 +433,17 @@ List<TreeNode<Dept>> flat = TreeUtil.flatten(tree);
 StrUtil.isBlank(str);
 StrUtil.format("Hello, {}!", "World");     // "Hello, World!"
 StrUtil.toCamelCase("user_name");           // "userName"
-StrUtil.toSnakeCase("userName");            // "user_name"
+StrUtil.toSnakeCase("URLValue");            // "url_value"
 StrUtil.truncate("long text...", 10);      // "long text..."
 StrUtil.join(list, ", ");
+
+// 截取长度按 Unicode 码点计算，不会截断 Emoji 的代理字符
+StrUtil.left("A😀B", 2);                    // "A😀"
 ```
+
+命名转换固定使用 `Locale.ROOT`，不会受土耳其语等系统默认语言环境影响。`truncate` 的负长度、
+`join` 和 `split` 的空分隔符会统一抛出 `ValueOperationException`，避免错误配置
+被静默转换成不可靠结果。
 
 ### 9. 集合工具 CollUtil
 
@@ -445,9 +452,75 @@ CollUtil.isEmpty(list);
 List<String> list = CollUtil.newArrayList("a", "b", "c");
 List<Integer> lengths = CollUtil.extract(list, String::length);
 Map<Long, User> map = CollUtil.toMap(users, User::getId);
+Map<Long, String> names = CollUtil.toMap(users, User::getId, User::getName);
 List<User> common = CollUtil.intersection(listA, listB);
 List<List<User>> chunks = CollUtil.partition(users, 100);
 ```
+
+`extract`、`toMap`、交集、并集、差集和分片均返回独立的可变快照，空输入也不例外。集合运算
+使用首次出现顺序并执行集合语义去重；`toMap` 使用 `LinkedHashMap`，键重复时保留第一个值。
+分片大小始终必须大于零，即使源列表为空也会先校验配置。
+
+#### 9.1 业务枚举 EnumUtil
+
+新业务枚举推荐实现轻量的 `CodeEnum<C>` 和 `DescribedEnum` 契约：
+
+```java
+enum OrderStatus implements CodeEnum<Integer>, DescribedEnum {
+    CREATED(1, "已创建"),
+    PAID(2, "已支付");
+
+    private final Integer code;
+    private final String description;
+
+    // 构造器与 Getter 省略
+}
+
+Optional<OrderStatus> status = EnumUtil.findByCode(OrderStatus.class, 1);
+OrderStatus required = EnumUtil.requireByCode(OrderStatus.class, 1);
+Map<String, Object> options = EnumUtil.toMap(OrderStatus.class);
+// {"已创建": 1, "已支付": 2}
+```
+
+历史枚举无需立即改造：`getByCode` 和 `getBy` 仍支持 JavaBean Getter 或同名私有字段，并在未命中时
+返回 `null`。属性元数据使用 `ClassValue` 按枚举类型缓存，不保存枚举实例；属性不存在或读取失败
+不再被静默吞掉。新代码优先使用返回 `Optional` 的 `findByName`、`findByCode` 和 `findBy`，必须命中
+编码时使用 `requireByCode`。`toMap` 保持枚举声明顺序，重复描述会直接拒绝，避免选项被覆盖。
+
+#### 9.2 常用校验 ValidatorUtil
+
+```java
+ValidatorUtil.isPhone("13812345678");
+ValidatorUtil.isEmail("user.name+tag@example.com");
+ValidatorUtil.isUrl("https://example.com:8443/orders/1");
+ValidatorUtil.isIdCard("11010519491231002X");
+ValidatorUtil.isIpV4("192.168.1.1");
+```
+
+身份证校验包含严格出生日期和 GB 11643 校验位；URL 仅接受具有合法主机、端口的 HTTP/HTTPS
+地址；邮箱校验覆盖常见 ASCII 地址、长度和连续点边界；IPv4 只接受无多余前导零的规范十进制分段。
+这些方法负责结构校验，不连接邮箱、DNS 或身份证权威数据源验证输入真实性。动态正则语法错误时
+`matches` 返回 `false`，适合处理来自配置中心或规则平台的表达式。
+
+基础值工具稳定错误码如下：
+
+| 错误码 | 含义 |
+|---|---|
+| `TOOL_VALUE_001` | 字符串、集合或枚举参数不符合方法契约 |
+| `TOOL_VALUE_002` | 枚举属性不存在或读取失败 |
+| `TOOL_VALUE_003` | 严格枚举编码查询未命中 |
+| `TOOL_VALUE_004` | 枚举描述重复，无法安全生成选项映射 |
+
+**2.0 迁移说明**
+
+- `StrUtil` 的截取长度按 Unicode 码点计算；负截断长度和非法分隔符不再产生底层异常或模糊结果。
+- `CollUtil` 的转换与集合运算统一返回可变快照；依赖空结果不可修改的代码应自行使用
+  `List.copyOf(...)` 或 `Map.copyOf(...)` 固化结果。
+- `intersection` 改为按第一个集合首次出现顺序输出去重交集；依赖哈希遍历顺序的代码必须调整。
+- `partition` 对空列表同样校验分片大小，非法配置统一抛出 `ValueOperationException`。
+- `EnumUtil.getBy*` 未命中仍返回 `null`，但属性缺失或访问失败会抛出稳定异常；新代码优先迁移到
+  `findBy*` 或 `requireByCode`。
+- 身份证、URL、邮箱和 IPv4 校验规则已经收紧，旧版仅通过正则外形的无效输入现在会返回 `false`。
 
 ### 10. 日期工具 DateUtil
 

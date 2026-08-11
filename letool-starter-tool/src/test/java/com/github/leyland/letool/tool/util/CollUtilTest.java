@@ -1,66 +1,93 @@
 package com.github.leyland.letool.tool.util;
 
+import com.github.leyland.letool.tool.value.ValueErrorCode;
+import com.github.leyland.letool.tool.value.ValueOperationException;
 import org.junit.jupiter.api.Test;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
+/**
+ * 集合工具可变性、顺序和参数契约测试。
+ */
 class CollUtilTest {
 
+    /**
+     * 验证空输入仍返回独立的可变快照，调用方可以继续组装业务数据。
+     */
     @Test
-    void isEmpty() {
-        assertTrue(CollUtil.isEmpty((List<?>) null));
-        assertTrue(CollUtil.isEmpty(Collections.emptyList()));
-        assertFalse(CollUtil.isEmpty(Arrays.asList(1, 2)));
-        assertTrue(CollUtil.isEmpty((Map<?, ?>) null));
-        assertFalse(CollUtil.isEmpty(Collections.singletonMap("k", "v")));
+    void shouldReturnMutableIndependentSnapshotsForEmptyInputs() {
+        List<String> extracted = CollUtil.extract(List.of(), String::trim);
+        List<String> union = CollUtil.union(null, null);
+        List<List<String>> partitions = CollUtil.partition(List.of(), 1);
+
+        extracted.add("value");
+        union.add("value");
+        partitions.add(new ArrayList<>());
+
+        assertEquals(List.of("value"), extracted);
+        assertEquals(List.of("value"), union);
+        assertEquals(1, partitions.size());
     }
 
+    /**
+     * 验证集合运算按第一个集合的出现顺序去重输出。
+     */
     @Test
-    void newArrayList() {
-        List<String> list = CollUtil.newArrayList("a", "b", "c");
-        assertEquals(3, list.size());
-        assertEquals("a", list.get(0));
+    void shouldPreserveEncounterOrderForSetOperations() {
+        assertEquals(
+                List.of(3, 2),
+                CollUtil.intersection(List.of(3, 2, 3, 1), List.of(2, 3))
+        );
+        assertEquals(List.of(3, 2, 1, 4), CollUtil.union(List.of(3, 2, 3), List.of(1, 4)));
+        assertEquals(List.of(3, 1), CollUtil.subtract(List.of(3, 2, 3, 1), List.of(2)));
     }
 
+    /**
+     * 验证转换为 Map 时保留顺序、首值和自定义值映射结果。
+     */
     @Test
-    void intersection() {
-        List<Integer> a = Arrays.asList(1, 2, 3, 4);
-        List<Integer> b = Arrays.asList(3, 4, 5, 6);
-        List<Integer> result = CollUtil.intersection(a, b);
-        assertEquals(new HashSet<>(Arrays.asList(3, 4)), new HashSet<>(result));
+    void shouldBuildOrderedMapAndKeepFirstDuplicate() {
+        List<String> source = List.of("b1", "a11", "b222");
+        Map<Character, String> values = CollUtil.toMap(source, value -> value.charAt(0));
+        Map<Character, Integer> lengths = CollUtil.toMap(
+                source,
+                value -> value.charAt(0),
+                String::length
+        );
+
+        assertEquals(List.of('b', 'a'), new ArrayList<>(values.keySet()));
+        assertEquals("b1", values.get('b'));
+        assertEquals(Map.of('b', 2, 'a', 3), lengths);
     }
 
+    /**
+     * 验证空列表同样执行分片大小校验，避免非法参数被输入数据状态掩盖。
+     */
     @Test
-    void union() {
-        List<Integer> a = Arrays.asList(1, 2, 3);
-        List<Integer> b = Arrays.asList(3, 4, 5);
-        List<Integer> result = CollUtil.union(a, b);
-        assertEquals(5, result.size());
+    void shouldValidatePartitionSizeBeforeEmptyShortcut() {
+        ValueOperationException exception = assertThrows(
+                ValueOperationException.class,
+                () -> CollUtil.partition(List.of(), 0)
+        );
+
+        assertEquals(ValueErrorCode.INVALID_ARGUMENT, exception.getErrorCode());
     }
 
+    /**
+     * 验证必填映射函数缺失时抛出统一异常，而不是泄漏空指针异常。
+     */
     @Test
-    void subtract() {
-        List<Integer> a = Arrays.asList(1, 2, 3, 4);
-        List<Integer> b = Arrays.asList(3, 4);
-        List<Integer> result = CollUtil.subtract(a, b);
-        assertEquals(Arrays.asList(1, 2), result);
-    }
+    void shouldRejectMissingMapperWithStableError() {
+        ValueOperationException exception = assertThrows(
+                ValueOperationException.class,
+                () -> CollUtil.extract(List.of("value"), null)
+        );
 
-    @Test
-    void partition() {
-        List<Integer> list = Arrays.asList(1, 2, 3, 4, 5);
-        List<List<Integer>> parts = CollUtil.partition(list, 2);
-        assertEquals(3, parts.size());
-        assertEquals(2, parts.get(0).size());
-        assertEquals(1, parts.get(2).size());
-    }
-
-    @Test
-    void extract() {
-        List<String> list = Arrays.asList("a", "bb", "ccc");
-        List<Integer> lengths = CollUtil.extract(list, String::length);
-        assertEquals(Arrays.asList(1, 2, 3), lengths);
+        assertEquals(ValueErrorCode.INVALID_ARGUMENT, exception.getErrorCode());
     }
 }

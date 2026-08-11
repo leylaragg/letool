@@ -1,367 +1,499 @@
 package com.github.leyland.letool.tool.util;
 
 import com.github.leyland.letool.tool.constant.SymbolConstant;
+import com.github.leyland.letool.tool.value.ValueOperationException;
 
 import java.util.Collection;
-import java.util.regex.Matcher;
+import java.util.Locale;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
- * 字符串工具类——判空、格式化、驼峰/下划线互转、截取拼接等常用操作.
+ * 提供判空、命名转换、Unicode 安全截取和拼接等常用字符串操作。
  *
- * <p>所有方法均为空安全：传入 {@code null} 不会抛出 NPE，而是返回安全的默认值.</p>
+ * <p>内容查询方法对 {@code null} 输入保持兼容；开发者配置类参数不合法时抛出
+ * {@link ValueOperationException}，避免错误配置被静默处理。</p>
  */
 public final class StrUtil {
 
-    /** 驼峰 → 下划线转换正则：匹配小写字母/数字后接大写字母的位置 */
-    private static final Pattern CAMEL_PATTERN = Pattern.compile("([a-z\\d])([A-Z])");
-    /** 下划线 → 驼峰转换正则：匹配下划线后的单个字母 */
-    private static final Pattern LINE_PATTERN = Pattern.compile("_(\\w)");
-
-    private StrUtil() {}
-
-    // ======================== 判空 ========================
+    /** 截断超长文本时使用的默认省略标记。 */
+    private static final String ELLIPSIS = "...";
 
     /**
-     * 字符串是否为 {@code null} 或空串.
+     * 禁止创建工具类实例。
+     */
+    private StrUtil() {
+    }
+
+    /**
+     * 判断字符序列是否为 {@code null} 或空串。
      *
-     * @param cs 待检查的字符序列
-     * @return {@code true} 如果为 {@code null} 或 {@code ""}
+     * @param cs 待检查字符序列
+     * @return 为 {@code null} 或长度为零时返回 {@code true}
      */
     public static boolean isEmpty(CharSequence cs) {
         return cs == null || cs.length() == 0;
     }
 
     /**
-     * 字符串是否非空（长度 &gt; 0）.
+     * 判断字符序列是否包含至少一个字符。
+     *
+     * @param cs 待检查字符序列
+     * @return 不为空时返回 {@code true}
      */
     public static boolean isNotEmpty(CharSequence cs) {
         return !isEmpty(cs);
     }
 
     /**
-     * 字符串是否为 {@code null}、空串或仅包含空白字符.
+     * 判断字符序列是否为 {@code null}、空串或仅包含 Unicode 空白字符。
      *
-     * @param cs 待检查的字符序列
-     * @return {@code true} 如果无有效内容
+     * @param cs 待检查字符序列
+     * @return 没有有效内容时返回 {@code true}
      */
     public static boolean isBlank(CharSequence cs) {
-        if (isEmpty(cs)) return true;
-        for (int i = 0; i < cs.length(); i++) {
-            if (!Character.isWhitespace(cs.charAt(i))) return false;
+        if (isEmpty(cs)) {
+            return true;
+        }
+        for (int offset = 0; offset < cs.length();) {
+            int codePoint = Character.codePointAt(cs, offset);
+            if (!Character.isWhitespace(codePoint) && !Character.isSpaceChar(codePoint)) {
+                return false;
+            }
+            offset += Character.charCount(codePoint);
         }
         return true;
     }
 
     /**
-     * 字符串是否包含至少一个非空白字符.
+     * 判断字符序列是否包含至少一个非空白字符。
+     *
+     * @param cs 待检查字符序列
+     * @return 包含有效内容时返回 {@code true}
      */
     public static boolean isNotBlank(CharSequence cs) {
         return !isBlank(cs);
     }
 
     /**
-     * 任意一个字符串为空.
+     * 判断参数中是否存在空字符序列。
      *
-     * @param css 变长参数
-     * @return 只要有一个为 {@code null} 或 {@code ""} 即返回 {@code true}
+     * @param css 待检查字符序列；参数数组为 {@code null} 时视为缺失输入
+     * @return 任一元素为空或参数数组缺失时返回 {@code true}
      */
     public static boolean hasEmpty(CharSequence... css) {
+        if (css == null) {
+            return true;
+        }
         for (CharSequence cs : css) {
-            if (isEmpty(cs)) return true;
+            if (isEmpty(cs)) {
+                return true;
+            }
         }
         return false;
     }
 
     /**
-     * 任意一个字符串为空白.
+     * 判断参数中是否存在空白字符序列。
      *
-     * @param css 变长参数
-     * @return 只要有一个无有效内容即返回 {@code true}
+     * @param css 待检查字符序列；参数数组为 {@code null} 时视为缺失输入
+     * @return 任一元素为空白或参数数组缺失时返回 {@code true}
      */
     public static boolean hasBlank(CharSequence... css) {
+        if (css == null) {
+            return true;
+        }
         for (CharSequence cs : css) {
-            if (isBlank(cs)) return true;
+            if (isBlank(cs)) {
+                return true;
+            }
         }
         return false;
     }
 
-    // ======================== 默认值 ========================
-
     /**
-     * 字符串为空时返回默认值.
+     * 字符串为空时返回默认值。
      *
-     * @param str        源字符串
-     * @param defaultStr 默认值
-     * @return {@code str} 非空则返回自身，否则返回 {@code defaultStr}
+     * @param str 源字符串
+     * @param defaultStr 默认字符串
+     * @return 源字符串非空时返回自身，否则返回默认字符串
      */
     public static String defaultIfEmpty(String str, String defaultStr) {
         return isEmpty(str) ? defaultStr : str;
     }
 
     /**
-     * 字符串为空白时返回默认值.
+     * 字符串为空白时返回默认值。
      *
-     * @param str        源字符串
-     * @param defaultStr 默认值
-     * @return {@code str} 非空白则返回自身，否则返回 {@code defaultStr}
+     * @param str 源字符串
+     * @param defaultStr 默认字符串
+     * @return 源字符串非空白时返回自身，否则返回默认字符串
      */
     public static String defaultIfBlank(String str, String defaultStr) {
         return isBlank(str) ? defaultStr : str;
     }
 
-    // ======================== 格式化 ========================
-
     /**
-     * 使用 {@code {}} 占位符格式化字符串，类似 Slf4j 风格.
+     * 使用 {@code {}} 占位符格式化字符串。
      *
-     * <p>参数不足时保留剩余占位符原样输出；参数多余时忽略.</p>
+     * <p>参数不足时保留剩余占位符，参数多余时忽略多余参数。</p>
      *
-     * <pre>{@code
-     * StrUtil.format("Hello, {}!", "World");  // → "Hello, World!"
-     * StrUtil.format("{},{},{}", "a");        // → "a,{},{}"
-     * }</pre>
-     *
-     * @param template 含 {@code {}} 占位符的模板
-     * @param args     替换参数
-     * @return 格式化后的字符串，模板为 {@code null} 时返回 {@code null}
+     * @param template 格式模板；为 {@code null} 时返回 {@code null}
+     * @param args 替换参数
+     * @return 格式化后的字符串
      */
     public static String format(String template, Object... args) {
-        if (template == null) return null;
-        if (args == null || args.length == 0) return template;
-        StringBuilder sb = new StringBuilder(template.length() + 64);
+        if (template == null) {
+            return null;
+        }
+        if (args == null || args.length == 0) {
+            return template;
+        }
+        StringBuilder result = new StringBuilder(template.length() + 32);
         int cursor = 0;
-        int argIndex = 0;
+        int argumentIndex = 0;
         while (cursor < template.length()) {
-            int brace = template.indexOf("{}", cursor);
-            if (brace < 0) {
-                sb.append(template.substring(cursor));
+            int placeholderIndex = template.indexOf("{}", cursor);
+            if (placeholderIndex < 0) {
+                result.append(template, cursor, template.length());
                 break;
             }
-            sb.append(template, cursor, brace);
-            if (argIndex < args.length) {
-                sb.append(args[argIndex++]);
+            result.append(template, cursor, placeholderIndex);
+            if (argumentIndex < args.length) {
+                result.append(args[argumentIndex++]);
             } else {
-                sb.append("{}");
+                result.append("{}");
             }
-            cursor = brace + 2;
+            cursor = placeholderIndex + 2;
         }
-        return sb.toString();
+        return result.toString();
     }
 
-    // ======================== 驼峰/下划线转换 ========================
-
     /**
-     * 下划线风格转驼峰风格.
+     * 将下划线命名转换为小驼峰命名。
      *
-     * <pre>{@code
-     * toCamelCase("user_name")  → "userName"
-     * toCamelCase("HELLO_WORLD") → "helloWorld"
-     * }</pre>
+     * <p>连续下划线按一个分隔符处理，大小写转换固定使用根语言环境。</p>
      *
      * @param str 下划线格式字符串
-     * @return 小驼峰格式字符串，{@code null} 输入返回 {@code null}
+     * @return 小驼峰格式字符串；输入为 {@code null} 时返回 {@code null}
      */
     public static String toCamelCase(String str) {
-        if (str == null) return null;
-        str = str.toLowerCase();
-        Matcher m = LINE_PATTERN.matcher(str);
-        StringBuilder sb = new StringBuilder();
-        int last = 0;
-        while (m.find()) {
-            sb.append(str, last, m.start());
-            sb.append(m.group(1).toUpperCase());
-            last = m.end();
+        if (str == null) {
+            return null;
         }
-        sb.append(str.substring(last));
-        return sb.toString();
+        String normalized = str.toLowerCase(Locale.ROOT);
+        StringBuilder result = new StringBuilder(normalized.length());
+        boolean capitalizeNext = false;
+        for (int offset = 0; offset < normalized.length();) {
+            int codePoint = normalized.codePointAt(offset);
+            offset += Character.charCount(codePoint);
+            if (codePoint == '_') {
+                capitalizeNext = result.length() > 0;
+                continue;
+            }
+            result.appendCodePoint(capitalizeNext ? Character.toTitleCase(codePoint) : codePoint);
+            capitalizeNext = false;
+        }
+        return result.toString();
     }
 
     /**
-     * 驼峰风格转下划线风格.
+     * 将驼峰或缩写命名转换为下划线命名。
      *
-     * <pre>{@code
-     * toSnakeCase("userName")  → "user_name"
-     * toSnakeCase("HelloWorld") → "hello_world"
-     * }</pre>
+     * <p>大写缩写与后续普通单词之间会保留边界，例如 {@code URLValue} 转换为
+     * {@code url_value}。</p>
      *
-     * @param str 驼峰格式字符串
-     * @return 下划线格式（全小写）字符串，{@code null} 输入返回 {@code null}
+     * @param str 驼峰或缩写格式字符串
+     * @return 全小写下划线格式字符串；输入为 {@code null} 时返回 {@code null}
      */
     public static String toSnakeCase(String str) {
-        if (str == null) return null;
-        return CAMEL_PATTERN.matcher(str).replaceAll("$1_$2").toLowerCase();
+        if (str == null) {
+            return null;
+        }
+        int[] codePoints = str.codePoints().toArray();
+        StringBuilder result = new StringBuilder(str.length() + 8);
+        for (int index = 0; index < codePoints.length; index++) {
+            int current = codePoints[index];
+            if (current == '_') {
+                if (result.length() > 0 && result.charAt(result.length() - 1) != '_') {
+                    result.append('_');
+                }
+                continue;
+            }
+            if (Character.isUpperCase(current) && shouldInsertBoundary(codePoints, index, result)) {
+                result.append('_');
+            }
+            result.appendCodePoint(Character.toLowerCase(current));
+        }
+        int length = result.length();
+        if (length > 0 && result.charAt(length - 1) == '_') {
+            result.deleteCharAt(length - 1);
+        }
+        return result.toString();
     }
 
-    // ======================== 截取/省略 ========================
+    /**
+     * 判断当前大写字符前是否需要插入单词边界。
+     *
+     * @param codePoints 完整码点数组
+     * @param index 当前码点下标
+     * @param result 已生成结果
+     * @return 需要插入下划线时返回 {@code true}
+     */
+    private static boolean shouldInsertBoundary(int[] codePoints, int index, StringBuilder result) {
+        if (index == 0 || result.length() == 0 || result.charAt(result.length() - 1) == '_') {
+            return false;
+        }
+        int previous = codePoints[index - 1];
+        boolean previousIsWordTail = Character.isLowerCase(previous) || Character.isDigit(previous);
+        boolean acronymEnds = Character.isUpperCase(previous)
+                && index + 1 < codePoints.length
+                && Character.isLowerCase(codePoints[index + 1]);
+        return previousIsWordTail || acronymEnds;
+    }
 
     /**
-     * 超长截断并追加省略号.
+     * 按 Unicode 码点截断超长文本并追加省略标记。
      *
-     * @param cs        字符序列
-     * @param maxLength 最大长度（不含省略号）
-     * @return 不超过 {@code maxLength + 3} 的字符串，超长部分以 "..." 代替
+     * @param cs 源字符序列
+     * @param maxLength 最大码点数量，不包含省略标记
+     * @return 未超长时返回原内容，超长时返回截断内容和省略标记
+     * @throws ValueOperationException 当最大长度小于零时抛出
      */
     public static String truncate(CharSequence cs, int maxLength) {
-        if (cs == null) return null;
-        if (cs.length() <= maxLength) return cs.toString();
-        return cs.subSequence(0, maxLength) + "...";
+        requireNonNegative(maxLength, "maxLength");
+        if (cs == null) {
+            return null;
+        }
+        String value = cs.toString();
+        int codePointCount = value.codePointCount(0, value.length());
+        if (codePointCount <= maxLength) {
+            return value;
+        }
+        int endOffset = value.offsetByCodePoints(0, maxLength);
+        return value.substring(0, endOffset) + ELLIPSIS;
     }
 
     /**
-     * 取左侧指定长度的子串.
+     * 按 Unicode 码点获取左侧指定长度的子串。
      *
      * @param str 源字符串
-     * @param len 长度，&le;0 返回空串，&ge;str.length() 返回原串
-     * @return 左起 {@code len} 个字符
+     * @param len 码点数量；小于等于零时返回空串
+     * @return 左侧子串；源字符串为 {@code null} 时返回 {@code null}
      */
     public static String left(String str, int len) {
-        if (str == null) return null;
-        if (len <= 0) return SymbolConstant.EMPTY;
-        if (len >= str.length()) return str;
-        return str.substring(0, len);
+        if (str == null) {
+            return null;
+        }
+        if (len <= 0) {
+            return SymbolConstant.EMPTY;
+        }
+        int codePointCount = str.codePointCount(0, str.length());
+        if (len >= codePointCount) {
+            return str;
+        }
+        return str.substring(0, str.offsetByCodePoints(0, len));
     }
 
     /**
-     * 取右侧指定长度的子串.
+     * 按 Unicode 码点获取右侧指定长度的子串。
      *
      * @param str 源字符串
-     * @param len 长度，&le;0 返回空串，&ge;str.length() 返回原串
-     * @return 末尾 {@code len} 个字符
+     * @param len 码点数量；小于等于零时返回空串
+     * @return 右侧子串；源字符串为 {@code null} 时返回 {@code null}
      */
     public static String right(String str, int len) {
-        if (str == null) return null;
-        if (len <= 0) return SymbolConstant.EMPTY;
-        if (len >= str.length()) return str;
-        return str.substring(str.length() - len);
+        if (str == null) {
+            return null;
+        }
+        if (len <= 0) {
+            return SymbolConstant.EMPTY;
+        }
+        int codePointCount = str.codePointCount(0, str.length());
+        if (len >= codePointCount) {
+            return str;
+        }
+        return str.substring(str.offsetByCodePoints(0, codePointCount - len));
     }
 
-    // ======================== 前缀/后缀 ========================
-
     /**
-     * 移除字符串前缀（仅匹配一次）.
+     * 移除字符串的一次前缀匹配。
      *
-     * @param str    源字符串
-     * @param prefix 待移除的前缀
-     * @return 若以 {@code prefix} 开头则返回剩余部分，否则返回原串
+     * @param str 源字符串
+     * @param prefix 待移除前缀
+     * @return 匹配时返回剩余部分，否则返回原字符串
      */
     public static String removePrefix(String str, String prefix) {
-        if (str == null || prefix == null) return str;
-        if (str.startsWith(prefix)) return str.substring(prefix.length());
-        return str;
+        if (str == null || prefix == null) {
+            return str;
+        }
+        return str.startsWith(prefix) ? str.substring(prefix.length()) : str;
     }
 
     /**
-     * 移除字符串后缀（仅匹配一次）.
+     * 移除字符串的一次后缀匹配。
      *
-     * @param str    源字符串
-     * @param suffix 待移除的后缀
-     * @return 若以 {@code suffix} 结尾则返回剩余部分，否则返回原串
+     * @param str 源字符串
+     * @param suffix 待移除后缀
+     * @return 匹配时返回剩余部分，否则返回原字符串
      */
     public static String removeSuffix(String str, String suffix) {
-        if (str == null || suffix == null) return str;
-        if (str.endsWith(suffix)) return str.substring(0, str.length() - suffix.length());
-        return str;
+        if (str == null || suffix == null) {
+            return str;
+        }
+        return str.endsWith(suffix)
+                ? str.substring(0, str.length() - suffix.length())
+                : str;
     }
 
-    // ======================== 拼接 ========================
-
     /**
-     * 将集合元素用分隔符拼接为字符串.
+     * 使用指定分隔符拼接集合元素。
      *
-     * @param coll      集合，{@code null} 返回空串
-     * @param delimiter 分隔符
+     * @param coll 元素集合；为空时返回空串
+     * @param delimiter 非 {@code null} 且非空的分隔符
      * @return 拼接后的字符串
+     * @throws ValueOperationException 当分隔符为空时抛出
      */
     public static String join(Collection<?> coll, String delimiter) {
-        if (coll == null || coll.isEmpty()) return SymbolConstant.EMPTY;
+        requireDelimiter(delimiter);
+        if (coll == null || coll.isEmpty()) {
+            return SymbolConstant.EMPTY;
+        }
         return coll.stream().map(String::valueOf).collect(Collectors.joining(delimiter));
     }
 
     /**
-     * 将数组元素用分隔符拼接为字符串.
+     * 使用指定分隔符拼接数组元素。
      *
-     * @param array     数组，{@code null} 返回空串
-     * @param delimiter 分隔符
+     * @param array 元素数组；为空时返回空串
+     * @param delimiter 非 {@code null} 且非空的分隔符
      * @return 拼接后的字符串
+     * @throws ValueOperationException 当分隔符为空时抛出
      */
     public static String join(Object[] array, String delimiter) {
-        if (array == null || array.length == 0) return SymbolConstant.EMPTY;
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < array.length; i++) {
-            if (i > 0) sb.append(delimiter);
-            sb.append(array[i]);
+        requireDelimiter(delimiter);
+        if (array == null || array.length == 0) {
+            return SymbolConstant.EMPTY;
         }
-        return sb.toString();
+        StringBuilder result = new StringBuilder();
+        for (int index = 0; index < array.length; index++) {
+            if (index > 0) {
+                result.append(delimiter);
+            }
+            result.append(array[index]);
+        }
+        return result.toString();
     }
 
-    // ======================== 分割 ========================
-
     /**
-     * 按分隔符切分字符串.
+     * 按字面量分隔符切分字符串。
      *
-     * <p>分隔符会被当作字面量（内部调用 {@code Pattern.quote}），不会作为正则解析.</p>
-     *
-     * @param str       源字符串
-     * @param delimiter 分隔符
-     * @return 切分后的数组，{@code str} 为 {@code null} 时返回空数组
+     * @param str 源字符串；为 {@code null} 时返回空数组
+     * @param delimiter 非空字面量分隔符
+     * @return 切分后的字符串数组
+     * @throws ValueOperationException 当分隔符为空时抛出
      */
     public static String[] split(String str, String delimiter) {
-        if (str == null) return new String[0];
+        if (isEmpty(delimiter)) {
+            throw ValueOperationException.invalidArgument("delimiter");
+        }
+        if (str == null) {
+            return new String[0];
+        }
         return str.split(Pattern.quote(delimiter));
     }
 
-    // ======================== 常用操作 ========================
-
     /**
-     * 安全比较两个字符序列是否内容相等.
+     * 安全比较两个字符序列内容是否相等。
      *
-     * @param a 字符序列
-     * @param b 字符序列
-     * @return {@code true} 如果同为 {@code null} 或内容相等
+     * @param first 第一个字符序列
+     * @param second 第二个字符序列
+     * @return 同为 {@code null} 或内容相等时返回 {@code true}
      */
-    public static boolean equals(CharSequence a, CharSequence b) {
-        if (a == b) return true;
-        if (a == null || b == null) return false;
-        return a.toString().equals(b.toString());
+    public static boolean equals(CharSequence first, CharSequence second) {
+        if (first == second) {
+            return true;
+        }
+        if (first == null || second == null) {
+            return false;
+        }
+        return first.toString().contentEquals(second);
     }
 
     /**
-     * 是否包含子序列.
+     * 判断字符序列是否包含目标子序列。
      *
-     * @param cs     字符序列
-     * @param search 待查找的子序列
-     * @return 任一为 {@code null} 返回 {@code false}
+     * @param cs 源字符序列
+     * @param search 目标子序列
+     * @return 任一参数为 {@code null} 时返回 {@code false}
      */
     public static boolean contains(CharSequence cs, CharSequence search) {
-        if (cs == null || search == null) return false;
-        return cs.toString().contains(search);
+        return cs != null && search != null && cs.toString().contains(search);
     }
 
     /**
-     * 首字母大写.
+     * 按 Unicode 码点将首字符转换为大写。
      *
      * @param str 源字符串
-     * @return 首字母大写后的字符串，已大写或空串返回自身
+     * @return 首字符大写后的字符串
      */
     public static String capitalize(String str) {
-        if (isEmpty(str)) return str;
-        char first = str.charAt(0);
-        if (Character.isUpperCase(first)) return str;
-        return Character.toUpperCase(first) + str.substring(1);
+        return changeFirstCodePointCase(str, true);
     }
 
     /**
-     * 首字母小写.
+     * 按 Unicode 码点将首字符转换为小写。
      *
      * @param str 源字符串
-     * @return 首字母小写后的字符串，已小写或空串返回自身
+     * @return 首字符小写后的字符串
      */
     public static String uncapitalize(String str) {
-        if (isEmpty(str)) return str;
-        char first = str.charAt(0);
-        if (Character.isLowerCase(first)) return str;
-        return Character.toLowerCase(first) + str.substring(1);
+        return changeFirstCodePointCase(str, false);
+    }
+
+    /**
+     * 转换字符串首码点大小写。
+     *
+     * @param str 源字符串
+     * @param upperCase 是否转换为大写
+     * @return 转换后的字符串
+     */
+    private static String changeFirstCodePointCase(String str, boolean upperCase) {
+        if (isEmpty(str)) {
+            return str;
+        }
+        int first = str.codePointAt(0);
+        int converted = upperCase ? Character.toUpperCase(first) : Character.toLowerCase(first);
+        if (first == converted) {
+            return str;
+        }
+        int firstLength = Character.charCount(first);
+        return new StringBuilder(str.length())
+                .appendCodePoint(converted)
+                .append(str, firstLength, str.length())
+                .toString();
+    }
+
+    /**
+     * 校验长度参数不能为负数。
+     *
+     * @param value 待校验长度
+     * @param parameterName 安全的参数名称
+     */
+    private static void requireNonNegative(int value, String parameterName) {
+        if (value < 0) {
+            throw ValueOperationException.invalidArgument(parameterName);
+        }
+    }
+
+    /**
+     * 校验拼接分隔符不能为 {@code null} 或空串。
+     *
+     * @param delimiter 待校验分隔符
+     */
+    private static void requireDelimiter(String delimiter) {
+        if (isEmpty(delimiter)) {
+            throw ValueOperationException.invalidArgument("delimiter");
+        }
     }
 }
