@@ -1,118 +1,179 @@
 package com.github.leyland.letool.tool.util;
 
+import com.github.leyland.letool.tool.reflection.ReflectionOperationException;
 import org.springframework.beans.BeanUtils;
-import org.springframework.cglib.beans.BeanCopier;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 
 /**
- * Bean 操作工具类——属性拷贝、Map 与 Bean 互转、批量转换.
+ * 基于 Spring BeanUtils 的 Bean 实例化、属性拷贝和批量转换便捷工具。
  *
- * <h3>两种拷贝策略</h3>
- * <table>
- *   <tr><th>方法</th><th>底层实现</th><th>性能</th><th>适用场景</th></tr>
- *   <tr><td>{@link #copy(Object, Class)}</td><td>Spring BeanUtils（反射）</td><td>中</td><td>单次操作</td></tr>
- *   <tr><td>{@link #copyFast(Object, Class)}</td><td>CGLIB BeanCopier（字节码）</td><td>高</td><td>批量操作、高频调用</td></tr>
- * </table>
- *
- * <h3>使用示例</h3>
- * <pre>{@code
- * // 单次拷贝
- * UserVO vo = BeanUtil.copy(user, UserVO.class);
- *
- * // 批量拷贝（使用 BeanCopier 缓存，性能更高）
- * List<UserVO> vos = BeanUtil.copyListFast(users, UserVO.class);
- *
- * // Map → Bean
- * User user = BeanUtil.toBean(map, User.class);
- * }</pre>
+ * <p>工具只处理同名且类型兼容的 JavaBean 属性，不提供深拷贝、循环引用复制或自动类型转换。
+ * 高频且类型固定的大规模对象映射应使用 MapStruct 等编译期映射方案。</p>
  */
 public final class BeanUtil {
 
-    /**
-     * BeanCopier 缓存——key 为 "sourceClassName->targetClassName".
-     *
-     * <p>BeanCopier 创建成本高（字节码生成），但拷贝性能极高（避免反射），适合批量场景缓存复用.</p>
-     */
-    private static final Map<String, BeanCopier> COPIER_CACHE = new ConcurrentHashMap<>();
-
-    private BeanUtil() {}
-
-    // ======================== 属性拷贝 ========================
+    /** 工具类不允许实例化。 */
+    private BeanUtil() {
+    }
 
     /**
-     * 拷贝对象属性到新实例（基于 Spring BeanUtils，反射）.
+     * 拷贝对象属性到由目标类型创建的新实例。
      *
-     * <p>先通过无参构造器创建目标对象，再逐一拷贝同名属性.</p>
-     *
-     * @param source      源对象
-     * @param targetClass 目标类型（必须有 public 无参构造器）
-     * @param <S>         源类型
-     * @param <T>         目标类型
-     * @return 目标对象，{@code source} 为 {@code null} 返回 {@code null}
+     * @param source 源对象，允许为空
+     * @param targetClass 目标类型，必须能够由 Spring BeanUtils 实例化
+     * @param <S> 源对象类型
+     * @param <T> 目标对象类型
+     * @return 完成属性拷贝的目标对象；源对象为空时返回 {@code null}
+     * @throws ReflectionOperationException 目标类型无效、无法实例化或属性拷贝失败时抛出
      */
     public static <S, T> T copy(S source, Class<T> targetClass) {
-        if (source == null) return null;
+        return copy(source, targetClass, new String[0]);
+    }
+
+    /**
+     * 拷贝对象属性到新实例，并忽略指定目标属性。
+     *
+     * @param source 源对象，允许为空
+     * @param targetClass 目标类型，必须能够由 Spring BeanUtils 实例化
+     * @param ignoreProperties 不参与拷贝的目标属性名称
+     * @param <S> 源对象类型
+     * @param <T> 目标对象类型
+     * @return 完成属性拷贝的目标对象；源对象为空时返回 {@code null}
+     * @throws ReflectionOperationException 参数无效、无法实例化或属性拷贝失败时抛出
+     */
+    public static <S, T> T copy(
+            S source,
+            Class<T> targetClass,
+            String... ignoreProperties) {
+        requireType(targetClass, "targetClass");
+        String[] ignored = normalizeIgnoreProperties(ignoreProperties);
+        if (source == null) {
+            return null;
+        }
         T target = newInstance(targetClass);
+        copyProperties(source, target, ignored);
+        return target;
+    }
+
+    /**
+     * 使用调用方提供的工厂创建目标实例后拷贝属性。
+     *
+     * <p>该入口适用于没有默认构造器、需要 Builder 或必须由受控工厂创建的目标对象。</p>
+     *
+     * @param source 源对象，允许为空
+     * @param targetSupplier 目标对象工厂，返回值不得为空
+     * @param <S> 源对象类型
+     * @param <T> 目标对象类型
+     * @return 完成属性拷贝的目标对象；源对象为空时返回 {@code null}
+     * @throws ReflectionOperationException 工厂无效、目标创建失败或属性拷贝失败时抛出
+     */
+    public static <S, T> T copy(S source, Supplier<T> targetSupplier) {
+        if (targetSupplier == null) {
+            throw ReflectionOperationException.invalidArgument("targetSupplier");
+        }
+        if (source == null) {
+            return null;
+        }
+
+        T target;
+        try {
+            target = targetSupplier.get();
+        } catch (RuntimeException exception) {
+            throw ReflectionOperationException.instantiationFailed(null, exception);
+        }
+        if (target == null) {
+            throw ReflectionOperationException.instantiationFailed(
+                    null,
+                    new IllegalStateException("Target supplier returned null")
+            );
+        }
         copyProperties(source, target);
         return target;
     }
 
     /**
-     * 拷贝源对象属性到目标对象（原地修改目标对象，基于 Spring BeanUtils）.
+     * 将源对象的兼容属性原地拷贝到目标对象。
      *
-     * @param source 源对象
-     * @param target 目标对象
-     * @param <S>    源类型
-     * @param <T>    目标类型
+     * @param source 源对象，允许为空；为空时不修改目标对象
+     * @param target 目标对象，不得为空
+     * @param <S> 源对象类型
+     * @param <T> 目标对象类型
+     * @throws ReflectionOperationException 目标为空或属性拷贝失败时抛出
      */
     public static <S, T> void copyProperties(S source, T target) {
-        if (source == null || target == null) return;
-        BeanUtils.copyProperties(source, target);
+        copyProperties(source, target, new String[0]);
     }
 
-    // ======================== 高性能拷贝（CGLIB BeanCopier） ========================
-
     /**
-     * 高性能拷贝——使用 CGLIB BeanCopier（字节码生成，避免反射）.
+     * 将源对象的兼容属性原地拷贝到目标对象，并忽略指定属性。
      *
-     * <p>首次调用某对类型组合时会生成字节码并缓存，后续调用直接复用，性能远高于反射.
-     * 适用于批量拷贝场景（如一次拷贝数千条记录）.</p>
-     *
-     * @param source      源对象
-     * @param targetClass 目标类型
-     * @param <S>         源类型
-     * @param <T>         目标类型
-     * @return 目标对象，{@code source} 为 {@code null} 返回 {@code null}
+     * @param source 源对象，允许为空；为空时不修改目标对象
+     * @param target 目标对象，不得为空
+     * @param ignoreProperties 不参与拷贝的目标属性名称
+     * @param <S> 源对象类型
+     * @param <T> 目标对象类型
+     * @throws ReflectionOperationException 参数无效或属性拷贝失败时抛出
      */
-    @SuppressWarnings("unchecked")
-    public static <S, T> T copyFast(S source, Class<T> targetClass) {
-        if (source == null) return null;
-        T target = newInstance(targetClass);
-        String key = source.getClass().getName() + "->" + targetClass.getName();
-        BeanCopier copier = COPIER_CACHE.computeIfAbsent(key,
-                k -> BeanCopier.create(source.getClass(), targetClass, false));
-        copier.copy(source, target, null);
-        return target;
+    public static <S, T> void copyProperties(
+            S source,
+            T target,
+            String... ignoreProperties) {
+        if (target == null) {
+            throw ReflectionOperationException.invalidArgument("target");
+        }
+        String[] ignored = normalizeIgnoreProperties(ignoreProperties);
+        if (source == null) {
+            return;
+        }
+
+        try {
+            BeanUtils.copyProperties(source, target, ignored);
+        } catch (RuntimeException exception) {
+            String mapping = source.getClass().getName() + "->" + target.getClass().getName();
+            throw ReflectionOperationException.fieldAccessFailed(mapping, exception);
+        }
     }
 
-    // ======================== 批量拷贝 ========================
+    /**
+     * 兼容旧版所谓高性能拷贝入口。
+     *
+     * <p>该方法不再维护 CGLIB BeanCopier 缓存，统一委托可靠的 Spring BeanUtils。
+     * 高频固定类型映射应迁移到 MapStruct。</p>
+     *
+     * @param source 源对象，允许为空
+     * @param targetClass 目标类型
+     * @param <S> 源对象类型
+     * @param <T> 目标对象类型
+     * @return 完成属性拷贝的目标对象；源对象为空时返回 {@code null}
+     * @deprecated 使用 {@link #copy(Object, Class)} 或编译期映射方案
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
+    public static <S, T> T copyFast(S source, Class<T> targetClass) {
+        return copy(source, targetClass);
+    }
 
     /**
-     * 批量拷贝列表（反射方式，适合少量数据）.
+     * 按输入顺序批量拷贝列表。
      *
-     * @param sourceList  源列表
+     * <p>返回值始终是可修改的新列表，输入中的 {@code null} 元素会在对应位置保留。</p>
+     *
+     * @param sourceList 源列表，允许为空
      * @param targetClass 目标类型
-     * @param <S>         源类型
-     * @param <T>         目标类型
-     * @return 新列表，{@code sourceList} 为空返回空列表
+     * @param <S> 源对象类型
+     * @param <T> 目标对象类型
+     * @return 可修改的新列表
+     * @throws ReflectionOperationException 目标类型无效或任一元素转换失败时抛出
      */
     public static <S, T> List<T> copyList(List<S> sourceList, Class<T> targetClass) {
-        if (CollUtil.isEmpty(sourceList)) return Collections.emptyList();
+        requireType(targetClass, "targetClass");
+        if (sourceList == null || sourceList.isEmpty()) {
+            return new ArrayList<>();
+        }
+
         List<T> targets = new ArrayList<>(sourceList.size());
         for (S source : sourceList) {
             targets.add(copy(source, targetClass));
@@ -121,64 +182,89 @@ public final class BeanUtil {
     }
 
     /**
-     * 批量拷贝列表（CGLIB 高性能方式，适合大量数据）.
+     * 兼容旧版所谓高性能批量拷贝入口。
      *
-     * @param sourceList  源列表
+     * @param sourceList 源列表，允许为空
      * @param targetClass 目标类型
-     * @param <S>         源类型
-     * @param <T>         目标类型
-     * @return 新列表，{@code sourceList} 为空返回空列表
+     * @param <S> 源对象类型
+     * @param <T> 目标对象类型
+     * @return 可修改的新列表
+     * @deprecated 使用 {@link #copyList(List, Class)} 或编译期映射方案
      */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     public static <S, T> List<T> copyListFast(List<S> sourceList, Class<T> targetClass) {
-        if (CollUtil.isEmpty(sourceList)) return Collections.emptyList();
-        List<T> targets = new ArrayList<>(sourceList.size());
-        for (S source : sourceList) {
-            targets.add(copyFast(source, targetClass));
-        }
-        return targets;
+        return copyList(sourceList, targetClass);
     }
 
-    // ======================== Map 互转 ========================
-
     /**
-     * JavaBean → Map（委托给 {@link JsonUtil#toMap(Object)}，基于 Fastjson2 序列化）.
+     * 将 JavaBean 转换为键值 Map。
      *
-     * @param obj 任意 JavaBean
-     * @return 字段名 → 值的 LinkedHashMap，{@code obj} 为 {@code null} 返回 {@code null}
+     * @param object 待转换对象，允许为空
+     * @return 字段名到值的 Map；对象为空时返回 {@code null}
      */
-    public static Map<String, Object> toMap(Object obj) {
-        if (obj == null) return null;
-        return JsonUtil.toMap(obj);
+    public static Map<String, Object> toMap(Object object) {
+        return object == null ? null : JsonUtil.toMap(object);
     }
 
     /**
-     * Map → JavaBean（委托给 {@link JsonUtil#toBean(Map, Class)}）.
+     * 将键值 Map 转换为目标 JavaBean。
      *
-     * @param map   key 为字段名，value 为字段值的 Map
-     * @param clazz 目标类型
-     * @param <T>   目标泛型
-     * @return Bean 实例，{@code map} 为 {@code null} 返回 {@code null}
+     * @param map 字段名到值的 Map，允许为空
+     * @param targetClass 目标类型
+     * @param <T> 目标对象类型
+     * @return 转换后的对象；Map 为空时返回 {@code null}
+     * @throws ReflectionOperationException 目标类型无效时抛出
      */
-    public static <T> T toBean(Map<String, Object> map, Class<T> clazz) {
-        if (map == null) return null;
-        return JsonUtil.toBean(map, clazz);
+    public static <T> T toBean(Map<String, Object> map, Class<T> targetClass) {
+        requireType(targetClass, "targetClass");
+        return map == null ? null : JsonUtil.toBean(map, targetClass);
     }
 
-    // ======================== 实例化 ========================
-
     /**
-     * 通过无参构造器创建实例.
+     * 使用 Spring BeanUtils 创建目标类型实例。
      *
      * @param clazz 目标类型
-     * @param <T>   目标泛型
+     * @param <T> 目标对象类型
      * @return 新实例
-     * @throws RuntimeException 如果没有 public 无参构造器或构造失败
+     * @throws ReflectionOperationException 类型无效或实例化失败时抛出
      */
     public static <T> T newInstance(Class<T> clazz) {
+        requireType(clazz, "clazz");
         try {
-            return clazz.getDeclaredConstructor().newInstance();
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to instantiate " + clazz.getName(), e);
+            return BeanUtils.instantiateClass(clazz);
+        } catch (RuntimeException exception) {
+            throw ReflectionOperationException.instantiationFailed(clazz, exception);
         }
+    }
+
+    /**
+     * 校验目标类型控制参数。
+     *
+     * @param type 待校验类型
+     * @param parameterName 公开参数名称
+     */
+    private static void requireType(Class<?> type, String parameterName) {
+        if (type == null) {
+            throw ReflectionOperationException.invalidArgument(parameterName);
+        }
+    }
+
+    /**
+     * 校验并复制忽略属性数组，避免调用期间被外部修改。
+     *
+     * @param ignoreProperties 调用方属性名称数组
+     * @return 非空属性名称数组副本
+     */
+    private static String[] normalizeIgnoreProperties(String[] ignoreProperties) {
+        if (ignoreProperties == null || ignoreProperties.length == 0) {
+            return new String[0];
+        }
+        String[] copy = ignoreProperties.clone();
+        for (String property : copy) {
+            if (property == null || property.isBlank()) {
+                throw ReflectionOperationException.invalidArgument("ignoreProperties");
+            }
+        }
+        return copy;
     }
 }

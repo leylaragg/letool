@@ -1,98 +1,242 @@
 package com.github.leyland.letool.tool.function;
 
+import com.github.leyland.letool.tool.reflection.ReflectionOperationException;
+import org.springframework.util.ReflectionUtils;
+
 import java.beans.Introspector;
+import java.io.Serializable;
+import java.lang.invoke.MethodHandleInfo;
+import java.lang.invoke.MethodType;
 import java.lang.invoke.SerializedLambda;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.lang.reflect.RecordComponent;
+import java.util.function.Function;
 
 /**
- * Lambda 工具——从方法引用（{@code User::getName}）中解析属性名.
+ * 从可序列化方法引用中解析 JavaBean 或 record 属性名的便捷工具。
  *
- * <h3>原理</h3>
- * <p>通过 JDK 的 {@link SerializedLambda} 机制，在运行时解析 Lambda 表达式的
- * {@code writeReplace} 方法，获取底层实现方法名（如 {@code getName}），
- * 再通过 JavaBeans 规范去掉 {@code get/is} 前缀得到属性名（如 {@code name}）.</p>
+ * <p>支持无参数且非 void 的实例方法引用：标准 {@code getXxx()}、返回 primitive boolean 的
+ * {@code isXxx()}，以及 record 组件访问器。普通 Lambda、静态方法和任意业务方法会被明确拒绝。</p>
  *
- * <h3>使用前提</h3>
- * <p>Lambda 必须实现 {@link SFunction} 接口（继承了 {@link java.io.Serializable}），
- * 因为 {@link SerializedLambda} 仅支持可序列化的 Lambda.</p>
- *
- * <h3>使用示例</h3>
- * <pre>{@code
- * // 获取属性名（类型安全，无需字符串）
- * String name = LambdaUtil.getPropertyName(User::getName);    // → "name"
- * String status = LambdaUtil.getPropertyName(User::getStatus); // → "status"
- *
- * // 配合 Lambda 查询构造器
- * query.eq(User::getName, "张三");     // 等价于 WHERE name = '张三'
- * query.orderByDesc(User::getAge);     // 等价于 ORDER BY age DESC
- * }</pre>
- *
- * <p>注意：此方法有反射开销，结果会被缓存，建议在类型安全的查询构建器中使用.</p>
+ * <p>工具只通过 {@link ClassValue} 缓存 Lambda 类的 {@code writeReplace} 反射入口，每次都解析
+ * 当前函数实例，不缓存 {@link SerializedLambda} 或捕获参数，避免长期持有业务对象。</p>
  */
 public final class LambdaUtil {
 
-    /** SerializedLambda 缓存——key 为 Lambda 类名 */
-    private static final Map<String, SerializedLambda> CACHE = new ConcurrentHashMap<>();
-
-    private LambdaUtil() {}
-
     /**
-     * 从 SFunction（方法引用 Lambda）中提取属性名.
-     *
-     * <p>例如传入 {@code User::getName}，提取字符串 {@code "name"}.</p>
-     *
-     * @param func 可序列化的方法引用（如 {@code User::getName}）
-     * @param <T>  源对象类型
-     * @param <R>  属性类型
-     * @return 属性名（JavaBeans 规范，首字母小写）
-     * @throws RuntimeException 如果 Lambda 解析失败（如传入非序列化 Lambda）
+     * 按 Lambda 生成类缓存序列化入口；ClassValue 不会阻止对应类及其类加载器卸载。
      */
-    public static <T, R> String getPropertyName(SFunction<T, R> func) {
-        SerializedLambda lambda = resolve(func);
-        String methodName = lambda.getImplMethodName();
-        // 校验 "is" 后第一个字符必须大写（JavaBeans 规范），避免误匹配 issueCount、isomorphic 等方法
-        String prefix;
-        if (methodName.startsWith("is") && methodName.length() > 2 && Character.isUpperCase(methodName.charAt(2))) {
-            prefix = "is";
-        } else {
-            prefix = "get";
-        }
-        return Introspector.decapitalize(methodName.substring(prefix.length()));
-    }
+    private static final ClassValue<Method> WRITE_REPLACE_METHODS = new ClassValue<>() {
 
-    /**
-     * 解析 Lambda 表达式为 SerializedLambda 实例.
-     *
-     * <p>通过反射调用 Lambda 对象的 {@code writeReplace} 方法获取序列化信息.
-     * 结果缓存到 ConcurrentHashMap 中，同一类只需解析一次.</p>
-     */
-    @SuppressWarnings("unchecked")
-    private static <T> SerializedLambda resolve(SFunction<T, ?> func) {
-        Class<?> clazz = func.getClass();
-        String name = clazz.getName();
-        return CACHE.computeIfAbsent(name, k -> {
-            try {
-                Method writeReplace = clazz.getDeclaredMethod("writeReplace");
-                writeReplace.setAccessible(true);
-                return (SerializedLambda) writeReplace.invoke(func);
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to resolve lambda", e);
+        /**
+         * 查找并开放 Lambda 类的序列化替换方法。
+         *
+         * @param type Lambda 生成类
+         * @return 可调用的序列化替换方法
+         */
+        @Override
+        protected Method computeValue(Class<?> type) {
+            Method method = ReflectionUtils.findMethod(type, "writeReplace");
+            if (method == null) {
+                throw ReflectionOperationException.lambdaResolutionFailed(type.getName(), null);
             }
-        });
+            try {
+                ReflectionUtils.makeAccessible(method);
+                return method;
+            } catch (RuntimeException exception) {
+                throw ReflectionOperationException.lambdaResolutionFailed(
+                        type.getName(),
+                        exception
+                );
+            }
+        }
+    };
+
+    /** 工具类不允许实例化。 */
+    private LambdaUtil() {
     }
 
     /**
-     * 可序列化的 Function 接口——用于 Lambda 属性名解析.
+     * 从受支持的 Getter 或 record 组件方法引用中提取属性名。
      *
-     * <p>继承 {@link java.util.function.Function} 和 {@link java.io.Serializable}，
-     * 使方法引用（如 {@code User::getName}）生成的 Lambda 对象可序列化，
-     * 从而能被 {@link LambdaUtil#getPropertyName(SFunction)} 解析.</p>
+     * @param function 可序列化实例方法引用
+     * @param <T> 源对象类型
+     * @param <R> 属性值类型
+     * @return 符合 JavaBeans 首字母处理规则的属性名
+     * @throws ReflectionOperationException 参数无效或方法引用不属于受支持的属性访问器时抛出
+     */
+    public static <T, R> String getPropertyName(SFunction<T, R> function) {
+        if (function == null) {
+            throw ReflectionOperationException.invalidArgument("function");
+        }
+        SerializedLambda lambda = resolve(function);
+        String implementation = lambda.getImplClass().replace('/', '.')
+                + "#" + lambda.getImplMethodName();
+
+        try {
+            ClassLoader classLoader = resolveClassLoader(function.getClass());
+            MethodType methodType = MethodType.fromMethodDescriptorString(
+                    lambda.getImplMethodSignature(),
+                    classLoader
+            );
+            Class<?> implementationClass = Class.forName(
+                    lambda.getImplClass().replace('/', '.'),
+                    false,
+                    classLoader
+            );
+            validateInstanceAccessor(lambda, methodType, implementation);
+            return resolvePropertyName(
+                    implementationClass,
+                    lambda.getImplMethodName(),
+                    methodType.returnType(),
+                    implementation
+            );
+        } catch (ReflectionOperationException exception) {
+            throw exception;
+        } catch (ClassNotFoundException | LinkageError | RuntimeException exception) {
+            throw ReflectionOperationException.lambdaResolutionFailed(
+                    implementation,
+                    exception
+            );
+        }
+    }
+
+    /**
+     * 解析当前函数实例的 SerializedLambda，不缓存捕获参数。
      *
-     * @param <T> 输入类型
-     * @param <R> 返回类型
+     * @param function 当前函数实例
+     * @return 当前实例的 Lambda 序列化元数据
+     */
+    private static SerializedLambda resolve(SFunction<?, ?> function) {
+        Class<?> lambdaClass = function.getClass();
+        try {
+            Object resolved = WRITE_REPLACE_METHODS.get(lambdaClass).invoke(function);
+            if (resolved instanceof SerializedLambda serializedLambda) {
+                return serializedLambda;
+            }
+            throw ReflectionOperationException.lambdaResolutionFailed(
+                    lambdaClass.getName(),
+                    new IllegalStateException("writeReplace did not return SerializedLambda")
+            );
+        } catch (ReflectionOperationException exception) {
+            throw exception;
+        } catch (InvocationTargetException exception) {
+            throw ReflectionOperationException.lambdaResolutionFailed(
+                    lambdaClass.getName(),
+                    exception.getTargetException()
+            );
+        } catch (IllegalAccessException | RuntimeException exception) {
+            throw ReflectionOperationException.lambdaResolutionFailed(
+                    lambdaClass.getName(),
+                    exception
+            );
+        }
+    }
+
+    /**
+     * 校验实现方法属于无参数、非 void 的实例调用。
+     *
+     * @param lambda Lambda 序列化元数据
+     * @param methodType 实现方法类型
+     * @param implementation 安全实现方法标识
+     */
+    private static void validateInstanceAccessor(
+            SerializedLambda lambda,
+            MethodType methodType,
+            String implementation) {
+        int methodKind = lambda.getImplMethodKind();
+        boolean instanceInvocation = methodKind == MethodHandleInfo.REF_invokeVirtual
+                || methodKind == MethodHandleInfo.REF_invokeInterface
+                || methodKind == MethodHandleInfo.REF_invokeSpecial;
+        if (!instanceInvocation
+                || methodType.parameterCount() != 0
+                || methodType.returnType() == void.class
+                || lambda.getImplMethodName().startsWith("lambda$")) {
+            throw ReflectionOperationException.lambdaResolutionFailed(implementation, null);
+        }
+    }
+
+    /**
+     * 按 JavaBeans 或 record 规则解析属性名称。
+     *
+     * @param implementationClass 实现方法声明类型
+     * @param methodName 实现方法名称
+     * @param returnType 实现方法返回类型
+     * @param implementation 安全实现方法标识
+     * @return 合法属性名称
+     */
+    private static String resolvePropertyName(
+            Class<?> implementationClass,
+            String methodName,
+            Class<?> returnType,
+            String implementation) {
+        if (methodName.startsWith("get")
+                && methodName.length() > 3
+                && Character.isUpperCase(methodName.charAt(3))
+                && !(implementationClass == Object.class && methodName.equals("getClass"))) {
+            return Introspector.decapitalize(methodName.substring(3));
+        }
+        if (methodName.startsWith("is")
+                && methodName.length() > 2
+                && Character.isUpperCase(methodName.charAt(2))
+                && returnType == boolean.class) {
+            return Introspector.decapitalize(methodName.substring(2));
+        }
+        if (isRecordComponent(implementationClass, methodName, returnType)) {
+            return methodName;
+        }
+        throw ReflectionOperationException.lambdaResolutionFailed(implementation, null);
+    }
+
+    /**
+     * 判断方法是否为指定 record 的组件访问器。
+     *
+     * @param implementationClass 实现方法声明类型
+     * @param methodName 方法名称
+     * @param returnType 方法返回类型
+     * @return 名称和类型均匹配 record 组件时返回 {@code true}
+     */
+    private static boolean isRecordComponent(
+            Class<?> implementationClass,
+            String methodName,
+            Class<?> returnType) {
+        if (!implementationClass.isRecord()) {
+            return false;
+        }
+        for (RecordComponent component : implementationClass.getRecordComponents()) {
+            if (component.getName().equals(methodName)
+                    && component.getType().equals(returnType)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 获取能够同时看到 Lambda 类和实现类的类加载器。
+     *
+     * @param lambdaClass Lambda 生成类
+     * @return 非空类加载器
+     */
+    private static ClassLoader resolveClassLoader(Class<?> lambdaClass) {
+        ClassLoader classLoader = lambdaClass.getClassLoader();
+        if (classLoader == null) {
+            classLoader = Thread.currentThread().getContextClassLoader();
+        }
+        if (classLoader == null) {
+            classLoader = LambdaUtil.class.getClassLoader();
+        }
+        return classLoader;
+    }
+
+    /**
+     * 可序列化 Function，用于让 JDK 生成可解析的 SerializedLambda 元数据。
+     *
+     * @param <T> 输入对象类型
+     * @param <R> 返回属性类型
      */
     @FunctionalInterface
-    public interface SFunction<T, R> extends java.util.function.Function<T, R>, java.io.Serializable {}
+    public interface SFunction<T, R> extends Function<T, R>, Serializable {
+    }
 }

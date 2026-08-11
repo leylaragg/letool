@@ -3,8 +3,8 @@
 ## 模块简介
 
 `letool-starter-tool` 是 letool 的通用工具模块，为其他模块提供 JSON 序列化、HTTP 请求、
-Redis 操作、分布式 ID、树形结构、字符串、集合、日期时间、Bean 拷贝、统一响应体、
-分页模型及 Spring 容器辅助能力。统一异常和国际化由独立的
+Redis 操作、分布式 ID、树形结构、字符串、集合、日期时间、Bean 拷贝、反射访问、类扫描、
+Lambda 属性解析、统一响应体、分页模型及 Spring 容器辅助能力。统一异常和国际化由独立的
 [`letool-starter-exception`](../letool-starter-exception/README.md) 模块提供；tool 模块依赖该基础模块，
 但不再自行维护异常体系。
 
@@ -427,22 +427,115 @@ ZonedDateTime endExclusive = DateUtil.startOfNextDay(date, zoneId);
   `[startOfDay(date), startOfNextDay(date))`。
 - 无时区的 Date、时间戳转换仍使用系统默认时区；跨系统业务应迁移到带 `ZoneId` 的重载。
 
-### 11. Bean 拷贝 BeanUtil
+### 11. Bean 与反射工具组
+
+#### BeanUtil
 
 ```java
-// 单次拷贝（反射）
+// 基于 Spring BeanUtils 的标准属性拷贝
 UserVO vo = BeanUtil.copy(user, UserVO.class);
 
-// 高性能批量拷贝（CGLIB BeanCopier，字节码生成，避免反射）
-List<UserVO> vos = BeanUtil.copyListFast(users, UserVO.class);
+// 忽略主键和审计属性
+UserVO safe = BeanUtil.copy(user, UserVO.class, "id", "createdAt");
 
-// 原地拷贝
-BeanUtil.copyProperties(source, target);
+// 无默认构造器或受控对象通过 Supplier 创建
+UserVO supplied = BeanUtil.copy(user, () -> new UserVO(defaultStatus));
+
+// 批量拷贝保持输入顺序和 null 元素位置，返回可修改的新列表
+List<UserVO> vos = BeanUtil.copyList(users, UserVO.class);
 
 // Map 互转
 Map<String, Object> map = BeanUtil.toMap(user);
 User user = BeanUtil.toBean(map, User.class);
 ```
+
+`copyFast` 和 `copyListFast` 已标记废弃并委托标准拷贝路径，不再维护可能持有类加载器的 CGLIB
+`BeanCopier` 缓存。高频且类型固定的大规模映射应使用 MapStruct 等编译期映射方案。
+
+#### ReflectUtil
+
+```java
+// 预期字段可能不存在时使用 Optional
+Optional<Field> field = ReflectUtil.findField(User.class, "nickname");
+
+// 业务要求字段必须存在时使用严格入口
+Field idField = ReflectUtil.requireField(User.class, "id");
+ReflectUtil.setFieldValue(user, "nickname", "小李");
+String nickname = ReflectUtil.getFieldValue(user, "nickname");
+
+// 自动处理基本类型包装、父类型参数和唯一的最接近重载
+String result = ReflectUtil.invokeMethod(service, "handle", request);
+
+// null 参数或重载存在歧义时，先显式选择方法再调用
+Method method = ReflectUtil.requireMethod(Service.class, "handle", String.class);
+String explicit = ReflectUtil.invokeMethod(service, method, new Object[]{null});
+
+// 从指定泛型接口解析类型
+Class<?> entityType = ReflectUtil.resolveTypeArgument(
+        UserRepository.class,
+        Repository.class,
+        0
+).orElse(Object.class);
+```
+
+类、字段和方法注解查询使用 Spring 合并注解语义，能够识别组合注解和元注解。查询型接口使用
+`Optional` 表达正常缺失；写入、调用和 `requireXxx` 等命令型接口遇到空目标或缺失成员时快速失败。
+
+#### ClassUtil
+
+```java
+// 只读取 ASM 元数据，不加载候选类
+List<String> classNames = ClassUtil.scanClassNames("com.example.handler");
+
+// 加载类型定义，但不会执行静态初始化块
+List<Class<?>> classes = ClassUtil.scan("com.example.handler");
+
+// 注解扫描支持元注解，接口扫描只返回具体实现类
+List<Class<?>> components = ClassUtil.scanByAnnotation(
+        "com.example.handler",
+        Component.class
+);
+List<Class<? extends DataHandler>> handlers = ClassUtil.scanByInterface(
+        "com.example.handler",
+        DataHandler.class
+);
+```
+
+所有扫描结果按类名去重并稳定排序。插件、热部署或容器环境应使用带 `ClassLoader` 的重载，确保资源
+扫描和类型加载使用同一类加载器。可读候选的元数据解析失败或匹配类型无法加载时会快速失败，不会
+返回难以判断完整性的部分结果。
+
+#### LambdaUtil
+
+```java
+String name = LambdaUtil.getPropertyName(User::getName);
+String active = LambdaUtil.getPropertyName(User::isActive);
+String recordName = LambdaUtil.getPropertyName(UserRecord::name);
+```
+
+仅支持标准 `getXxx()`、返回 primitive `boolean` 的 `isXxx()` 和 record 组件访问器。普通 Lambda、
+静态方法及任意业务方法不会被猜测为属性。工具只缓存 Lambda 类的 `writeReplace` 反射入口，不缓存
+`SerializedLambda` 或捕获参数。
+
+稳定错误码如下：
+
+| 错误码 | 含义 |
+|---|---|
+| `TOOL_REFLECTION_001` | 必填参数或调用契约无效 |
+| `TOOL_REFLECTION_002` | 字段、方法不存在或重载存在歧义 |
+| `TOOL_REFLECTION_003` | 字段或 Bean 属性访问失败 |
+| `TOOL_REFLECTION_004` | 目标方法调用失败 |
+| `TOOL_REFLECTION_005` | Bean 或目标类型实例化失败 |
+| `TOOL_REFLECTION_006` | 类路径扫描或候选类加载失败 |
+| `TOOL_REFLECTION_007` | Lambda 属性解析失败 |
+
+**2.0 迁移说明**
+
+- `copyFast`、`copyListFast` 已废弃；迁移到标准拷贝，性能敏感场景迁移到编译期映射方案。
+- 命令型反射操作不再对空目标静默返回，统一抛出 `ReflectionOperationException`。
+- `invokeMethod` 现在使用 Spring 类型匹配并拒绝同权重歧义；歧义调用需要显式传入 `Method`。
+- Class 扫描结果改为不可修改、稳定排序的完整快照，且不再触发候选类静态初始化。
+- 非 Getter Lambda 不再返回错误字符串，而是通过稳定错误码明确拒绝。
 
 ### 12. Spring 容器工具 SpringUtil
 
