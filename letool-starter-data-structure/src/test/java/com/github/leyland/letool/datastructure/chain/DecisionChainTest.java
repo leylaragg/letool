@@ -1,181 +1,143 @@
 package com.github.leyland.letool.datastructure.chain;
 
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
+import com.github.leyland.letool.datastructure.exception.DataStructureErrorCode;
+import com.github.leyland.letool.datastructure.exception.DataStructureException;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@DisplayName("决策链测试")
+/**
+ * 决策链顺序、快照、安全异常和回调边界测试。
+ */
 class DecisionChainTest {
 
-    @Nested
-    @DisplayName("基本匹配")
-    class BasicMatching {
+    /**
+     * 验证决策链按顺序执行首个命中规则，并公开安全诊断信息。
+     */
+    @Test
+    void shouldExecuteFirstMatchAndReportDiagnostics() {
+        DecisionChain<Integer, String> chain = DecisionChain.<Integer, String>builder()
+                .when(number -> number > 10, number -> "大于10")
+                .when(number -> number > 5, number -> "大于5")
+                .otherwise(number -> "默认")
+                .build();
 
-        @Test
-        @DisplayName("首个条件命中则执行对应动作")
-        void firstMatch() {
-            DecisionChain<Integer, String> chain = DecisionChain.<Integer, String>builder()
-                    .when(n -> n > 10, n -> "大于10")
-                    .when(n -> n > 5,  n -> "大于5")
-                    .otherwise(n -> "默认")
-                    .build();
+        assertEquals("大于10", chain.execute(15));
+        assertEquals("大于5", chain.execute(7));
+        assertEquals("默认", chain.execute(3));
+        assertEquals(3, chain.size());
+        assertTrue(chain.hasDefault());
+    }
 
-            assertEquals("大于10", chain.execute(15));
-        }
+    /**
+     * 验证已构建决策链与构建器后续规则变更隔离。
+     */
+    @Test
+    void shouldIsolateBuiltChainFromBuilderChanges() {
+        DecisionChainBuilder<Integer, String> builder = DecisionChain.<Integer, String>builder()
+                .when(number -> number > 10, number -> "大于10");
+        DecisionChain<Integer, String> firstChain = builder.build();
+        builder.when(number -> number > 5, number -> "大于5");
 
-        @Test
-        @DisplayName("第二个条件命中时跳过第一个")
-        void secondMatch() {
-            DecisionChain<Integer, String> chain = DecisionChain.<Integer, String>builder()
-                    .when(n -> n > 10, n -> "大于10")
-                    .when(n -> n > 5,  n -> "大于5")
-                    .otherwise(n -> "默认")
-                    .build();
+        assertEquals(1, firstChain.size());
+        assertFalse(firstChain.hasDefault());
+        assertEquals(2, builder.build().size());
+    }
 
-            assertEquals("大于5", chain.execute(7));
-        }
+    /**
+     * 验证未命中时使用稳定错误码，并且异常消息不输出业务上下文。
+     */
+    @Test
+    void shouldFailWithoutLeakingContextWhenNoRuleMatches() {
+        DecisionChain<SecretContext, String> chain = DecisionChain
+                .<SecretContext, String>builder()
+                .when(context -> false, context -> "never")
+                .build();
 
-        @Test
-        @DisplayName("无条件命中时走 otherwise 兜底")
-        void otherwise() {
-            DecisionChain<Integer, String> chain = DecisionChain.<Integer, String>builder()
-                    .when(n -> n > 10, n -> "大于10")
-                    .otherwise(n -> "默认")
-                    .build();
+        DataStructureException exception = assertThrows(
+                DataStructureException.class,
+                () -> chain.execute(new SecretContext())
+        );
 
-            assertEquals("默认", chain.execute(3));
-        }
+        assertEquals(DataStructureErrorCode.DECISION_NOT_MATCHED, exception.getErrorCode());
+        assertFalse(exception.getMessage().contains("SECRET-CONTEXT"));
+    }
 
-        @Test
-        @DisplayName("未设置 otherwise 时抛出包含上下文的异常")
-        void noOtherwiseThrowsWithContext() {
-            DecisionChain<Integer, String> chain = DecisionChain.<Integer, String>builder()
-                    .when(n -> n > 10, n -> "大于10")
-                    .build();
+    /**
+     * 验证构建器非法状态统一进入稳定参数错误。
+     */
+    @Test
+    void shouldRejectInvalidBuilderStateWithStableError() {
+        DataStructureException empty = assertThrows(
+                DataStructureException.class,
+                () -> DecisionChain.builder().build()
+        );
+        DataStructureException missingCondition = assertThrows(
+                DataStructureException.class,
+                () -> DecisionChain.<Integer, String>builder().when(null, value -> "value")
+        );
+        DataStructureException duplicateDefault = assertThrows(
+                DataStructureException.class,
+                () -> DecisionChain.<Integer, String>builder()
+                        .otherwise(value -> "first")
+                        .otherwise(value -> "second")
+        );
+        DataStructureException unreachableRule = assertThrows(
+                DataStructureException.class,
+                () -> DecisionChain.<Integer, String>builder()
+                        .otherwise(value -> "default")
+                        .when(value -> true, value -> "unreachable")
+        );
 
-            IllegalStateException exception = assertThrows(
-                    IllegalStateException.class,
-                    () -> chain.execute(5));
-            assertEquals(
-                    "No matching rule found in decision chain for context: 5",
-                    exception.getMessage());
+        assertEquals(DataStructureErrorCode.INVALID_ARGUMENT, empty.getErrorCode());
+        assertEquals(DataStructureErrorCode.INVALID_ARGUMENT, missingCondition.getErrorCode());
+        assertEquals(DataStructureErrorCode.INVALID_ARGUMENT, duplicateDefault.getErrorCode());
+        assertEquals(DataStructureErrorCode.INVALID_ARGUMENT, unreachableRule.getErrorCode());
+    }
+
+    /**
+     * 验证用户动作异常保持原始类型和实例，不被注册框架无差别包装。
+     */
+    @Test
+    void shouldPropagateCallbackFailureWithoutWrapping() {
+        BusinessFailure failure = new BusinessFailure();
+        DecisionChain<Integer, String> chain = DecisionChain.<Integer, String>builder()
+                .otherwise(value -> {
+                    throw failure;
+                })
+                .build();
+
+        BusinessFailure actual = assertThrows(BusinessFailure.class, () -> chain.execute(1));
+
+        assertSame(failure, actual);
+    }
+
+    /**
+     * 用于验证异常消息不会调用或输出业务上下文。
+     */
+    private static final class SecretContext {
+
+        /**
+         * 返回模拟敏感内容。
+         *
+         * @return 模拟敏感上下文
+         */
+        @Override
+        public String toString() {
+            return "SECRET-CONTEXT";
         }
     }
 
-    @Nested
-    @DisplayName("构建器校验")
-    class BuilderValidation {
+    /**
+     * 模拟业务回调主动抛出的异常。
+     */
+    private static final class BusinessFailure extends RuntimeException {
 
-        @Test
-        @DisplayName("空规则时抛异常")
-        void emptyThrows() {
-            assertThrows(IllegalStateException.class,
-                    () -> DecisionChain.builder().build());
-        }
-
-        @Test
-        @DisplayName("重复设置 otherwise 抛异常")
-        void doubleOtherwiseThrows() {
-            assertThrows(IllegalStateException.class, () ->
-                    DecisionChain.<Integer, String>builder()
-                            .otherwise(n -> "a")
-                            .otherwise(n -> "b"));
-        }
-
-        @Test
-        @DisplayName("otherwise 之后继续添加 when 时抛异常")
-        void whenAfterOtherwiseThrows() {
-            DecisionChainBuilder<Integer, String> builder =
-                    DecisionChain.<Integer, String>builder()
-                            .otherwise(n -> "默认");
-
-            IllegalStateException exception = assertThrows(
-                    IllegalStateException.class,
-                    () -> builder.when(n -> n > 0, n -> "正数"));
-
-            assertEquals("when cannot be added after otherwise", exception.getMessage());
-        }
-
-        @Test
-        @DisplayName("when 条件为空时立即抛异常")
-        void nullConditionThrows() {
-            NullPointerException exception = assertThrows(
-                    NullPointerException.class,
-                    () -> DecisionChain.<Integer, String>builder()
-                            .when(null, n -> "结果"));
-
-            assertEquals("condition must not be null", exception.getMessage());
-        }
-    }
-
-    @Nested
-    @DisplayName("静态工厂")
-    class StaticFactory {
-
-        @Test
-        @DisplayName("of 创建单规则链")
-        void of() {
-            DecisionChain<Integer, String> chain = DecisionChain.of(n -> "结果:" + n);
-            assertEquals("结果:42", chain.execute(42));
-        }
-    }
-
-    @Nested
-    @DisplayName("实际业务场景")
-    class BusinessScenarios {
-
-        static class Order {
-            private final int amount;
-            private final boolean vip;
-
-            Order(int amount, boolean vip) {
-                this.amount = amount;
-                this.vip = vip;
-            }
-
-            int getAmount() { return amount; }
-            boolean isVip() { return vip; }
-        }
-
-        @Test
-        @DisplayName("订单路由——VIP 大额")
-        void orderRoutingVipLarge() {
-            DecisionChain<Order, String> chain = DecisionChain.<Order, String>builder()
-                    .when(o -> o.isVip() && o.getAmount() > 1000, o -> "VIP大额订单")
-                    .when(o -> o.isVip(),                          o -> "VIP普通订单")
-                    .when(o -> o.getAmount() > 5000,               o -> "大额订单")
-                    .otherwise(o -> "普通订单")
-                    .build();
-
-            assertEquals("VIP大额订单", chain.execute(new Order(2000, true)));
-        }
-
-        @Test
-        @DisplayName("订单路由——非VIP大额")
-        void orderRoutingLarge() {
-            DecisionChain<Order, String> chain = DecisionChain.<Order, String>builder()
-                    .when(o -> o.isVip() && o.getAmount() > 1000, o -> "VIP大额订单")
-                    .when(o -> o.isVip(),                          o -> "VIP普通订单")
-                    .when(o -> o.getAmount() > 5000,               o -> "大额订单")
-                    .otherwise(o -> "普通订单")
-                    .build();
-
-            assertEquals("大额订单", chain.execute(new Order(6000, false)));
-        }
-
-        @Test
-        @DisplayName("订单路由——默认")
-        void orderRoutingDefault() {
-            DecisionChain<Order, String> chain = DecisionChain.<Order, String>builder()
-                    .when(o -> o.isVip() && o.getAmount() > 1000, o -> "VIP大额订单")
-                    .when(o -> o.isVip(),                          o -> "VIP普通订单")
-                    .when(o -> o.getAmount() > 5000,               o -> "大额订单")
-                    .otherwise(o -> "普通订单")
-                    .build();
-
-            assertEquals("普通订单", chain.execute(new Order(100, false)));
-        }
+        /** 序列化版本。 */
+        private static final long serialVersionUID = 1L;
     }
 }

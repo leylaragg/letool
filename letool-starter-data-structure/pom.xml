@@ -11,29 +11,17 @@
 
     <artifactId>letool-starter-data-structure</artifactId>
     <name>letool-starter-data-structure</name>
-    <description>letool 数据结构模块 —— 泛型树/TreeNode、决策链/规则链（消除if-else）、链表/双向链表</description>
+    <description>letool 业务结构模块 —— 提供树、链表、决策链和不可变策略注册表等纯 Java 能力</description>
     <packaging>jar</packaging>
 
     <dependencies>
+        <!-- 数据结构失败统一使用基础异常协议，不依赖 tool 或 Spring 运行时。 -->
         <dependency>
             <groupId>com.github.leyland</groupId>
-            <artifactId>letool-starter-tool</artifactId>
+            <artifactId>letool-starter-exception</artifactId>
         </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter</artifactId>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-autoconfigure</artifactId>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-api</artifactId>
-            <scope>provided</scope>
-        </dependency>
+
+        <!-- 仅测试阶段使用 JUnit 5 等测试基础设施。 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
