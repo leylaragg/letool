@@ -101,9 +101,9 @@
         <javassist.version>3.31.0-GA</javassist.version>
 
         <!-- 核心工具库 -->
-        <hutool.version>5.8.35</hutool.version>
         <fastjson2.version>2.0.53</fastjson2.version>
         <guava.version>33.4.0-jre</guava.version>
+        <resilience4j.version>2.4.0</resilience4j.version>
         <slf4j.version>2.0.16</slf4j.version>
 
         <!-- 缓存 -->
@@ -386,11 +386,6 @@
 
             <!-- 核心工具库 -->
             <dependency>
-                <groupId>cn.hutool</groupId>
-                <artifactId>hutool-all</artifactId>
-                <version>${hutool.version}</version>
-            </dependency>
-            <dependency>
                 <groupId>com.alibaba.fastjson2</groupId>
                 <artifactId>fastjson2</artifactId>
                 <version>${fastjson2.version}</version>
@@ -399,6 +394,16 @@
                 <groupId>com.google.guava</groupId>
                 <artifactId>guava</artifactId>
                 <version>${guava.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.resilience4j</groupId>
+                <artifactId>resilience4j-core</artifactId>
+                <version>${resilience4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.resilience4j</groupId>
+                <artifactId>resilience4j-retry</artifactId>
+                <version>${resilience4j.version}</version>
             </dependency>
 
             <!-- 缓存 -->

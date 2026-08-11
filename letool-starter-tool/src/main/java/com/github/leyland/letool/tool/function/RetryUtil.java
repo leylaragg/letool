@@ -1,191 +1,213 @@
 package com.github.leyland.letool.tool.function;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import io.github.resilience4j.retry.MaxRetriesExceededException;
+import io.github.resilience4j.retry.Retry;
+import io.github.resilience4j.retry.RetryConfig;
 
+import java.time.Duration;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 
 /**
- * 重试工具——支持固定间隔重试、指数退避重试、按返回结果重试.
+ * 基于 Resilience4j Retry 的同步重试便捷工具。
  *
- * <h3>三种重试策略</h3>
- * <table>
- *   <tr><th>方法</th><th>策略</th><th>适用场景</th></tr>
- *   <tr><td>{@link #retry(Callable, int, long)}</td><td>固定间隔</td><td>临时故障（如网络抖动）</td></tr>
- *   <tr><td>{@link #retryExponential(Callable, int, long)}</td><td>指数退避</td><td>服务过载、限流恢复</td></tr>
- *   <tr><td>{@link #retryByResult(Callable, int, long, Predicate)}</td><td>按结果判断</td><td>异步结果轮询、状态等待</td></tr>
- * </table>
- *
- * <h3>使用示例</h3>
- * <pre>{@code
- * // 简单重试：最多 3 次，每次间隔 500ms
- * String result = RetryUtil.retry(() -> httpClient.get(url), 3, 500);
- *
- * // 指数退避：基础 100ms，每次翻倍（100, 200, 400, 800...）
- * String result = RetryUtil.retryExponential(() -> db.query(sql), 5, 100);
- *
- * // 按返回值判断是否重试（如轮询异步任务状态）
- * JobStatus status = RetryUtil.retryByResult(
- *     () -> jobService.getStatus(jobId),
- *     10, 2000,
- *     s -> s == JobStatus.RUNNING   // 仍在运行中 → 继续等待
- * );
- *
- * // 按异常类型判断是否重试（只重试连接异常，不重试业务异常）
- * String result = RetryUtil.retry(
- *     () -> api.call(),
- *     3, 1000,
- *     e -> e instanceof java.net.ConnectException
- * );
- * }</pre>
+ * <p>Letool 负责参数契约、统一异常和线程中断语义，实际重试循环与等待由成熟框架执行。
+ * 工具不会记录任务返回值、异常消息或业务参数。</p>
  */
 public final class RetryUtil {
 
-    private static final Logger log = LoggerFactory.getLogger(RetryUtil.class);
+    /** Resilience4j 内部实例名称，不包含业务动态信息。 */
+    private static final String RETRY_NAME = "letool-retry";
 
-    private RetryUtil() {}
-
-    // ======================== 固定间隔重试 ========================
-
-    /**
-     * 固定间隔重试——所有异常均触发重试.
-     *
-     * @param task       待执行任务
-     * @param maxRetries 最大重试次数（总执行次数 = maxRetries + 1）
-     * @param intervalMs 重试间隔（毫秒）
-     * @param <T>        返回值类型
-     * @return 任务执行结果
-     * @throws RuntimeException 如果重试耗尽后仍然失败（包裹最后一次异常）
-     */
-    public static <T> T retry(Callable<T> task, int maxRetries, long intervalMs) {
-        return retry(task, maxRetries, intervalMs, e -> true);
+    /** 工具类不允许实例化。 */
+    private RetryUtil() {
     }
 
     /**
-     * 固定间隔重试——仅指定异常类型触发重试.
+     * 使用指定策略同步执行可返回结果的任务。
      *
-     * @param task       待执行任务
-     * @param maxRetries 最大重试次数
-     * @param intervalMs 重试间隔（毫秒）
-     * @param retryOn    异常过滤器（返回 {@code true} 才重试）
-     * @param <T>        返回值类型
-     * @return 任务执行结果
-     * @throws RuntimeException 如果重试耗尽后仍然失败
+     * @param task 待执行任务
+     * @param policy 不可变重试策略
+     * @param <T> 任务返回值类型
+     * @return 首个不再满足重试条件的任务结果
+     * @throws RetryOperationException 参数无效、任务失败、次数耗尽或线程中断时抛出
      */
-    public static <T> T retry(Callable<T> task, int maxRetries, long intervalMs,
-                              Predicate<Exception> retryOn) {
-        Exception last = null;
-        for (int i = 0; i <= maxRetries; i++) {
-            try {
-                return task.call();
-            } catch (Exception e) {
-                last = e;
-                if (i < maxRetries && retryOn.test(e)) {
-                    log.debug("Retry {}/{} after {}ms: {}", i + 1, maxRetries, intervalMs, e.getMessage());
-                    sleep(intervalMs);
-                } else {
-                    break;
-                }
-            }
+    public static <T> T execute(Callable<T> task, RetryPolicy<T> policy) {
+        if (task == null) {
+            throw RetryOperationException.invalidArgument("task");
         }
-        throw new RuntimeException("Failed after " + maxRetries + " retries", last);
-    }
-
-    // ======================== 指数退避重试 ========================
-
-    /**
-     * 指数退避重试——间隔时间按倍数递增（baseMs × multiplier⁰, baseMs × multiplier¹, ...）.
-     *
-     * <p>默认 multiplier = 2.0，即 100ms → 200ms → 400ms → 800ms...</p>
-     *
-     * @param task       待执行任务
-     * @param maxRetries 最大重试次数
-     * @param baseMs     基础间隔（毫秒）
-     * @param <T>        返回值类型
-     * @return 任务执行结果
-     * @throws RuntimeException 如果重试耗尽后仍然失败
-     */
-    public static <T> T retryExponential(Callable<T> task, int maxRetries, long baseMs) {
-        return retryExponential(task, maxRetries, baseMs, 2.0);
-    }
-
-    /**
-     * 指数退避重试——自定义倍数.
-     *
-     * @param task       待执行任务
-     * @param maxRetries 最大重试次数
-     * @param baseMs     基础间隔（毫秒）
-     * @param multiplier 退避倍数（通常 1.5 ~ 2.0）
-     * @param <T>        返回值类型
-     * @return 任务执行结果
-     * @throws RuntimeException 如果重试耗尽后仍然失败
-     */
-    public static <T> T retryExponential(Callable<T> task, int maxRetries, long baseMs, double multiplier) {
-        Exception last = null;
-        for (int i = 0; i <= maxRetries; i++) {
-            try {
-                return task.call();
-            } catch (Exception e) {
-                last = e;
-                if (i < maxRetries) {
-                    long delay = (long) (baseMs * Math.pow(multiplier, i));
-                    log.debug("Retry {}/{} after {}ms (exponential): {}", i + 1, maxRetries, delay, e.getMessage());
-                    sleep(delay);
-                }
-            }
+        if (policy == null) {
+            throw RetryOperationException.invalidArgument("policy");
         }
-        throw new RuntimeException("Failed after " + maxRetries + " exponential retries", last);
-    }
 
-    // ======================== 按结果重试 ========================
+        AtomicInteger attempts = new AtomicInteger();
+        AtomicBoolean lastFailureRetryable = new AtomicBoolean();
+        AtomicBoolean resultPredicateFailed = new AtomicBoolean();
+        RetryConfig retryConfig = RetryConfig.<T>custom()
+                .maxAttempts(policy.maxAttempts())
+                .intervalFunction(policy.intervalFunction())
+                .retryOnException(throwable -> {
+                    lastFailureRetryable.set(false);
+                    // 结果判断器属于策略代码，其自身失败时不得重复执行业务任务。
+                    if (resultPredicateFailed.getAndSet(false)) {
+                        return false;
+                    }
+                    boolean retryable = !isInterruption(throwable)
+                            && policy.retryOnException().test(throwable);
+                    lastFailureRetryable.set(retryable);
+                    return retryable;
+                })
+                .retryOnResult(result -> {
+                    resultPredicateFailed.set(false);
+                    try {
+                        return policy.retryOnResult().test(result);
+                    } catch (RuntimeException exception) {
+                        resultPredicateFailed.set(true);
+                        throw exception;
+                    }
+                })
+                .failAfterMaxAttempts(true)
+                .build();
+        Retry retry = Retry.of(RETRY_NAME, retryConfig);
 
-    /**
-     * 按返回结果判断是否需要重试.
-     *
-     * <p>适用场景：轮询异步任务状态，直到任务完成或不再匹配重试条件.</p>
-     *
-     * @param task        待执行任务
-     * @param maxRetries  最大重试次数
-     * @param intervalMs  重试间隔（毫秒）
-     * @param shouldRetry 返回值判断器（返回 {@code true} 则继续重试）
-     * @param <T>         返回值类型
-     * @return 任务执行结果（最后一次执行的结果）
-     * @throws RuntimeException 如果重试耗尽后仍然需要重试
-     */
-    public static <T> T retryByResult(Callable<T> task, int maxRetries, long intervalMs,
-                                      Predicate<T> shouldRetry) {
-        Exception last = null;
-        for (int i = 0; i <= maxRetries; i++) {
-            try {
-                T result = task.call();
-                if (i < maxRetries && shouldRetry.test(result)) {
-                    log.debug("Retry {}/{} due to result: {}", i + 1, maxRetries, result);
-                    sleep(intervalMs);
-                } else {
-                    return result;
-                }
-            } catch (Exception e) {
-                last = e;
-                if (i < maxRetries) {
-                    sleep(intervalMs);
-                }
-            }
-        }
-        if (last != null) throw new RuntimeException("Failed after " + maxRetries + " retries", last);
-        throw new RuntimeException("Failed after " + maxRetries + " retries with no exception");
-    }
-
-    /**
-     * 线程休眠，捕获并恢复中断状态.
-     *
-     * @param ms 休眠毫秒数
-     */
-    private static void sleep(long ms) {
         try {
-            Thread.sleep(ms);
-        } catch (InterruptedException e) {
+            return retry.executeCallable(() -> {
+                attempts.incrementAndGet();
+                return task.call();
+            });
+        } catch (MaxRetriesExceededException exception) {
+            throw RetryOperationException.exhausted(attempts.get(), exception);
+        } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
+            throw RetryOperationException.interrupted(attempts.get(), exception);
+        } catch (Exception exception) {
+            if (Thread.currentThread().isInterrupted() || isInterruption(exception)) {
+                Thread.currentThread().interrupt();
+                throw RetryOperationException.interrupted(attempts.get(), exception);
+            }
+            if (attempts.get() >= policy.maxAttempts() && lastFailureRetryable.get()) {
+                throw RetryOperationException.exhausted(attempts.get(), exception);
+            }
+            throw RetryOperationException.executionFailed(attempts.get(), exception);
         }
+    }
+
+    /**
+     * 使用固定等待时间和默认异常条件执行重试。
+     *
+     * <p>默认情况下，除线程中断和显式取消外，其他异常都会触发重试。</p>
+     *
+     * @param task 待执行任务
+     * @param maxAttempts 包含首次调用在内的最大尝试次数
+     * @param delay 每次重试前的固定等待时间
+     * @param <T> 任务返回值类型
+     * @return 首个成功执行的任务结果
+     * @throws RetryOperationException 参数无效、任务失败、次数耗尽或线程中断时抛出
+     */
+    public static <T> T retry(
+            Callable<T> task,
+            int maxAttempts,
+            Duration delay) {
+        return retry(task, maxAttempts, delay, throwable -> true);
+    }
+
+    /**
+     * 使用固定等待时间和指定异常条件执行重试。
+     *
+     * @param task 待执行任务
+     * @param maxAttempts 包含首次调用在内的最大尝试次数
+     * @param delay 每次重试前的固定等待时间
+     * @param retryOnException 异常重试条件，返回 {@code true} 时允许重试
+     * @param <T> 任务返回值类型
+     * @return 首个成功执行的任务结果
+     * @throws RetryOperationException 参数无效、任务失败、次数耗尽或线程中断时抛出
+     */
+    public static <T> T retry(
+            Callable<T> task,
+            int maxAttempts,
+            Duration delay,
+            Predicate<Throwable> retryOnException) {
+        RetryPolicy<T> policy = RetryPolicy.<T>builder()
+                .maxAttempts(maxAttempts)
+                .fixedDelay(delay)
+                .retryOnException(retryOnException)
+                .build();
+        return execute(task, policy);
+    }
+
+    /**
+     * 使用带最大等待上限的指数退避策略执行重试。
+     *
+     * <p>默认情况下，除线程中断和显式取消外，其他异常都会触发重试。</p>
+     *
+     * @param task 待执行任务
+     * @param maxAttempts 包含首次调用在内的最大尝试次数
+     * @param initialDelay 首次重试前的正等待时间
+     * @param multiplier 每次递增倍数，必须为大于一的有限值
+     * @param maxDelay 单次等待上限，不得小于初始等待时间
+     * @param <T> 任务返回值类型
+     * @return 首个成功执行的任务结果
+     * @throws RetryOperationException 参数无效、任务失败、次数耗尽或线程中断时抛出
+     */
+    public static <T> T retryExponential(
+            Callable<T> task,
+            int maxAttempts,
+            Duration initialDelay,
+            double multiplier,
+            Duration maxDelay) {
+        RetryPolicy<T> policy = RetryPolicy.<T>builder()
+                .maxAttempts(maxAttempts)
+                .exponentialBackoff(initialDelay, multiplier, maxDelay)
+                .build();
+        return execute(task, policy);
+    }
+
+    /**
+     * 使用固定等待时间按任务结果执行重试。
+     *
+     * <p>结果条件返回 {@code true} 表示当前结果尚不可接受，需要继续执行任务。</p>
+     *
+     * @param task 待执行任务
+     * @param maxAttempts 包含首次调用在内的最大尝试次数
+     * @param delay 每次重试前的固定等待时间
+     * @param retryOnResult 结果重试条件，返回 {@code true} 时允许重试
+     * @param <T> 任务返回值类型
+     * @return 首个不再满足重试条件的任务结果
+     * @throws RetryOperationException 参数无效、任务失败、次数耗尽或线程中断时抛出
+     */
+    public static <T> T retryByResult(
+            Callable<T> task,
+            int maxAttempts,
+            Duration delay,
+            Predicate<T> retryOnResult) {
+        RetryPolicy<T> policy = RetryPolicy.<T>builder()
+                .maxAttempts(maxAttempts)
+                .fixedDelay(delay)
+                .retryOnResult(retryOnResult)
+                .build();
+        return execute(task, policy);
+    }
+
+    /**
+     * 判断异常原因链是否表示线程中断或显式取消。
+     *
+     * <p>原因链遍历设置深度上限，避免第三方异常构造循环原因链后导致工具无法返回。</p>
+     *
+     * @param throwable 待检查异常
+     * @return 原因链包含中断或取消异常时返回 {@code true}
+     */
+    private static boolean isInterruption(Throwable throwable) {
+        Throwable current = throwable;
+        for (int depth = 0; current != null && depth < 32; depth++) {
+            if (current instanceof InterruptedException
+                    || current instanceof CancellationException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 }

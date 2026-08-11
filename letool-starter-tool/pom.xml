@@ -52,12 +52,6 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- Hutool 工具集 -->
-        <dependency>
-            <groupId>cn.hutool</groupId>
-            <artifactId>hutool-all</artifactId>
-        </dependency>
-
         <!-- Fastjson2 JSON 序列化 -->
         <dependency>
             <groupId>com.alibaba.fastjson2</groupId>
@@ -69,6 +63,12 @@
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
             <optional>true</optional>
+        </dependency>
+
+        <!-- 同步重试引擎：Letool 仅提供便捷策略和统一异常门面 -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-retry</artifactId>
         </dependency>
 
         <!-- Redis（可选依赖） -->

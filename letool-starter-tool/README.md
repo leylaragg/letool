@@ -492,7 +492,66 @@ String name = SpelUtil.evalSafe("name", user, String.class);
 模板现在遵循 Spring 原生 `#{...}` 语法；旧版 Map 变量占位符 `#{name}` 需要迁移为
 `#{#name}`。
 
-### 14. 分页结果 PageResult
+### 14. 重试工具 RetryUtil
+
+`RetryUtil` 使用 Resilience4j Retry 执行同步重试，Letool 负责提供类型安全的策略、便捷入口、
+参数校验和统一异常。常用的固定等待可以直接调用：
+
+```java
+String result = RetryUtil.retry(
+        () -> remoteClient.query(orderNo),
+        3,
+        Duration.ofMillis(200),
+        throwable -> throwable instanceof IOException
+);
+```
+
+`maxAttempts` 包含首次调用。上例最多执行三次任务，而不是首次调用后再重试三次。
+需要指数退避、随机抖动或按结果重试时，可以创建不可变策略：
+
+```java
+RetryPolicy<JobStatus> policy = RetryPolicy.<JobStatus>builder()
+        .maxAttempts(5)
+        .exponentialRandomBackoff(
+                Duration.ofMillis(100),
+                2.0,
+                0.5,
+                Duration.ofSeconds(2))
+        .retryOnException(throwable -> throwable instanceof IOException)
+        .retryOnResult(status -> status == JobStatus.RUNNING)
+        .build();
+
+JobStatus status = RetryUtil.execute(
+        () -> jobClient.queryStatus(jobId),
+        policy
+);
+```
+
+也可以使用 `retryExponential(...)` 和 `retryByResult(...)` 完成常见场景。线程中断或显式取消
+不会被重试，并且工具会恢复当前线程的中断标记。工具只控制尝试次数和两次调用之间的等待，
+不会为单次任务创建额外线程或强制超时；HTTP、数据库等客户端仍需配置自己的连接与读取超时。
+
+稳定错误码如下：
+
+| 错误码 | 含义 |
+|---|---|
+| `TOOL_RETRY_001` | 重试参数无效 |
+| `TOOL_RETRY_002` | 任务发生不可重试的执行失败 |
+| `TOOL_RETRY_003` | 最大尝试次数耗尽 |
+| `TOOL_RETRY_004` | 任务执行或退避等待被中断 |
+
+**2.0 迁移说明**
+
+- 旧版 `maxRetries` 表示首次调用后的额外重试次数；新版 `maxAttempts` 表示包含首次调用的总次数。
+- 毫秒数参数已替换为 `Duration`，避免单位歧义和负数等待时间。
+- 指数退避必须提供最大等待上限，避免等待时间无限增长；随机抖动通过
+  `RetryPolicy.exponentialRandomBackoff(...)` 配置。
+- 失败时不再抛出无差别的 `RuntimeException`，统一抛出保留原始原因链的
+  `RetryOperationException`。
+- 工具不再记录可能包含业务数据的任务结果和异常消息。需要观测时，应由业务层按脱敏规则记录。
+- Hutool 已从本模块依赖中移除；业务若直接使用 Hutool API，需要在业务项目中显式声明依赖。
+
+### 15. 分页结果 PageResult
 
 ```java
 PageResult<User> page = PageResult.of(users, totalCount, 1, 20);
