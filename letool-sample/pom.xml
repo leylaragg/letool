@@ -16,6 +16,11 @@
     <name>letool-sample</name>
     <description>letool 示例项目 —— 演示各模块核心功能</description>
 
+    <properties>
+        <!-- 示例应用只参与构建验证，不作为公共依赖发布。 -->
+        <maven.deploy.skip>true</maven.deploy.skip>
+    </properties>
+
     <dependencies>
         <!-- 核心模块 -->
         <dependency>

@@ -29,7 +29,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         properties = {
                 "letool.security.jwt.secret=test-resource-server-secret-key-256-bits!!",
                 "letool.security.jwt.issuer=resource-server-test",
-                "letool.security.exclude-paths=/public/**"
+                "letool.security.exclude-paths=/public/{*path}"
         }
 )
 @AutoConfigureMockMvc

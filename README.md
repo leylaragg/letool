@@ -1,6 +1,6 @@
 # letool
 
-[![CI](https://github.com/leyland-wang/letool/actions/workflows/maven.yml/badge.svg)](https://github.com/leyland-wang/letool/actions/workflows/maven.yml)
+[![CI](https://github.com/leylaragg/letool/actions/workflows/maven.yml/badge.svg)](https://github.com/leylaragg/letool/actions/workflows/maven.yml)
 [![JDK](https://img.shields.io/badge/JDK-17%2B-orange)](https://openjdk.org/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.x-brightgreen)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
@@ -75,8 +75,9 @@ Lambda 查询 DSL、分页模型和数据库方言。
 应答检测，以及受单一请求绝对期限约束的写出前有界建连重试。未提供请求关联标识时，
 每条连接严格保持单请求独占，不会假设任意私有协议天然支持多路复用。
 
-HTTP、服务网关、负载均衡和熔断不在本阶段伪造实现；HTTP 客户端和网关能力将在后续
-阶段基于成熟框架单独建设。具体用法和限制见
+通用 HTTP 请求可以使用 `letool-starter-tool` 中基于 JDK `HttpClient` 的 `HttpUtil`；服务网关、
+负载均衡和熔断不在 TCP 模块中重复实现，应直接选择 Spring Cloud Gateway、Spring Cloud
+LoadBalancer、Sentinel 或 Resilience4j。具体用法和限制见
 [`letool-starter-net/README.md`](letool-starter-net/README.md)。
 
 ## 快速开始

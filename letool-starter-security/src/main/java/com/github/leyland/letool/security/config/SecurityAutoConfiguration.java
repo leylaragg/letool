@@ -33,7 +33,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -199,9 +199,12 @@ public class SecurityAutoConfiguration {
                         .authenticationEntryPoint(authEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler))
                 .authorizeHttpRequests(authorize -> {
+                    // 与 Spring MVC 统一使用 PathPattern 语法，避免依赖已废弃的 Ant 路径匹配器。
+                    PathPatternRequestMatcher.Builder matcherBuilder =
+                            PathPatternRequestMatcher.withDefaults();
                     for (String path : validatedExcludePaths(properties)) {
                         authorize.requestMatchers(
-                                new AntPathRequestMatcher(path)
+                                matcherBuilder.matcher(path)
                         ).permitAll();
                     }
                     authorize.anyRequest().authenticated();

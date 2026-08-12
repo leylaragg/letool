@@ -11,7 +11,7 @@
 
     <name>letool</name>
     <description>企业级 Java 工具包 —— 提供缓存、日志、安全、网络通信、加密、规则引擎等开箱即用的 Spring Boot Starter 组件</description>
-    <url>https://github.com/leyland-wang/letool</url>
+    <url>https://github.com/leylaragg/letool</url>
 
     <licenses>
         <license>
@@ -22,10 +22,24 @@
 
     <developers>
         <developer>
+            <id>leyland</id>
             <name>leyland</name>
             <email>leyland@github.com</email>
+            <url>https://github.com/leylaragg</url>
         </developer>
     </developers>
+
+    <scm>
+        <connection>scm:git:https://github.com/leylaragg/letool.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/leylaragg/letool.git</developerConnection>
+        <url>https://github.com/leylaragg/letool</url>
+        <tag>HEAD</tag>
+    </scm>
+
+    <issueManagement>
+        <system>GitHub Issues</system>
+        <url>https://github.com/leylaragg/letool/issues</url>
+    </issueManagement>
 
     <modules>
         <!-- 阶段 1：基石模块 -->
@@ -114,6 +128,7 @@
         <okhttp.version>4.12.0</okhttp.version>
         <commons-net.version>3.13.0</commons-net.version>
         <commons-compress.version>1.28.0</commons-compress.version>
+        <commons-io.version>2.20.0</commons-io.version>
 
         <!-- API 文档 -->
         <springdoc.version>2.8.17</springdoc.version>
@@ -457,6 +472,12 @@
                 <artifactId>commons-compress</artifactId>
                 <version>${commons-compress.version}</version>
             </dependency>
+            <!-- Commons Compress 1.28.0 需要 Commons IO 2.20.0 的 FileTimes API。 -->
+            <dependency>
+                <groupId>commons-io</groupId>
+                <artifactId>commons-io</artifactId>
+                <version>${commons-io.version}</version>
+            </dependency>
             <!-- API 文档 -->
             <dependency>
                 <groupId>org.springdoc</groupId>
@@ -654,6 +675,13 @@
                     </executions>
                 </plugin>
 
+                <!-- Javadoc 制品插件 -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-javadoc-plugin</artifactId>
+                    <version>${maven-javadoc-plugin.version}</version>
+                </plugin>
+
                 <!-- 测试插件 -->
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -690,5 +718,55 @@
             </plugins>
         </pluginManagement>
     </build>
+
+    <profiles>
+        <!--
+            只负责生成 Maven Central 发布所需的源码、Javadoc 和签名制品。
+            仓库地址、Central Portal Token 与 GPG 私钥由发布环境显式提供。
+        -->
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <configuration>
+                            <doclint>none</doclint>
+                            <encoding>${project.build.sourceEncoding}</encoding>
+                            <docencoding>${project.build.sourceEncoding}</docencoding>
+                            <charset>${project.build.sourceEncoding}</charset>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
 </project>
