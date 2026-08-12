@@ -3,7 +3,7 @@
 ## 模块简介
 
 `letool-starter-tool` 是 letool 的通用工具模块，为其他模块提供 JSON 序列化、HTTP 请求、
-Redis 操作、分布式 ID、树形结构、字符串、集合、业务枚举、常用校验、日期时间、Bean 拷贝、反射访问、类扫描、
+Redis 操作、分布式 ID、字符串、集合、业务枚举、常用校验、日期时间、Bean 拷贝、反射访问、类扫描、
 Lambda 属性解析、统一响应体、分页模型及 Spring 容器辅助能力。统一异常和国际化由独立的
 [`letool-starter-exception`](../letool-starter-exception/README.md) 模块提供；tool 模块依赖该基础模块，
 但不再自行维护异常体系。
@@ -102,6 +102,39 @@ public User getUser() {
 `R<T>` 仍由 tool 模块提供；错误码、异常类型、国际化解析以及日志/HTTP 消息边界由
 [`letool-starter-exception`](../letool-starter-exception/README.md) 提供。这样工具类不会持有
 `MessageSource` 等全局状态，非 Web 任务也可以稳定记录异常。
+
+### 树能力迁移到 Data Structure
+
+Tool 模块不再维护重复的 `tool.model.TreeNode` 和 `tool.util.TreeUtil`。需要从平列表构建树、
+执行非递归遍历或检测重复 ID、孤儿节点和环时，请单独引入生产化的数据结构模块：
+
+```xml
+<dependency>
+    <groupId>com.github.leyland</groupId>
+    <artifactId>letool-starter-data-structure</artifactId>
+    <version>${letool.version}</version>
+</dependency>
+```
+
+业务实体可以直接实现 `com.github.leyland.letool.datastructure.tree.TreeNode<T>`：
+
+```java
+List<Dept> tree = TreeBuilder.build(deptList);
+```
+
+不方便修改业务实体时，使用映射函数创建包装节点：
+
+```java
+List<SimpleTreeNode<Dept>> tree = TreeBuilder.buildSimple(
+    deptList,
+    Dept::getId,
+    Dept::getParentId
+);
+```
+
+旧 Tool API 会静默覆盖重复 ID，并把父节点缺失的数据当作根节点；新 API 默认快速失败。业务确实
+允许把孤儿节点提升为根时，应显式传入 `TreeOrphanPolicy.AS_ROOT`。完整用法和迁移契约参见
+[`letool-starter-data-structure`](../letool-starter-data-structure/README.md)。
 
 ### 3. JSON 工具 JsonUtil
 
@@ -407,27 +440,7 @@ Base64 和 Hex 非法文本统一抛出 `EncodingOperationException`，公开消
 - Snowflake 节点越界、时钟回拨和时间戳越界统一转换为 `IdGenerationException`。
 - 多实例生产环境必须显式分配 Snowflake 节点号，不能依赖 PID/MAC 自动推导保证唯一性。
 
-### 7. 树形工具 TreeUtil
-
-```java
-// 递归构建
-List<TreeNode<Dept>> tree = TreeUtil.buildTree(
-    deptList,
-    Dept::getId,
-    Dept::getParentId,
-    Dept::getName
-);
-
-// 迭代构建（深层嵌套 > 1000 层）
-List<TreeNode<Dept>> tree = TreeUtil.buildTreeIterative(
-    deptList, Dept::getId, Dept::getParentId
-);
-
-// 扁平化
-List<TreeNode<Dept>> flat = TreeUtil.flatten(tree);
-```
-
-### 8. 字符串工具 StrUtil
+### 7. 字符串工具 StrUtil
 
 ```java
 StrUtil.isBlank(str);
@@ -445,7 +458,7 @@ StrUtil.left("A😀B", 2);                    // "A😀"
 `join` 和 `split` 的空分隔符会统一抛出 `ValueOperationException`，避免错误配置
 被静默转换成不可靠结果。
 
-### 9. 集合工具 CollUtil
+### 8. 集合工具 CollUtil
 
 ```java
 CollUtil.isEmpty(list);
@@ -461,7 +474,7 @@ List<List<User>> chunks = CollUtil.partition(users, 100);
 使用首次出现顺序并执行集合语义去重；`toMap` 使用 `LinkedHashMap`，键重复时保留第一个值。
 分片大小始终必须大于零，即使源列表为空也会先校验配置。
 
-#### 9.1 业务枚举 EnumUtil
+#### 8.1 业务枚举 EnumUtil
 
 新业务枚举推荐实现轻量的 `CodeEnum<C>` 和 `DescribedEnum` 契约：
 
@@ -487,7 +500,7 @@ Map<String, Object> options = EnumUtil.toMap(OrderStatus.class);
 不再被静默吞掉。新代码优先使用返回 `Optional` 的 `findByName`、`findByCode` 和 `findBy`，必须命中
 编码时使用 `requireByCode`。`toMap` 保持枚举声明顺序，重复描述会直接拒绝，避免选项被覆盖。
 
-#### 9.2 常用校验 ValidatorUtil
+#### 8.2 常用校验 ValidatorUtil
 
 ```java
 ValidatorUtil.isPhone("13812345678");
@@ -522,7 +535,7 @@ ValidatorUtil.isIpV4("192.168.1.1");
   `findBy*` 或 `requireByCode`。
 - 身份证、URL、邮箱和 IPv4 校验规则已经收紧，旧版仅通过正则外形的无效输入现在会返回 `false`。
 
-### 10. 日期工具 DateUtil
+### 9. 日期工具 DateUtil
 
 日期工具直接封装 JDK 17 `java.time` 的高频组合，不引入额外日期框架。公共格式器不可变且线程安全；
 严格入口不会再把空值转换为 `null` 或 `0`，需要容错时应显式使用 `tryParse`。
@@ -575,7 +588,7 @@ ZonedDateTime endExclusive = DateUtil.startOfNextDay(date, zoneId);
   `[startOfDay(date), startOfNextDay(date))`。
 - 无时区的 Date、时间戳转换仍使用系统默认时区；跨系统业务应迁移到带 `ZoneId` 的重载。
 
-### 11. Bean 与反射工具组
+### 10. Bean 与反射工具组
 
 #### BeanUtil
 
@@ -685,7 +698,7 @@ String recordName = LambdaUtil.getPropertyName(UserRecord::name);
 - Class 扫描结果改为不可修改、稳定排序的完整快照，且不再触发候选类静态初始化。
 - 非 Getter Lambda 不再返回错误字符串，而是通过稳定错误码明确拒绝。
 
-### 12. Spring 容器工具 SpringUtil
+### 11. Spring 容器工具 SpringUtil
 
 ```java
 UserService service = SpringUtil.getBean(UserService.class);
@@ -697,7 +710,7 @@ boolean exists = SpringUtil.containsBean("dataSource");
 String profile = SpringUtil.getActiveProfile();  // "dev" / "prod"
 ```
 
-### 13. Spring 表达式工具 SpelUtil
+### 12. Spring 表达式工具 SpelUtil
 
 ```java
 // 普通表达式与显式返回类型
@@ -733,7 +746,7 @@ String name = SpelUtil.evalSafe("name", user, String.class);
 模板现在遵循 Spring 原生 `#{...}` 语法；旧版 Map 变量占位符 `#{name}` 需要迁移为
 `#{#name}`。
 
-### 14. 重试工具 RetryUtil
+### 13. 重试工具 RetryUtil
 
 `RetryUtil` 使用 Resilience4j Retry 执行同步重试，Letool 负责提供类型安全的策略、便捷入口、
 参数校验和统一异常。常用的固定等待可以直接调用：
@@ -792,7 +805,7 @@ JobStatus status = RetryUtil.execute(
 - 工具不再记录可能包含业务数据的任务结果和异常消息。需要观测时，应由业务层按脱敏规则记录。
 - Hutool 已从本模块依赖中移除；业务若直接使用 Hutool API，需要在业务项目中显式声明依赖。
 
-### 15. 分页结果 PageResult
+### 14. 分页结果 PageResult
 
 ```java
 PageResult<User> page = PageResult.of(users, totalCount, 1, 20);

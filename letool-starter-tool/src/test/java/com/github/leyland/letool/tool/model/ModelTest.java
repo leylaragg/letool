@@ -50,14 +50,4 @@ class ModelTest {
         assertEquals("1", mapped.getRecords().get(0));
     }
 
-    @Test
-    void treeNode() {
-        TreeNode<String> root = TreeNode.of("1", "0", "root", "data1");
-        assertTrue(root.isRoot());
-        TreeNode<String> child = TreeNode.of("2", "1", "child", "data2");
-        root.addChild(child);
-        assertFalse(root.isLeaf());
-        assertTrue(child.isLeaf());
-        assertEquals(1, root.getChildren().size());
-    }
 }

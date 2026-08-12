@@ -30,11 +30,13 @@ public class DataStructureController {
      *  │    └── 前端组
      *  └── 市场部
      * }</pre>
+     *
+     * @return 包含完整部门树的成功响应
      */
     @GetMapping("/tree")
     public R<List<TreeNode>> tree() {
         List<TreeNode> flatList = Arrays.asList(
-                new TreeNode(1L, 0L, "总公司"),
+                new TreeNode(1L, null, "总公司"),
                 new TreeNode(2L, 1L, "技术部"),
                 new TreeNode(3L, 1L, "市场部"),
                 new TreeNode(4L, 2L, "后端组"),
@@ -49,6 +51,9 @@ public class DataStructureController {
      * <p>
      * GET /api/public/datastructure/decision?amount=15000 -> "主管审批"
      * GET /api/public/datastructure/decision?amount=100 -> "自动通过"
+     *
+     * @param amount 待决策金额
+     * @return 金额和决策结果
      */
     @GetMapping("/decision")
     public R<Map<String, Object>> decision(@RequestParam(defaultValue = "1000") int amount) {
