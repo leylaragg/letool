@@ -39,8 +39,8 @@ public class MultiLevelZSetCache<K, V> {
     private final Cache<K, Map<V, Double>> l1Cache;
     /** Redis 操作工具。为 null 时退化为 L1-only。 */
     private final RedisUtil redisUtil;
-    /** Redis key 前缀，最终 Redis key = redisKeyPrefix + keySerializer.apply(key)。 */
-    private final String redisKeyPrefix;
+    /** 当前 ZSet 缓存区域的 Redis 键空间。 */
+    private final RedisCacheKeyspace keyspace;
     /** Redis ZSet 的过期时间，每次写入后都会补充 TTL。 */
     private final Duration l2Ttl;
     /** 当前缓存实例是否启用 L1。 */
@@ -94,7 +94,7 @@ public class MultiLevelZSetCache<K, V> {
                         Runnable degradationListener) {
         this.name = config.getName();
         this.redisUtil = redisUtil;
-        this.redisKeyPrefix = config.getRedisKeyPrefix();
+        this.keyspace = new RedisCacheKeyspace(config.getRedisKeyPrefix(), name);
         this.l2Ttl = config.getL2Ttl();
         this.l1Enabled = config.isL1Enabled();
         this.l2Enabled = redisUtil != null && config.isL2Enabled();
@@ -273,6 +273,23 @@ public class MultiLevelZSetCache<K, V> {
         publishInvalidation(key);
     }
 
+    /**
+     * 清空当前 ZSet 缓存区域的全部 L1/L2 数据，并广播其它 JVM 清理本地快照。
+     *
+     * <p>Redis L2 使用 SCAN + UNLINK 分批清理，只匹配当前缓存名称对应的键空间。</p>
+     */
+    public void evictAll() {
+        evictLocalAll();
+        if (l2Enabled && !l2Degraded) {
+            try {
+                keyspace.scanAndUnlink(redisUtil.getTemplate());
+            } catch (Exception e) {
+                markL2Degraded(e);
+            }
+        }
+        publishInvalidationAll();
+    }
+
     /** 仅清理当前 JVM 的某个 L1 条目，供失效监听器调用。 */
     void evictLocal(K key) {
         if (l1Enabled && key != null) {
@@ -319,7 +336,7 @@ public class MultiLevelZSetCache<K, V> {
             return true;
         }
         try {
-            redisUtil.hasKey(redisKeyPrefix + "__health_check");
+            redisUtil.hasKey(keyspace.healthCheckKey());
             evictLocalAll();
             l2Degraded = false;
             return true;
@@ -451,12 +468,19 @@ public class MultiLevelZSetCache<K, V> {
     }
 
     private String redisKey(K key) {
-        return redisKeyPrefix + keySerializer.apply(key);
+        return keyspace.key(keySerializer.apply(key));
     }
 
     private void publishInvalidation(K key) {
         invalidationPublisher.publish(CacheInvalidationMessage.keys(
                 name, java.util.List.of(keySerializer.apply(key)), instanceId));
+    }
+
+    /**
+     * 广播当前 ZSet 缓存区域全部失效。
+     */
+    private void publishInvalidationAll() {
+        invalidationPublisher.publish(CacheInvalidationMessage.all(name, instanceId));
     }
 
     private void markL2Degraded(Exception e) {

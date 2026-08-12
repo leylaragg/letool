@@ -40,7 +40,7 @@ public class CacheConfig<K, V> {
     private boolean nullValueCache = true;
     /** null 哨兵 TTL，通常应短于正常业务值 TTL。 */
     private Duration nullValueTtl = Duration.ofMinutes(5);
-    /** Redis key 前缀；最终 KV Redis key 还会拼接缓存名称和业务 key。 */
+    /** Redis Key 前缀；最终 Redis Key 还会拼接缓存名称和业务 Key。 */
     private String redisKeyPrefix = "letool:cache:";
     /** L2 读取时用于校验 RedisTemplate 反序列化结果的 value 类型；为 null 时跳过严格类型校验。 */
     private Class<?> valueType;

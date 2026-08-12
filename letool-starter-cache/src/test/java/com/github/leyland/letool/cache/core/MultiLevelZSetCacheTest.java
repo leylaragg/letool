@@ -18,6 +18,8 @@ import java.util.function.Function;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
@@ -42,7 +44,7 @@ class MultiLevelZSetCacheTest {
         config = CacheConfig.<String, String>builder("ranking")
                 .l1Ttl(Duration.ofMinutes(10))
                 .l2Ttl(Duration.ofHours(1))
-                .redisKeyPrefix("test:zset:")
+                .redisKeyPrefix("test:cache:")
                 .strongConsistency(false)
                 .build();
     }
@@ -50,7 +52,7 @@ class MultiLevelZSetCacheTest {
     @Test
     @DisplayName("add 写入 L1 和 Redis ZSet")
     void addWritesLocalAndRedisZSet() {
-        when(redisUtil.boundZSetOps("test:zset:game:1")).thenReturn(boundZSetOperations);
+        when(redisUtil.boundZSetOps("test:cache:ranking:game:1")).thenReturn(boundZSetOperations);
         when(boundZSetOperations.rangeWithScores(0, -1))
                 .thenReturn(Set.of(tuple("alice", 100.0)));
         MultiLevelZSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
@@ -61,7 +63,7 @@ class MultiLevelZSetCacheTest {
         assertEquals(Set.of("alice"), cache.range("game:1", 0, -1));
         assertEquals(100.0, cache.score("game:1", "alice"));
         verify(boundZSetOperations).add("alice", 100.0);
-        verify(redisUtil).expire("test:zset:game:1", Duration.ofHours(1).toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+        verify(redisUtil).expire("test:cache:ranking:game:1", Duration.ofHours(1).toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
     }
 
     @Test
@@ -80,7 +82,7 @@ class MultiLevelZSetCacheTest {
     @Test
     @DisplayName("L1 miss 时从 Redis ZSet 读取并回填")
     void l1MissReadsRedisZSetAndRefillsLocal() {
-        when(redisUtil.boundZSetOps("test:zset:game:2")).thenReturn(boundZSetOperations);
+        when(redisUtil.boundZSetOps("test:cache:ranking:game:2")).thenReturn(boundZSetOperations);
         when(boundZSetOperations.rangeWithScores(0, -1))
                 .thenReturn(Set.of(
                         tuple("alice", 100.0),
@@ -99,7 +101,7 @@ class MultiLevelZSetCacheTest {
     @Test
     @DisplayName("remove 删除 Redis ZSet 成员并清理本地副本")
     void removeDeletesMemberAndEvictsLocalSnapshot() {
-        when(redisUtil.boundZSetOps("test:zset:game:3")).thenReturn(boundZSetOperations);
+        when(redisUtil.boundZSetOps("test:cache:ranking:game:3")).thenReturn(boundZSetOperations);
         when(boundZSetOperations.score("alice")).thenReturn(null);
         MultiLevelZSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
                 .getOrCreateZSetCache(config, Function.identity(), String.class);
@@ -114,7 +116,7 @@ class MultiLevelZSetCacheTest {
     @Test
     @DisplayName("Redis 异常后 ZSet 缓存进入 L2 降级")
     void redisFailureMarksZSetCacheDegraded() {
-        when(redisUtil.boundZSetOps("test:zset:game:4")).thenReturn(boundZSetOperations);
+        when(redisUtil.boundZSetOps("test:cache:ranking:game:4")).thenReturn(boundZSetOperations);
         when(boundZSetOperations.rangeWithScores(0, -1))
                 .thenThrow(new RuntimeException("redis down"));
         CacheManager manager = new CacheManager(redisUtil, serializer);
@@ -129,7 +131,7 @@ class MultiLevelZSetCacheTest {
     @Test
     @DisplayName("局部写入不能让 L1 冒充完整 Redis ZSet 快照")
     void partialAddShouldNotHideExistingRedisMembers() {
-        when(redisUtil.boundZSetOps("test:zset:game:5"))
+        when(redisUtil.boundZSetOps("test:cache:ranking:game:5"))
                 .thenReturn(boundZSetOperations);
         when(boundZSetOperations.rangeWithScores(0, -1))
                 .thenReturn(Set.of(
@@ -160,10 +162,10 @@ class MultiLevelZSetCacheTest {
                 CacheConfig.<String, String>builder("ranking")
                         .l1Ttl(Duration.ofMinutes(10))
                         .l2Ttl(Duration.ofHours(1))
-                        .redisKeyPrefix("test:zset:")
+                        .redisKeyPrefix("test:cache:")
                         .strongConsistency(true)
                         .build();
-        when(redisUtil.boundZSetOps("test:zset:game:6"))
+        when(redisUtil.boundZSetOps("test:cache:ranking:game:6"))
                 .thenReturn(boundZSetOperations);
         when(boundZSetOperations.rangeWithScores(0, -1))
                 .thenReturn(
@@ -208,11 +210,11 @@ class MultiLevelZSetCacheTest {
     void defaultFactoryShouldUseConfiguredMemberType() {
         CacheConfig<String, String> typedConfig =
                 CacheConfig.<String, String>builder("typed-zset")
-                        .redisKeyPrefix("test:typed-zset:")
+                        .redisKeyPrefix("test:cache:")
                         .strongConsistency(false)
                         .valueType(String.class)
                         .build();
-        when(redisUtil.boundZSetOps("test:typed-zset:key"))
+        when(redisUtil.boundZSetOps("test:cache:typed-zset:key"))
                 .thenReturn(boundZSetOperations);
         when(boundZSetOperations.rangeWithScores(0, -1))
                 .thenReturn(Set.of(tuple(42, 100.0)));
@@ -221,6 +223,30 @@ class MultiLevelZSetCacheTest {
                         .getOrCreateZSetCache(typedConfig);
 
         assertTrue(cache.range("key", 0, -1).isEmpty());
+    }
+
+    /**
+     * 验证区域清理会删除本地 ZSet 快照并广播全区域失效消息。
+     */
+    @Test
+    @DisplayName("evictAll 清理 ZSet 区域并广播失效")
+    void evictAllShouldClearLocalZSetAndPublishInvalidation() {
+        CacheInvalidationPublisher publisher = mock(CacheInvalidationPublisher.class);
+        MultiLevelZSetCache<String, String> cache = new CacheManager(
+                null,
+                serializer,
+                true,
+                false,
+                "test:cache:",
+                publisher
+        ).getOrCreateZSetCache(config, Function.identity(), String.class);
+        cache.add("game:9", "alice", 100.0);
+
+        cache.evictAll();
+
+        assertTrue(cache.range("game:9", 0, -1).isEmpty());
+        verify(publisher).publish(argThat(message ->
+                message.isAll() && "ranking".equals(message.getCacheName())));
     }
 
     /**

@@ -52,8 +52,6 @@ public class MultiLevelCache<K, V> {
 
     /** Redis 中用于表示“命中空值”的可序列化哨兵，避免 null 穿透数据库。 */
     private static final String REDIS_NULL_SENTINEL = "NULL_SENTINEL";
-    /** 每个缓存区域对应一个版本 key，业务 key 和版本 key 共用同一个 Redis 前缀。 */
-    private static final String VERSION_KEY_SUFFIX = "__version__";
     /** L2 关闭或非强一致模式下使用的本地固定版本。 */
     private static final long LOCAL_ONLY_VERSION = -1L;
     /** 原子写脚本：先推进区域版本，再设置业务值和 TTL。 */
@@ -80,6 +78,8 @@ public class MultiLevelCache<K, V> {
     private final CacheSerializer serializer;
     /** 当前缓存区域的最终配置，已经由 CacheManager 合并全局开关后传入。 */
     private final CacheConfig<K, V> config;
+    /** 当前缓存区域的 Redis 键空间，负责键隔离和非阻塞区域清理。 */
+    private final RedisCacheKeyspace keyspace;
     /** L2 命中时用于校验 RedisTemplate 反序列化结果的 value 类型；为 null 时跳过严格类型校验。 */
     private final Class<?> valueType;
     /** 当前缓存实例的运行统计。 */
@@ -132,6 +132,7 @@ public class MultiLevelCache<K, V> {
         this.redisUtil = redisUtil;
         this.serializer = serializer;
         this.config = config;
+        this.keyspace = new RedisCacheKeyspace(config.getRedisKeyPrefix(), name);
         this.valueType = config.getValueType();
         this.invalidationPublisher = invalidationPublisher == null ? CacheInvalidationPublisher.noop() : invalidationPublisher;
         this.instanceId = instanceId == null ? "local" : instanceId;
@@ -326,11 +327,8 @@ public class MultiLevelCache<K, V> {
         evictLocalAll();
         if (isL2Enabled()) {
             try {
-                // 只删除当前缓存区域下的 key，避免误删其它缓存区域或业务数据。
-                Set<String> keys = redisUtil.getTemplate().keys(config.getRedisKeyPrefix() + name + ":*");
-                if (keys != null && !keys.isEmpty()) {
-                    redisUtil.delete(keys);
-                }
+                // 使用 SCAN + UNLINK 分批清理当前区域，避免 KEYS 阻塞 Redis 主线程。
+                keyspace.scanAndUnlink(redisUtil.getTemplate());
                 bumpConsistencyVersion();
             } catch (Exception e) {
                 markL2Degraded(e);
@@ -708,11 +706,11 @@ public class MultiLevelCache<K, V> {
     }
 
     private String redisKey(K key) {
-        return config.getRedisKeyPrefix() + name + ":" + key;
+        return keyspace.key(String.valueOf(key));
     }
 
     private String versionKey() {
-        return config.getRedisKeyPrefix() + name + ":" + VERSION_KEY_SUFFIX;
+        return keyspace.versionKey();
     }
 
     private static Duration min(Duration left, Duration right) {

@@ -17,6 +17,8 @@ import java.util.function.Function;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -40,7 +42,7 @@ class MultiLevelListCacheTest {
         config = CacheConfig.<String, String>builder("events")
                 .l1Ttl(Duration.ofMinutes(10))
                 .l2Ttl(Duration.ofHours(1))
-                .redisKeyPrefix("test:list:")
+                .redisKeyPrefix("test:cache:")
                 .strongConsistency(false)
                 .build();
     }
@@ -48,7 +50,7 @@ class MultiLevelListCacheTest {
     @Test
     @DisplayName("rightPush 写入 L1 和 Redis List")
     void rightPushWritesLocalAndRedisList() {
-        when(redisUtil.boundListOps("test:list:user:1")).thenReturn(boundListOperations);
+        when(redisUtil.boundListOps("test:cache:events:user:1")).thenReturn(boundListOperations);
         when(boundListOperations.range(0, -1))
                 .thenReturn(List.of("login"));
         MultiLevelListCache<String, String> cache = new CacheManager(redisUtil, serializer)
@@ -58,7 +60,7 @@ class MultiLevelListCacheTest {
 
         assertEquals(List.of("login"), cache.range("user:1", 0, -1));
         verify(boundListOperations).rightPush("login");
-        verify(redisUtil).expire("test:list:user:1", Duration.ofHours(1).toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+        verify(redisUtil).expire("test:cache:events:user:1", Duration.ofHours(1).toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
     }
 
     @Test
@@ -78,7 +80,7 @@ class MultiLevelListCacheTest {
     @Test
     @DisplayName("L1 miss 时从 Redis List 读取并回填")
     void l1MissReadsRedisListAndRefillsLocal() {
-        when(redisUtil.boundListOps("test:list:user:2")).thenReturn(boundListOperations);
+        when(redisUtil.boundListOps("test:cache:events:user:2")).thenReturn(boundListOperations);
         when(boundListOperations.range(0, -1)).thenReturn(List.of("a", "b"));
         MultiLevelListCache<String, String> cache = new CacheManager(redisUtil, serializer)
                 .getOrCreateListCache(config, Function.identity(), String.class);
@@ -92,7 +94,7 @@ class MultiLevelListCacheTest {
     @Test
     @DisplayName("pop 从 Redis List 弹出元素并清理本地副本")
     void popUsesRedisListAndEvictsLocalSnapshot() {
-        when(redisUtil.boundListOps("test:list:user:3")).thenReturn(boundListOperations);
+        when(redisUtil.boundListOps("test:cache:events:user:3")).thenReturn(boundListOperations);
         when(boundListOperations.leftPop()).thenReturn("first");
         MultiLevelListCache<String, String> cache = new CacheManager(redisUtil, serializer)
                 .getOrCreateListCache(config, Function.identity(), String.class);
@@ -108,7 +110,7 @@ class MultiLevelListCacheTest {
     @Test
     @DisplayName("Redis 异常后 List 缓存进入 L2 降级")
     void redisFailureMarksListCacheDegraded() {
-        when(redisUtil.boundListOps("test:list:user:4")).thenReturn(boundListOperations);
+        when(redisUtil.boundListOps("test:cache:events:user:4")).thenReturn(boundListOperations);
         when(boundListOperations.range(0, -1)).thenThrow(new RuntimeException("redis down"));
         CacheManager manager = new CacheManager(redisUtil, serializer);
         MultiLevelListCache<String, String> cache = manager.getOrCreateListCache(config, Function.identity(), String.class);
@@ -122,7 +124,7 @@ class MultiLevelListCacheTest {
     @Test
     @DisplayName("局部推入不能让 L1 冒充完整 Redis List 快照")
     void partialPushShouldNotHideExistingRedisElements() {
-        when(redisUtil.boundListOps("test:list:user:5"))
+        when(redisUtil.boundListOps("test:cache:events:user:5"))
                 .thenReturn(boundListOperations);
         when(boundListOperations.range(0, -1))
                 .thenReturn(List.of("existing", "new"));
@@ -150,10 +152,10 @@ class MultiLevelListCacheTest {
                 CacheConfig.<String, String>builder("events")
                         .l1Ttl(Duration.ofMinutes(10))
                         .l2Ttl(Duration.ofHours(1))
-                        .redisKeyPrefix("test:list:")
+                        .redisKeyPrefix("test:cache:")
                         .strongConsistency(true)
                         .build();
-        when(redisUtil.boundListOps("test:list:user:6"))
+        when(redisUtil.boundListOps("test:cache:events:user:6"))
                 .thenReturn(boundListOperations);
         when(boundListOperations.range(0, -1))
                 .thenReturn(List.of("old"), List.of());
@@ -195,11 +197,11 @@ class MultiLevelListCacheTest {
     void defaultFactoryShouldUseConfiguredElementType() {
         CacheConfig<String, String> typedConfig =
                 CacheConfig.<String, String>builder("typed-list")
-                        .redisKeyPrefix("test:typed-list:")
+                        .redisKeyPrefix("test:cache:")
                         .strongConsistency(false)
                         .valueType(String.class)
                         .build();
-        when(redisUtil.boundListOps("test:typed-list:key"))
+        when(redisUtil.boundListOps("test:cache:typed-list:key"))
                 .thenReturn(boundListOperations);
         when(boundListOperations.range(0, -1)).thenReturn(List.of(42));
         MultiLevelListCache<String, String> cache =
@@ -207,5 +209,29 @@ class MultiLevelListCacheTest {
                         .getOrCreateListCache(typedConfig);
 
         assertTrue(cache.range("key", 0, -1).isEmpty());
+    }
+
+    /**
+     * 验证区域清理会删除本地列表快照并广播全区域失效消息。
+     */
+    @Test
+    @DisplayName("evictAll 清理 List 区域并广播失效")
+    void evictAllShouldClearLocalListAndPublishInvalidation() {
+        CacheInvalidationPublisher publisher = mock(CacheInvalidationPublisher.class);
+        MultiLevelListCache<String, String> cache = new CacheManager(
+                null,
+                serializer,
+                true,
+                false,
+                "test:cache:",
+                publisher
+        ).getOrCreateListCache(config, Function.identity(), String.class);
+        cache.rightPush("user:9", "login");
+
+        cache.evictAll();
+
+        assertTrue(cache.range("user:9", 0, -1).isEmpty());
+        verify(publisher).publish(argThat(message ->
+                message.isAll() && "events".equals(message.getCacheName())));
     }
 }

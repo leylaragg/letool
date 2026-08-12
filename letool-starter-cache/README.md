@@ -177,6 +177,19 @@ List、Hash、Set、ZSet 缓存保留在本模块中，它们是 Redis 原生数
 - `MultiLevelSetCache`：规则索引、标签索引、ID 集合。
 - `MultiLevelZSetCache`：排行榜、权重或优先级排序。
 
+五种缓存统一使用下面的 Redis Key 格式，不同缓存名称即使使用相同业务 Key 也不会串用数据：
+
+```text
+<redis-key-prefix><encoded-cache-name>:<business-key>
+```
+
+例如全局前缀为 `myapp:cache:`、缓存名称为 `ruleIndex`、业务 Key 为 `product:loan` 时，
+最终 Redis Key 为 `myapp:cache:ruleIndex:product:loan`。
+
+缓存名称中的 `%` 和 `:` 会分别编码为 `%25` 和 `%3A`，确保缓存名称与业务 Key 的边界不会产生
+歧义。例如缓存名称 `rule:index` 会使用 `rule%3Aindex` 作为 Redis Key 段。业务 Key 保持用户
+序列化函数返回的原始形式，不由框架二次编码。
+
 Set 示例：
 
 ```java
@@ -210,6 +223,21 @@ MultiLevelZSetCache<String, String> ranking =
         cacheManager.getOrCreateZSetCache(zSetConfig);
 ```
 
+KV、List、Hash、Set、ZSet 均支持清理整个缓存区域：
+
+```java
+userCache.evictAll();
+events.evictAll();
+profile.evictAll();
+ruleIndex.evictAll();
+ranking.evictAll();
+```
+
+区域清理使用 `SCAN + UNLINK` 分批处理，只扫描当前缓存名称对应的键空间，不调用会阻塞 Redis
+主线程的 `KEYS`。Redis Cluster 模式会逐个扫描当前拓扑中的可用主节点，不会只清理当前连接
+节点。该能力要求 Redis 4.0 或更高版本，并要求缓存使用的 RedisTemplate 将
+`StringRedisSerializer` 配置为 Key 序列化器；letool 提供的默认 RedisTemplate 已满足该约束。
+
 类型解析顺序为：工厂方法显式类型、`CacheConfig.valueType(...)`、RedisTemplate 实际反序列化类型。本模块不再假设 Set 成员一定是 `Long`；生产配置建议显式声明类型。
 
 集合缓存的一致性约束：
@@ -220,6 +248,17 @@ MultiLevelZSetCache<String, String> ranking =
 - List 的范围索引与 `LRANGE` 一致，ZSet 的范围索引与 `ZRANGE` 一致，均支持负索引。
 - ZSet 范围读取使用带分数的单次批量查询，不会逐成员执行 `ZSCORE`。
 - 跨 JVM 失效会按 key 的序列化表示匹配真实 L1 key，支持 `Long` 和自定义 key 类型，不再把广播 key 强转成 `String`。
+
+### 集合缓存 Key 迁移说明
+
+从本版本开始，五种缓存的 Redis Key 都使用经过分段编码的缓存名称；List、Hash、Set、ZSet
+还会首次强制包含该名称。这是一项破坏性安全修复：
+旧版本仅使用 `<redis-key-prefix><business-key>`，不同集合缓存可能因相同业务 Key 串用数据；新版本
+不会继续读取旧格式 Key。
+
+升级前可以主动清理旧集合缓存前缀，也可以等待旧 Key 按原 TTL 自然淘汰。框架不提供新旧 Key
+双读，避免不安全的共享键空间继续进入新缓存。若多个集合缓存过去共用了同一个前缀，上线前应先
+确认旧数据不再由旧版本应用实例访问。
 
 ## 统一异常
 
@@ -302,6 +341,8 @@ Map<String, CacheStats> snapshot = cacheMonitor.snapshot();
 - Redis key 前缀按应用隔离，例如 `edc:cache:`、`crm:cache:`。
 - 生产日志或监控中关注命中率、加载失败、降级次数和回源量。
 - 集合写入和 TTL 刷新当前是两个 Redis 命令；需要事务级原子性的队列、排行榜或超高频写路径，应在业务层使用 Lua/事务或更成熟的分布式数据结构方案。
-- `MultiLevelSetCache.evictAll()` 当前使用 Redis key 模式查询，不要在超大 key 空间中高频调用。
+- 区域级 `evictAll()` 使用 `SCAN + UNLINK` 分批清理，但它仍会遍历当前缓存区域的全部 Key；超大区域不要高频执行。
+- Redis Cluster 上执行区域清理前，应确认应用账号能够读取集群拓扑并访问全部主节点。
+- 自定义 RedisTemplate 时必须使用 `StringRedisSerializer` 序列化 Key，否则区域清理会进入既有 L2 降级流程，避免错误扫描其它键空间。
 - 非 String key 的精确失效需要扫描当前缓存区域的本地 key 并比较序列化结果；超大 L1 区域且高频失效时，优先使用 String key 或评估业务侧反向索引。
 - 当前自动化测试以 Mock Redis 为主，生产发布前仍应在目标 Redis 版本和序列化配置下执行集成测试。

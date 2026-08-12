@@ -51,8 +51,8 @@ public class MultiLevelSetCache<K, V> {
     private final Cache<K, Set<V>> l1Cache;
     /** Redis 操作工具。为 null 时该缓存退化为 L1-only。 */
     private final RedisUtil redisUtil;
-    /** Redis key 前缀，最终 Redis key = redisKeyPrefix + keySerializer.apply(key)。 */
-    private final String redisKeyPrefix;
+    /** 当前 Set 缓存区域的 Redis 键空间。 */
+    private final RedisCacheKeyspace keyspace;
     /** Redis Set 的过期时间。每次写入后都会补充 TTL，防止新 key 永不过期。 */
     private final Duration l2Ttl;
     /** 当前缓存实例是否启用 L1。 */
@@ -106,7 +106,7 @@ public class MultiLevelSetCache<K, V> {
                        Runnable degradationListener) {
         this.name = config.getName();
         this.redisUtil = redisUtil;
-        this.redisKeyPrefix = config.getRedisKeyPrefix();
+        this.keyspace = new RedisCacheKeyspace(config.getRedisKeyPrefix(), name);
         this.l2Ttl = config.getL2Ttl();
         this.l1Enabled = config.isL1Enabled();
         this.l2Enabled = redisUtil != null && config.isL2Enabled();
@@ -312,16 +312,13 @@ public class MultiLevelSetCache<K, V> {
     /**
      * 清空当前缓存区域的所有 L1/L2 数据，并广播其它 JVM 清理本地副本。
      *
-     * <p>当前 L2 清理依赖 Redis key 模式查询，不适合超大 key 空间中的高频调用。</p>
+     * <p>Redis L2 使用 SCAN + UNLINK 分批清理，只匹配当前缓存名称对应的键空间。</p>
      */
     public void evictAll() {
         evictLocalAll();
         if (l2Enabled && !l2Degraded) {
             try {
-                Set<String> keys = redisUtil.getTemplate().keys(redisKeyPrefix + "*");
-                if (keys != null && !keys.isEmpty()) {
-                    redisUtil.delete(keys);
-                }
+                keyspace.scanAndUnlink(redisUtil.getTemplate());
             } catch (Exception e) {
                 markL2Degraded(e);
             }
@@ -379,7 +376,7 @@ public class MultiLevelSetCache<K, V> {
             return true;
         }
         try {
-            redisUtil.hasKey(redisKeyPrefix + "__health_check");
+            redisUtil.hasKey(keyspace.healthCheckKey());
             evictLocalAll();
             l2Degraded = false;
             return true;
@@ -419,7 +416,7 @@ public class MultiLevelSetCache<K, V> {
     }
 
     private String redisKey(K key) {
-        return redisKeyPrefix + keySerializer.apply(key);
+        return keyspace.key(keySerializer.apply(key));
     }
 
     private boolean saddToRedis(K key, V member) {

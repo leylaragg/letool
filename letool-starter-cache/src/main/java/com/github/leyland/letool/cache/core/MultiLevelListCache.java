@@ -34,8 +34,8 @@ public class MultiLevelListCache<K, V> {
     private final Cache<K, List<V>> l1Cache;
     /** Redis 操作入口；为 {@code null} 时该缓存仅使用 L1。 */
     private final RedisUtil redisUtil;
-    /** Redis key 前缀。 */
-    private final String redisKeyPrefix;
+    /** 当前 List 缓存区域的 Redis 键空间。 */
+    private final RedisCacheKeyspace keyspace;
     /** Redis List 过期时间。 */
     private final Duration l2Ttl;
     /** 当前缓存实例是否启用 L1。 */
@@ -89,7 +89,7 @@ public class MultiLevelListCache<K, V> {
                         Runnable degradationListener) {
         this.name = config.getName();
         this.redisUtil = redisUtil;
-        this.redisKeyPrefix = config.getRedisKeyPrefix();
+        this.keyspace = new RedisCacheKeyspace(config.getRedisKeyPrefix(), name);
         this.l2Ttl = config.getL2Ttl();
         this.l1Enabled = config.isL1Enabled();
         this.l2Enabled = redisUtil != null && config.isL2Enabled();
@@ -219,6 +219,23 @@ public class MultiLevelListCache<K, V> {
         publishInvalidation(key);
     }
 
+    /**
+     * 清空当前 List 缓存区域的全部 L1/L2 数据，并广播其它 JVM 清理本地快照。
+     *
+     * <p>Redis L2 使用 SCAN + UNLINK 分批清理，只匹配当前缓存名称对应的键空间。</p>
+     */
+    public void evictAll() {
+        evictLocalAll();
+        if (l2Enabled && !l2Degraded) {
+            try {
+                keyspace.scanAndUnlink(redisUtil.getTemplate());
+            } catch (Exception e) {
+                markL2Degraded(e);
+            }
+        }
+        publishInvalidationAll();
+    }
+
     void evictLocal(K key) {
         if (l1Enabled && key != null) {
             l1Cache.invalidate(key);
@@ -263,7 +280,7 @@ public class MultiLevelListCache<K, V> {
             return true;
         }
         try {
-            redisUtil.hasKey(redisKeyPrefix + "__health_check");
+            redisUtil.hasKey(keyspace.healthCheckKey());
             evictLocalAll();
             l2Degraded = false;
             return true;
@@ -453,12 +470,19 @@ public class MultiLevelListCache<K, V> {
     }
 
     private String redisKey(K key) {
-        return redisKeyPrefix + keySerializer.apply(key);
+        return keyspace.key(keySerializer.apply(key));
     }
 
     private void publishInvalidation(K key) {
         invalidationPublisher.publish(CacheInvalidationMessage.keys(
                 name, java.util.List.of(keySerializer.apply(key)), instanceId));
+    }
+
+    /**
+     * 广播当前 List 缓存区域全部失效。
+     */
+    private void publishInvalidationAll() {
+        invalidationPublisher.publish(CacheInvalidationMessage.all(name, instanceId));
     }
 
     private void markL2Degraded(Exception e) {
