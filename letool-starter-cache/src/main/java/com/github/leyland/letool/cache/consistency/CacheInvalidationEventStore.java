@@ -36,7 +36,20 @@ public interface CacheInvalidationEventStore {
      *
      * @param eventId 事件 ID
      */
-    void markCompleted(String eventId);
+    default boolean markCompleted(String eventId, String leaseOwner) {
+        markCompleted(eventId);
+        return true;
+    }
+
+    /**
+     * 兼容旧版事件仓储实现；新实现应覆盖带租约令牌的方法。
+     *
+     * @param eventId 事件 ID
+     */
+    @Deprecated
+    default void markCompleted(String eventId) {
+        markCompleted(eventId, null);
+    }
 
     /**
      * 记录一次失败，并安排下一次重试时间。
@@ -44,5 +57,37 @@ public interface CacheInvalidationEventStore {
      * @param eventId 事件 ID
      * @param nextAttemptAt 下一次允许处理的时间
      */
-    void markRetry(String eventId, Instant nextAttemptAt);
+    default boolean markRetry(String eventId, String leaseOwner, Instant nextAttemptAt) {
+        markRetry(eventId, nextAttemptAt);
+        return true;
+    }
+
+    /**
+     * 兼容旧版事件仓储实现；新实现应覆盖带租约令牌的方法。
+     */
+    @Deprecated
+    default void markRetry(String eventId, Instant nextAttemptAt) {
+        markRetry(eventId, null, nextAttemptAt);
+    }
+
+    /**
+     * 查询 Outbox 当前积压和已完成事件数量。
+     *
+     * @param now 当前时间
+     * @return 积压快照
+     */
+    default CacheInvalidationBacklog backlog(Instant now) {
+        return new CacheInvalidationBacklog(0, 0, 0, null);
+    }
+
+    /**
+     * 分批删除超过保留期的已完成事件。
+     *
+     * @param completedBefore 删除此时间之前完成的事件
+     * @param batchSize 单批最大删除数量
+     * @return 实际删除数量
+     */
+    default int deleteCompletedBefore(Instant completedBefore, int batchSize) {
+        return 0;
+    }
 }

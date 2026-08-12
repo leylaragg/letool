@@ -4,6 +4,8 @@ import com.github.leyland.letool.cache.core.CacheConfig;
 import com.github.leyland.letool.cache.core.CacheManager;
 import com.github.leyland.letool.cache.core.MultiLevelCache;
 import com.github.leyland.letool.cache.serializer.JacksonCacheSerializer;
+import com.github.leyland.letool.cache.consistency.CacheInvalidationBacklog;
+import com.github.leyland.letool.cache.consistency.CacheInvalidationRecovery;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -12,6 +14,11 @@ import org.springframework.boot.test.system.OutputCaptureExtension;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import java.time.Instant;
 
 /**
  * 缓存监控输出测试。
@@ -39,5 +46,19 @@ class CacheMonitorTest {
         assertTrue(output.getOut().contains("L1HitRate=100.00%"));
         assertTrue(output.getOut().contains("L2HitRate=0.00%"));
         assertFalse(output.getOut().contains("{:.2%}"));
+    }
+
+    @Test
+    @DisplayName("DURABLE 模式应对外暴露 Outbox 积压")
+    void shouldExposeDurableOutboxBacklog() {
+        CacheManager cacheManager = new CacheManager(null, new JacksonCacheSerializer());
+        CacheInvalidationRecovery recovery = mock(CacheInvalidationRecovery.class);
+        Instant now = Instant.parse("2026-08-12T08:00:00Z");
+        CacheInvalidationBacklog expected = new CacheInvalidationBacklog(3, 1, 20, now.minusSeconds(30));
+        when(recovery.backlog(now)).thenReturn(expected);
+
+        CacheMonitor monitor = new CacheMonitor(cacheManager, recovery);
+
+        assertEquals(expected, monitor.outboxBacklog(now));
     }
 }

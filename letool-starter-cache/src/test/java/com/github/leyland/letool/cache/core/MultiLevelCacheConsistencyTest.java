@@ -10,6 +10,7 @@ import org.springframework.data.redis.core.BoundValueOperations;
 
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -65,5 +66,21 @@ class MultiLevelCacheConsistencyTest {
         assertEquals("db-1", cache.getOrLoad("u1", key -> "db-" + loads.incrementAndGet()));
         assertEquals("db-2", cache.getOrLoad("u1", key -> "db-" + loads.incrementAndGet()));
         assertEquals(2, loads.get());
+    }
+
+    @Test
+    @DisplayName("DURABLE 批量读取在围栏存在时也必须失败关闭")
+    void durableBatchReadShouldBypassFencedKey() {
+        RedisUtil redisUtil = mock(RedisUtil.class);
+        when(redisUtil.hasKey(any())).thenReturn(true);
+        MultiLevelCache<String, String> cache = new MultiLevelCache<>(
+                CacheConfig.<String, String>builder("critical")
+                        .redisKeyPrefix("test:")
+                        .consistencyMode(CacheConsistencyMode.DURABLE)
+                        .readValidation(CacheReadValidation.VERSIONED),
+                redisUtil,
+                new JacksonCacheSerializer());
+
+        assertEquals(0, cache.getAllPresent(Set.of("u1")).size());
     }
 }

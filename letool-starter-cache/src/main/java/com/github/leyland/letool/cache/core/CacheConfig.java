@@ -6,6 +6,7 @@ import com.github.leyland.letool.cache.consistency.CacheWritePolicy;
 import com.github.leyland.letool.cache.exception.CacheException;
 
 import java.time.Duration;
+import java.util.function.Function;
 
 /**
  * 单个缓存区域的配置模型。
@@ -51,6 +52,8 @@ public class CacheConfig<K, V> {
     private String redisKeyPrefix = "letool:cache:";
     /** L2 读取时用于校验 RedisTemplate 反序列化结果的 value 类型；为 null 时跳过严格类型校验。 */
     private Class<?> valueType;
+    /** 业务 key 的稳定字符串序列化器，参与 Redis Key、版本、围栏和失效广播。 */
+    private Function<K, String> keySerializer = String::valueOf;
 
     private CacheConfig(String name) {
         this.name = name;
@@ -222,6 +225,33 @@ public class CacheConfig<K, V> {
     }
 
     /**
+     * 设置业务 key 的稳定字符串序列化器。
+     *
+     * <p>复合对象 key 必须显式配置确定性的序列化规则，不能依赖默认 {@code toString()} 的实现细节。</p>
+     *
+     * @param keySerializer key 序列化器
+     * @return 当前配置对象
+     */
+    public CacheConfig<K, V> keySerializer(Function<K, String> keySerializer) {
+        this.keySerializer = keySerializer;
+        return this;
+    }
+
+    /**
+     * 将业务 key 转换为框架内部统一使用的稳定字符串。
+     *
+     * @param key 业务 key
+     * @return 非空的稳定字符串
+     */
+    public String serializeKey(K key) {
+        String serializedKey = keySerializer.apply(key);
+        if (serializedKey == null || serializedKey.isBlank()) {
+            throw CacheException.configurationInvalid("serialized-key");
+        }
+        return serializedKey;
+    }
+
+    /**
      * 完成配置构建并执行基础校验。
      *
      * @return 校验通过的当前配置对象
@@ -257,6 +287,9 @@ public class CacheConfig<K, V> {
         }
         if (writePolicy == null) {
             throw CacheException.configurationInvalid("write-policy");
+        }
+        if (keySerializer == null) {
+            throw CacheException.configurationInvalid("key-serializer");
         }
         if (consistencyMode == CacheConsistencyMode.DURABLE
                 && (!l2Enabled || readValidation != CacheReadValidation.VERSIONED)) {

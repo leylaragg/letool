@@ -287,6 +287,9 @@ public class MultiLevelCache<K, V> {
         }
         Map<K, V> result = new HashMap<>();
         for (K key : keys) {
+            if (key == null || !isDurableReadSafe(key)) {
+                continue;
+            }
             CacheLookup<V> lookup = getPresentLookup(key);
             if (lookup.hit()) {
                 result.put(key, lookup.value());
@@ -381,8 +384,7 @@ public class MultiLevelCache<K, V> {
     /**
      * 按广播中的字符串表示匹配并清理真实 L1 key。
      *
-     * <p>KV 缓存发布失效消息时使用 {@link String#valueOf(Object)}，因此接收端用相同规则
-     * 匹配 Long 等非 String key，避免把字符串直接强转为泛型 key。</p>
+     * <p>发布端和接收端共用缓存区域配置的 key 序列化器，避免复合 key 的字符串表示不稳定。</p>
      *
      * @param serializedKey 广播中的业务 key 字符串
      */
@@ -391,7 +393,7 @@ public class MultiLevelCache<K, V> {
             return;
         }
         for (K candidate : l1Cache.asMap().keySet()) {
-            if (serializedKey.equals(String.valueOf(candidate))) {
+            if (serializedKey.equals(serializeKey(candidate))) {
                 evictLocal(candidate);
             }
         }
@@ -765,7 +767,7 @@ public class MultiLevelCache<K, V> {
         }
         List<String> serializedKeys = keys.stream()
                 .filter(key -> key != null)
-                .map(String::valueOf)
+                .map(this::serializeKey)
                 .toList();
         invalidationPublisher.publish(CacheInvalidationMessage.keys(name, serializedKeys, instanceId));
     }
@@ -810,18 +812,28 @@ public class MultiLevelCache<K, V> {
     }
 
     private String redisKey(K key) {
-        String serializedKey = String.valueOf(key);
+        String serializedKey = serializeKey(key);
         return config.isStrongConsistency()
                 ? keyspace.clusteredKey(serializedKey)
                 : keyspace.key(serializedKey);
     }
 
     private String versionKey(K key) {
-        return keyspace.versionKey(String.valueOf(key));
+        return keyspace.versionKey(serializeKey(key));
     }
 
     private String fenceKey(K key) {
-        return keyspace.fenceKey(String.valueOf(key));
+        return keyspace.fenceKey(serializeKey(key));
+    }
+
+    /**
+     * 返回 Redis Key、版本、围栏、Outbox 和失效广播共同使用的业务 key 字符串。
+     *
+     * @param key 业务 key
+     * @return 稳定序列化结果
+     */
+    public String serializeKey(K key) {
+        return config.serializeKey(key);
     }
 
     /**

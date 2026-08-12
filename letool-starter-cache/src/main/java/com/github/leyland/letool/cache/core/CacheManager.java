@@ -435,6 +435,7 @@ public class CacheManager {
                 .nullValueCache(config.isNullValueCache())
                 .nullValueTtl(config.getNullValueTtl())
                 .valueType(config.getValueType())
+                .keySerializer(config::serializeKey)
                 .redisKeyPrefix(prefix)
                 .build();
     }

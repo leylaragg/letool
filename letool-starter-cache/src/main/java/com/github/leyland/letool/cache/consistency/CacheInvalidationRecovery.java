@@ -62,18 +62,45 @@ public class CacheInvalidationRecovery {
                 CacheFenceCompletion completion = fenceStore.complete(fence);
                 // SUPERSEDED 表示该事件建立围栏时的旧数据早已删除，且当前围栏属于更新事务。
                 if (completion != null) {
-                    eventStore.markCompleted(event.eventId());
+                    eventStore.markCompleted(event.eventId(), event.leaseOwner());
                     completed++;
                 }
             } catch (Exception exception) {
                 Duration delay = retryDelay(event.attemptCount());
-                eventStore.markRetry(event.eventId(), now.plus(delay));
+                eventStore.markRetry(event.eventId(), event.leaseOwner(), now.plus(delay));
                 log.warn("Durable cache invalidation recovery failed, eventId={}, attempt={}",
                         event.eventId(), event.attemptCount() + 1);
                 log.debug("Durable cache invalidation recovery detail", exception);
             }
         }
         return completed;
+    }
+
+    /**
+     * 查询 Outbox 当前积压，用于接入 Actuator、监控系统或巡检任务。
+     *
+     * @param now 当前时间
+     * @return 积压快照
+     */
+    public CacheInvalidationBacklog backlog(Instant now) {
+        return eventStore.backlog(Objects.requireNonNull(now, "当前时间不能为空"));
+    }
+
+    /**
+     * 分批删除超过保留期的已完成事件。
+     *
+     * @param now 当前时间
+     * @param retention 已完成事件保留时长
+     * @param cleanupBatchSize 单次最多删除数量
+     * @return 实际删除数量
+     */
+    public int cleanupCompleted(Instant now, Duration retention, int cleanupBatchSize) {
+        Objects.requireNonNull(now, "当前时间不能为空");
+        Objects.requireNonNull(retention, "保留时间不能为空");
+        if (retention.isNegative() || retention.isZero() || cleanupBatchSize <= 0) {
+            throw new IllegalArgumentException("保留时间和清理批量必须大于零");
+        }
+        return eventStore.deleteCompletedBefore(now.minus(retention), cleanupBatchSize);
     }
 
     private Duration retryDelay(int attemptCount) {

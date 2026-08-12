@@ -3,6 +3,8 @@ package com.github.leyland.letool.cache.aspect;
 import com.github.leyland.letool.cache.annotation.MultiLevelCacheable;
 import com.github.leyland.letool.cache.annotation.MultiLevelCachePut;
 import com.github.leyland.letool.cache.consistency.CacheWritePolicy;
+import com.github.leyland.letool.cache.consistency.CacheMutationCoordinator;
+import com.github.leyland.letool.cache.consistency.CacheMutation;
 import com.github.leyland.letool.cache.core.CacheConfig;
 import com.github.leyland.letool.cache.core.CacheManager;
 import com.github.leyland.letool.cache.serializer.JacksonCacheSerializer;
@@ -17,6 +19,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 
 /**
  * 缓存注解切面的生产语义测试。
@@ -83,6 +88,31 @@ class CacheAspectTest {
 
         assertEquals("new", aspect.handleCachePut(joinPoint, annotation));
         assertEquals("new", cache.getIfPresent("u1"));
+    }
+
+    @Test
+    @DisplayName("修改协调器使用缓存配置的稳定 Key 序列化结果")
+    void mutationShouldUseConfiguredKeySerializer() throws Throwable {
+        CacheManager cacheManager = new CacheManager(null, new JacksonCacheSerializer());
+        cacheManager.getOrCreate(CacheConfig.<String, String>builder("users")
+                .l2Enabled(false)
+                .keySerializer(key -> "stable-" + key));
+        CacheMutationCoordinator coordinator = mock(CacheMutationCoordinator.class);
+        when(coordinator.execute(any(CacheMutation.class), any(), any())).thenAnswer(invocation -> {
+            CacheMutationCoordinator.ThrowingSupplier<?> action = invocation.getArgument(1);
+            return action.get();
+        });
+        CacheAspect aspect = new CacheAspect(cacheManager, coordinator);
+        ProceedingJoinPoint joinPoint = mockJoinPointReturning("new");
+        MultiLevelCachePut annotation = mock(MultiLevelCachePut.class);
+        when(annotation.name()).thenReturn("users");
+        when(annotation.key()).thenReturn("'u1'");
+
+        aspect.handleCachePut(joinPoint, annotation);
+
+        verify(coordinator).execute(eq(new CacheMutation(
+                com.github.leyland.letool.cache.consistency.CacheConsistencyMode.TRANSACTIONAL,
+                "users", "stable-u1")), any(), any());
     }
 
     private ProceedingJoinPoint mockJoinPointThrowing(Throwable throwable) throws Throwable {

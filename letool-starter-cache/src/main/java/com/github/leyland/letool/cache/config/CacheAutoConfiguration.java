@@ -28,7 +28,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -64,6 +66,7 @@ public class CacheAutoConfiguration {
      */
     @Bean
     @ConditionalOnBean(PlatformTransactionManager.class)
+    @Conditional(ExactSingleTransactionManagerCondition.class)
     @ConditionalOnMissingBean(CacheMutationCoordinator.class)
     public CacheMutationCoordinator cacheMutationCoordinator(
             PlatformTransactionManager transactionManager,
@@ -77,7 +80,7 @@ public class CacheAutoConfiguration {
     /** 使用业务 JdbcTemplate 注册默认 Outbox 仓储。 */
     @Bean
     @ConditionalOnClass(JdbcTemplate.class)
-    @ConditionalOnBean(JdbcTemplate.class)
+    @Conditional({ExactSingleJdbcTemplateCondition.class, DurableCacheConfiguredCondition.class})
     @ConditionalOnMissingBean(CacheInvalidationEventStore.class)
     public CacheInvalidationEventStore cacheInvalidationEventStore(
             JdbcTemplate jdbcTemplate, CacheProperties properties) {
@@ -89,6 +92,7 @@ public class CacheAutoConfiguration {
     @Bean
     @ConditionalOnBean(RedisUtil.class)
     @ConditionalOnMissingBean(RedisCacheFenceStore.class)
+    @Conditional(DurableCacheConfiguredCondition.class)
     public RedisCacheFenceStore redisCacheFenceStore(
             RedisUtil redisUtil, CacheProperties properties) {
         return new RedisCacheFenceStore(
@@ -99,6 +103,7 @@ public class CacheAutoConfiguration {
     @Bean
     @ConditionalOnBean({CacheInvalidationEventStore.class, RedisCacheFenceStore.class})
     @ConditionalOnMissingBean(CacheInvalidationRecovery.class)
+    @Conditional(DurableCacheConfiguredCondition.class)
     public CacheInvalidationRecovery cacheInvalidationRecovery(
             CacheInvalidationEventStore eventStore,
             RedisCacheFenceStore fenceStore,
@@ -117,7 +122,11 @@ public class CacheAutoConfiguration {
     public CacheInvalidationRecoveryScheduler cacheInvalidationRecoveryScheduler(
             CacheInvalidationRecovery recovery, CacheProperties properties) {
         return new CacheInvalidationRecoveryScheduler(
-                recovery, properties.getConsistency().getRecoveryInterval());
+                recovery,
+                properties.getConsistency().getRecoveryInterval(),
+                properties.getConsistency().getCleanupInterval(),
+                properties.getConsistency().getCompletedRetention(),
+                properties.getConsistency().getCleanupBatchSize());
     }
 
     /**
@@ -125,23 +134,27 @@ public class CacheAutoConfiguration {
      *
      * @param properties 缓存配置
      * @param redisUtil Redis 操作入口
-     * @param transactionManager 业务事务管理器
-     * @param eventStore 持久化事件仓储
+     * @param redisProvider Redis 操作入口候选
+     * @param coordinatorProvider 已绑定正确事务管理器的缓存修改协调器候选
+     * @param eventStoreProvider 持久化事件仓储候选
      * @return 启动期校验标记对象
      */
     @Bean
     @ConditionalOnMissingBean(name = "cacheConsistencyInfrastructureValidator")
     public Object cacheConsistencyInfrastructureValidator(
             CacheProperties properties,
-            @org.springframework.beans.factory.annotation.Autowired(required = false) RedisUtil redisUtil,
-            @org.springframework.beans.factory.annotation.Autowired(required = false) PlatformTransactionManager transactionManager,
-            @org.springframework.beans.factory.annotation.Autowired(required = false) CacheInvalidationEventStore eventStore) {
+            ObjectProvider<RedisUtil> redisProvider,
+            ObjectProvider<CacheMutationCoordinator> coordinatorProvider,
+            ObjectProvider<CacheInvalidationEventStore> eventStoreProvider) {
         boolean durableConfigured = properties.getConsistency().getMode() == CacheConsistencyMode.DURABLE
                 || properties.getInstances().stream()
                 .anyMatch(instance -> instance.getConsistencyMode() == CacheConsistencyMode.DURABLE);
-        if (durableConfigured && (redisUtil == null || transactionManager == null || eventStore == null)) {
+        if (durableConfigured && (redisProvider.getIfUnique() == null
+                || coordinatorProvider.getIfUnique() == null
+                || eventStoreProvider.getIfUnique() == null)) {
             throw new IllegalStateException(
-                    "DURABLE 缓存一致性模式要求 Redis、事务管理器和 CacheInvalidationEventStore");
+                    "DURABLE 缓存一致性模式要求唯一 Redis、CacheMutationCoordinator 和 CacheInvalidationEventStore；"
+                            + "多数据源项目必须显式声明绑定正确事务管理器/数据源的实现");
         }
         return new Object();
     }
@@ -275,8 +288,11 @@ public class CacheAutoConfiguration {
     @ConditionalOnBean(CacheManager.class)
     @ConditionalOnMissingBean(CacheMonitor.class)
     @ConditionalOnProperty(prefix = "letool.cache.monitoring", name = "enabled", havingValue = "true", matchIfMissing = true)
-    public CacheMonitor cacheMonitor(CacheManager cacheManager) {
-        return new CacheMonitor(cacheManager);
+    public CacheMonitor cacheMonitor(
+            CacheManager cacheManager,
+            @org.springframework.beans.factory.annotation.Autowired(required = false)
+            CacheInvalidationRecovery invalidationRecovery) {
+        return new CacheMonitor(cacheManager, invalidationRecovery);
     }
 
     /**

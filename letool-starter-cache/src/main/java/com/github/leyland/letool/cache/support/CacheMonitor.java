@@ -3,12 +3,15 @@ package com.github.leyland.letool.cache.support;
 import com.github.leyland.letool.cache.core.CacheManager;
 import com.github.leyland.letool.cache.core.CacheStats;
 import com.github.leyland.letool.cache.core.MultiLevelCache;
+import com.github.leyland.letool.cache.consistency.CacheInvalidationBacklog;
+import com.github.leyland.letool.cache.consistency.CacheInvalidationRecovery;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.time.Instant;
 
 /**
  * 缓存监控组件。
@@ -21,9 +24,21 @@ public class CacheMonitor {
     private static final Logger log = LoggerFactory.getLogger(CacheMonitor.class);
 
     private final CacheManager cacheManager;
+    private final CacheInvalidationRecovery invalidationRecovery;
 
     public CacheMonitor(CacheManager cacheManager) {
+        this(cacheManager, null);
+    }
+
+    /**
+     * 创建同时支持常规缓存统计和 DURABLE Outbox 监控的组件。
+     *
+     * @param cacheManager 缓存管理器
+     * @param invalidationRecovery DURABLE 恢复处理器；非 DURABLE 模式可为 {@code null}
+     */
+    public CacheMonitor(CacheManager cacheManager, CacheInvalidationRecovery invalidationRecovery) {
         this.cacheManager = cacheManager;
+        this.invalidationRecovery = invalidationRecovery;
     }
 
     /**
@@ -37,6 +52,19 @@ public class CacheMonitor {
             result.put(cache.getName(), cache.stats());
         }
         return result;
+    }
+
+    /**
+     * 获取 DURABLE Outbox 积压快照。
+     *
+     * @param now 当前时间
+     * @return Outbox 积压；未启用 DURABLE 时返回全零快照
+     */
+    public CacheInvalidationBacklog outboxBacklog(Instant now) {
+        if (invalidationRecovery == null) {
+            return new CacheInvalidationBacklog(0, 0, 0, null);
+        }
+        return invalidationRecovery.backlog(now);
     }
 
     /**

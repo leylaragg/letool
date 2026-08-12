@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
@@ -84,6 +85,7 @@ public class JdbcCacheInvalidationEventStore implements CacheInvalidationEventSt
         List<CacheInvalidationEvent> claimed = new ArrayList<>(candidates.size());
         Timestamp leaseUntil = timestamp(now.plus(lease));
         for (String eventId : candidates) {
+            String leaseToken = owner + ":" + UUID.randomUUID();
             int updated = jdbcTemplate.update(
                     "UPDATE " + tableName
                             + " SET status = 'PROCESSING', lease_owner = ?, lease_until = ?, updated_at = ?"
@@ -91,7 +93,7 @@ public class JdbcCacheInvalidationEventStore implements CacheInvalidationEventSt
                             + " AND status IN ('PENDING', 'PROCESSING')"
                             + " AND next_attempt_at <= ?"
                             + " AND (lease_until IS NULL OR lease_until <= ?)",
-                    owner, leaseUntil, current, eventId, current, current);
+                    leaseToken, leaseUntil, current, eventId, current, current);
             if (updated == 1) {
                 claimed.add(load(eventId));
             }
@@ -101,35 +103,101 @@ public class JdbcCacheInvalidationEventStore implements CacheInvalidationEventSt
 
     /** {@inheritDoc} */
     @Override
-    public void markCompleted(String eventId) {
-        jdbcTemplate.update("UPDATE " + tableName
-                        + " SET status = 'COMPLETED', lease_owner = NULL, lease_until = NULL, updated_at = ?"
-                        + " WHERE event_id = ?",
-                timestamp(Instant.now()), eventId);
+    public boolean markCompleted(String eventId, String leaseOwner) {
+        String ownershipPredicate = leaseOwner == null
+                ? " AND status = 'PENDING' AND lease_owner IS NULL"
+                : " AND status = 'PROCESSING' AND lease_owner = ?";
+        int updated = leaseOwner == null
+                ? jdbcTemplate.update("UPDATE " + tableName
+                                + " SET status = 'COMPLETED', lease_owner = NULL, lease_until = NULL, updated_at = ?"
+                                + " WHERE event_id = ?" + ownershipPredicate,
+                        timestamp(Instant.now()), eventId)
+                : jdbcTemplate.update("UPDATE " + tableName
+                                + " SET status = 'COMPLETED', lease_owner = NULL, lease_until = NULL, updated_at = ?"
+                                + " WHERE event_id = ?" + ownershipPredicate,
+                        timestamp(Instant.now()), eventId, leaseOwner);
+        return updated == 1;
     }
 
     /** {@inheritDoc} */
     @Override
-    public void markRetry(String eventId, Instant nextAttemptAt) {
-        jdbcTemplate.update("UPDATE " + tableName
+    public boolean markRetry(String eventId, String leaseOwner, Instant nextAttemptAt) {
+        if (leaseOwner == null) {
+            return false;
+        }
+        int updated = jdbcTemplate.update("UPDATE " + tableName
                         + " SET status = 'PENDING', attempt_count = attempt_count + 1,"
                         + " next_attempt_at = ?, lease_owner = NULL, lease_until = NULL, updated_at = ?"
-                        + " WHERE event_id = ?",
-                timestamp(nextAttemptAt), timestamp(Instant.now()), eventId);
+                        + " WHERE event_id = ? AND status = 'PROCESSING' AND lease_owner = ?",
+                timestamp(nextAttemptAt), timestamp(Instant.now()), eventId, leaseOwner);
+        return updated == 1;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public CacheInvalidationBacklog backlog(Instant now) {
+        Objects.requireNonNull(now, "当前时间不能为空");
+        long pending = countByStatus(CacheInvalidationEventStatus.PENDING);
+        long processing = countByStatus(CacheInvalidationEventStatus.PROCESSING);
+        long completed = countByStatus(CacheInvalidationEventStatus.COMPLETED);
+        Instant oldest = jdbcTemplate.query(
+                "SELECT MIN(created_at) FROM " + tableName
+                        + " WHERE status IN ('PENDING', 'PROCESSING')",
+                resultSet -> {
+                    if (!resultSet.next()) {
+                        return null;
+                    }
+                    Timestamp timestamp = resultSet.getTimestamp(1);
+                    return timestamp == null ? null : timestamp.toInstant();
+                });
+        return new CacheInvalidationBacklog(pending, processing, completed, oldest);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public int deleteCompletedBefore(Instant completedBefore, int batchSize) {
+        Objects.requireNonNull(completedBefore, "完成事件清理时间不能为空");
+        if (batchSize <= 0) {
+            throw new IllegalArgumentException("清理批量数量必须大于零");
+        }
+        Timestamp cutoff = timestamp(completedBefore);
+        List<String> candidates = jdbcTemplate.query(connection -> {
+            var statement = connection.prepareStatement(
+                    "SELECT event_id FROM " + tableName
+                            + " WHERE status = 'COMPLETED' AND updated_at < ? ORDER BY updated_at, event_id");
+            statement.setTimestamp(1, cutoff);
+            statement.setMaxRows(batchSize);
+            return statement;
+        }, (resultSet, rowNumber) -> resultSet.getString("event_id"));
+        int deleted = 0;
+        for (String eventId : candidates) {
+            deleted += jdbcTemplate.update("DELETE FROM " + tableName
+                            + " WHERE event_id = ? AND status = 'COMPLETED' AND updated_at < ?",
+                    eventId, cutoff);
+        }
+        return deleted;
     }
 
     private CacheInvalidationEvent load(String eventId) {
         return jdbcTemplate.queryForObject(
                 "SELECT event_id, cache_name, serialized_key, fence_token, status, attempt_count,"
-                        + " next_attempt_at, created_at FROM " + tableName + " WHERE event_id = ?",
+                        + " next_attempt_at, created_at, lease_owner FROM " + tableName + " WHERE event_id = ?",
                 (resultSet, rowNumber) -> new CacheInvalidationEvent(
                         resultSet.getString("event_id"), resultSet.getString("cache_name"),
                         resultSet.getString("serialized_key"), resultSet.getString("fence_token"),
                         CacheInvalidationEventStatus.valueOf(resultSet.getString("status")),
                         resultSet.getInt("attempt_count"),
                         resultSet.getTimestamp("next_attempt_at").toInstant(),
-                        resultSet.getTimestamp("created_at").toInstant()),
+                        resultSet.getTimestamp("created_at").toInstant(),
+                        resultSet.getString("lease_owner")),
                 eventId);
+    }
+
+    private long countByStatus(CacheInvalidationEventStatus status) {
+        Long count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM " + tableName + " WHERE status = ?",
+                Long.class, status.name());
+        return count == null ? 0L : count;
     }
 
     private static Timestamp timestamp(Instant instant) {

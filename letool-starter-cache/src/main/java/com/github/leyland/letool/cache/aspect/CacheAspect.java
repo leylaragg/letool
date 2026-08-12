@@ -153,7 +153,7 @@ public class CacheAspect {
             java.util.function.Consumer<Object> cacheAction) throws Throwable {
         if (mutationCoordinator != null) {
             return mutationCoordinator.execute(
-                    new CacheMutation(cache.getConsistencyMode(), cache.getName(), String.valueOf(key)),
+                    new CacheMutation(cache.getConsistencyMode(), cache.getName(), cache.serializeKey(key)),
                     joinPoint::proceed,
                     cacheAction);
         }

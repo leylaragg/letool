@@ -13,6 +13,14 @@ import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import com.github.leyland.letool.cache.consistency.CacheInvalidationEventStore;
+import com.github.leyland.letool.cache.consistency.CacheInvalidationRecovery;
+import com.github.leyland.letool.cache.consistency.CacheInvalidationRecoveryScheduler;
+import com.github.leyland.letool.cache.consistency.CacheMutationCoordinator;
+import com.github.leyland.letool.tool.redis.RedisUtil;
 
 import java.lang.reflect.Field;
 
@@ -203,6 +211,59 @@ class CacheAutoConfigurationTest {
                 });
     }
 
+    @Test
+    void transactionalModeShouldNotStartDurableRecoveryWorker() {
+        contextRunner
+                .withUserConfiguration(DurableInfrastructureConfiguration.class)
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).doesNotHaveBean(CacheInvalidationRecovery.class);
+                    assertThat(context).doesNotHaveBean(CacheInvalidationRecoveryScheduler.class);
+                });
+    }
+
+    @Test
+    void durableModeShouldStartRecoveryWorkerWhenInfrastructureIsComplete() {
+        contextRunner
+                .withUserConfiguration(DurableInfrastructureConfiguration.class)
+                .withPropertyValues("letool.cache.consistency.mode=DURABLE")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(CacheInvalidationRecovery.class);
+                    assertThat(context).hasSingleBean(CacheInvalidationRecoveryScheduler.class);
+                });
+    }
+
+    @Test
+    void multipleJdbcTemplatesShouldRequireExplicitEventStore() {
+        contextRunner
+                .withUserConfiguration(MultipleJdbcTemplatesConfiguration.class)
+                .run(context -> assertThat(context).doesNotHaveBean(CacheInvalidationEventStore.class));
+    }
+
+    @Test
+    void durableWithMultipleTransactionManagersShouldRequireExplicitCoordinator() {
+        contextRunner
+                .withUserConfiguration(MultipleTransactionManagersConfiguration.class)
+                .withPropertyValues("letool.cache.consistency.mode=DURABLE")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("CacheMutationCoordinator");
+                });
+    }
+
+    @Test
+    void durableShouldNotUsePrimaryFromMultipleInfrastructureCandidates() {
+        contextRunner
+                .withUserConfiguration(PrimaryMultipleInfrastructureConfiguration.class)
+                .withPropertyValues("letool.cache.consistency.mode=DURABLE")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure()).hasMessageContaining("多数据源");
+                });
+    }
+
     private CacheConfig<?, ?> extractConfig(MultiLevelCache<?, ?> cache) {
         try {
             Field field = cache.getClass().getDeclaredField("config");
@@ -239,6 +300,94 @@ class CacheAutoConfigurationTest {
         @Bean({"cacheInstancesInitializer", "userCacheInstancesInitializer"})
         Object cacheInstancesInitializer() {
             return new Object();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class DurableInfrastructureConfiguration {
+
+        @Bean
+        RedisUtil redisUtil() {
+            return org.mockito.Mockito.mock(RedisUtil.class);
+        }
+
+        @Bean
+        PlatformTransactionManager transactionManager() {
+            return org.mockito.Mockito.mock(PlatformTransactionManager.class);
+        }
+
+        @Bean
+        CacheInvalidationEventStore cacheInvalidationEventStore() {
+            return org.mockito.Mockito.mock(CacheInvalidationEventStore.class);
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class MultipleJdbcTemplatesConfiguration {
+
+        @Bean
+        JdbcTemplate firstJdbcTemplate() {
+            return org.mockito.Mockito.mock(JdbcTemplate.class);
+        }
+
+        @Bean
+        JdbcTemplate secondJdbcTemplate() {
+            return org.mockito.Mockito.mock(JdbcTemplate.class);
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class MultipleTransactionManagersConfiguration {
+
+        @Bean
+        RedisUtil redisUtil() {
+            return org.mockito.Mockito.mock(RedisUtil.class);
+        }
+
+        @Bean
+        CacheInvalidationEventStore cacheInvalidationEventStore() {
+            return org.mockito.Mockito.mock(CacheInvalidationEventStore.class);
+        }
+
+        @Bean
+        PlatformTransactionManager firstTransactionManager() {
+            return org.mockito.Mockito.mock(PlatformTransactionManager.class);
+        }
+
+        @Bean
+        PlatformTransactionManager secondTransactionManager() {
+            return org.mockito.Mockito.mock(PlatformTransactionManager.class);
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class PrimaryMultipleInfrastructureConfiguration {
+
+        @Bean
+        RedisUtil redisUtil() {
+            return org.mockito.Mockito.mock(RedisUtil.class);
+        }
+
+        @Bean
+        @Primary
+        PlatformTransactionManager primaryTransactionManager() {
+            return org.mockito.Mockito.mock(PlatformTransactionManager.class);
+        }
+
+        @Bean
+        PlatformTransactionManager secondaryTransactionManager() {
+            return org.mockito.Mockito.mock(PlatformTransactionManager.class);
+        }
+
+        @Bean
+        @Primary
+        JdbcTemplate primaryJdbcTemplate() {
+            return org.mockito.Mockito.mock(JdbcTemplate.class);
+        }
+
+        @Bean
+        JdbcTemplate secondaryJdbcTemplate() {
+            return org.mockito.Mockito.mock(JdbcTemplate.class);
         }
     }
 }

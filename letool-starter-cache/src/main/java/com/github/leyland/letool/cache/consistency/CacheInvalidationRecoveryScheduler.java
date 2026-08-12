@@ -24,8 +24,33 @@ public class CacheInvalidationRecoveryScheduler implements AutoCloseable {
      * @param interval 扫描间隔
      */
     public CacheInvalidationRecoveryScheduler(CacheInvalidationRecovery recovery, Duration interval) {
+        this(recovery, interval, Duration.ofHours(1), Duration.ofDays(7), 1000);
+    }
+
+    /**
+     * 创建并启动恢复与已完成事件清理调度器。
+     *
+     * @param recovery 恢复处理器
+     * @param interval 恢复扫描间隔
+     * @param cleanupInterval 已完成事件清理间隔
+     * @param completedRetention 已完成事件保留时间
+     * @param cleanupBatchSize 单次清理数量
+     */
+    public CacheInvalidationRecoveryScheduler(
+            CacheInvalidationRecovery recovery,
+            Duration interval,
+            Duration cleanupInterval,
+            Duration completedRetention,
+            int cleanupBatchSize) {
         Duration effectiveInterval = interval == null || interval.isZero() || interval.isNegative()
                 ? Duration.ofSeconds(5) : interval;
+        Duration effectiveCleanupInterval = cleanupInterval == null
+                || cleanupInterval.isZero() || cleanupInterval.isNegative()
+                ? Duration.ofHours(1) : cleanupInterval;
+        Duration effectiveRetention = completedRetention == null
+                || completedRetention.isZero() || completedRetention.isNegative()
+                ? Duration.ofDays(7) : completedRetention;
+        int effectiveCleanupBatchSize = cleanupBatchSize <= 0 ? 1000 : cleanupBatchSize;
         executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
             Thread thread = new Thread(runnable, "letool-cache-outbox-recovery");
             thread.setDaemon(true);
@@ -34,6 +59,23 @@ public class CacheInvalidationRecoveryScheduler implements AutoCloseable {
         long delayMillis = effectiveInterval.toMillis();
         executor.scheduleWithFixedDelay(
                 () -> recover(recovery), delayMillis, delayMillis, TimeUnit.MILLISECONDS);
+        long cleanupDelayMillis = effectiveCleanupInterval.toMillis();
+        executor.scheduleWithFixedDelay(
+                () -> cleanup(recovery, effectiveRetention, effectiveCleanupBatchSize),
+                cleanupDelayMillis, cleanupDelayMillis, TimeUnit.MILLISECONDS);
+    }
+
+    private void cleanup(
+            CacheInvalidationRecovery recovery, Duration completedRetention, int cleanupBatchSize) {
+        try {
+            int deleted = recovery.cleanupCompleted(
+                    Instant.now(), completedRetention, cleanupBatchSize);
+            if (deleted > 0) {
+                log.info("Durable cache completed outbox events cleaned, count={}", deleted);
+            }
+        } catch (Exception exception) {
+            log.warn("Durable cache completed outbox cleanup failed", exception);
+        }
     }
 
     private void recover(CacheInvalidationRecovery recovery) {

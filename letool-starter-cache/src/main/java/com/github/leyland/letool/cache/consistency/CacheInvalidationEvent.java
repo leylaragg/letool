@@ -14,6 +14,7 @@ import java.util.Objects;
  * @param attemptCount 已失败次数
  * @param nextAttemptAt 下一次允许处理的时间
  * @param createdAt 创建时间
+ * @param leaseOwner 当前处理租约持有者；未领取时为 {@code null}
  */
 public record CacheInvalidationEvent(
         String eventId,
@@ -23,7 +24,8 @@ public record CacheInvalidationEvent(
         CacheInvalidationEventStatus status,
         int attemptCount,
         Instant nextAttemptAt,
-        Instant createdAt) {
+        Instant createdAt,
+        String leaseOwner) {
 
     public CacheInvalidationEvent {
         Objects.requireNonNull(eventId, "事件 ID 不能为空");
@@ -36,6 +38,22 @@ public record CacheInvalidationEvent(
         if (attemptCount < 0) {
             throw new IllegalArgumentException("重试次数不能小于零");
         }
+    }
+
+    /**
+     * 兼容未携带租约令牌的旧构造方式。
+     */
+    public CacheInvalidationEvent(
+            String eventId,
+            String cacheName,
+            String serializedKey,
+            String fenceToken,
+            CacheInvalidationEventStatus status,
+            int attemptCount,
+            Instant nextAttemptAt,
+            Instant createdAt) {
+        this(eventId, cacheName, serializedKey, fenceToken, status,
+                attemptCount, nextAttemptAt, createdAt, null);
     }
 
     /**
@@ -56,6 +74,6 @@ public record CacheInvalidationEvent(
             Instant createdAt) {
         return new CacheInvalidationEvent(
                 eventId, cacheName, serializedKey, fenceToken,
-                CacheInvalidationEventStatus.PENDING, 0, createdAt, createdAt);
+                CacheInvalidationEventStatus.PENDING, 0, createdAt, createdAt, null);
     }
 }

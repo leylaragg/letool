@@ -48,6 +48,9 @@ class CachePropertiesTest {
         assertEquals(CacheConsistencyMode.TRANSACTIONAL, properties.getConsistency().getMode());
         assertEquals(CacheReadValidation.VERSIONED, properties.getConsistency().getReadValidation());
         assertEquals(CacheWritePolicy.INVALIDATE, properties.getConsistency().getWritePolicy());
+        assertEquals(Duration.ofDays(7), properties.getConsistency().getCompletedRetention());
+        assertEquals(Duration.ofHours(1), properties.getConsistency().getCleanupInterval());
+        assertEquals(1000, properties.getConsistency().getCleanupBatchSize());
     }
 
     @Test

@@ -92,6 +92,12 @@ public class CacheProperties {
         private Duration retryBaseDelay = Duration.ofSeconds(1);
         /** JDBC Outbox 表名。 */
         private String outboxTable = "letool_cache_outbox";
+        /** 已完成 Outbox 事件保留时间。 */
+        private Duration completedRetention = Duration.ofDays(7);
+        /** 已完成 Outbox 事件清理间隔。 */
+        private Duration cleanupInterval = Duration.ofHours(1);
+        /** 已完成 Outbox 事件单次清理数量。 */
+        private int cleanupBatchSize = 1000;
 
         public CacheConsistencyMode getMode() { return mode; }
         public void setMode(CacheConsistencyMode mode) { this.mode = mode; }
@@ -111,6 +117,12 @@ public class CacheProperties {
         public void setRetryBaseDelay(Duration retryBaseDelay) { this.retryBaseDelay = retryBaseDelay; }
         public String getOutboxTable() { return outboxTable; }
         public void setOutboxTable(String outboxTable) { this.outboxTable = outboxTable; }
+        public Duration getCompletedRetention() { return completedRetention; }
+        public void setCompletedRetention(Duration completedRetention) { this.completedRetention = completedRetention; }
+        public Duration getCleanupInterval() { return cleanupInterval; }
+        public void setCleanupInterval(Duration cleanupInterval) { this.cleanupInterval = cleanupInterval; }
+        public int getCleanupBatchSize() { return cleanupBatchSize; }
+        public void setCleanupBatchSize(int cleanupBatchSize) { this.cleanupBatchSize = cleanupBatchSize; }
     }
 
     /**

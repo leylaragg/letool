@@ -64,6 +64,19 @@ class CacheConfigTest {
     }
 
     @Test
+    @DisplayName("KV 自定义 Key 使用显式稳定序列化函数")
+    void shouldUseConfiguredStableKeySerializer() {
+        CacheConfig<BusinessKey, String> config = CacheConfig.<BusinessKey, String>builder("users")
+                .keySerializer(key -> key.tenantId() + ":" + key.userId())
+                .build();
+
+        assertEquals("tenant-a:42", config.serializeKey(new BusinessKey("tenant-a", 42L)));
+    }
+
+    private record BusinessKey(String tenantId, Long userId) {
+    }
+
+    @Test
     @DisplayName("旧 strongConsistency 只映射读取校验")
     void legacyStrongConsistencyShouldOnlyMapReadValidation() {
         CacheConfig<String, String> config = CacheConfig.<String, String>builder("legacy")
