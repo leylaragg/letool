@@ -83,6 +83,72 @@ public final class DataStructureException extends SystemException {
     }
 
     /**
+     * 创建树节点 ID 重复异常。
+     *
+     * @return 不暴露实际节点 ID 的重复异常
+     */
+    public static DataStructureException duplicateTreeId() {
+        return new DataStructureException(
+                DataStructureErrorCode.DUPLICATE_TREE_ID,
+                "nodeId",
+                null
+        );
+    }
+
+    /**
+     * 创建树节点父节点不存在异常。
+     *
+     * @return 不暴露实际父节点 ID 的孤儿节点异常
+     */
+    public static DataStructureException orphanTreeNode() {
+        return new DataStructureException(
+                DataStructureErrorCode.ORPHAN_TREE_NODE,
+                "parentId",
+                null
+        );
+    }
+
+    /**
+     * 创建非法树拓扑异常。
+     *
+     * @return 不暴露节点内容的树结构异常
+     */
+    public static DataStructureException invalidTreeStructure() {
+        return new DataStructureException(
+                DataStructureErrorCode.INVALID_TREE_STRUCTURE,
+                "treeTopology",
+                null
+        );
+    }
+
+    /**
+     * 创建非法链表连接异常。
+     *
+     * @param linkName 安全的连接名称
+     * @return 链表连接异常
+     */
+    public static DataStructureException invalidLink(String linkName) {
+        return new DataStructureException(
+                DataStructureErrorCode.INVALID_LINK,
+                linkName,
+                null
+        );
+    }
+
+    /**
+     * 创建链表环异常。
+     *
+     * @return 不暴露节点负载的链表环异常
+     */
+    public static DataStructureException linkCycleDetected() {
+        return new DataStructureException(
+                DataStructureErrorCode.LINK_CYCLE_DETECTED,
+                "linkTopology",
+                null
+        );
+    }
+
+    /**
      * 规范化公开消息中的安全名称。
      *
      * @param value 待规范化名称

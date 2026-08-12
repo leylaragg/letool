@@ -1,185 +1,203 @@
 package com.github.leyland.letool.datastructure.linked;
 
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
+import com.github.leyland.letool.datastructure.exception.DataStructureErrorCode;
+import com.github.leyland.letool.datastructure.exception.DataStructureException;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@DisplayName("链表测试")
+/**
+ * 单向和双向链表的关键生产契约测试。
+ */
 class LinkedNodeTest {
 
-    @Nested
-    @DisplayName("INext 接口默认方法")
-    class INextDefaults {
+    /**
+     * 验证单向链表连接方法返回被连接节点，并支持安全遍历与计数。
+     */
+    @Test
+    void shouldBuildAndTraverseSinglyLinkedList() {
+        LinkedNode<String> head = LinkedNode.of("a");
+        LinkedNode<String> middle = head.next("b");
+        LinkedNode<String> tail = middle.nextNode(LinkedNode.of("c"));
+        List<String> values = new ArrayList<>();
 
-        static class TestNode implements INext<TestNode> {
-            private TestNode next;
+        head.forEach(values::add);
 
-            @Override public TestNode getNext() { return next; }
-            @Override public void setNext(TestNode next) { this.next = next; }
-        }
-
-        @Test
-        @DisplayName("有 next 时 hasNext 返回 true")
-        void hasNextTrue() {
-            TestNode a = new TestNode();
-            a.setNext(new TestNode());
-            assertTrue(a.hasNext());
-        }
-
-        @Test
-        @DisplayName("无 next 时 hasNext 返回 false")
-        void hasNextFalse() {
-            assertFalse(new TestNode().hasNext());
-        }
+        assertSame(tail, middle.getNext());
+        assertEquals(List.of("a", "b", "c"), values);
+        assertEquals(3, head.count());
+        assertTrue(head.hasNext());
+        assertFalse(tail.hasNext());
     }
 
-    @Nested
-    @DisplayName("LinkedNode 单向链表")
-    class SinglyLinked {
+    /**
+     * 验证连接入口拒绝自环和包含当前节点的候选链。
+     */
+    @Test
+    void shouldRejectCycleCreatingConnections() {
+        LinkedNode<String> self = LinkedNode.of("self");
+        assertError(DataStructureErrorCode.LINK_CYCLE_DETECTED, () -> self.setNext(self));
 
-        @Test
-        @DisplayName("of 静态工厂创建")
-        void of() {
-            LinkedNode<String> node = LinkedNode.of("hello");
-            assertEquals("hello", node.getData());
-            assertNull(node.getNext());
-        }
-
-        @Test
-        @DisplayName("next 链式构建")
-        void nextChaining() {
-            LinkedNode<String> head = LinkedNode.of("a");
-            head.next("b").next("c");
-
-            assertEquals("a", head.getData());
-            assertEquals("b", head.getNext().getData());
-            assertEquals("c", head.getNext().getNext().getData());
-            assertNull(head.getNext().getNext().getNext());
-        }
-
-        @Test
-        @DisplayName("nextNode 连接已有节点")
-        void nextNode() {
-            LinkedNode<String> a = LinkedNode.of("a");
-            LinkedNode<String> b = LinkedNode.of("b");
-            a.nextNode(b);
-
-            assertSame(b, a.getNext());
-        }
-
-        @Test
-        @DisplayName("forEach 遍历")
-        void forEach() {
-            LinkedNode<String> head = LinkedNode.of("a");
-            head.next("b").next("c");
-
-            List<String> collected = new ArrayList<>();
-            head.forEach(collected::add);
-            assertEquals(List.of("a", "b", "c"), collected);
-        }
-
-        @Test
-        @DisplayName("count 统计长度")
-        void count() {
-            LinkedNode<String> head = LinkedNode.of("a");
-            head.next("b").next("c");
-            assertEquals(3, head.count());
-        }
-
-        @Test
-        @DisplayName("单节点 count 为 1")
-        void countSingle() {
-            assertEquals(1, LinkedNode.of("a").count());
-        }
-
-        @Test
-        @DisplayName("Iterable 增强 for 循环")
-        void iterable() {
-            LinkedNode<String> head = LinkedNode.of("x");
-            head.next("y").next("z");
-
-            List<String> result = new ArrayList<>();
-            for (String s : head) {
-                result.add(s);
-            }
-            assertEquals(List.of("x", "y", "z"), result);
-        }
+        LinkedNode<String> head = LinkedNode.of("a");
+        LinkedNode<String> tail = head.next("b");
+        assertError(DataStructureErrorCode.LINK_CYCLE_DETECTED, () -> tail.nextNode(head));
     }
 
-    @Nested
-    @DisplayName("DoublyLinkedNode 双向链表")
-    class DoublyLinked {
+    /**
+     * 验证遍历器能够识别由子类或外部恢复过程带入的损坏环形链路。
+     */
+    @Test
+    void shouldDetectCorruptedCycleDuringTraversal() {
+        CorruptibleNode<String> first = new CorruptibleNode<>("a");
+        CorruptibleNode<String> second = new CorruptibleNode<>("b");
+        first.corruptNext(second);
+        second.corruptNext(first);
 
-        @Test
-        @DisplayName("of 静态工厂")
-        void of() {
-            DoublyLinkedNode<Integer> node = DoublyLinkedNode.of(1);
-            assertEquals(1, node.getData());
-            assertNull(node.getPrev());
-            assertNull(node.getNext());
+        assertError(DataStructureErrorCode.LINK_CYCLE_DETECTED, first::count);
+        assertError(DataStructureErrorCode.LINK_CYCLE_DETECTED, () -> first.forEach(ignored -> { }));
+
+        Iterator<String> iterator = first.iterator();
+        assertEquals("a", iterator.next());
+        assertEquals("b", iterator.next());
+        assertError(DataStructureErrorCode.LINK_CYCLE_DETECTED, iterator::next);
+    }
+
+    /**
+     * 验证空回调被统一拒绝，节点相等性和哈希值不依赖可变数据。
+     */
+    @Test
+    void shouldUseIdentitySemanticsAndValidateConsumer() {
+        LinkedNode<String> first = LinkedNode.of("same");
+        LinkedNode<String> second = LinkedNode.of("same");
+        int originalHash = first.hashCode();
+
+        assertNotEquals(first, second);
+        first.setData("changed");
+        assertEquals(originalHash, first.hashCode());
+        assertError(DataStructureErrorCode.INVALID_ARGUMENT, () -> first.forEach(null));
+    }
+
+    /**
+     * 验证继承的链式入口仍创建双向节点，并保持前后导航一致。
+     */
+    @Test
+    void shouldBuildDoublyLinkedListThroughAllConvenienceEntrances() {
+        DoublyLinkedNode<String> head = DoublyLinkedNode.of("a");
+        DoublyLinkedNode<String> middle = head.next("b");
+        DoublyLinkedNode<String> tail = middle.append("c");
+        List<String> reverseValues = new ArrayList<>();
+
+        tail.forEachReverse(reverseValues::add);
+
+        assertSame(head, middle.getPrev());
+        assertSame(middle, tail.getPrev());
+        assertSame(tail, head.tail());
+        assertSame(head, tail.head());
+        assertEquals(List.of("c", "b", "a"), reverseValues);
+    }
+
+    /**
+     * 验证替换和解除后继时同步维护旧、新节点的前驱引用。
+     */
+    @Test
+    void shouldKeepBothDirectionsConsistentWhenReplacingLinks() {
+        DoublyLinkedNode<String> head = DoublyLinkedNode.of("head");
+        DoublyLinkedNode<String> oldNext = head.append("old");
+        DoublyLinkedNode<String> replacement = DoublyLinkedNode.of("replacement");
+
+        head.setNext(replacement);
+
+        assertNull(oldNext.getPrev());
+        assertSame(head, replacement.getPrev());
+        assertSame(replacement, head.getNext());
+
+        head.setNext(null);
+        assertNull(head.getNext());
+        assertNull(replacement.getPrev());
+    }
+
+    /**
+     * 验证已有节点连接、前插和前驱设置不会静默破坏其他双向链路。
+     */
+    @Test
+    void shouldRejectNodeOwnershipConflictsAndPlainNodes() {
+        DoublyLinkedNode<String> firstHead = DoublyLinkedNode.of("first");
+        DoublyLinkedNode<String> shared = DoublyLinkedNode.of("shared");
+        assertSame(shared, firstHead.appendNode(shared));
+
+        DoublyLinkedNode<String> secondHead = DoublyLinkedNode.of("second");
+        assertError(DataStructureErrorCode.INVALID_LINK, () -> secondHead.appendNode(shared));
+        assertError(DataStructureErrorCode.INVALID_LINK, () -> firstHead.setNext(LinkedNode.of("plain")));
+
+        DoublyLinkedNode<String> standalone = DoublyLinkedNode.of("standalone");
+        standalone.setPrev(secondHead);
+        assertSame(standalone, secondHead.getNext());
+        assertSame(secondHead, standalone.getPrev());
+
+        DoublyLinkedNode<String> newHead = firstHead.prepend("before");
+        assertSame(newHead, firstHead.getPrev());
+        assertSame(firstHead, newHead.getNext());
+    }
+
+    /**
+     * 断言操作抛出指定稳定错误码。
+     *
+     * @param errorCode 预期错误码
+     * @param action 待执行操作
+     */
+    private static void assertError(DataStructureErrorCode errorCode, Runnable action) {
+        DataStructureException exception = assertThrows(DataStructureException.class, action::run);
+        assertEquals(errorCode, exception.getErrorCode());
+    }
+
+    /**
+     * 用于模拟外部反序列化或不受信任子类写坏链路的节点。
+     *
+     * @param <T> 节点数据类型
+     */
+    private static final class CorruptibleNode<T> extends LinkedNode<T> {
+
+        /** 绕过正常连接入口写入的后继。 */
+        private LinkedNode<T> rawNext;
+
+        /**
+         * 创建可模拟损坏链路的节点。
+         *
+         * @param data 节点数据
+         */
+        private CorruptibleNode(T data) {
+            super(data);
         }
 
-        @Test
-        @DisplayName("append 追加并自动建立双向链接")
-        void append() {
-            DoublyLinkedNode<String> head = DoublyLinkedNode.of("a");
-            DoublyLinkedNode<String> mid = head.append("b");
-            DoublyLinkedNode<String> tail = mid.append("c");
-
-            assertEquals("a", head.getData());
-            assertEquals("b", mid.getData());
-            assertEquals("c", tail.getData());
-            assertNull(head.getPrev());
-            assertSame(head, mid.getPrev());
-            assertSame(mid, tail.getPrev());
+        /**
+         * 直接写入后继，仅用于构造损坏拓扑。
+         *
+         * @param next 后继节点
+         */
+        private void corruptNext(LinkedNode<T> next) {
+            this.rawNext = next;
         }
 
-        @Test
-        @DisplayName("prepend 前插并自动建立双向链接")
-        void prepend() {
-            DoublyLinkedNode<String> tail = DoublyLinkedNode.of("c");
-            DoublyLinkedNode<String> mid = tail.prepend("b");
-            DoublyLinkedNode<String> head = mid.prepend("a");
-
-            assertEquals("a", head.getData());
-            assertEquals("b", mid.getData());
-            assertEquals("c", tail.getData());
-            assertSame(head, mid.getPrev());
-            assertSame(mid, tail.getPrev());
+        /** {@inheritDoc} */
+        @Override
+        public LinkedNode<T> getNext() {
+            return rawNext;
         }
 
-        @Test
-        @DisplayName("forEachReverse 反向遍历")
-        void forEachReverse() {
-            DoublyLinkedNode<String> head = DoublyLinkedNode.of("a");
-            DoublyLinkedNode<String> tail = head.append("b").append("c");
-
-            List<String> collected = new ArrayList<>();
-            tail.forEachReverse(collected::add);
-            assertEquals(List.of("c", "b", "a"), collected);
-        }
-
-        @Test
-        @DisplayName("head 回溯到头部")
-        void head() {
-            DoublyLinkedNode<String> head = DoublyLinkedNode.of("a");
-            DoublyLinkedNode<String> tail = head.append("b").append("c");
-
-            assertSame(head, tail.head());
-        }
-
-        @Test
-        @DisplayName("tail 移动到尾部")
-        void tail() {
-            DoublyLinkedNode<String> head = DoublyLinkedNode.of("a");
-            DoublyLinkedNode<String> tail = head.append("b").append("c");
-
-            assertSame(tail, head.tail());
+        /** {@inheritDoc} */
+        @Override
+        public void setNext(LinkedNode<T> next) {
+            this.rawNext = next;
         }
     }
 }

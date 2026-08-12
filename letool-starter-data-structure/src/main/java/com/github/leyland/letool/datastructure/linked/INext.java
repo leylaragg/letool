@@ -1,15 +1,10 @@
 package com.github.leyland.letool.datastructure.linked;
 
 /**
- * 标记接口 —— 表示节点具有指向下一个节点的引用，用于树或其他结构中需要链式遍历的场景.
+ * 定义具有后继引用的链式节点最小契约。
  *
- * <pre>{@code
- * public class MyBizNode implements INext<MyBizNode> {
- *     private MyBizNode next;
- *     public MyBizNode getNext() { return next; }
- *     public void setNext(MyBizNode next) { this.next = next; }
- * }
- * }</pre>
+ * <p>接口只描述访问能力，不规定连接校验规则。使用 {@link LinkedNode} 和
+ * {@link DoublyLinkedNode} 时，应通过其连接方法获得防环和拓扑一致性保护。</p>
  *
  * @param <T> 实现类自身类型
  * @author leyland
@@ -17,13 +12,25 @@ package com.github.leyland.letool.datastructure.linked;
  */
 public interface INext<T extends INext<T>> {
 
-    /** 获取下一个节点. */
+    /**
+     * 获取当前节点的后继。
+     *
+     * @return 后继节点；没有后继时为 {@code null}
+     */
     T getNext();
 
-    /** 设置下一个节点. */
+    /**
+     * 设置当前节点的后继。
+     *
+     * @param next 后继节点；传入 {@code null} 表示解除连接
+     */
     void setNext(T next);
 
-    /** 是否还有下一个节点. */
+    /**
+     * 判断当前节点是否存在后继。
+     *
+     * @return 存在后继时为 {@code true}
+     */
     default boolean hasNext() {
         return getNext() != null;
     }

@@ -36,8 +36,10 @@ String routeResult = DecisionChain.<Order, String>builder()
     .build()
     .execute(order);
 
-// 4. 链式构建链表并遍历
-LinkedNode.of("a").next("b").next("c").forEach(System.out::println);
+// 4. 保存头节点后链式追加并遍历
+LinkedNode<String> head = LinkedNode.of("a");
+head.next("b").next("c");
+head.forEach(System.out::println);
 ```
 
 ## 核心 API 示例
@@ -103,11 +105,30 @@ List<Dept> deptList = deptMapper.selectAll();
 List<Dept> tree = TreeBuilder.build(deptList);
 ```
 
+`build` 采用严格默认契约：节点不能为空、ID 必须非空且唯一、父节点必须存在、父链不能成环。
+所有结构校验会在回填 `children` 之前完成，因此脏数据不会留下只构建了一部分的树。构建成功后，
+每个节点会获得独立、可修改的子节点列表，根节点和同级节点顺序与输入列表一致。
+
+构建器会修改传入节点的 `children`。不希望修改业务实体时使用下面的 `buildSimple` 包装方式。
+
 **方式二：使用 `SimpleTreeNode` 包装（无需修改实体）：**
 
 ```java
 List<SimpleTreeNode<Dept>> tree = TreeBuilder.buildSimple(
     deptList, Dept::getId, Dept::getParentId);
+```
+
+业务明确允许把父节点缺失的数据降级为根节点时，必须显式选择策略，不再静默丢弃孤儿节点：
+
+```java
+List<Dept> tree = TreeBuilder.build(deptList, TreeOrphanPolicy.AS_ROOT);
+
+List<SimpleTreeNode<Dept>> wrappedTree = TreeBuilder.buildSimple(
+    deptList,
+    Dept::getId,
+    Dept::getParentId,
+    TreeOrphanPolicy.AS_ROOT
+);
 ```
 
 **树遍历与操作（`TreeUtil`）：**
@@ -132,6 +153,10 @@ List<Dept> ancestors = TreeUtil.getAncestors(allDepts, targetDept);
 int depth = TreeUtil.maxDepth(root);
 int nodes = TreeUtil.countNodes(root);
 ```
+
+遍历、查询和统计均采用非递归实现，可处理万级深树。运行时发现环、空子节点元素或同一节点对象
+被多个父节点重复引用时，会抛出 `DATA_STRUCTURE_007`，不会无限循环。`getAncestors` 同样会拒绝
+重复 ID、缺失父节点和父链环，不再静默覆盖或截断祖先链。
 
 ### 3. 决策链（DecisionChain -- 消除 if-else）
 
@@ -168,8 +193,9 @@ Integer val = chain.execute("123");
 ### 4. 单向链表（LinkedNode）
 
 ```java
-// 链式构建
-LinkedNode<String> head = LinkedNode.of("a").next("b").next("c");
+// 保存头节点，再从返回的后继继续追加
+LinkedNode<String> head = LinkedNode.of("a");
+LinkedNode<String> tail = head.next("b").next("c");
 
 // Consumer 遍历
 head.forEach(System.out::println);
@@ -182,6 +208,10 @@ for (String s : head) {
 // 统计
 int size = head.count();
 ```
+
+`next` 和 `nextNode` 都返回新连接的后继节点；解除连接使用 `setNext(null)`。所有连接入口都会拒绝
+自环、候选链内部环以及包含当前节点的反向连接，遍历器还会防御外部反序列化或不受信任子类带入的
+损坏环形链路。节点采用对象身份相等语义，比较数据内容请显式使用 `getData()`。
 
 ### 5. 双向链表（DoublyLinkedNode）
 
@@ -205,6 +235,10 @@ DoublyLinkedNode<String> last = head.tail();
 DoublyLinkedNode<String> newHead = head.prepend("0");
 ```
 
+双向节点覆盖了继承的 `next`、`nextNode` 和 `setNext`：便捷入口始终创建双向节点，替换或解除后继
+会同步维护旧、新节点的 `prev`。已有其他前驱的节点不能被静默抢占，应先在原前驱上解除连接；
+普通 `LinkedNode` 也不能混入双向链。`appendNode` 返回被追加节点，可继续链式构建。
+
 ## 稳定错误码
 
 | 错误码 | 含义 |
@@ -213,6 +247,11 @@ DoublyLinkedNode<String> newHead = head.prepend("0");
 | `DATA_STRUCTURE_002` | 策略键重复注册 |
 | `DATA_STRUCTURE_003` | 必需策略未找到，或显式替换目标不存在 |
 | `DATA_STRUCTURE_004` | 决策链没有命中规则且没有默认动作 |
+| `DATA_STRUCTURE_005` | 树节点 ID 重复 |
+| `DATA_STRUCTURE_006` | 树节点的父节点不存在 |
+| `DATA_STRUCTURE_007` | 树存在环或重复对象引用 |
+| `DATA_STRUCTURE_008` | 链表连接关系不符合双向拓扑等约束 |
+| `DATA_STRUCTURE_009` | 链表中检测到环 |
 
 ## 2.0 迁移说明
 
@@ -225,3 +264,11 @@ DoublyLinkedNode<String> newHead = head.prepend("0");
   因此无需提供替代配置；模块引入后仍可直接使用全部 API。
 - 模块不再直接声明 tool、Spring Boot 或 SLF4J 依赖，只直接依赖统一异常模块；异常模块仍可能传递
   Spring 国际化和自动配置所需依赖。
+- `TreeBuilder.build` 不再静默忽略孤儿节点，也不再接受重复 ID 或父链环。确需把孤儿提升为根时，
+  显式传入 `TreeOrphanPolicy.AS_ROOT`。
+- `TreeBuilder` 在成功后会给每个节点回填独立、可修改的子节点列表；校验失败时不会修改节点。
+- `TreeUtil.maxDepth`、`countNodes` 等操作改为非递归实现，并统一拒绝环和重复对象引用。
+- `LinkedNode.nextNode` 与 `DoublyLinkedNode.appendNode` 现在返回被连接节点，便于连续追加。
+- `LinkedNode` 和 `DoublyLinkedNode` 从数据值相等改为对象身份相等；旧代码应改为比较 `getData()`。
+- 双向链表不再允许混入普通单向节点，也不再允许用 `setPrev` 制造不对称连接。节点已有前驱时，
+  必须先解除旧连接再挂到新前驱。

@@ -1,40 +1,222 @@
 package com.github.leyland.letool.datastructure.tree;
 
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
+import com.github.leyland.letool.datastructure.exception.DataStructureErrorCode;
+import com.github.leyland.letool.datastructure.exception.DataStructureException;
 import org.junit.jupiter.api.Test;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@DisplayName("树结构测试")
+/**
+ * 树构建和树操作的关键生产契约测试。
+ */
 class TreeTest {
 
-    // ---- 测试用实体 ----
-    static class Dept implements TreeNode<Dept> {
-        private Long id;
-        private Long parentId;
-        private String name;
-        private List<Dept> children = new ArrayList<>();
+    /**
+     * 验证构建结果保持输入顺序，并为每个节点回填独立、可修改的子节点列表。
+     */
+    @Test
+    void shouldBuildOrderedMutableTree() {
+        List<Dept> flatList = sampleFlatList();
 
-        Dept(Long id, Long parentId, String name) {
-            this.id = id;
-            this.parentId = parentId;
-            this.name = name;
-        }
+        List<Dept> roots = TreeBuilder.build(flatList);
 
-        @Override public Object getId() { return id; }
-        @Override public Object getParentId() { return parentId; }
-        @Override public List<Dept> getChildren() { return children; }
-        @Override public void setChildren(List<Dept> children) { this.children = children; }
-        public String getName() { return name; }
-
-        @Override public String toString() { return "Dept{id=" + id + ", name='" + name + "'}"; }
+        assertEquals(List.of("总公司"), names(roots));
+        assertEquals(List.of("研发部", "市场部"), names(roots.get(0).getChildren()));
+        assertEquals(List.of("后端组", "前端组"), names(roots.get(0).getChildren().get(0).getChildren()));
+        roots.get(0).getChildren().get(1).getChildren().add(new Dept(7L, 3L, "增长组"));
+        assertEquals(2, roots.get(0).getChildren().get(1).childCount());
     }
 
-    static List<Dept> sampleFlatList() {
-        return Arrays.asList(
+    /**
+     * 验证重复 ID 被稳定拒绝，并且失败前不会覆盖调用方已有子节点。
+     */
+    @Test
+    void shouldRejectDuplicateIdWithoutMutatingInput() {
+        Dept sentinel = new Dept(99L, 1L, "原子性哨兵");
+        Dept first = new Dept(1L, null, "第一个节点");
+        List<Dept> originalChildren = new ArrayList<>(List.of(sentinel));
+        first.setChildren(originalChildren);
+        Dept duplicate = new Dept(1L, null, "重复节点");
+
+        DataStructureException exception = assertThrows(
+                DataStructureException.class,
+                () -> TreeBuilder.build(List.of(first, duplicate))
+        );
+
+        assertEquals(DataStructureErrorCode.DUPLICATE_TREE_ID, exception.getErrorCode());
+        assertSame(originalChildren, first.getChildren());
+    }
+
+    /**
+     * 验证孤儿节点默认失败，显式降级时提升为根且仍能挂载自己的后代。
+     */
+    @Test
+    void shouldHandleOrphanOnlyWithExplicitPolicy() {
+        Dept root = new Dept(1L, null, "正常根");
+        Dept orphan = new Dept(2L, 99L, "孤儿根");
+        Dept child = new Dept(3L, 2L, "孤儿后代");
+        List<Dept> flatList = List.of(root, orphan, child);
+
+        DataStructureException exception = assertThrows(
+                DataStructureException.class,
+                () -> TreeBuilder.build(flatList)
+        );
+        assertEquals(DataStructureErrorCode.ORPHAN_TREE_NODE, exception.getErrorCode());
+
+        List<Dept> roots = TreeBuilder.build(flatList, TreeOrphanPolicy.AS_ROOT);
+        assertEquals(List.of("正常根", "孤儿根"), names(roots));
+        assertEquals(List.of("孤儿后代"), names(orphan.getChildren()));
+    }
+
+    /**
+     * 验证父链环在回填子节点之前被拒绝。
+     */
+    @Test
+    void shouldRejectParentCycleWithoutMutatingInput() {
+        Dept first = new Dept(1L, 2L, "节点一");
+        Dept second = new Dept(2L, 1L, "节点二");
+        List<Dept> originalChildren = new ArrayList<>();
+        first.setChildren(originalChildren);
+
+        DataStructureException exception = assertThrows(
+                DataStructureException.class,
+                () -> TreeBuilder.build(List.of(first, second), TreeOrphanPolicy.AS_ROOT)
+        );
+
+        assertEquals(DataStructureErrorCode.INVALID_TREE_STRUCTURE, exception.getErrorCode());
+        assertSame(originalChildren, first.getChildren());
+    }
+
+    /**
+     * 验证普通实体可以通过映射函数包装成树，并遵循相同的严格校验。
+     */
+    @Test
+    void shouldBuildSimpleTreeWithSameValidationContract() {
+        List<Dept> flatList = sampleFlatList();
+
+        List<SimpleTreeNode<Dept>> roots = TreeBuilder.buildSimple(
+                flatList,
+                Dept::getId,
+                Dept::getParentId
+        );
+
+        assertEquals("总公司", roots.get(0).getData().getName());
+        assertEquals(2, roots.get(0).childCount());
+        assertError(
+                DataStructureErrorCode.INVALID_ARGUMENT,
+                () -> TreeBuilder.buildSimple(flatList, null, Dept::getParentId)
+        );
+    }
+
+    /**
+     * 验证核心遍历、查询和统计保持约定顺序。
+     */
+    @Test
+    void shouldTraverseQueryAndMeasureTree() {
+        Dept root = TreeBuilder.build(sampleFlatList()).get(0);
+        List<String> postOrder = new ArrayList<>();
+        TreeUtil.traversePostOrder(root, node -> postOrder.add(node.getName()));
+
+        assertEquals(
+                List.of("总公司", "研发部", "后端组", "前端组", "市场部", "品牌组"),
+                names(TreeUtil.toListPreOrder(root))
+        );
+        assertEquals(
+                List.of("总公司", "研发部", "市场部", "后端组", "前端组", "品牌组"),
+                names(TreeUtil.flatten(root))
+        );
+        assertEquals(List.of("后端组", "前端组", "研发部", "品牌组", "市场部", "总公司"), postOrder);
+        assertEquals(List.of("后端组", "前端组", "品牌组"), names(TreeUtil.collectLeaves(root)));
+        assertEquals(Optional.of("前端组"), TreeUtil.findFirst(root, node -> node.getId().equals(5L)).map(Dept::getName));
+        assertEquals(3, TreeUtil.maxDepth(root));
+        assertEquals(6, TreeUtil.countNodes(root));
+    }
+
+    /**
+     * 验证万级深树不会因递归实现造成线程栈溢出。
+     */
+    @Test
+    void shouldHandleDeepTreeWithoutRecursion() {
+        int depth = 10_000;
+        Dept root = new Dept(0L, null, "0");
+        Dept current = root;
+        for (long index = 1L; index < depth; index++) {
+            Dept child = new Dept(index, index - 1L, String.valueOf(index));
+            current.setChildren(List.of(child));
+            current = child;
+        }
+
+        assertEquals(depth, TreeUtil.countNodes(root));
+        assertEquals(depth, TreeUtil.maxDepth(root));
+        assertEquals(depth, TreeUtil.toListPreOrder(root).size());
+    }
+
+    /**
+     * 验证遍历遇到环或重复对象引用时快速失败，而不是无限执行。
+     */
+    @Test
+    void shouldRejectInvalidRuntimeTreeTopology() {
+        Dept root = new Dept(1L, null, "根");
+        Dept child = new Dept(2L, 1L, "子");
+        root.setChildren(Arrays.asList(child, child));
+
+        assertError(DataStructureErrorCode.INVALID_TREE_STRUCTURE, () -> TreeUtil.countNodes(root));
+
+        child.setChildren(List.of(root));
+        root.setChildren(List.of(child));
+        assertError(DataStructureErrorCode.INVALID_TREE_STRUCTURE, () -> TreeUtil.flatten(root));
+    }
+
+    /**
+     * 验证祖先查询不会静默接受重复 ID、缺失父节点或父链环。
+     */
+    @Test
+    void shouldRejectInvalidAncestorIndex() {
+        Dept target = new Dept(3L, 2L, "目标");
+
+        assertError(
+                DataStructureErrorCode.DUPLICATE_TREE_ID,
+                () -> TreeUtil.getAncestors(List.of(new Dept(1L, null, "一"), new Dept(1L, null, "重复")), target)
+        );
+        assertError(
+                DataStructureErrorCode.ORPHAN_TREE_NODE,
+                () -> TreeUtil.getAncestors(List.of(target), target)
+        );
+        assertError(
+                DataStructureErrorCode.INVALID_TREE_STRUCTURE,
+                () -> TreeUtil.getAncestors(
+                        List.of(new Dept(1L, 2L, "一"), new Dept(2L, 1L, "二"), target),
+                        target
+                )
+        );
+    }
+
+    /**
+     * 断言操作抛出指定稳定错误码。
+     *
+     * @param errorCode 预期错误码
+     * @param action 待执行操作
+     */
+    private static void assertError(DataStructureErrorCode errorCode, Runnable action) {
+        DataStructureException exception = assertThrows(DataStructureException.class, action::run);
+        assertEquals(errorCode, exception.getErrorCode());
+    }
+
+    /**
+     * 创建保持确定顺序的部门平列表。
+     *
+     * @return 部门平列表
+     */
+    private static List<Dept> sampleFlatList() {
+        return List.of(
                 new Dept(1L, null, "总公司"),
                 new Dept(2L, 1L, "研发部"),
                 new Dept(3L, 1L, "市场部"),
@@ -44,275 +226,77 @@ class TreeTest {
         );
     }
 
-    @Nested
-    @DisplayName("TreeNode 接口默认方法")
-    class TreeNodeDefaults {
-
-        @Test
-        @DisplayName("parentId 为 null 时 isRoot 返回 true")
-        void isRoot() {
-            Dept root = new Dept(1L, null, "root");
-            assertTrue(root.isRoot());
-        }
-
-        @Test
-        @DisplayName("parentId 不为 null 时 isRoot 返回 false")
-        void isNotRoot() {
-            Dept child = new Dept(2L, 1L, "child");
-            assertFalse(child.isRoot());
-        }
-
-        @Test
-        @DisplayName("无子节点时 isLeaf 返回 true")
-        void isLeaf() {
-            Dept node = new Dept(1L, null, "leaf");
-            assertTrue(node.isLeaf());
-        }
-
-        @Test
-        @DisplayName("空子节点列表时 isLeaf 返回 true")
-        void isLeafEmptyList() {
-            Dept node = new Dept(1L, null, "leaf");
-            node.setChildren(Collections.emptyList());
-            assertTrue(node.isLeaf());
-        }
-
-        @Test
-        @DisplayName("有子节点时 isLeaf 返回 false")
-        void isNotLeaf() {
-            Dept parent = new Dept(1L, null, "parent");
-            parent.setChildren(Collections.singletonList(new Dept(2L, 1L, "child")));
-            assertFalse(parent.isLeaf());
-        }
+    /**
+     * 提取节点名称，便于断言遍历顺序。
+     *
+     * @param nodes 节点列表
+     * @return 名称列表
+     */
+    private static List<String> names(List<Dept> nodes) {
+        return nodes.stream().map(Dept::getName).toList();
     }
 
-    @Nested
-    @DisplayName("SimpleTreeNode")
-    class SimpleTreeNodeTests {
+    /**
+     * 测试使用的部门节点。
+     */
+    private static final class Dept implements TreeNode<Dept> {
 
-        @Test
-        @DisplayName("静态工厂方法创建节点")
-        void of() {
-            SimpleTreeNode<String> node = SimpleTreeNode.of(1, null, "root");
-            assertEquals(1, node.getId());
-            assertNull(node.getParentId());
-            assertEquals("root", node.getData());
-            assertTrue(node.isRoot());
+        /** 节点 ID。 */
+        private final Long id;
+
+        /** 父节点 ID。 */
+        private final Long parentId;
+
+        /** 部门名称。 */
+        private final String name;
+
+        /** 子部门列表。 */
+        private List<Dept> children = new ArrayList<>();
+
+        /**
+         * 创建部门节点。
+         *
+         * @param id 节点 ID
+         * @param parentId 父节点 ID
+         * @param name 部门名称
+         */
+        private Dept(Long id, Long parentId, String name) {
+            this.id = id;
+            this.parentId = parentId;
+            this.name = name;
         }
 
-        @Test
-        @DisplayName("addChild 链式添加子节点")
-        void addChild() {
-            SimpleTreeNode<String> root = SimpleTreeNode.of(1, null, "root");
-            root.addChild(SimpleTreeNode.of(2, 1, "child1"))
-                .addChild(SimpleTreeNode.of(3, 1, "child2"));
-
-            assertEquals(2, root.getChildren().size());
-            assertEquals("child1", root.getChildren().get(0).getData());
-            assertEquals("child2", root.getChildren().get(1).getData());
+        /** {@inheritDoc} */
+        @Override
+        public Object getId() {
+            return id;
         }
 
-        @Test
-        @DisplayName("addChildren 批量添加")
-        void addChildren() {
-            SimpleTreeNode<String> root = SimpleTreeNode.of(1, null, "root");
-            root.addChildren(
-                    SimpleTreeNode.of(2, 1, "a"),
-                    SimpleTreeNode.of(3, 1, "b"),
-                    SimpleTreeNode.of(4, 1, "c")
-            );
-            assertEquals(3, root.getChildren().size());
-        }
-    }
-
-    @Nested
-    @DisplayName("TreeBuilder 树构建")
-    class TreeBuilderTests {
-
-        @Test
-        @DisplayName("空列表返回空集合")
-        void emptyList() {
-            assertTrue(TreeBuilder.build(Collections.<Dept>emptyList()).isEmpty());
-            assertTrue(TreeBuilder.buildSimple(Collections.<String>emptyList(), s -> s, s -> null).isEmpty());
+        /** {@inheritDoc} */
+        @Override
+        public Object getParentId() {
+            return parentId;
         }
 
-        @Test
-        @DisplayName("null 列表返回空集合")
-        void nullList() {
-            assertTrue(TreeBuilder.build(null).isEmpty());
+        /** {@inheritDoc} */
+        @Override
+        public List<Dept> getChildren() {
+            return children;
         }
 
-        @Test
-        @DisplayName("从平列表构建树结构")
-        void build() {
-            List<Dept> flatList = sampleFlatList();
-            List<Dept> roots = TreeBuilder.build(flatList);
-
-            assertEquals(1, roots.size());
-            Dept root = roots.get(0);
-            assertEquals("总公司", root.getName());
-            assertEquals(2, root.getChildren().size());
-
-            Dept rd = root.getChildren().stream()
-                    .filter(d -> "研发部".equals(d.getName())).findFirst().orElseThrow();
-            assertEquals(2, rd.getChildren().size());
+        /** {@inheritDoc} */
+        @Override
+        public void setChildren(List<Dept> children) {
+            this.children = children;
         }
 
-        @Test
-        @DisplayName("buildSimple 通过映射函数构建树")
-        void buildSimple() {
-            List<Dept> flatList = sampleFlatList();
-            List<SimpleTreeNode<Dept>> roots = TreeBuilder.buildSimple(flatList, Dept::getId, Dept::getParentId);
-
-            assertEquals(1, roots.size());
-            SimpleTreeNode<Dept> root = roots.get(0);
-            assertEquals("总公司", root.getData().getName());
-            assertEquals(2, root.getChildren().size());
-        }
-    }
-
-    @Nested
-    @DisplayName("TreeUtil 遍历")
-    class TreeTraversalTests {
-
-        private Dept buildTree() {
-            List<Dept> roots = TreeBuilder.build(sampleFlatList());
-            return roots.get(0);
-        }
-
-        @Test
-        @DisplayName("前序遍历——根 → 左 → 右顺序")
-        void preOrder() {
-            List<String> order = new ArrayList<>();
-            TreeUtil.traversePreOrder(buildTree(), d -> order.add(d.getName()));
-
-            assertEquals(Arrays.asList("总公司", "研发部", "后端组", "前端组", "市场部", "品牌组"), order);
-        }
-
-        @Test
-        @DisplayName("后序遍历——子节点先于父节点")
-        void postOrder() {
-            List<String> order = new ArrayList<>();
-            TreeUtil.traversePostOrder(buildTree(), d -> order.add(d.getName()));
-
-            // 后端组, 前端组, 研发部, 品牌组, 市场部, 总公司
-            assertEquals("总公司", order.get(order.size() - 1));
-            assertTrue(order.indexOf("后端组") < order.indexOf("研发部"));
-            assertTrue(order.indexOf("前端组") < order.indexOf("研发部"));
-        }
-
-        @Test
-        @DisplayName("层序遍历——按层级从上到下")
-        void levelOrder() {
-            List<String> order = new ArrayList<>();
-            TreeUtil.traverseLevelOrder(buildTree(), d -> order.add(d.getName()));
-
-            assertEquals("总公司", order.get(0));
-            assertTrue(order.indexOf("研发部") < order.indexOf("后端组"));
-            assertTrue(order.indexOf("市场部") < order.indexOf("品牌组"));
-        }
-
-        @Test
-        @DisplayName("null 节点不抛异常")
-        void nullRoot() {
-            assertDoesNotThrow(() -> TreeUtil.traversePreOrder(null, d -> {}));
-            assertDoesNotThrow(() -> TreeUtil.traversePostOrder(null, d -> {}));
-            assertDoesNotThrow(() -> TreeUtil.traverseLevelOrder(null, d -> {}));
-        }
-
-        @Test
-        @DisplayName("toListPreOrder 收集为列表")
-        void toListPreOrder() {
-            List<Dept> list = TreeUtil.toListPreOrder(buildTree());
-            assertEquals(6, list.size());
-        }
-
-        @Test
-        @DisplayName("flatten 层序展平")
-        void flatten() {
-            List<Dept> list = TreeUtil.flatten(buildTree());
-            assertEquals(6, list.size());
-            assertEquals("总公司", list.get(0).getName());
-        }
-    }
-
-    @Nested
-    @DisplayName("TreeUtil 查询")
-    class TreeQueryTests {
-
-        private Dept buildTree() {
-            return TreeBuilder.build(sampleFlatList()).get(0);
-        }
-
-        @Test
-        @DisplayName("findFirst 找到匹配节点")
-        void findFirst() {
-            Optional<Dept> found = TreeUtil.findFirst(buildTree(), d -> "后端组".equals(d.getName()));
-            assertTrue(found.isPresent());
-            assertEquals(4L, found.get().getId());
-        }
-
-        @Test
-        @DisplayName("findFirst 未找到返回空")
-        void findFirstNotFound() {
-            Optional<Dept> found = TreeUtil.findFirst(buildTree(), d -> "不存在的部门".equals(d.getName()));
-            assertFalse(found.isPresent());
-        }
-
-        @Test
-        @DisplayName("collectLeaves 收集所有叶子")
-        void collectLeaves() {
-            List<Dept> leaves = TreeUtil.collectLeaves(buildTree());
-            assertEquals(3, leaves.size());
-            assertTrue(leaves.stream().allMatch(Dept::isLeaf));
-        }
-
-        @Test
-        @DisplayName("getAncestors 获取祖先链")
-        void getAncestors() {
-            List<Dept> flat = sampleFlatList();
-            Dept backend = flat.stream().filter(d -> "后端组".equals(d.getName())).findFirst().orElseThrow();
-            List<Dept> ancestors = TreeUtil.getAncestors(flat, backend);
-
-            assertEquals(2, ancestors.size());
-            assertEquals("总公司", ancestors.get(0).getName());
-            assertEquals("研发部", ancestors.get(1).getName());
-        }
-
-        @Test
-        @DisplayName("根节点 getAncestors 返回空列表")
-        void getAncestorsRoot() {
-            List<Dept> flat = sampleFlatList();
-            Dept root = flat.stream().filter(d -> "总公司".equals(d.getName())).findFirst().orElseThrow();
-            assertTrue(TreeUtil.getAncestors(flat, root).isEmpty());
-        }
-    }
-
-    @Nested
-    @DisplayName("TreeUtil 统计")
-    class TreeStatsTests {
-
-        private Dept buildTree() {
-            return TreeBuilder.build(sampleFlatList()).get(0);
-        }
-
-        @Test
-        @DisplayName("maxDepth 计算树深度")
-        void maxDepth() {
-            assertEquals(3, TreeUtil.maxDepth(buildTree()));
-        }
-
-        @Test
-        @DisplayName("只有根节点深度为 1")
-        void maxDepthSingleNode() {
-            Dept root = new Dept(1L, null, "only");
-            assertEquals(1, TreeUtil.maxDepth(root));
-        }
-
-        @Test
-        @DisplayName("countNodes 统计节点总数")
-        void countNodes() {
-            assertEquals(6, TreeUtil.countNodes(buildTree()));
+        /**
+         * 获取部门名称。
+         *
+         * @return 部门名称
+         */
+        private String getName() {
+            return name;
         }
     }
 }

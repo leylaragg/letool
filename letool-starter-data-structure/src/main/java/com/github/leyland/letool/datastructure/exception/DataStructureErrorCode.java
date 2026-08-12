@@ -17,7 +17,22 @@ public enum DataStructureErrorCode implements ErrorCode {
     STRATEGY_NOT_FOUND("DATA_STRUCTURE_003", "未找到必需策略：{0}"),
 
     /** 决策链没有命中规则且未配置默认动作。 */
-    DECISION_NOT_MATCHED("DATA_STRUCTURE_004", "决策链没有命中可执行规则：{0}");
+    DECISION_NOT_MATCHED("DATA_STRUCTURE_004", "决策链没有命中可执行规则：{0}"),
+
+    /** 树节点 ID 被重复使用。 */
+    DUPLICATE_TREE_ID("DATA_STRUCTURE_005", "树节点 ID 重复：{0}"),
+
+    /** 树节点引用了不存在的父节点。 */
+    ORPHAN_TREE_NODE("DATA_STRUCTURE_006", "树节点的父节点不存在：{0}"),
+
+    /** 树存在环或重复对象引用。 */
+    INVALID_TREE_STRUCTURE("DATA_STRUCTURE_007", "树结构存在环或重复引用：{0}"),
+
+    /** 链表连接关系不符合拓扑约束。 */
+    INVALID_LINK("DATA_STRUCTURE_008", "链表连接关系无效：{0}"),
+
+    /** 链表中检测到环。 */
+    LINK_CYCLE_DETECTED("DATA_STRUCTURE_009", "链表中检测到环：{0}");
 
     /** 稳定的机器可读错误码。 */
     private final String code;

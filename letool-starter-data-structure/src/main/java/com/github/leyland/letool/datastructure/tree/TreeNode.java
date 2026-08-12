@@ -3,48 +3,70 @@ package com.github.leyland.letool.datastructure.tree;
 import java.util.List;
 
 /**
- * 泛型树节点接口 —— 采用 CRTP 自引用泛型模式，用户实体实现此接口即可被 {@link TreeBuilder} 和
- * {@link TreeUtil} 识别并构建树结构.
+ * 可由 {@link TreeBuilder} 构建、由 {@link TreeUtil} 操作的泛型树节点契约。
  *
- * <p>典型用法：业务实体直接实现此接口：</p>
- * <pre>{@code
- * public class Dept implements TreeNode<Dept> {
- *     private Long id;
- *     private Long parentId;
- *     private List<Dept> children;
- *     // getters / setters ...
- * }
- * }</pre>
+ * <p>接口使用自引用泛型，业务实体实现后无需转换即可构建树。节点 ID 在同一次构建中必须非空且唯一；
+ * 父节点 ID 为空表示根节点。构建器会通过 {@link #setChildren(List)} 回填新的可修改子节点列表。</p>
  *
- * @param <T> 实现类自身类型（自引用泛型）
+ * @param <T> 实现类自身类型
  * @author leyland
  * @since 2.0.0
  */
 public interface TreeNode<T extends TreeNode<T>> {
 
-    /** 节点唯一标识. */
+    /**
+     * 获取节点唯一标识。
+     *
+     * @return 节点 ID；参与构建时不允许为空
+     */
     Object getId();
 
-    /** 父节点标识，{@code null} 表示根节点. */
+    /**
+     * 获取父节点标识。
+     *
+     * @return 父节点 ID；根节点返回 {@code null}
+     */
     Object getParentId();
 
-    /** 子节点列表. */
+    /**
+     * 获取子节点列表。
+     *
+     * @return 子节点列表；未初始化时允许为空
+     */
     List<T> getChildren();
 
-    /** 设置子节点列表（由 {@link TreeBuilder} 回填）. */
+    /**
+     * 回填子节点列表。
+     *
+     * @param children 子节点列表；{@link TreeBuilder} 传入非空、可修改的独立列表
+     */
     void setChildren(List<T> children);
 
-    /** 是否为根节点. */
+    /**
+     * 判断当前节点是否为声明的根节点。
+     *
+     * <p>该方法只判断父节点 ID 是否为空，不检查父节点是否真实存在。</p>
+     *
+     * @return 父节点 ID 为空时为 {@code true}
+     */
     default boolean isRoot() {
         return getParentId() == null;
     }
 
-    /** 是否为叶子节点. */
+    /**
+     * 判断当前节点是否没有子节点。
+     *
+     * @return 子节点列表为空引用或空列表时为 {@code true}
+     */
     default boolean isLeaf() {
         return getChildren() == null || getChildren().isEmpty();
     }
 
-    /** 子节点数量. */
+    /**
+     * 获取直接子节点数量。
+     *
+     * @return 子节点数量；子节点列表为空引用时返回零
+     */
     default int childCount() {
         return getChildren() == null ? 0 : getChildren().size();
     }
