@@ -27,8 +27,62 @@
     {
       "name": "letool.cache.strong-consistency",
       "type": "java.lang.Boolean",
-      "description": "Verify Redis cache-region versions before returning L1 hits.",
+      "description": "Deprecated compatibility switch that only maps L1 read validation. It does not enable database durable consistency.",
       "defaultValue": true
+    },
+    {
+      "name": "letool.cache.consistency.mode",
+      "type": "com.github.leyland.letool.cache.consistency.CacheConsistencyMode",
+      "description": "Database/cache consistency mode. DURABLE requires Redis, a transaction manager and a CacheInvalidationEventStore.",
+      "defaultValue": "TRANSACTIONAL"
+    },
+    {
+      "name": "letool.cache.consistency.read-validation",
+      "type": "com.github.leyland.letool.cache.consistency.CacheReadValidation",
+      "description": "Validation performed before returning L1 entries.",
+      "defaultValue": "VERSIONED"
+    },
+    {
+      "name": "letool.cache.consistency.write-policy",
+      "type": "com.github.leyland.letool.cache.consistency.CacheWritePolicy",
+      "description": "Cache action after a successful database commit.",
+      "defaultValue": "INVALIDATE"
+    },
+    {
+      "name": "letool.cache.consistency.outbox-table",
+      "type": "java.lang.String",
+      "description": "JDBC Outbox table used by DURABLE mode.",
+      "defaultValue": "letool_cache_outbox"
+    },
+    {
+      "name": "letool.cache.consistency.fence-ttl",
+      "type": "java.time.Duration",
+      "description": "Maximum lifetime of a DURABLE Redis write fence.",
+      "defaultValue": "120s"
+    },
+    {
+      "name": "letool.cache.consistency.recovery-interval",
+      "type": "java.time.Duration",
+      "description": "DURABLE Outbox recovery scan interval.",
+      "defaultValue": "5s"
+    },
+    {
+      "name": "letool.cache.consistency.recovery-batch-size",
+      "type": "java.lang.Integer",
+      "description": "Maximum Outbox events claimed in one recovery scan.",
+      "defaultValue": 100
+    },
+    {
+      "name": "letool.cache.consistency.recovery-lease",
+      "type": "java.time.Duration",
+      "description": "Lease duration for a claimed Outbox event.",
+      "defaultValue": "30s"
+    },
+    {
+      "name": "letool.cache.consistency.retry-base-delay",
+      "type": "java.time.Duration",
+      "description": "Base delay for exponential Outbox retries.",
+      "defaultValue": "1s"
     },
     {
       "name": "letool.cache.instances.name",
@@ -68,8 +122,23 @@
     {
       "name": "letool.cache.instances.strong-consistency",
       "type": "java.lang.Boolean",
-      "description": "Per-cache strong consistency switch.",
+      "description": "Deprecated per-cache read validation compatibility switch.",
       "defaultValue": true
+    },
+    {
+      "name": "letool.cache.instances.consistency-mode",
+      "type": "com.github.leyland.letool.cache.consistency.CacheConsistencyMode",
+      "description": "Optional per-cache database consistency mode override."
+    },
+    {
+      "name": "letool.cache.instances.read-validation",
+      "type": "com.github.leyland.letool.cache.consistency.CacheReadValidation",
+      "description": "Optional per-cache L1 read validation override."
+    },
+    {
+      "name": "letool.cache.instances.write-policy",
+      "type": "com.github.leyland.letool.cache.consistency.CacheWritePolicy",
+      "description": "Optional per-cache post-commit write policy override."
     },
     {
       "name": "letool.cache.instances.null-value-cache",

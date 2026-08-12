@@ -3,6 +3,9 @@ package com.github.leyland.letool.cache.aspect;
 import com.github.leyland.letool.cache.annotation.MultiLevelCacheEvict;
 import com.github.leyland.letool.cache.annotation.MultiLevelCachePut;
 import com.github.leyland.letool.cache.annotation.MultiLevelCacheable;
+import com.github.leyland.letool.cache.consistency.CacheMutationCoordinator;
+import com.github.leyland.letool.cache.consistency.CacheMutation;
+import com.github.leyland.letool.cache.consistency.CacheWritePolicy;
 import com.github.leyland.letool.cache.core.CacheManager;
 import com.github.leyland.letool.cache.core.MultiLevelCache;
 import com.github.leyland.letool.cache.exception.CacheException;
@@ -32,8 +35,22 @@ public class CacheAspect {
      */
     private final CacheManager cacheManager;
 
+    /** 可选的数据库事务与缓存动作协调器。 */
+    private final CacheMutationCoordinator mutationCoordinator;
+
     public CacheAspect(CacheManager cacheManager) {
+        this(cacheManager, null);
+    }
+
+    /**
+     * 创建支持数据库事务协调的缓存切面。
+     *
+     * @param cacheManager 缓存实例管理器
+     * @param mutationCoordinator 事务协调器；没有事务基础设施时允许为 {@code null}
+     */
+    public CacheAspect(CacheManager cacheManager, CacheMutationCoordinator mutationCoordinator) {
         this.cacheManager = cacheManager;
+        this.mutationCoordinator = mutationCoordinator;
     }
 
     /**
@@ -89,16 +106,17 @@ public class CacheAspect {
         String keyExpression = annotation.key();
         long ttl = annotation.ttl();
 
-        Object result = joinPoint.proceed();
         Object key = resolveKey(keyExpression, joinPoint);
         MultiLevelCache<Object, Object> cache = cacheManager.get(cacheName);
-
-        if (ttl > 0) {
-            cache.put(key, result, Duration.ofSeconds(ttl));
-        } else {
-            cache.put(key, result);
-        }
-        return result;
+        return executeMutation(joinPoint, cache, key, result -> {
+            if (cache.getWritePolicy() == CacheWritePolicy.INVALIDATE) {
+                cache.evict(key);
+            } else if (ttl > 0) {
+                cache.put(key, result, Duration.ofSeconds(ttl));
+            } else {
+                cache.put(key, result);
+            }
+        });
     }
 
     /**
@@ -112,10 +130,39 @@ public class CacheAspect {
         String cacheName = annotation.name();
         String keyExpression = annotation.key();
 
-        Object result = joinPoint.proceed();
         Object key = resolveKey(keyExpression, joinPoint);
         MultiLevelCache<Object, Object> cache = cacheManager.get(cacheName);
-        cache.evict(key);
+        return executeMutation(joinPoint, cache, key, ignored -> cache.evict(key));
+    }
+
+    /**
+     * 通过统一协调器执行业务修改，并把缓存动作延迟到数据库事务提交之后。
+     *
+     * <p>没有事务管理器时保持兼容行为：业务方法成功返回后立即执行缓存动作。</p>
+     *
+     * @param joinPoint 业务方法调用点
+     * @param cache 目标缓存实例
+     * @param cacheAction 提交后缓存动作
+     * @return 业务方法返回值
+     * @throws Throwable 业务方法或缓存动作抛出的原始异常
+     */
+    private Object executeMutation(
+            ProceedingJoinPoint joinPoint,
+            MultiLevelCache<Object, Object> cache,
+            Object key,
+            java.util.function.Consumer<Object> cacheAction) throws Throwable {
+        if (mutationCoordinator != null) {
+            return mutationCoordinator.execute(
+                    new CacheMutation(cache.getConsistencyMode(), cache.getName(), String.valueOf(key)),
+                    joinPoint::proceed,
+                    cacheAction);
+        }
+        if (cache.getConsistencyMode()
+                == com.github.leyland.letool.cache.consistency.CacheConsistencyMode.DURABLE) {
+            throw new IllegalStateException("DURABLE 模式必须装配事务协调器");
+        }
+        Object result = joinPoint.proceed();
+        cacheAction.accept(result);
         return result;
     }
 

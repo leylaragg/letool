@@ -1,5 +1,8 @@
 package com.github.leyland.letool.cache.core;
 
+import com.github.leyland.letool.cache.consistency.CacheConsistencyMode;
+import com.github.leyland.letool.cache.consistency.CacheReadValidation;
+import com.github.leyland.letool.cache.consistency.CacheWritePolicy;
 import com.github.leyland.letool.cache.exception.CacheException;
 
 import java.time.Duration;
@@ -34,8 +37,12 @@ public class CacheConfig<K, V> {
     private Duration l2Ttl = Duration.ofDays(3);
     /** 是否启用 L2 Redis 缓存。 */
     private boolean l2Enabled = true;
-    /** 是否启用 Redis 版本校验，避免跨 JVM 返回旧 L1 数据。 */
-    private boolean strongConsistency = true;
+    /** 数据库修改与缓存失效之间的一致性模式。 */
+    private CacheConsistencyMode consistencyMode = CacheConsistencyMode.TRANSACTIONAL;
+    /** L1 命中时采用的读取校验策略。 */
+    private CacheReadValidation readValidation = CacheReadValidation.VERSIONED;
+    /** 数据库修改成功后的缓存处理策略。 */
+    private CacheWritePolicy writePolicy = CacheWritePolicy.INVALIDATE;
     /** 是否缓存 loader 返回的 null，防止不存在的数据频繁穿透到数据库。 */
     private boolean nullValueCache = true;
     /** null 哨兵 TTL，通常应短于正常业务值 TTL。 */
@@ -123,13 +130,48 @@ public class CacheConfig<K, V> {
     }
 
     /**
-     * 设置是否启用强一致版本校验。
+     * 设置是否启用版本读取校验。
+     *
+     * <p>该方法只为兼容旧配置保留，不会开启数据库持久化一致性模式。</p>
      *
      * @param strongConsistency {@code true} 表示读取时执行一致性校验
      * @return 当前配置对象
      */
     public CacheConfig<K, V> strongConsistency(boolean strongConsistency) {
-        this.strongConsistency = strongConsistency;
+        this.readValidation = strongConsistency ? CacheReadValidation.VERSIONED : CacheReadValidation.NONE;
+        return this;
+    }
+
+    /**
+     * 设置数据库一致性模式。
+     *
+     * @param consistencyMode 数据库一致性模式
+     * @return 当前配置对象
+     */
+    public CacheConfig<K, V> consistencyMode(CacheConsistencyMode consistencyMode) {
+        this.consistencyMode = consistencyMode;
+        return this;
+    }
+
+    /**
+     * 设置 L1 读取校验策略。
+     *
+     * @param readValidation 读取校验策略
+     * @return 当前配置对象
+     */
+    public CacheConfig<K, V> readValidation(CacheReadValidation readValidation) {
+        this.readValidation = readValidation;
+        return this;
+    }
+
+    /**
+     * 设置数据库修改成功后的缓存处理策略。
+     *
+     * @param writePolicy 缓存写策略
+     * @return 当前配置对象
+     */
+    public CacheConfig<K, V> writePolicy(CacheWritePolicy writePolicy) {
+        this.writePolicy = writePolicy;
         return this;
     }
 
@@ -207,6 +249,19 @@ public class CacheConfig<K, V> {
         if (nullValueTtl == null || nullValueTtl.isZero() || nullValueTtl.isNegative()) {
             throw CacheException.configurationInvalid("null-value-ttl");
         }
+        if (consistencyMode == null) {
+            throw CacheException.configurationInvalid("consistency-mode");
+        }
+        if (readValidation == null) {
+            throw CacheException.configurationInvalid("read-validation");
+        }
+        if (writePolicy == null) {
+            throw CacheException.configurationInvalid("write-policy");
+        }
+        if (consistencyMode == CacheConsistencyMode.DURABLE
+                && (!l2Enabled || readValidation != CacheReadValidation.VERSIONED)) {
+            throw CacheException.configurationInvalid("durable-requires-l2-versioned");
+        }
         return this;
     }
 
@@ -228,8 +283,17 @@ public class CacheConfig<K, V> {
     /** @return 当前缓存区域是否启用 L2 */
     public boolean isL2Enabled() { return l2Enabled; }
 
-    /** @return 是否启用强一致校验 */
-    public boolean isStrongConsistency() { return strongConsistency; }
+    /** @return 是否启用版本读取校验；仅为兼容旧 API 保留 */
+    public boolean isStrongConsistency() { return readValidation == CacheReadValidation.VERSIONED; }
+
+    /** @return 数据库一致性模式 */
+    public CacheConsistencyMode getConsistencyMode() { return consistencyMode; }
+
+    /** @return L1 读取校验策略 */
+    public CacheReadValidation getReadValidation() { return readValidation; }
+
+    /** @return 数据库修改成功后的缓存处理策略 */
+    public CacheWritePolicy getWritePolicy() { return writePolicy; }
 
     /** @return 是否缓存 null 哨兵 */
     public boolean isNullValueCache() { return nullValueCache; }

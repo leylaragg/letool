@@ -39,8 +39,17 @@ class RedisCacheKeyspaceTest {
         RedisCacheKeyspace nestedKeyspace = new RedisCacheKeyspace("app:cache:", "rule:index");
         RedisCacheKeyspace parentKeyspace = new RedisCacheKeyspace("app:cache:", "rule");
 
-        assertEquals("app:cache:ruleIndex:project:1", keyspace.key("project:1"));
-        assertEquals("app:cache:%META%:ruleIndex:version", keyspace.versionKey());
+        String dataKey = keyspace.clusteredKey("project:1");
+        String versionKey = keyspace.versionKey("project:1");
+        String fenceKey = keyspace.fenceKey("project:1");
+
+        assertTrue(dataKey.startsWith("app:cache:ruleIndex:"));
+        assertTrue(dataKey.endsWith(":project:1"));
+        assertTrue(versionKey.startsWith("app:cache:%META%:ruleIndex:"));
+        assertTrue(versionKey.endsWith(":version"));
+        assertEquals(hashTag(dataKey), hashTag(versionKey));
+        assertEquals(hashTag(dataKey), hashTag(fenceKey));
+        assertNotEquals(hashTag(dataKey), hashTag(keyspace.clusteredKey("project:2")));
         assertNotEquals(
                 nestedKeyspace.key("project:1"),
                 parentKeyspace.key("index:project:1")
@@ -137,6 +146,19 @@ class RedisCacheKeyspaceTest {
     ) {
         return java.util.Arrays.equals(keySerializer.serialize(expectedPattern), options.getBytePattern())
                 && Long.valueOf(1000L).equals(options.getCount());
+    }
+
+    /**
+     * 提取 Redis Cluster 用于计算 Slot 的 Hash Tag。
+     *
+     * @param key Redis Key
+     * @return 大括号内的 Hash Tag
+     */
+    private static String hashTag(String key) {
+        int start = key.indexOf('{');
+        int end = key.indexOf('}', start + 1);
+        assertTrue(start >= 0 && end > start + 1, "Redis Key 必须包含非空 Hash Tag");
+        return key.substring(start + 1, end);
     }
 
     /**

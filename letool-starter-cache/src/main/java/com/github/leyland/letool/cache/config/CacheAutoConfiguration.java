@@ -1,6 +1,14 @@
 package com.github.leyland.letool.cache.config;
 
 import com.github.leyland.letool.cache.aspect.CacheAspect;
+import com.github.leyland.letool.cache.consistency.CacheConsistencyMode;
+import com.github.leyland.letool.cache.consistency.CacheInvalidationEventStore;
+import com.github.leyland.letool.cache.consistency.CacheMutationCoordinator;
+import com.github.leyland.letool.cache.consistency.SpringCacheMutationCoordinator;
+import com.github.leyland.letool.cache.consistency.RedisCacheFenceStore;
+import com.github.leyland.letool.cache.consistency.JdbcCacheInvalidationEventStore;
+import com.github.leyland.letool.cache.consistency.CacheInvalidationRecovery;
+import com.github.leyland.letool.cache.consistency.CacheInvalidationRecoveryScheduler;
 import com.github.leyland.letool.cache.core.CacheConfig;
 import com.github.leyland.letool.cache.core.CacheInvalidationPublisher;
 import com.github.leyland.letool.cache.core.CacheManager;
@@ -21,11 +29,14 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 
 import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 
 /**
  * 缓存 starter 的自动配置入口。
@@ -44,6 +55,96 @@ import java.nio.charset.StandardCharsets;
 public class CacheAutoConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(CacheAutoConfiguration.class);
+
+    /**
+     * 注册基于 Spring 事务的缓存修改协调器。
+     *
+     * @param transactionManager 业务数据库事务管理器
+     * @return 缓存修改协调器
+     */
+    @Bean
+    @ConditionalOnBean(PlatformTransactionManager.class)
+    @ConditionalOnMissingBean(CacheMutationCoordinator.class)
+    public CacheMutationCoordinator cacheMutationCoordinator(
+            PlatformTransactionManager transactionManager,
+            @org.springframework.beans.factory.annotation.Autowired(required = false)
+            RedisCacheFenceStore fenceStore,
+            @org.springframework.beans.factory.annotation.Autowired(required = false)
+            CacheInvalidationEventStore eventStore) {
+        return new SpringCacheMutationCoordinator(transactionManager, fenceStore, eventStore);
+    }
+
+    /** 使用业务 JdbcTemplate 注册默认 Outbox 仓储。 */
+    @Bean
+    @ConditionalOnClass(JdbcTemplate.class)
+    @ConditionalOnBean(JdbcTemplate.class)
+    @ConditionalOnMissingBean(CacheInvalidationEventStore.class)
+    public CacheInvalidationEventStore cacheInvalidationEventStore(
+            JdbcTemplate jdbcTemplate, CacheProperties properties) {
+        return new JdbcCacheInvalidationEventStore(
+                jdbcTemplate, properties.getConsistency().getOutboxTable());
+    }
+
+    /** 注册 Redis 单 Key 写入围栏。 */
+    @Bean
+    @ConditionalOnBean(RedisUtil.class)
+    @ConditionalOnMissingBean(RedisCacheFenceStore.class)
+    public RedisCacheFenceStore redisCacheFenceStore(
+            RedisUtil redisUtil, CacheProperties properties) {
+        return new RedisCacheFenceStore(
+                redisUtil, properties.getRedisPrefix(), properties.getConsistency().getFenceTtl());
+    }
+
+    /** 注册 DURABLE Outbox 单批恢复处理器。 */
+    @Bean
+    @ConditionalOnBean({CacheInvalidationEventStore.class, RedisCacheFenceStore.class})
+    @ConditionalOnMissingBean(CacheInvalidationRecovery.class)
+    public CacheInvalidationRecovery cacheInvalidationRecovery(
+            CacheInvalidationEventStore eventStore,
+            RedisCacheFenceStore fenceStore,
+            CacheProperties properties) {
+        CacheProperties.Consistency consistency = properties.getConsistency();
+        return new CacheInvalidationRecovery(
+                eventStore, fenceStore, UUID.randomUUID().toString(),
+                consistency.getRecoveryBatchSize(), consistency.getRecoveryLease(),
+                consistency.getRetryBaseDelay());
+    }
+
+    /** 注册 DURABLE Outbox 后台恢复调度器。 */
+    @Bean(destroyMethod = "close")
+    @ConditionalOnBean(CacheInvalidationRecovery.class)
+    @ConditionalOnMissingBean(CacheInvalidationRecoveryScheduler.class)
+    public CacheInvalidationRecoveryScheduler cacheInvalidationRecoveryScheduler(
+            CacheInvalidationRecovery recovery, CacheProperties properties) {
+        return new CacheInvalidationRecoveryScheduler(
+                recovery, properties.getConsistency().getRecoveryInterval());
+    }
+
+    /**
+     * 校验 DURABLE 模式所需基础设施，防止强一致配置被静默降级。
+     *
+     * @param properties 缓存配置
+     * @param redisUtil Redis 操作入口
+     * @param transactionManager 业务事务管理器
+     * @param eventStore 持久化事件仓储
+     * @return 启动期校验标记对象
+     */
+    @Bean
+    @ConditionalOnMissingBean(name = "cacheConsistencyInfrastructureValidator")
+    public Object cacheConsistencyInfrastructureValidator(
+            CacheProperties properties,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) RedisUtil redisUtil,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) PlatformTransactionManager transactionManager,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) CacheInvalidationEventStore eventStore) {
+        boolean durableConfigured = properties.getConsistency().getMode() == CacheConsistencyMode.DURABLE
+                || properties.getInstances().stream()
+                .anyMatch(instance -> instance.getConsistencyMode() == CacheConsistencyMode.DURABLE);
+        if (durableConfigured && (redisUtil == null || transactionManager == null || eventStore == null)) {
+            throw new IllegalStateException(
+                    "DURABLE 缓存一致性模式要求 Redis、事务管理器和 CacheInvalidationEventStore");
+        }
+        return new Object();
+    }
 
     /**
      * 注册默认的缓存序列化器。
@@ -157,8 +258,11 @@ public class CacheAutoConfiguration {
     @ConditionalOnBean(CacheManager.class)
     @ConditionalOnMissingBean(CacheAspect.class)
     @ConditionalOnProperty(prefix = "letool.cache.annotation", name = "enabled", havingValue = "true", matchIfMissing = true)
-    public CacheAspect cacheAspect(CacheManager cacheManager) {
-        return new CacheAspect(cacheManager);
+    public CacheAspect cacheAspect(
+            CacheManager cacheManager,
+            @org.springframework.beans.factory.annotation.Autowired(required = false)
+            CacheMutationCoordinator mutationCoordinator) {
+        return new CacheAspect(cacheManager, mutationCoordinator);
     }
 
     /**
@@ -192,7 +296,17 @@ public class CacheAutoConfiguration {
                     .l1Ttl(ic.getL1Ttl())
                     .l2Ttl(ic.getL2Ttl())
                     .l2Enabled(ic.isL2Enabled())
-                    .strongConsistency(properties.isStrongConsistency() && ic.isStrongConsistency())
+                    .consistencyMode(ic.getConsistencyMode() == null
+                            ? properties.getConsistency().getMode()
+                            : ic.getConsistencyMode())
+                    .readValidation(properties.isStrongConsistency() && ic.isStrongConsistency()
+                            ? (ic.getReadValidation() == null
+                            ? properties.getConsistency().getReadValidation()
+                            : ic.getReadValidation())
+                            : com.github.leyland.letool.cache.consistency.CacheReadValidation.NONE)
+                    .writePolicy(ic.getWritePolicy() == null
+                            ? properties.getConsistency().getWritePolicy()
+                            : ic.getWritePolicy())
                     .nullValueCache(ic.isNullValueCache())
                     .nullValueTtl(ic.getNullValueTtl())
                     .redisKeyPrefix(properties.getRedisPrefix());

@@ -1,5 +1,8 @@
 package com.github.leyland.letool.cache.core;
 
+import com.github.leyland.letool.cache.consistency.CacheConsistencyMode;
+import com.github.leyland.letool.cache.consistency.CacheReadValidation;
+import com.github.leyland.letool.cache.consistency.CacheWritePolicy;
 import com.github.leyland.letool.cache.exception.CacheException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,9 +31,48 @@ class CacheConfigTest {
         assertTrue(config.isL1Enabled());
         assertTrue(config.isL2Enabled());
         assertTrue(config.isStrongConsistency());
+        assertEquals(CacheConsistencyMode.TRANSACTIONAL, config.getConsistencyMode());
+        assertEquals(CacheReadValidation.VERSIONED, config.getReadValidation());
+        assertEquals(CacheWritePolicy.INVALIDATE, config.getWritePolicy());
         assertTrue(config.isNullValueCache());
         assertEquals(Duration.ofMinutes(5), config.getNullValueTtl());
         assertEquals("letool:cache:", config.getRedisKeyPrefix());
+    }
+
+    @Test
+    @DisplayName("TRANSACTIONAL 模式可以独立选择读取校验和写策略")
+    void transactionalModeShouldAllowIndependentReadAndWritePolicies() {
+        CacheConfig<String, String> config = CacheConfig.<String, String>builder("critical")
+                .consistencyMode(CacheConsistencyMode.TRANSACTIONAL)
+                .readValidation(CacheReadValidation.NONE)
+                .writePolicy(CacheWritePolicy.UPDATE)
+                .build();
+
+        assertEquals(CacheConsistencyMode.TRANSACTIONAL, config.getConsistencyMode());
+        assertEquals(CacheReadValidation.NONE, config.getReadValidation());
+        assertEquals(CacheWritePolicy.UPDATE, config.getWritePolicy());
+        assertFalse(config.isStrongConsistency());
+    }
+
+    @Test
+    @DisplayName("DURABLE 必须启用 L2 和 VERSIONED 读取校验")
+    void durableShouldRequireL2VersionValidation() {
+        assertThrows(CacheException.class, () -> CacheConfig.<String, String>builder("critical")
+                .consistencyMode(CacheConsistencyMode.DURABLE)
+                .readValidation(CacheReadValidation.NONE)
+                .build());
+    }
+
+    @Test
+    @DisplayName("旧 strongConsistency 只映射读取校验")
+    void legacyStrongConsistencyShouldOnlyMapReadValidation() {
+        CacheConfig<String, String> config = CacheConfig.<String, String>builder("legacy")
+                .strongConsistency(false)
+                .build();
+
+        assertEquals(CacheConsistencyMode.TRANSACTIONAL, config.getConsistencyMode());
+        assertEquals(CacheReadValidation.NONE, config.getReadValidation());
+        assertFalse(config.isStrongConsistency());
     }
 
     @Test

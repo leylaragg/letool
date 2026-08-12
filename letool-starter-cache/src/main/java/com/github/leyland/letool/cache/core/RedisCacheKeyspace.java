@@ -11,6 +11,10 @@ import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 import java.util.ArrayList;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 
@@ -61,12 +65,53 @@ final class RedisCacheKeyspace {
     }
 
     /**
+     * 生成适用于 Redis Cluster 单 Key 原子脚本的数据 Key。
+     *
+     * @param serializedKey 已序列化的业务 Key
+     * @return 包含业务 Key 独立 Hash Tag 的完整 Redis Key
+     */
+    String clusteredKey(String serializedKey) {
+        String key = Objects.requireNonNull(serializedKey, "序列化业务 Key 不能为空");
+        return regionPrefix + hashTag(key) + ":" + key;
+    }
+
+    /**
      * 生成当前缓存区域的版本元数据 Key。
      *
      * <p>版本 Key 不属于数据扫描范围，区域清理后继续保持单调递增，防止其它 JVM
      * 因版本号回退而误用旧的 L1 数据。</p>
      *
      * @return 当前缓存区域的版本元数据 Key
+     */
+    String versionKey(String serializedKey) {
+        String key = Objects.requireNonNull(serializedKey, "序列化业务 Key 不能为空");
+        return metadataPrefix + hashTag(key) + ":version";
+    }
+
+    /**
+     * 生成与数据 Key、版本 Key 同槽的写事务围栏 Key。
+     *
+     * @param serializedKey 已序列化的业务 Key
+     * @return 单 Key 围栏元数据 Key
+     */
+    String fenceKey(String serializedKey) {
+        String key = Objects.requireNonNull(serializedKey, "序列化业务 Key 不能为空");
+        return metadataPrefix + hashTag(key) + ":fence";
+    }
+
+    /**
+     * 生成区域级版本 Key，仅用于区域清理后使全部 L1 快照失效。
+     *
+     * @return 当前缓存区域的区域版本 Key
+     */
+    String regionVersionKey() {
+        return metadataPrefix + "region-version";
+    }
+
+    /**
+     * 生成兼容现有区域版本校验的元数据 Key。
+     *
+     * @return 当前缓存区域的旧版区域版本 Key
      */
     String versionKey() {
         return metadataPrefix + "version";
@@ -184,6 +229,25 @@ final class RedisCacheKeyspace {
      */
     private static String encodeCacheName(String cacheName) {
         return cacheName.replace("%", "%25").replace(":", "%3A");
+    }
+
+    /**
+     * 为单个业务 Key 生成稳定的 Redis Cluster Hash Tag。
+     *
+     * <p>数据 Key 和版本 Key 使用同一个 Tag，可以在 Lua 中原子操作；不同业务 Key 使用
+     * 不同摘要，避免整个缓存区域集中到单一 Slot。</p>
+     *
+     * @param serializedKey 已序列化的业务 Key
+     * @return 包含大括号的 Hash Tag 片段
+     */
+    private static String hashTag(String serializedKey) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(serializedKey.getBytes(StandardCharsets.UTF_8));
+            return "{" + HexFormat.of().formatHex(digest, 0, 12) + "}";
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("当前 Java 运行环境不支持 SHA-256", exception);
+        }
     }
 
     /**

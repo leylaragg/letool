@@ -1,5 +1,8 @@
 package com.github.leyland.letool.cache.config;
 
+import com.github.leyland.letool.cache.consistency.CacheConsistencyMode;
+import com.github.leyland.letool.cache.consistency.CacheReadValidation;
+import com.github.leyland.letool.cache.consistency.CacheWritePolicy;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,6 +39,25 @@ class CachePropertiesTest {
     void testDefaultInstances() {
         assertNotNull(properties.getInstances());
         assertTrue(properties.getInstances().isEmpty());
+    }
+
+    @Test
+    @DisplayName("默认使用事务最终一致性和失效写策略")
+    void consistencyDefaultsShouldBeTransactionalAndInvalidate() {
+        assertNotNull(properties.getConsistency());
+        assertEquals(CacheConsistencyMode.TRANSACTIONAL, properties.getConsistency().getMode());
+        assertEquals(CacheReadValidation.VERSIONED, properties.getConsistency().getReadValidation());
+        assertEquals(CacheWritePolicy.INVALIDATE, properties.getConsistency().getWritePolicy());
+    }
+
+    @Test
+    @DisplayName("旧 strongConsistency 只修改读取校验")
+    void legacyStrongConsistencyShouldNotEnableDurableMode() {
+        properties.setStrongConsistency(false);
+
+        assertEquals(CacheConsistencyMode.TRANSACTIONAL, properties.getConsistency().getMode());
+        assertEquals(CacheReadValidation.NONE, properties.getConsistency().getReadValidation());
+        assertFalse(properties.isStrongConsistency());
     }
 
     @Test
@@ -104,6 +126,9 @@ class CachePropertiesTest {
         assertEquals(Duration.ofDays(3), config.getL2Ttl());
         assertTrue(config.isNullValueCache());
         assertEquals(Duration.ofMinutes(5), config.getNullValueTtl());
+        assertNull(config.getConsistencyMode());
+        assertNull(config.getReadValidation());
+        assertNull(config.getWritePolicy());
         assertNull(config.getName());
     }
 
@@ -117,6 +142,9 @@ class CachePropertiesTest {
         config.setL2Ttl(Duration.ofDays(7));
         config.setNullValueCache(false);
         config.setNullValueTtl(Duration.ofMinutes(10));
+        config.setConsistencyMode(CacheConsistencyMode.DURABLE);
+        config.setReadValidation(CacheReadValidation.NONE);
+        config.setWritePolicy(CacheWritePolicy.UPDATE);
 
         assertEquals("myCache", config.getName());
         assertEquals(500, config.getL1MaxSize());
@@ -124,5 +152,8 @@ class CachePropertiesTest {
         assertEquals(Duration.ofDays(7), config.getL2Ttl());
         assertFalse(config.isNullValueCache());
         assertEquals(Duration.ofMinutes(10), config.getNullValueTtl());
+        assertEquals(CacheConsistencyMode.DURABLE, config.getConsistencyMode());
+        assertEquals(CacheReadValidation.NONE, config.getReadValidation());
+        assertEquals(CacheWritePolicy.UPDATE, config.getWritePolicy());
     }
 }

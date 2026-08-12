@@ -1,5 +1,8 @@
 package com.github.leyland.letool.cache.config;
 
+import com.github.leyland.letool.cache.consistency.CacheConsistencyMode;
+import com.github.leyland.letool.cache.consistency.CacheReadValidation;
+import com.github.leyland.letool.cache.consistency.CacheWritePolicy;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
@@ -29,8 +32,8 @@ public class CacheProperties {
     private boolean l1Enabled = true;
     /** 全局 L2 开关。 */
     private boolean l2Enabled = true;
-    /** 全局强一致开关。 */
-    private boolean strongConsistency = true;
+    /** 数据库一致性与缓存读写策略。 */
+    private Consistency consistency = new Consistency();
     /** 启动时预注册的缓存实例列表。 */
     private List<InstanceConfig> instances = new ArrayList<>();
     /** Redis 降级和恢复相关配置。 */
@@ -50,8 +53,12 @@ public class CacheProperties {
     public void setL1Enabled(boolean l1Enabled) { this.l1Enabled = l1Enabled; }
     public boolean isL2Enabled() { return l2Enabled; }
     public void setL2Enabled(boolean l2Enabled) { this.l2Enabled = l2Enabled; }
-    public boolean isStrongConsistency() { return strongConsistency; }
-    public void setStrongConsistency(boolean strongConsistency) { this.strongConsistency = strongConsistency; }
+    public boolean isStrongConsistency() { return consistency.getReadValidation() == CacheReadValidation.VERSIONED; }
+    public void setStrongConsistency(boolean strongConsistency) {
+        consistency.setReadValidation(strongConsistency ? CacheReadValidation.VERSIONED : CacheReadValidation.NONE);
+    }
+    public Consistency getConsistency() { return consistency; }
+    public void setConsistency(Consistency consistency) { this.consistency = consistency; }
     public List<InstanceConfig> getInstances() { return instances; }
     public void setInstances(List<InstanceConfig> instances) { this.instances = instances; }
     public Degradation getDegradation() { return degradation; }
@@ -62,6 +69,49 @@ public class CacheProperties {
     public void setAnnotation(AnnotationConfig annotation) { this.annotation = annotation; }
     public Invalidation getInvalidation() { return invalidation; }
     public void setInvalidation(Invalidation invalidation) { this.invalidation = invalidation; }
+
+    /**
+     * 数据库一致性与缓存读写策略配置。
+     */
+    public static class Consistency {
+        /** 数据库修改协调模式。 */
+        private CacheConsistencyMode mode = CacheConsistencyMode.TRANSACTIONAL;
+        /** L1 命中时的读取校验策略。 */
+        private CacheReadValidation readValidation = CacheReadValidation.VERSIONED;
+        /** 数据库修改成功后的缓存处理策略。 */
+        private CacheWritePolicy writePolicy = CacheWritePolicy.INVALIDATE;
+        /** DURABLE Redis 围栏最大存活时间。 */
+        private Duration fenceTtl = Duration.ofMinutes(2);
+        /** Outbox 恢复扫描间隔。 */
+        private Duration recoveryInterval = Duration.ofSeconds(5);
+        /** Outbox 单批领取数量。 */
+        private int recoveryBatchSize = 100;
+        /** Outbox 处理租约。 */
+        private Duration recoveryLease = Duration.ofSeconds(30);
+        /** Outbox 失败后的基础重试延迟。 */
+        private Duration retryBaseDelay = Duration.ofSeconds(1);
+        /** JDBC Outbox 表名。 */
+        private String outboxTable = "letool_cache_outbox";
+
+        public CacheConsistencyMode getMode() { return mode; }
+        public void setMode(CacheConsistencyMode mode) { this.mode = mode; }
+        public CacheReadValidation getReadValidation() { return readValidation; }
+        public void setReadValidation(CacheReadValidation readValidation) { this.readValidation = readValidation; }
+        public CacheWritePolicy getWritePolicy() { return writePolicy; }
+        public void setWritePolicy(CacheWritePolicy writePolicy) { this.writePolicy = writePolicy; }
+        public Duration getFenceTtl() { return fenceTtl; }
+        public void setFenceTtl(Duration fenceTtl) { this.fenceTtl = fenceTtl; }
+        public Duration getRecoveryInterval() { return recoveryInterval; }
+        public void setRecoveryInterval(Duration recoveryInterval) { this.recoveryInterval = recoveryInterval; }
+        public int getRecoveryBatchSize() { return recoveryBatchSize; }
+        public void setRecoveryBatchSize(int recoveryBatchSize) { this.recoveryBatchSize = recoveryBatchSize; }
+        public Duration getRecoveryLease() { return recoveryLease; }
+        public void setRecoveryLease(Duration recoveryLease) { this.recoveryLease = recoveryLease; }
+        public Duration getRetryBaseDelay() { return retryBaseDelay; }
+        public void setRetryBaseDelay(Duration retryBaseDelay) { this.retryBaseDelay = retryBaseDelay; }
+        public String getOutboxTable() { return outboxTable; }
+        public void setOutboxTable(String outboxTable) { this.outboxTable = outboxTable; }
+    }
 
     /**
      * 单个缓存区域的配置项。
@@ -81,6 +131,12 @@ public class CacheProperties {
         private boolean l2Enabled = true;
         /** 当前缓存区域是否启用强一致版本校验。 */
         private boolean strongConsistency = true;
+        /** 当前缓存区域的一致性模式；为空时继承全局配置。 */
+        private CacheConsistencyMode consistencyMode;
+        /** 当前缓存区域的读取校验策略；为空时继承全局配置。 */
+        private CacheReadValidation readValidation;
+        /** 当前缓存区域的写策略；为空时继承全局配置。 */
+        private CacheWritePolicy writePolicy;
         /** 是否缓存 null 结果。 */
         private boolean nullValueCache = true;
         /** null 哨兵 TTL。 */
@@ -100,6 +156,12 @@ public class CacheProperties {
         public void setL2Enabled(boolean l2Enabled) { this.l2Enabled = l2Enabled; }
         public boolean isStrongConsistency() { return strongConsistency; }
         public void setStrongConsistency(boolean strongConsistency) { this.strongConsistency = strongConsistency; }
+        public CacheConsistencyMode getConsistencyMode() { return consistencyMode; }
+        public void setConsistencyMode(CacheConsistencyMode consistencyMode) { this.consistencyMode = consistencyMode; }
+        public CacheReadValidation getReadValidation() { return readValidation; }
+        public void setReadValidation(CacheReadValidation readValidation) { this.readValidation = readValidation; }
+        public CacheWritePolicy getWritePolicy() { return writePolicy; }
+        public void setWritePolicy(CacheWritePolicy writePolicy) { this.writePolicy = writePolicy; }
         public boolean isNullValueCache() { return nullValueCache; }
         public void setNullValueCache(boolean nullValueCache) { this.nullValueCache = nullValueCache; }
         public Duration getNullValueTtl() { return nullValueTtl; }

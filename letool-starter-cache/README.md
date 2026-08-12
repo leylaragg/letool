@@ -5,7 +5,7 @@
 - L1 使用 Caffeine，本地进程内高速读取。
 - L2 使用 Redis，多 JVM 共享缓存数据。
 - 支持注解式和编程式两种接入方式。
-- 支持强一致版本校验、跨 JVM L1 失效广播、Redis 异常降级和恢复探测。
+- 支持事务提交后失效、版本化读取校验、跨 JVM L1 失效广播、Redis 异常降级和恢复探测。
 - 支持 null 值哨兵，减少不存在数据反复穿透数据库。
 - 支持 KV、List、Hash、Set、ZSet；集合缓存直接使用 Redis 原生数据结构。
 
@@ -20,7 +20,7 @@
 
 谨慎使用：
 
-- 金融扣款、库存扣减等强事务写路径。
+- 金融扣款、库存扣减等事实数据；数据库事务和条件更新必须承担最终裁决，缓存不能作为账本。
 - 值非常大或 key 数量不可控的缓存区域。
 - 写入极高频且要求每次读取都绝对实时的场景。
 
@@ -35,6 +35,8 @@
 ```
 
 如果项目需要 L2 Redis，请确保业务工程已经配置 Spring Data Redis，并引入 `letool-starter-tool` 中的 Redis 能力。
+`spring-tx` 由本 starter 提供，用于提交后缓存动作；`spring-jdbc` 仍是可选依赖，只有使用默认
+JDBC Outbox 时业务工程才需要提供它和业务 `JdbcTemplate`。
 
 ## 快速开始
 
@@ -47,13 +49,25 @@ letool:
     redis-prefix: "myapp:cache:"
     l1-enabled: true
     l2-enabled: true
-    strong-consistency: true
+    consistency:
+      mode: TRANSACTIONAL
+      read-validation: VERSIONED
+      write-policy: INVALIDATE
+      # DURABLE 模式使用；表需要由业务项目按下文 SQL 预先创建
+      outbox-table: letool_cache_outbox
+      fence-ttl: 2m
+      recovery-interval: 5s
+      recovery-batch-size: 100
+      recovery-lease: 30s
+      retry-base-delay: 1s
     instances:
       - name: userCache
         l1-max-size: 2000
         l1-ttl: 30m
         l2-ttl: 2h
-        strong-consistency: true
+        # 可按缓存实例覆盖全局策略；未配置时继承全局值
+        read-validation: VERSIONED
+        write-policy: INVALIDATE
         null-value-cache: true
         null-value-ttl: 3m
     invalidation:
@@ -99,6 +113,14 @@ public void deleteUser(Long userId) {
 }
 ```
 
+默认 `write-policy=INVALIDATE`，因此 `@MultiLevelCachePut` 在数据库事务提交后删除旧缓存，
+下一次读取再从数据库重建。只有确认方法返回值就是数据库最终状态时，才配置
+`write-policy=UPDATE` 让该注解在提交后写回返回值。
+
+如果应用存在 Spring `PlatformTransactionManager`，Put/Evict 注解会加入当前事务或创建
+`REQUIRED` 事务；数据库回滚时不执行缓存动作。没有事务管理器时，框架只能在业务方法
+成功返回后立即处理缓存，不具备数据库事务同步语义。
+
 ### 4. 编程式使用
 
 ```java
@@ -111,7 +133,9 @@ public class CacheConfiguration {
                 .l1MaxSize(2000)
                 .l1Ttl(Duration.ofMinutes(30))
                 .l2Ttl(Duration.ofHours(2))
-                .strongConsistency(true)
+                .consistencyMode(CacheConsistencyMode.TRANSACTIONAL)
+                .readValidation(CacheReadValidation.VERSIONED)
+                .writePolicy(CacheWritePolicy.INVALIDATE)
                 .nullValueCache(true)
                 .nullValueTtl(Duration.ofMinutes(3))
                 .redisKeyPrefix("myapp:cache:")
@@ -133,32 +157,82 @@ CacheStats stats = userCache.stats();
 ```text
 getOrLoad(key)
   1. 尝试读取 L1。
-  2. 强一致开启时，L1 命中前会校验 Redis 中的缓存区域版本。
+  2. `VERSIONED` 开启时，L1 命中前会同时校验 Redis 单 Key 版本和区域纪元。
   3. L1 未命中或版本过期时读取 Redis L2。
   4. L2 命中后回填 L1，L1 TTL 不超过 Redis 剩余 TTL。
   5. L1/L2 都未命中时，同一个 key 在当前 JVM 内只允许一个线程回源 loader。
   6. loader 返回值写入 L2 和 L1；loader 返回 null 时按配置写入 null 哨兵。
 ```
 
-## 一致性说明
+## 一致性模式与选择
+
+缓存一致性不是越强越好。选择标准是：一次旧读是否会造成越权、错误放行或不可逆业务后果。
+
+| 数据与后果 | 建议 |
+| --- | --- |
+| 用户昵称、头像、商品介绍、普通列表、统计和推荐结果 | 最终一致性，使用 `TRANSACTIONAL` |
+| 可重试、可补偿且没有不可逆后果的业务状态展示 | `TRANSACTIONAL` |
+| 权限撤销、账户禁用、风控名单、关键规则和紧急开关 | 使用 `DURABLE`，并先完成真实 Redis/数据库故障演练 |
+| 余额、库存扣减、支付裁决、唯一性和幂等事实 | 由数据库事务、条件更新和约束保证；缓存不作最终裁决 |
+
+### TRANSACTIONAL：事务最终一致性
+
+这是默认且已经可用的模式：
+
+1. 执行业务数据库事务。
+2. 数据库提交后执行缓存失效或显式更新。
+3. 数据库回滚时不改变缓存。
+
+该模式成本较低，适合绝大多数企业缓存。但它不能覆盖“数据库刚提交、应用在缓存失效前立即宕机”
+的极短窗口，因此不能称为严格强一致。
+
+### DURABLE：持久化强一致
+
+实现协议为“Redis 写入围栏 + 同事务 JDBC Outbox + 幂等清理 + 后台重放”：
+
+1. 在业务 SQL 前原子删除旧 Redis 数据、推进单 Key 版本并建立有限 TTL 围栏；围栏失败则不执行 SQL。
+2. 业务 SQL 与 Outbox 事件使用同一个 `PlatformTransactionManager` 提交或回滚。
+3. 提交后幂等完成 Redis 清理并解除围栏；这一步失败时数据库事件保持未完成。
+4. 后台恢复任务带租约领取事件并指数退避重试，应用重启后仍可继续。
+5. 围栏存在或 Redis 状态无法确认时，读取绕过 L1/L2 直接查询数据库且不回填缓存。
+6. 回源写缓存采用单 Key 版本 CAS，拒绝把并发事务提交前读到的旧数据库快照写回。
+
+`fence-ttl` 必须大于业务事务允许的最大执行时间并留出网络抖动余量；过短会让仍在执行的超长事务
+提前失去围栏，过长则会延长异常进程留下围栏时的数据库直读时间。生产上应让数据库事务超时先于
+围栏超时，并监控 Outbox 待处理数量与最老事件年龄。
+
+启用 `DURABLE` 必须同时具备 Redis、业务数据库事务管理器和 `CacheInvalidationEventStore`；缺少任一项
+都会启动失败。默认会在存在业务 `JdbcTemplate` 时创建 `JdbcCacheInvalidationEventStore`，其表结构见
+制品中的 `letool-cache-outbox-schema.sql`。框架不会自动执行 DDL，生产项目应通过 Flyway/Liquibase
+或既有数据库变更流程建表。`DURABLE` 当前仅覆盖注解式 KV Put/Evict，不覆盖 List/Hash/Set/ZSet。
+它也不把 `evictAll` 定义为可与任意并发写原子串行化的全区事务；关键数据应使用可定位的单 Key 失效。
+
+### 读取校验与数据库一致性是两件事
 
 框架同时使用两种机制减少多 JVM L1 旧值问题：
 
 - Redis Pub/Sub 失效广播：某个 JVM 执行 `put`、`evict`、`evictAll` 后，会通知其他 JVM 清理对应 L1。
-- Redis 版本校验：强一致模式下，每个缓存区域维护一个 Redis 版本号，L1 条目只有在本地版本和 Redis 当前版本一致时才会返回。
+- Redis 版本校验：`read-validation=VERSIONED` 时，每个业务 Key 维护独立 Redis 版本号，只有本地版本和 Redis 当前版本一致时才返回 L1。
 
 生产建议：
 
-- 多实例部署并且缓存数据会被多个实例写入时，建议保持 `strong-consistency=true`。
+- 多实例部署并且缓存数据会被多个实例写入时，建议保持 `read-validation=VERSIONED`。
 - Pub/Sub 是瞬时消息，实例离线期间可能错过失效广播；关键缓存不要只依赖广播，应开启强一致版本校验。
-- 对极致性能敏感、且短时间旧值可以接受的缓存，可以将单个实例的 `strong-consistency` 设置为 `false`。
+- 对性能敏感且短时间旧值可以接受的缓存，可以把单个实例的 `read-validation` 设置为 `NONE`。
+- 旧 `strong-consistency` 配置只作为读取校验兼容项保留，不会开启 `DURABLE`。
+
+一致性责任边界：只有通过 Letool Put/Evict 注解或后续一致性执行器包裹的数据库修改，框架才能协调
+事务和缓存。外部 SQL、直接调用 MyBatis-Plus `saveOrUpdate`、Mapper 或 Repository 而没有接入
+Letool 一致性入口时，业务方仍须主动失效缓存。外层事务已经先执行 SQL、之后才调用缓存 API 也
+不在自动保证范围内。
 
 ## Redis 降级和恢复
 
 当 Redis 访问异常时，缓存实例会进入 L2 降级状态：
 
 - 后续读写会跳过 Redis，避免每个请求都阻塞在 Redis 异常上。
-- 已有 L1 数据仍可命中。
+- `read-validation=NONE` 时已有 L1 数据仍可命中。
+- `read-validation=VERSIONED` 时无法验证 Redis 版本会丢弃并停止建立 L1，直接执行 loader 回源。
 - 未命中时会继续执行 loader 回源。
 - `CacheRecoveryScheduler` 会按 `recovery-interval` 定期尝试恢复 L2。
 - List、Hash、Set、ZSet 恢复成功后会清空降级期间形成的本地快照，下一次读取重新以 Redis 为准。
@@ -177,7 +251,8 @@ List、Hash、Set、ZSet 缓存保留在本模块中，它们是 Redis 原生数
 - `MultiLevelSetCache`：规则索引、标签索引、ID 集合。
 - `MultiLevelZSetCache`：排行榜、权重或优先级排序。
 
-五种缓存统一使用下面的 Redis Key 格式，不同缓存名称即使使用相同业务 Key 也不会串用数据：
+五种缓存都按缓存名称隔离键空间。KV 在 `VERSIONED`/`DURABLE` 下额外使用单业务 Key 的 Redis Cluster
+Hash Tag，使数据、版本和围栏 Key 落在同一 Slot；集合缓存继续使用普通区域前缀：
 
 ```text
 <redis-key-prefix><encoded-cache-name>:<business-key>
@@ -260,6 +335,13 @@ ranking.evictAll();
 双读，避免不安全的共享键空间继续进入新缓存。若多个集合缓存过去共用了同一个前缀，上线前应先
 确认旧数据不再由旧版本应用实例访问。
 
+### VERSIONED KV Key 迁移说明
+
+本版本把 `VERSIONED` KV 从“普通数据 Key + 区域版本 Key”调整为“带单 Key Hash Tag 的数据 Key +
+单 Key 版本 Key + 区域纪元”。新旧数据 Key 不同，升级后会自然冷启动并重新从数据库回填；旧 Key
+不会被新版本读取，可等待原 TTL 淘汰或在所有旧实例下线后主动清理。不要让新旧版本长期混合部署，
+因为旧实例不理解新的单 Key 围栏和版本协议。
+
 ## 统一异常
 
 缓存模块使用 `letool-starter-exception` 的统一异常体系：
@@ -302,7 +384,16 @@ Map<String, CacheStats> snapshot = cacheMonitor.snapshot();
 | `letool.cache.redis-prefix` | `letool:cache:` | 全局 Redis key 前缀 |
 | `letool.cache.l1-enabled` | `true` | 全局 L1 开关 |
 | `letool.cache.l2-enabled` | `true` | 全局 L2 开关 |
-| `letool.cache.strong-consistency` | `true` | 全局强一致版本校验开关 |
+| `letool.cache.consistency.mode` | `TRANSACTIONAL` | 数据库一致性模式：`TRANSACTIONAL`/`DURABLE` |
+| `letool.cache.consistency.read-validation` | `VERSIONED` | L1 读取校验策略：`VERSIONED`/`NONE` |
+| `letool.cache.consistency.write-policy` | `INVALIDATE` | 提交后失效或显式更新：`INVALIDATE`/`UPDATE` |
+| `letool.cache.consistency.outbox-table` | `letool_cache_outbox` | DURABLE JDBC Outbox 表名 |
+| `letool.cache.consistency.fence-ttl` | `2m` | Redis 写围栏最大存活时间 |
+| `letool.cache.consistency.recovery-interval` | `5s` | Outbox 恢复扫描间隔 |
+| `letool.cache.consistency.recovery-batch-size` | `100` | Outbox 单批最大领取数量 |
+| `letool.cache.consistency.recovery-lease` | `30s` | 单个恢复实例的处理租约 |
+| `letool.cache.consistency.retry-base-delay` | `1s` | 失败指数退避的基础延迟 |
+| `letool.cache.strong-consistency` | `true` | 旧读取校验兼容项，不代表数据库强一致 |
 | `letool.cache.instances[].name` | 无 | 缓存实例名称 |
 | `letool.cache.instances[].l1-enabled` | `true` | 当前实例 L1 开关 |
 | `letool.cache.instances[].l1-max-size` | `2000` | 当前实例 L1 最大条目数 |
@@ -310,6 +401,9 @@ Map<String, CacheStats> snapshot = cacheMonitor.snapshot();
 | `letool.cache.instances[].l2-enabled` | `true` | 当前实例 L2 开关 |
 | `letool.cache.instances[].l2-ttl` | `3d` | 当前实例 L2 TTL |
 | `letool.cache.instances[].strong-consistency` | `true` | 当前实例强一致开关 |
+| `letool.cache.instances[].consistency-mode` | 继承全局 | 当前实例数据库一致性模式 |
+| `letool.cache.instances[].read-validation` | 继承全局 | 当前实例读取校验策略 |
+| `letool.cache.instances[].write-policy` | 继承全局 | 当前实例提交后写策略 |
 | `letool.cache.instances[].null-value-cache` | `true` | 是否缓存 null 结果 |
 | `letool.cache.instances[].null-value-ttl` | `5m` | null 哨兵 TTL |
 | `letool.cache.invalidation.enabled` | `true` | 是否启用跨 JVM L1 失效广播 |
@@ -335,7 +429,10 @@ Map<String, CacheStats> snapshot = cacheMonitor.snapshot();
 - 缓存名称具有业务语义，避免多个业务复用同一个 cache name。
 - L2 TTL 大于或等于 L1 TTL。
 - 写多读少、强实时数据不要盲目加缓存。
-- 多实例写入同一缓存时开启强一致。
+- 多实例写入同一缓存时使用 `VERSIONED` 读取校验。
+- 普通展示和可补偿数据使用 `TRANSACTIONAL`；旧读会造成越权、错误放行或不可逆操作时再评估 `DURABLE`。
+- 余额、库存、支付、唯一性和幂等事实必须由数据库保证，缓存不参与最终裁决。
+- 外部 SQL 或未被框架一致性入口包裹的 MP/Mapper 修改后主动失效缓存。
 - Redis 异常时 loader 回源不会压垮数据库。
 - null 缓存 TTL 不要过长，避免不存在的数据创建后仍然短期不可见。
 - Redis key 前缀按应用隔离，例如 `edc:cache:`、`crm:cache:`。

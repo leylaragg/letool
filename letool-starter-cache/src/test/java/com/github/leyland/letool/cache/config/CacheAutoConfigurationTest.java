@@ -74,6 +74,20 @@ class CacheAutoConfigurationTest {
     }
 
     /**
+     * JDBC Outbox 是 DURABLE 可选能力，普通缓存不能强制业务项目引入 spring-jdbc。
+     */
+    @Test
+    void shouldStartWithoutSpringJdbcClasspath() {
+        contextRunner
+                .withClassLoader(new FilteredClassLoader("org.springframework.jdbc"))
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(CacheManager.class);
+                    assertThat(context).doesNotHaveBean(com.github.leyland.letool.cache.consistency.CacheInvalidationEventStore.class);
+                });
+    }
+
+    /**
      * 没有 AspectJ 时，注解切面不应加载，但编程式缓存 API 仍然可用。
      */
     @Test
@@ -157,6 +171,35 @@ class CacheAutoConfigurationTest {
                     CacheConfig<?, ?> config = extractConfig(cache);
 
                     assertThat(config.isStrongConsistency()).isFalse();
+                });
+    }
+
+    /**
+     * DURABLE 模式缺少事务管理器、Redis 和事件仓储时必须启动失败，不能静默降级。
+     */
+    @Test
+    void durableModeShouldFailFastWithoutRequiredInfrastructure() {
+        contextRunner
+                .withPropertyValues("letool.cache.consistency.mode=DURABLE")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("DURABLE");
+                });
+    }
+
+    /**
+     * 单个缓存实例选择 DURABLE 时同样必须执行基础设施校验。
+     */
+    @Test
+    void durableInstanceShouldFailFastWithoutRequiredInfrastructure() {
+        contextRunner
+                .withPropertyValues(
+                        "letool.cache.instances[0].name=permissions",
+                        "letool.cache.instances[0].consistency-mode=DURABLE")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure()).hasMessageContaining("DURABLE");
                 });
     }
 
