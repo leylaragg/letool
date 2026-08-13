@@ -6,9 +6,15 @@ import com.github.leyland.letool.print.api.PrintTemplate;
 import com.github.leyland.letool.print.api.TemplateFormat;
 import com.github.leyland.letool.print.context.PrintContext;
 import com.github.leyland.letool.print.exception.PrintValidationException;
+import com.github.leyland.letool.print.xml.format.FormatCompileContext;
+import com.github.leyland.letool.print.xml.format.PrintFormatPlan;
+import com.github.leyland.letool.print.xml.format.PrintFormatterRegistry;
+import com.github.leyland.letool.print.xml.format.PrintValueFormatter;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -116,6 +122,93 @@ class XmlBindingGovernorTest {
                 .hasMessageContaining("contract");
     }
 
+    /** 验证表格行、单元格及其内容全部计入真实绑定节点上限。 */
+    @Test
+    void shouldCountGeneratedTableStructure() {
+        ObjectNode root = squareLoopContext(160);
+        CompiledXmlTemplate template = compile("""
+                <page><table><body>
+                    <for-each items="outer" var="outerItem">
+                        <for-each items="inner" var="innerItem">
+                            <row><cell><paragraph>内容</paragraph></cell></row>
+                        </for-each>
+                    </for-each>
+                </body></table></page>
+                """);
+
+        assertThatThrownBy(() -> new XmlTemplateBinder().bind(template, PrintContext.of(1, root)))
+                .isInstanceOf(PrintValidationException.class)
+                .hasMessageContaining("生成节点")
+                .hasMessageContaining("contract");
+    }
+
+    /** 验证图片替代文本也计入真实绑定文本上限。 */
+    @Test
+    void shouldCountGeneratedImageAlternativeText() {
+        ObjectNode root = JsonNodeFactory.instance.objectNode();
+        for (int index = 0; index < XmlDsl.MAX_LOOP_ITEMS; index++) {
+            root.withArray("items").add(index);
+        }
+        String alt = "替代文本".repeat(63);
+        CompiledXmlTemplate template = compile("""
+                <page><for-each items="items" var="item">
+                    <image resource-id="shared.image" alt="%s" width="1mm" height="1mm"/>
+                </for-each></page>
+                """.formatted(alt));
+
+        assertThatThrownBy(() -> new XmlTemplateBinder().bind(template, PrintContext.of(1, root)))
+                .isInstanceOf(PrintValidationException.class)
+                .hasMessageContaining("生成文本")
+                .hasMessageContaining("contract");
+    }
+
+    /** 验证链接本身和标签子节点全部计入真实绑定节点上限。 */
+    @Test
+    void shouldCountLinkAndLabelNodes() {
+        ObjectNode root = squareLoopContext(160);
+        CompiledXmlTemplate template = compile("""
+                <page>
+                    <heading id="target">目标</heading>
+                    <for-each items="outer" var="outerItem">
+                        <for-each items="inner" var="innerItem">
+                            <paragraph><link target="target">值：<field path="$innerItem"/></link></paragraph>
+                        </for-each>
+                    </for-each>
+                </page>
+                """);
+
+        assertThatThrownBy(() -> new XmlTemplateBinder().bind(template, PrintContext.of(1, root)))
+                .isInstanceOf(PrintValidationException.class)
+                .hasMessageContaining("生成节点")
+                .hasMessageContaining("contract");
+    }
+
+    /** 验证格式化后的最终文本也受文本字符上限保护。 */
+    @Test
+    void shouldCountFormattedFieldText() {
+        PrintValueFormatter formatter = new PrintValueFormatter() {
+            @Override
+            public String name() {
+                return "large";
+            }
+
+            @Override
+            public PrintFormatPlan compile(
+                    Map<String, String> options, FormatCompileContext context) {
+                return value -> "x".repeat(XmlDsl.MAX_GENERATED_TEXT_CHARACTERS + 1);
+            }
+        };
+        CompiledXmlTemplate template = compile("""
+                <page><paragraph><field path="value" formatter="large"/></paragraph></page>
+                """, new XmlTemplateCompiler(new PrintFormatterRegistry(List.of(formatter))));
+        ObjectNode root = JsonNodeFactory.instance.objectNode().put("value", 1);
+
+        assertThatThrownBy(() -> new XmlTemplateBinder().bind(template, PrintContext.of(1, root)))
+                .isInstanceOf(PrintValidationException.class)
+                .hasMessageContaining("生成文本")
+                .hasMessageContaining("contract");
+    }
+
     /** 验证单循环数组元素超过上限时通过真实绑定入口失败。 */
     @Test
     void shouldLimitSingleLoopItems() {
@@ -161,12 +254,17 @@ class XmlBindingGovernorTest {
 
     /** 编译指定页面内容。 */
     private CompiledXmlTemplate compile(String page) {
+        return compile(page, new XmlTemplateCompiler());
+    }
+
+    /** 使用指定编译器编译页面内容。 */
+    private CompiledXmlTemplate compile(String page, XmlTemplateCompiler compiler) {
         String xml = """
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
                     %s
                 </document>
                 """.formatted(page);
-        return new XmlTemplateCompiler().compile(new PrintTemplate(
+        return compiler.compile(new PrintTemplate(
                 "contract", TemplateFormat.LETOOL_XML, 1, 9, 1,
                 xml.getBytes(StandardCharsets.UTF_8)));
     }

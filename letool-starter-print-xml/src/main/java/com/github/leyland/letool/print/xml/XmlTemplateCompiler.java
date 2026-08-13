@@ -2,6 +2,11 @@ package com.github.leyland.letool.print.xml;
 
 import com.github.leyland.letool.print.api.PrintTemplate;
 import com.github.leyland.letool.print.api.TemplateFormat;
+import com.github.leyland.letool.print.xml.format.BuiltInPrintFormatters;
+import com.github.leyland.letool.print.xml.format.FormatCompileContext;
+import com.github.leyland.letool.print.xml.format.PrintFormatPlan;
+import com.github.leyland.letool.print.xml.format.PrintFormatterRegistry;
+import com.github.leyland.letool.print.xml.format.PrintValueFormatter;
 
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLResolver;
@@ -47,33 +52,51 @@ public final class XmlTemplateCompiler {
             };
 
     /** 每个标签允许出现的属性。 */
-    private static final Map<String, Set<String>> ALLOWED_ATTRIBUTES = Map.of(
-            "document", Set.of("context-version", "title", "author", "language"),
-            "page", Set.of("size", "orientation", "margin"),
-            "section", Set.of("id"),
-            "heading", Set.of("id", "level"),
-            "paragraph", Set.of("id"),
-            "text", Set.of(),
-            "field", Set.of("path"),
-            "if", Set.of("path", "operator", "value", "value-type"),
-            "for-each", Set.of("items", "var"),
-            "page-break", Set.of());
+    private static final Map<String, Set<String>> ALLOWED_ATTRIBUTES = Map.ofEntries(
+            Map.entry("document", Set.of("context-version", "title", "author", "language")),
+            Map.entry("page", Set.of("size", "orientation", "margin")),
+            Map.entry("section", Set.of("id")),
+            Map.entry("heading", Set.of("id", "level")),
+            Map.entry("paragraph", Set.of("id")),
+            Map.entry("table", Set.of("id")),
+            Map.entry("header", Set.of()),
+            Map.entry("body", Set.of()),
+            Map.entry("row", Set.of()),
+            Map.entry("cell", Set.of("row-span", "col-span")),
+            Map.entry("image", Set.of("id", "resource-id", "resource-path", "alt", "width", "height")),
+            Map.entry("bookmark", Set.of("id", "label")),
+            Map.entry("link", Set.of("target")),
+            Map.entry("text", Set.of()),
+            Map.entry("field", Set.of("path", "formatter")),
+            Map.entry("format-option", Set.of("name", "value")),
+            Map.entry("if", Set.of("path", "operator", "value", "value-type")),
+            Map.entry("for-each", Set.of("items", "var")),
+            Map.entry("page-break", Set.of()));
 
     /** 每个父标签允许包含的直接子标签。 */
-    private static final Map<String, Set<String>> ALLOWED_CHILDREN = Map.of(
-            "document", Set.of("page"),
-            "page", Set.of("section", "heading", "paragraph", "page-break", "if", "for-each"),
-            "section", Set.of("section", "heading", "paragraph", "page-break", "if", "for-each"),
-            "heading", Set.of("text", "field"),
-            "paragraph", Set.of("text", "field"),
-            "text", Set.of(),
-            "field", Set.of(),
-            "if", Set.of("section", "heading", "paragraph", "page-break", "if", "for-each"),
-            "for-each", Set.of("section", "heading", "paragraph", "page-break", "if", "for-each"),
-            "page-break", Set.of());
+    private static final Map<String, Set<String>> ALLOWED_CHILDREN = Map.ofEntries(
+            Map.entry("document", Set.of("page")),
+            Map.entry("page", Set.of("section", "heading", "paragraph", "table", "image", "page-break", "if", "for-each")),
+            Map.entry("section", Set.of("section", "heading", "paragraph", "table", "image", "page-break", "if", "for-each")),
+            Map.entry("heading", Set.of("text", "field", "bookmark", "link")),
+            Map.entry("paragraph", Set.of("text", "field", "bookmark", "link")),
+            Map.entry("table", Set.of("header", "body")),
+            Map.entry("header", Set.of("row", "if", "for-each")),
+            Map.entry("body", Set.of("row", "if", "for-each")),
+            Map.entry("row", Set.of("cell")),
+            Map.entry("cell", Set.of("section", "heading", "paragraph", "table", "image", "page-break", "if", "for-each")),
+            Map.entry("image", Set.of()),
+            Map.entry("bookmark", Set.of()),
+            Map.entry("link", Set.of("text", "field")),
+            Map.entry("text", Set.of()),
+            Map.entry("field", Set.of("format-option")),
+            Map.entry("format-option", Set.of()),
+            Map.entry("if", Set.of("section", "heading", "paragraph", "table", "image", "page-break", "row", "if", "for-each")),
+            Map.entry("for-each", Set.of("section", "heading", "paragraph", "table", "image", "page-break", "row", "if", "for-each")),
+            Map.entry("page-break", Set.of()));
 
     /** 允许直接保存文本内容的标签。 */
-    private static final Set<String> TEXT_CONTAINERS = Set.of("heading", "paragraph", "text");
+    private static final Set<String> TEXT_CONTAINERS = Set.of("heading", "paragraph", "text", "link");
 
     /** 文档节点逻辑 ID 的稳定安全格式。 */
     private static final Pattern NODE_ID = Pattern.compile("[A-Za-z][A-Za-z0-9_.:-]{0,127}");
@@ -84,6 +107,27 @@ public final class XmlTemplateCompiler {
 
     /** 循环变量名的稳定安全格式。 */
     private static final Pattern LOOP_VARIABLE = Pattern.compile("[A-Za-z][A-Za-z0-9_]{0,63}");
+
+    /** 格式选项名称的稳定安全格式。 */
+    private static final Pattern FORMAT_OPTION_NAME = Pattern.compile("[A-Za-z][A-Za-z0-9_-]{0,63}");
+
+    /** 编译阶段使用的不可变格式化器注册表。 */
+    private final PrintFormatterRegistry formatterRegistry;
+
+    /** 使用内置格式化器创建编译器。 */
+    public XmlTemplateCompiler() {
+        this(BuiltInPrintFormatters.registry());
+    }
+
+    /**
+     * 使用显式格式化器注册表创建编译器。
+     *
+     * @param formatterRegistry 编译阶段使用的不可变注册表
+     */
+    public XmlTemplateCompiler(PrintFormatterRegistry formatterRegistry) {
+        this.formatterRegistry = Objects.requireNonNull(
+                formatterRegistry, "formatterRegistry 不能为空");
+    }
 
     /**
      * 编译模板快照。
@@ -223,7 +267,8 @@ public final class XmlTemplateCompiler {
                     throw PrintCompilationException.invalid(templateCode + "：模板没有完整根元素");
                 }
                 validateDocument(template, root);
-                return compileDynamicTree(templateCode, root, "", Set.of());
+                return compileDynamicTree(
+                        templateCode, root, "", Set.of(), BindingDomain.BLOCKS);
             } finally {
                 reader.close();
             }
@@ -343,6 +388,47 @@ public final class XmlTemplateCompiler {
                 throw located(templateCode, reader, "heading.level 必须在 1 到 6 之间");
             }
         }
+        if ("cell".equals(element)) {
+            validatePositiveSpan(templateCode, reader, attributes, "row-span");
+            validatePositiveSpan(templateCode, reader, attributes, "col-span");
+        }
+        if ("image".equals(element)) {
+            boolean staticResource = attributes.containsKey("resource-id");
+            boolean dynamicResource = attributes.containsKey("resource-path");
+            if (staticResource == dynamicResource) {
+                throw located(templateCode, reader,
+                        "image 必须且只能声明一个 resource-id 或 resource-path");
+            }
+            if (staticResource && attributes.get("resource-id").isBlank()) {
+                throw located(templateCode, reader, "image.resource-id 不能为空白");
+            }
+            if (!attributes.containsKey("alt")) {
+                throw located(templateCode, reader, "image.alt 必填");
+            }
+            validatePositiveMillimeters(templateCode, reader, attributes, "width");
+            validatePositiveMillimeters(templateCode, reader, attributes, "height");
+        }
+        if ("bookmark".equals(element)) {
+            if (!attributes.containsKey("id") || attributes.get("label") == null
+                    || attributes.get("label").isBlank()) {
+                throw located(templateCode, reader, "bookmark.id 和非空 label 必填");
+            }
+        }
+        if ("link".equals(element)) {
+            String target = attributes.get("target");
+            if (target == null || !NODE_ID.matcher(target).matches()) {
+                throw located(templateCode, reader, "link.target 不合法");
+            }
+        }
+        if ("format-option".equals(element)) {
+            String name = attributes.get("name");
+            if (name == null || !FORMAT_OPTION_NAME.matcher(name).matches()) {
+                throw located(templateCode, reader, "format-option.name 不合法");
+            }
+            if (!attributes.containsKey("value") || attributes.get("value").isEmpty()) {
+                throw located(templateCode, reader, "format-option.value 不能为空");
+            }
+        }
     }
 
     /** 校验文档元数据的空白和长度边界。 */
@@ -387,11 +473,20 @@ public final class XmlTemplateCompiler {
             String templateCode,
             CompiledXmlNode node,
             String parentPath,
-            Set<String> variables) {
+            Set<String> variables,
+            BindingDomain domain) {
+        if (domain == BindingDomain.TABLE_ROWS
+                && !Set.of("row", "if", "for-each").contains(node.name())) {
+            throw nodeLocated(templateCode, node, "表格动态结构只能产生 row");
+        }
+        if (domain == BindingDomain.BLOCKS && "row".equals(node.name())) {
+            throw nodeLocated(templateCode, node, "row 只能出现在表格 header 或 body 中");
+        }
         String tagPath = "#text".equals(node.name()) ? parentPath : parentPath + "/" + node.name();
         CompiledDataPath dataPath = null;
         CompiledCondition condition = null;
         String variableName = null;
+        PrintFormatPlan formatPlan = null;
         Set<String> childVariables = variables;
         if ("for-each".equals(node.name())) {
             variableName = node.attributes().get("var");
@@ -409,12 +504,20 @@ public final class XmlTemplateCompiler {
             childVariables = Set.copyOf(nested);
         }
         List<CompiledXmlNode> children = new ArrayList<>(node.children().size());
+        BindingDomain childDomain = childBindingDomain(node.name(), domain);
         for (CompiledXmlNode child : node.children()) {
-            children.add(compileDynamicTree(templateCode, child, tagPath, childVariables));
+            children.add(compileDynamicTree(
+                    templateCode, child, tagPath, childVariables, childDomain));
         }
         if ("field".equals(node.name())) {
             dataPath = CompiledDataPath.compile(
                     node.attributes().get("path"), variables, templateCode,
+                    tagPath, node.line(), node.column());
+            formatPlan = compileFormatPlan(templateCode, node, tagPath, children);
+        }
+        if ("image".equals(node.name()) && node.attributes().containsKey("resource-path")) {
+            dataPath = CompiledDataPath.compile(
+                    node.attributes().get("resource-path"), variables, templateCode,
                     tagPath, node.line(), node.column());
         }
         if ("if".equals(node.name())) {
@@ -432,7 +535,93 @@ public final class XmlTemplateCompiler {
         }
         return new CompiledXmlNode(
                 node.name(), node.attributes(), children, node.text(), node.line(), node.column(),
-                tagPath, dataPath, condition, variableName);
+                tagPath, dataPath, condition, variableName, formatPlan);
+    }
+
+    /** 确定子节点应遵循普通块还是表格行结果域。 */
+    private BindingDomain childBindingDomain(String nodeName, BindingDomain current) {
+        if ("header".equals(nodeName) || "body".equals(nodeName)) {
+            return BindingDomain.TABLE_ROWS;
+        }
+        if ("if".equals(nodeName) || "for-each".equals(nodeName)) {
+            return current;
+        }
+        return BindingDomain.BLOCKS;
+    }
+
+    /** 将 field 的静态选项编译为可直接绑定的格式化计划。 */
+    private PrintFormatPlan compileFormatPlan(
+            String templateCode, CompiledXmlNode field, String tagPath,
+            List<CompiledXmlNode> children) {
+        String formatterName = field.attributes().get("formatter");
+        if (formatterName == null) {
+            if (!children.isEmpty()) {
+                throw nodeLocated(templateCode, field, "format-option 必须与 formatter 一起使用");
+            }
+            return null;
+        }
+        Map<String, String> options = new LinkedHashMap<>();
+        for (CompiledXmlNode option : children) {
+            String name = option.attributes().get("name");
+            if (options.putIfAbsent(name, option.attributes().get("value")) != null) {
+                throw nodeLocated(templateCode, option, "format-option.name 不能重复");
+            }
+        }
+        PrintValueFormatter formatter;
+        try {
+            formatter = formatterRegistry.require(formatterName);
+        } catch (IllegalArgumentException exception) {
+            throw nodeLocated(templateCode, field, "格式化器不存在或未注册");
+        }
+        try {
+            PrintFormatPlan plan = formatter.compile(
+                    Map.copyOf(options),
+                    new FormatCompileContext(
+                            templateCode, tagPath, field.line(), field.column()));
+            if (plan == null) {
+                throw new IllegalArgumentException("格式化器返回了空计划");
+            }
+            return plan;
+        } catch (RuntimeException exception) {
+            throw nodeLocated(templateCode, field, "格式化器配置无效");
+        }
+    }
+
+    /** 校验表格跨度为核心模型支持范围内的正整数。 */
+    private void validatePositiveSpan(
+            String templateCode, XMLStreamReader reader,
+            Map<String, String> attributes, String name) {
+        String value = attributes.get(name);
+        if (value == null) {
+            return;
+        }
+        try {
+            int span = Integer.parseInt(value);
+            if (span < 1 || span > 1_000) {
+                throw new NumberFormatException("out of range");
+            }
+        } catch (NumberFormatException exception) {
+            throw located(templateCode, reader, "cell." + name + " 必须在 1 到 1000 之间");
+        }
+    }
+
+    /** 校验正毫米尺寸且保证能够精确转换为微米整数。 */
+    private void validatePositiveMillimeters(
+            String templateCode, XMLStreamReader reader,
+            Map<String, String> attributes, String name) {
+        String value = attributes.get(name);
+        if (value == null || !MILLIMETERS.matcher(value.toLowerCase(Locale.ROOT)).matches()) {
+            throw located(templateCode, reader, "image." + name + " 必须使用正 mm 单位");
+        }
+        try {
+            int micrometers = new BigDecimal(value.substring(0, value.length() - 2))
+                    .movePointRight(3).intValueExact();
+            if (micrometers < 1 || micrometers > 2_000_000) {
+                throw new ArithmeticException("out of range");
+            }
+        } catch (ArithmeticException exception) {
+            throw located(templateCode, reader, "image." + name + " 超出支持范围");
+        }
     }
 
     /** 禁止循环展开后产生重复静态 ID。 */
@@ -557,11 +746,13 @@ public final class XmlTemplateCompiler {
 
         /** 完成空元素和文本标签结构校验。 */
         private CompiledXmlNode build(String templateCode, XMLStreamReader reader) {
-            if ("page-break".equals(name) && !children.isEmpty()) {
+            if (("page-break".equals(name) || "format-option".equals(name)
+                    || "image".equals(name) || "bookmark".equals(name))
+                    && !children.isEmpty()) {
                 throw PrintCompilationException.invalid(
                         templateCode + "：第 " + Math.max(reader.getLocation().getLineNumber(), 1)
                                 + " 行，第 " + Math.max(reader.getLocation().getColumnNumber(), 1)
-                                + " 列：page-break 必须为空元素");
+                                + " 列：" + name + " 必须为空元素");
             }
             if ("section".equals(name) && children.isEmpty()) {
                 throw PrintCompilationException.invalid(
@@ -569,8 +760,22 @@ public final class XmlTemplateCompiler {
                                 + " 行，第 " + Math.max(reader.getLocation().getColumnNumber(), 1)
                                 + " 列：section 至少包含一个块节点");
             }
+            if ("table".equals(name)) {
+                validateTableStructure(templateCode);
+            }
+            if ("row".equals(name) && children.isEmpty()) {
+                throw PrintCompilationException.invalid(
+                        templateCode + "：第 " + line + " 行，第 " + column
+                                + " 列：row 至少包含一个 cell");
+            }
+            if ("link".equals(name) && children.isEmpty()) {
+                throw PrintCompilationException.invalid(
+                        templateCode + "：第 " + line + " 行，第 " + column
+                                + " 列：link 标签不能为空");
+            }
             if ("heading".equals(name)
-                    && children.stream().noneMatch(child -> "field".equals(child.name()))
+                    && children.stream().noneMatch(child -> Set.of(
+                            "field", "bookmark", "link").contains(child.name()))
                     && children.stream()
                     .filter(child -> "#text".equals(child.name()) || "text".equals(child.name()))
                     .allMatch(child -> child.text().isBlank())) {
@@ -593,5 +798,36 @@ public final class XmlTemplateCompiler {
             }
             return new CompiledXmlNode(name, attributes, children, text, line, column);
         }
+
+        /** 校验表头可选、表体必需且顺序固定。 */
+        private void validateTableStructure(String templateCode) {
+            int bodyCount = 0;
+            boolean bodySeen = false;
+            long headerCount = 0;
+            for (CompiledXmlNode child : children) {
+                if ("body".equals(child.name())) {
+                    bodyCount++;
+                    bodySeen = true;
+                } else if ("header".equals(child.name())) {
+                    headerCount++;
+                    if (bodySeen) {
+                        throw PrintCompilationException.invalid(
+                                templateCode + "：第 " + line + " 行，第 " + column
+                                        + " 列：table 的 header 顺序必须位于 body 之前");
+                    }
+                }
+            }
+            if (bodyCount != 1 || headerCount > 1) {
+                throw PrintCompilationException.invalid(
+                        templateCode + "：第 " + line + " 行，第 " + column
+                                + " 列：table 必须包含一个 body，且至多包含一个 header");
+            }
+        }
+    }
+
+    /** 动态结构在当前位置允许生成的节点类型。 */
+    private enum BindingDomain {
+        BLOCKS,
+        TABLE_ROWS
     }
 }

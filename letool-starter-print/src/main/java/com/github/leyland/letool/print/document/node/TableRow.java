@@ -33,8 +33,8 @@ public final class TableRow {
     }
 
     /** @return 本行所有单元格跨度之和 */
-    int effectiveColumns() {
-        return cells.stream().mapToInt(TableCell::colSpan).sum();
+    long effectiveColumns() {
+        return cells.stream().mapToLong(TableCell::colSpan).sum();
     }
 
     @Override

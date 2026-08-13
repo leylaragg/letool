@@ -1,5 +1,7 @@
 package com.github.leyland.letool.print.xml;
 
+import com.github.leyland.letool.print.xml.format.PrintFormatPlan;
+
 import java.util.List;
 import java.util.Map;
 
@@ -40,6 +42,9 @@ final class CompiledXmlNode {
     /** 循环节点声明的可选变量名。 */
     private final String variableName;
 
+    /** 字段节点可选的已编译格式化计划。 */
+    private final PrintFormatPlan formatPlan;
+
     /** 创建不可变编译节点。 */
     CompiledXmlNode(String name, Map<String, String> attributes,
                     List<CompiledXmlNode> children, String text, int line, int column) {
@@ -58,7 +63,7 @@ final class CompiledXmlNode {
                     List<CompiledXmlNode> children, String text, int line, int column,
                     String tagPath, CompiledDataPath dataPath, CompiledCondition condition) {
         this(name, attributes, children, text, line, column,
-                tagPath, dataPath, condition, null);
+                tagPath, dataPath, condition, null, null);
     }
 
     /** 创建包含循环描述的不可变节点。 */
@@ -66,6 +71,15 @@ final class CompiledXmlNode {
                     List<CompiledXmlNode> children, String text, int line, int column,
                     String tagPath, CompiledDataPath dataPath, CompiledCondition condition,
                     String variableName) {
+        this(name, attributes, children, text, line, column,
+                tagPath, dataPath, condition, variableName, null);
+    }
+
+    /** 创建包含循环描述和格式化计划的不可变节点。 */
+    CompiledXmlNode(String name, Map<String, String> attributes,
+                    List<CompiledXmlNode> children, String text, int line, int column,
+                    String tagPath, CompiledDataPath dataPath, CompiledCondition condition,
+                    String variableName, PrintFormatPlan formatPlan) {
         this.name = name;
         this.attributes = Map.copyOf(attributes);
         this.children = List.copyOf(children);
@@ -76,6 +90,7 @@ final class CompiledXmlNode {
         this.dataPath = dataPath;
         this.condition = condition;
         this.variableName = variableName;
+        this.formatPlan = formatPlan;
     }
 
     /** @return DSL 标签名 */
@@ -126,5 +141,10 @@ final class CompiledXmlNode {
     /** @return 可选循环变量名 */
     String variableName() {
         return variableName;
+    }
+
+    /** @return 字段节点可选的已编译格式化计划 */
+    PrintFormatPlan formatPlan() {
+        return formatPlan;
     }
 }
