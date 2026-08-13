@@ -60,6 +60,7 @@
         <!-- 阶段 4：扩展服务 -->
         <module>letool-starter-swagger</module>
         <module>letool-starter-file</module>
+        <module>letool-starter-print</module>
         <module>letool-starter-excel</module>
         <module>letool-starter-mail</module>
         <module>letool-starter-distributed-lock</module>
@@ -270,6 +271,11 @@
             <dependency>
                 <groupId>com.github.leyland</groupId>
                 <artifactId>letool-starter-file</artifactId>
+                <version>${letool.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.leyland</groupId>
+                <artifactId>letool-starter-print</artifactId>
                 <version>${letool.version}</version>
             </dependency>
             <dependency>
