@@ -1,6 +1,6 @@
 # letool-starter-print
 
-`letool-starter-print` 是 Letool 动态报表框架的纯核心模块。当前阶段只提供同步请求、只读上下文、通用文档模型、模板管线路由、输出渲染 SPI 和稳定错误契约；尚未实现 XML 解析、PDF、DOCX 或 JasperReports 渲染。
+`letool-starter-print` 是 Letool 动态报表框架的纯核心模块，提供同步请求、只读上下文、通用文档模型、模板管线路由、输出渲染 SPI 和稳定错误契约。受控 XML 编译位于独立的 `letool-starter-print-xml` 模块；PDF、DOCX 和 JasperReports 渲染仍按后续阶段实现。
 
 ## Maven 坐标
 

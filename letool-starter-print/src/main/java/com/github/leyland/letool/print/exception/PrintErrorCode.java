@@ -31,7 +31,10 @@ public enum PrintErrorCode implements ErrorCode {
     OUTPUT_LIMIT_EXCEEDED("PRINT_007", "打印产物超过大小限制：{0}"),
 
     /** 打印管线注册信息不完整。 */
-    INVALID_PIPELINE_REGISTRATION("PRINT_008", "打印管线注册不合法：{0}");
+    INVALID_PIPELINE_REGISTRATION("PRINT_008", "打印管线注册不合法：{0}"),
+
+    /** 模板源不符合格式、安全或 DSL 结构约束。 */
+    TEMPLATE_COMPILATION_FAILED("PRINT_009", "打印模板编译失败：{0}");
 
     /** 稳定错误码。 */
     private final String code;
