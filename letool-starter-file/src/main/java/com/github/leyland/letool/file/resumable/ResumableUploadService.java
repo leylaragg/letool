@@ -23,6 +23,8 @@ import com.github.leyland.letool.file.validation.FileTypeDetector;
 import com.github.leyland.letool.file.validation.FileValidationContext;
 import com.github.leyland.letool.file.validation.FileValidationPolicy;
 import com.github.leyland.letool.file.validation.MagicNumberFileTypeDetector;
+import com.github.leyland.letool.tool.util.DigestUtil;
+import com.github.leyland.letool.tool.util.HexUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,7 +42,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashSet;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -510,7 +511,7 @@ public final class ResumableUploadService {
         if (inputStream.read() != -1) {
             throw FileException.of(FileErrorCode.UPLOAD_REJECTED, "分片长度超出声明");
         }
-        return HexFormat.of().formatHex(digest.digest());
+        return HexUtil.encodeHex(digest.digest());
     }
 
     /**
@@ -599,7 +600,7 @@ public final class ResumableUploadService {
         }
         String actualSha256;
         try (FileResource resource = storageProvider.open(session.targetKey())) {
-            actualSha256 = sha256(resource.inputStream());
+            actualSha256 = DigestUtil.sha256(resource.inputStream());
         } catch (FileException exception) {
             throw exception;
         } catch (IOException exception) {
@@ -783,29 +784,12 @@ public final class ResumableUploadService {
      * @return 十六进制摘要
      */
     private String sha256(Path path) {
-        try (InputStream inputStream = Files.newInputStream(path)) {
-            return sha256(inputStream);
+        try {
+            return DigestUtil.sha256(path);
         } catch (IOException exception) {
             throw FileException.causedBy(
                     FileErrorCode.TRANSFER_FAILED, exception);
         }
-    }
-
-    /**
-     * 流式计算 SHA-256。
-     *
-     * @param inputStream 输入流
-     * @return 十六进制摘要
-     * @throws IOException 读取失败时抛出
-     */
-    private String sha256(InputStream inputStream) throws IOException {
-        MessageDigest digest = sha256Digest();
-        byte[] buffer = new byte[BUFFER_SIZE];
-        int read;
-        while ((read = inputStream.read(buffer)) != -1) {
-            digest.update(buffer, 0, read);
-        }
-        return HexFormat.of().formatHex(digest.digest());
     }
 
     /**

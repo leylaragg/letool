@@ -10,6 +10,7 @@ import com.github.leyland.letool.file.model.StorageCapability;
 import com.github.leyland.letool.file.model.StoreRequest;
 import com.github.leyland.letool.file.model.StoredFile;
 import com.github.leyland.letool.file.util.MimeTypeUtil;
+import com.github.leyland.letool.tool.util.HexUtil;
 import org.apache.commons.net.ftp.FTP;
 import org.apache.commons.net.ftp.FTPClient;
 import org.apache.commons.net.ftp.FTPFile;
@@ -27,7 +28,6 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -691,7 +691,7 @@ public final class FtpFileStorage implements FileStorageProvider {
         private long count() { return count; }
 
         /** @return SHA-256 十六进制摘要 */
-        private String sha256() { return HexFormat.of().formatHex(digest.digest()); }
+        private String sha256() { return HexUtil.encodeHex(digest.digest()); }
     }
 
     /**

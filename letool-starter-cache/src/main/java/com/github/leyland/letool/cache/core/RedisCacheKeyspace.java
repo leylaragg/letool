@@ -1,5 +1,6 @@
 package com.github.leyland.letool.cache.core;
 
+import com.github.leyland.letool.tool.util.DigestUtil;
 import org.springframework.data.redis.connection.RedisClusterConnection;
 import org.springframework.data.redis.connection.RedisClusterNode;
 import org.springframework.data.redis.connection.RedisConnection;
@@ -11,10 +12,6 @@ import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 import java.util.ArrayList;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 
@@ -241,13 +238,7 @@ final class RedisCacheKeyspace {
      * @return 包含大括号的 Hash Tag 片段
      */
     private static String hashTag(String serializedKey) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256")
-                    .digest(serializedKey.getBytes(StandardCharsets.UTF_8));
-            return "{" + HexFormat.of().formatHex(digest, 0, 12) + "}";
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("当前 Java 运行环境不支持 SHA-256", exception);
-        }
+        return "{" + DigestUtil.sha256(serializedKey).substring(0, 24) + "}";
     }
 
     /**

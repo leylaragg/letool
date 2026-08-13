@@ -69,6 +69,14 @@ public class FileController {
 下载过程中模块不会关闭 Servlet 输出流；FTP/FTPS 下载返回的远程资源连接会随
 `FileResource.close()` 一起释放。
 
+## 通用能力与业务流程边界
+
+本模块复用 `letool-starter-tool` 中的 `IoUtil`、`DigestUtil` 和 `HexUtil` 处理通用流复制、
+SHA-256 与十六进制编码；本地存储上传会在一次流式复制中同时得到实际字节数和摘要。
+业务通常不需要直接调用这些底层工具，只需使用 `FileTemplate`、`ResumableUploadService`
+等流程入口。带传输进度、FTP 协议完成确认、分片回滚和 `FileChannel.force(...)` 的代码仍由
+file 模块保留，因为这些语义不是普通流复制或通用原子写入可以替代的。
+
 ## 传输进度与 HTTP Range
 
 业务可以先生成 `transferId`，再把它随上传或下载请求返回给前端；默认监视器只在当前应用

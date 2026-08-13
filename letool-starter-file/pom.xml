@@ -17,6 +17,10 @@
     <dependencies>
         <dependency>
             <groupId>com.github.leyland</groupId>
+            <artifactId>letool-starter-tool</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.github.leyland</groupId>
             <artifactId>letool-starter-exception</artifactId>
         </dependency>
         <dependency>

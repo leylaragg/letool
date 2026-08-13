@@ -5,6 +5,7 @@ import com.github.leyland.letool.tool.encoding.EncodingOperationException;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -52,5 +53,15 @@ class HexUtilTest {
         assertEquals(EncodingErrorCode.HEX_DECODE_FAILED.getCode(), oddLength.getCode());
         assertEquals(EncodingErrorCode.HEX_DECODE_FAILED.getCode(), invalidCharacter.getCode());
         assertFalse(invalidCharacter.getMessage().contains("00xz"));
+    }
+
+    /**
+     * 验证大小写混合的十六进制文本能够严格解码。
+     */
+    @Test
+    void shouldDecodeMixedCaseHexText() {
+        assertArrayEquals(
+                new byte[]{(byte) 0xab, (byte) 0xcd, (byte) 0xef},
+                HexUtil.decodeHex("aBcDeF"));
     }
 }

@@ -194,6 +194,65 @@ flowchart LR
     Monitor --> Outbox
 ```
 
+### 应用集群中的写入传播
+
+应用部署多个 JVM 实例时，每个实例拥有独立的 Caffeine L1，Redis L2 和业务数据库由所有实例共享。
+一个节点完成更新后，其它节点收到的是“失效通知”，不会直接把广播消息当成新值写入 L1：
+
+```mermaid
+sequenceDiagram
+    participant A as 应用节点 A（执行更新）
+    participant DB as 共享业务数据库
+    participant Redis as 共享 Redis / Redis Cluster
+    participant B as 应用节点 B
+    participant C as 应用节点 C
+
+    A->>Redis: DURABLE 时先建立单 Key 围栏
+    A->>DB: 执行业务 SQL
+    DB-->>A: 事务提交
+    A->>Redis: 失效旧值并推进版本<br/>CachePut + UPDATE 可写入方法返回的新值
+    A->>A: 清理或更新本机 L1
+    A->>Redis: Pub/Sub 广播该 Key 失效
+    Redis-->>B: 失效通知
+    Redis-->>C: 失效通知
+    B->>B: 清理本机旧 L1
+    C->>C: 清理本机旧 L1
+    Note over B,C: 不通过广播直接写入新对象
+    B->>Redis: 下次读取 L2
+    alt L2 已有新值
+        Redis-->>B: 返回新值并回填 B 的 L1
+    else L2 已失效
+        B->>DB: loader 回源数据库
+        DB-->>B: 返回提交后的数据
+        B->>Redis: 重建 L2
+        B->>B: 回填 L1
+    end
+```
+
+这套传播由两层机制共同保证：
+
+- Redis Pub/Sub 负责快速通知在线节点清理 L1，降低旧值继续存在的时间。
+- `read-validation=VERSIONED` 负责兜底。节点离线、网络抖动或重启期间即使错过 Pub/Sub，下一次读取
+  也会校验 Redis 单 Key 版本，版本不一致时拒绝旧 L1。
+
+`@MultiLevelCacheEvict` 无论写策略如何都只负责失效；只有 `@MultiLevelCachePut` 配合
+`write-policy=UPDATE`，才会把方法返回值写入节点 A 的 L1 和共享 L2。DURABLE Outbox 只持久化并重放
+“缓存失效完成”事件，不保存或重放业务对象；提交后应用宕机时，缓存值仍由后续读取按数据库结果重建。
+
+因此，“其它节点都会更新”更准确的含义是：收到 Pub/Sub 通知的在线节点会清除旧 L1，并在下一次读取
+时从共享 Redis 或数据库按需重建最新值。漏掉通知的节点只有启用 `VERSIONED` 时，才能在下次读取拒绝
+旧 L1；配置为 `NONE` 时不具备该兜底。框架没有采用广播完整业务对象的方案，避免大对象传输、
+序列化兼容和消息乱序把旧对象重新写回其它节点。
+
+这里要区分两种集群，它们可以同时存在：
+
+- 应用集群：多个 JVM 实例共享 Redis 和数据库，通过 Pub/Sub、版本校验和 Outbox 租约协作。
+- Redis Cluster：Redis 数据分布在多个主节点；框架利用 Hash Tag 保证同一业务 Key 的数据、版本、
+  围栏和幂等标记处于同一 Slot，避免 Lua 执行出现 `CROSSSLOT`。
+
+上述保证的前提是数据库修改经过 Letool Put/Evict 注解或 `CacheMutationCoordinator`。绕过框架直接执行
+Mapper、MyBatis-Plus 或外部 SQL 时，框架无法感知变化，业务方必须显式失效缓存。
+
 框架只协调经过 `CacheAspect`/`CacheMutationCoordinator` 的修改。MyBatis-Plus、Mapper、Repository
 本身不可能被框架自动识别；这些写入口应改为 Letool 注解/一致性执行器，或者在写成功后显式失效缓存。
 

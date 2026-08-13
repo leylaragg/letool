@@ -3,7 +3,7 @@
 ## 模块简介
 
 `letool-starter-tool` 是 letool 的通用工具模块，为其他模块提供 JSON 序列化、HTTP 请求、
-Redis 操作、分布式 ID、字符串、集合、业务枚举、常用校验、日期时间、Bean 拷贝、反射访问、类扫描、
+Redis 操作、分布式 ID、文件与流、摘要、字符串、集合、业务枚举、常用校验、日期时间、Bean 拷贝、反射访问、类扫描、
 Lambda 属性解析、统一响应体、分页模型及 Spring 容器辅助能力。统一异常和国际化由独立的
 [`letool-starter-exception`](../letool-starter-exception/README.md) 模块提供；tool 模块依赖该基础模块，
 但不再自行维护异常体系。
@@ -200,7 +200,34 @@ class JsonConfiguration {
 
 异常保留原始 cause，但不会把原始 JSON 放入消息，避免日志泄露敏感数据。
 
-### 4. HTTP 工具 HttpUtil
+### 4. 文件、流与摘要工具
+
+通用 I/O 能力位于 tool 模块，不绑定 Spring、Servlet 或具体存储协议。`IoUtil` 提供流复制、
+有界读取和显式字符集解码；这些方法都不会关闭调用方传入的流，资源生命周期仍由调用方管理：
+
+```java
+long copied = IoUtil.copy(input, output);
+byte[] content = IoUtil.readBytes(input, 8 * 1024 * 1024L);
+String text = IoUtil.readString(input, StandardCharsets.UTF_8, 1024 * 1024L);
+```
+
+使用带上限的复制或读取时，超过限制会抛出 `IOException`，不会继续把超限内容写入输出流。
+摘要计算和“复制同时计算 SHA-256”由 `DigestUtil` 提供，可避免业务代码重复维护缓冲区循环：
+
+```java
+String sha256 = DigestUtil.sha256(path);
+DigestCopyResult result = DigestUtil.copyAndSha256(input, output);
+boolean matched = DigestUtil.matchesSha256(expectedSha256, result.sha256());
+```
+
+`FileUtil.resolveUnderRoot(...)` 用于约束相对路径并拒绝当前已存在的符号链接路径段；
+`FileUtil.writeAtomically(...)` 通过同目录临时文件写入；允许替换时优先执行原子移动，禁止替换时
+使用非覆盖移动来保证已有目标不被替换，失败时清理临时文件。
+前者不能消除并发修改文件系统带来的竞态，涉及不可信目录时仍应配合操作系统权限与隔离策略。
+原子移动只保证可见性切换，不等同于将文件和目录强制持久化到磁盘；需要崩溃一致性的状态仓库
+应继续显式调用 `FileChannel.force(...)`。
+
+### 5. HTTP 工具 HttpUtil
 
 HTTP 便利能力基于 JDK 17 `java.net.http.HttpClient`，连接复用、HTTP/2 和协议处理由 JDK 负责；
 Letool 只封装链式请求、Multipart、拦截器、有界响应、受控重试和统一异常。模块不会再根据
@@ -325,7 +352,7 @@ POST、PATCH 不会被静默重放。只有调用方确认业务具有幂等保�
 - `HttpResponse` 改为不可变对象，响应头类型改为 `Map<String, List<String>>`，不再提供 setter。
 - 查询参数和请求头 getter 返回不可修改的多值快照，同名查询参数不会再被覆盖。
 
-### 5. Redis 工具 RedisUtil
+### 6. Redis 工具 RedisUtil
 
 > 自动检测 classpath：仅在引入 `spring-boot-starter-data-redis` 后生效。
 
@@ -350,9 +377,9 @@ String result = redisUtil.executeScript("return redis.call('GET', KEYS[1])",
     List.of("key1"));
 ```
 
-### 6. ID、随机数与编码工具组
+### 7. ID、随机数与编码工具组
 
-#### 6.1 ID 生成 IdUtil
+#### 7.1 ID 生成 IdUtil
 
 ```java
 // 默认 Snowflake：适合单实例或已经配置唯一节点号的应用
@@ -387,7 +414,7 @@ String shortNano = IdUtil.nanoId(12);
 Snowflake 默认容忍 5 毫秒时钟回拨：容忍范围内使用逻辑时间继续递增，超过范围以
 `TOOL_ID_003` 快速失败。NanoId 长度必须位于 1 到 1024 之间。
 
-#### 6.2 安全随机 RandomUtil
+#### 7.2 安全随机 RandomUtil
 
 ```java
 int codeNumber = RandomUtil.nextInt(100000, 999999); // 闭区间
@@ -400,7 +427,7 @@ String custom = RandomUtil.randomString("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 8);
 整数和长整数使用闭区间，浮点数使用左闭右开区间。反向范围、非有限浮点边界、负长度或空字符表
 都会抛出稳定的 `RandomOperationException`；零长度字符串返回空字符串。
 
-#### 6.3 Base64 与 Hex 编解码
+#### 7.3 Base64 与 Hex 编解码
 
 ```java
 String standard = Base64Util.encode("Letool");
@@ -440,7 +467,7 @@ Base64 和 Hex 非法文本统一抛出 `EncodingOperationException`，公开消
 - Snowflake 节点越界、时钟回拨和时间戳越界统一转换为 `IdGenerationException`。
 - 多实例生产环境必须显式分配 Snowflake 节点号，不能依赖 PID/MAC 自动推导保证唯一性。
 
-### 7. 字符串工具 StrUtil
+### 8. 字符串工具 StrUtil
 
 ```java
 StrUtil.isBlank(str);
@@ -458,7 +485,7 @@ StrUtil.left("A😀B", 2);                    // "A😀"
 `join` 和 `split` 的空分隔符会统一抛出 `ValueOperationException`，避免错误配置
 被静默转换成不可靠结果。
 
-### 8. 集合工具 CollUtil
+### 9. 集合工具 CollUtil
 
 ```java
 CollUtil.isEmpty(list);
@@ -474,7 +501,7 @@ List<List<User>> chunks = CollUtil.partition(users, 100);
 使用首次出现顺序并执行集合语义去重；`toMap` 使用 `LinkedHashMap`，键重复时保留第一个值。
 分片大小始终必须大于零，即使源列表为空也会先校验配置。
 
-#### 8.1 业务枚举 EnumUtil
+#### 9.1 业务枚举 EnumUtil
 
 新业务枚举推荐实现轻量的 `CodeEnum<C>` 和 `DescribedEnum` 契约：
 
@@ -500,7 +527,7 @@ Map<String, Object> options = EnumUtil.toMap(OrderStatus.class);
 不再被静默吞掉。新代码优先使用返回 `Optional` 的 `findByName`、`findByCode` 和 `findBy`，必须命中
 编码时使用 `requireByCode`。`toMap` 保持枚举声明顺序，重复描述会直接拒绝，避免选项被覆盖。
 
-#### 8.2 常用校验 ValidatorUtil
+#### 9.2 常用校验 ValidatorUtil
 
 ```java
 ValidatorUtil.isPhone("13812345678");
@@ -535,7 +562,7 @@ ValidatorUtil.isIpV4("192.168.1.1");
   `findBy*` 或 `requireByCode`。
 - 身份证、URL、邮箱和 IPv4 校验规则已经收紧，旧版仅通过正则外形的无效输入现在会返回 `false`。
 
-### 9. 日期工具 DateUtil
+### 10. 日期工具 DateUtil
 
 日期工具直接封装 JDK 17 `java.time` 的高频组合，不引入额外日期框架。公共格式器不可变且线程安全；
 严格入口不会再把空值转换为 `null` 或 `0`，需要容错时应显式使用 `tryParse`。
@@ -588,7 +615,7 @@ ZonedDateTime endExclusive = DateUtil.startOfNextDay(date, zoneId);
   `[startOfDay(date), startOfNextDay(date))`。
 - 无时区的 Date、时间戳转换仍使用系统默认时区；跨系统业务应迁移到带 `ZoneId` 的重载。
 
-### 10. Bean 与反射工具组
+### 11. Bean 与反射工具组
 
 #### BeanUtil
 
@@ -698,7 +725,7 @@ String recordName = LambdaUtil.getPropertyName(UserRecord::name);
 - Class 扫描结果改为不可修改、稳定排序的完整快照，且不再触发候选类静态初始化。
 - 非 Getter Lambda 不再返回错误字符串，而是通过稳定错误码明确拒绝。
 
-### 11. Spring 容器工具 SpringUtil
+### 12. Spring 容器工具 SpringUtil
 
 ```java
 UserService service = SpringUtil.getBean(UserService.class);
@@ -710,7 +737,7 @@ boolean exists = SpringUtil.containsBean("dataSource");
 String profile = SpringUtil.getActiveProfile();  // "dev" / "prod"
 ```
 
-### 12. Spring 表达式工具 SpelUtil
+### 13. Spring 表达式工具 SpelUtil
 
 ```java
 // 普通表达式与显式返回类型
@@ -746,7 +773,7 @@ String name = SpelUtil.evalSafe("name", user, String.class);
 模板现在遵循 Spring 原生 `#{...}` 语法；旧版 Map 变量占位符 `#{name}` 需要迁移为
 `#{#name}`。
 
-### 13. 重试工具 RetryUtil
+### 14. 重试工具 RetryUtil
 
 `RetryUtil` 使用 Resilience4j Retry 执行同步重试，Letool 负责提供类型安全的策略、便捷入口、
 参数校验和统一异常。常用的固定等待可以直接调用：
@@ -805,7 +832,7 @@ JobStatus status = RetryUtil.execute(
 - 工具不再记录可能包含业务数据的任务结果和异常消息。需要观测时，应由业务层按脱敏规则记录。
 - Hutool 已从本模块依赖中移除；业务若直接使用 Hutool API，需要在业务项目中显式声明依赖。
 
-### 14. 分页结果 PageResult
+### 15. 分页结果 PageResult
 
 ```java
 PageResult<User> page = PageResult.of(users, totalCount, 1, 20);

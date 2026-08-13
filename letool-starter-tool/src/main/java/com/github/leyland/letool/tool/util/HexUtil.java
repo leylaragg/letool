@@ -3,6 +3,7 @@ package com.github.leyland.letool.tool.util;
 import com.github.leyland.letool.tool.encoding.EncodingOperationException;
 
 import java.nio.charset.StandardCharsets;
+import java.util.HexFormat;
 
 /**
  * 十六进制编解码工具，提供字节数组与十六进制文本之间的便捷转换。
@@ -12,11 +13,11 @@ import java.nio.charset.StandardCharsets;
  */
 public final class HexUtil {
 
-    /** 小写十六进制字符表。 */
-    private static final char[] LOWER_CASE_DIGITS = "0123456789abcdef".toCharArray();
+    /** 小写十六进制格式。 */
+    private static final HexFormat LOWER_CASE_FORMAT = HexFormat.of();
 
-    /** 大写十六进制字符表。 */
-    private static final char[] UPPER_CASE_DIGITS = "0123456789ABCDEF".toCharArray();
+    /** 大写十六进制格式。 */
+    private static final HexFormat UPPER_CASE_FORMAT = HexFormat.of().withUpperCase();
 
     /**
      * 禁止创建工具类实例。
@@ -45,14 +46,7 @@ public final class HexUtil {
         if (data == null) {
             return null;
         }
-        char[] digits = upperCase ? UPPER_CASE_DIGITS : LOWER_CASE_DIGITS;
-        char[] result = new char[data.length * 2];
-        for (int index = 0; index < data.length; index++) {
-            int value = data[index] & 0xff;
-            result[index * 2] = digits[value >>> 4];
-            result[index * 2 + 1] = digits[value & 0x0f];
-        }
-        return new String(result);
+        return (upperCase ? UPPER_CASE_FORMAT : LOWER_CASE_FORMAT).formatHex(data);
     }
 
     /**
@@ -76,24 +70,11 @@ public final class HexUtil {
         if (hex == null) {
             return null;
         }
-        if ((hex.length() & 1) != 0) {
-            throw EncodingOperationException.hexDecodeFailed(
-                    new IllegalArgumentException("Hex text length must be even")
-            );
+        try {
+            return LOWER_CASE_FORMAT.parseHex(hex);
+        } catch (IllegalArgumentException exception) {
+            throw EncodingOperationException.hexDecodeFailed(exception);
         }
-
-        byte[] result = new byte[hex.length() / 2];
-        for (int index = 0; index < hex.length(); index += 2) {
-            int high = Character.digit(hex.charAt(index), 16);
-            int low = Character.digit(hex.charAt(index + 1), 16);
-            if (high < 0 || low < 0) {
-                throw EncodingOperationException.hexDecodeFailed(
-                        new IllegalArgumentException("Hex text contains an invalid character")
-                );
-            }
-            result[index / 2] = (byte) ((high << 4) | low);
-        }
-        return result;
     }
 
     /**

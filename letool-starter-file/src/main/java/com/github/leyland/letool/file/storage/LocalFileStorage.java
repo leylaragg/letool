@@ -9,6 +9,8 @@ import com.github.leyland.letool.file.model.StorageCapability;
 import com.github.leyland.letool.file.model.StoreRequest;
 import com.github.leyland.letool.file.model.StoredFile;
 import com.github.leyland.letool.file.util.MimeTypeUtil;
+import com.github.leyland.letool.tool.model.DigestCopyResult;
+import com.github.leyland.letool.tool.util.DigestUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,12 +26,9 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -93,8 +92,14 @@ public final class LocalFileStorage implements FileStorageProvider {
                 throw FileException.of(FileErrorCode.UPLOAD_REJECTED, "目标文件已存在");
             }
             temporaryFile = Files.createTempFile(target.getParent(), ".upload-", ".tmp");
-            MessageDigest digest = sha256Digest();
-            long actualSize = copyAndDigest(inputStream, temporaryFile, digest);
+            DigestCopyResult digestResult;
+            try (var outputStream = Files.newOutputStream(
+                    temporaryFile,
+                    StandardOpenOption.WRITE,
+                    StandardOpenOption.TRUNCATE_EXISTING)) {
+                digestResult = DigestUtil.copyAndSha256(inputStream, outputStream);
+            }
+            long actualSize = digestResult.bytesCopied();
             if (request.declaredSize() >= 0 && request.declaredSize() != actualSize) {
                 throw FileException.of(FileErrorCode.UPLOAD_REJECTED, "声明大小与实际大小不一致");
             }
@@ -111,7 +116,7 @@ public final class LocalFileStorage implements FileStorageProvider {
                     target.getFileName().toString(),
                     actualSize,
                     request.contentType(),
-                    HexFormat.of().formatHex(digest.digest()),
+                    digestResult.sha256(),
                     attributes.lastModifiedTime().toInstant());
         } catch (FileException exception) {
             deleteTemporaryFile(temporaryFile);
@@ -354,33 +359,6 @@ public final class LocalFileStorage implements FileStorageProvider {
     }
 
     /**
-     * 将输入流复制到临时文件并计算摘要。
-     *
-     * @param inputStream 文件输入流
-     * @param temporaryFile 临时文件
-     * @param digest SHA-256 摘要器
-     * @return 实际复制字节数
-     * @throws IOException 复制失败时抛出
-     */
-    private long copyAndDigest(
-            InputStream inputStream,
-            Path temporaryFile,
-            MessageDigest digest) throws IOException {
-        long total = 0;
-        byte[] buffer = new byte[BUFFER_SIZE];
-        try (var outputStream = Files.newOutputStream(
-                temporaryFile, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
-            int read;
-            while ((read = inputStream.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, read);
-                digest.update(buffer, 0, read);
-                total += read;
-            }
-        }
-        return total;
-    }
-
-    /**
      * 将临时文件移动到最终位置。
      *
      * @param temporaryFile 临时文件
@@ -419,19 +397,6 @@ public final class LocalFileStorage implements FileStorageProvider {
         } catch (IOException exception) {
             // 主异常优先保留；日志可用于定位并清理遗留的 .upload- 临时文件。
             log.warn("本地上传临时文件清理失败：{}", temporaryFile, exception);
-        }
-    }
-
-    /**
-     * 获取 SHA-256 摘要器。
-     *
-     * @return SHA-256 摘要器
-     */
-    private MessageDigest sha256Digest() {
-        try {
-            return MessageDigest.getInstance("SHA-256");
-        } catch (NoSuchAlgorithmException exception) {
-            throw FileException.causedBy(FileErrorCode.STORAGE_OPERATION_FAILED, exception);
         }
     }
 
