@@ -67,7 +67,7 @@
         <module>letool-starter-distributed-lock</module>
 
         <!-- 阶段 5：高级能力 -->
-        <module>letool-starter-rule</module>
+        <module>letool-starter-rule-liteflow</module>
         <module>letool-starter-net</module>
         <module>letool-starter-pay</module>
         <module>letool-starter-pay-alipay</module>
@@ -301,7 +301,7 @@
             </dependency>
             <dependency>
                 <groupId>com.github.leyland</groupId>
-                <artifactId>letool-starter-rule</artifactId>
+                <artifactId>letool-starter-rule-liteflow</artifactId>
                 <version>${letool.version}</version>
             </dependency>
             <dependency>

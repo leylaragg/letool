@@ -1,6 +1,6 @@
-# letool-starter-rule
+# letool-starter-rule-liteflow
 
-`letool-starter-rule` 是基于 LiteFlow 2.12.4 的规则执行薄封装，不再维护独立的规则引擎。
+`letool-starter-rule-liteflow` 是基于 LiteFlow 2.12.4 的规则链执行薄封装，不维护独立的规则引擎。模块重命名只用于明确 LiteFlow 技术边界，现有 `com.github.leyland.letool.rule.*` Java API 和配置保持不变。
 
 模块只提供以下能力：
 
@@ -16,7 +16,7 @@
 ```xml
 <dependency>
     <groupId>com.github.leyland</groupId>
-    <artifactId>letool-starter-rule</artifactId>
+    <artifactId>letool-starter-rule-liteflow</artifactId>
     <version>${letool.version}</version>
 </dependency>
 ```

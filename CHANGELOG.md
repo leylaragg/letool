@@ -88,6 +88,12 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
 
 ### Changed
 
+- **BREAKING — `com.github.leyland:letool-starter-rule` Maven coordinate:**
+  LiteFlow 薄封装模块重命名为
+  `com.github.leyland:letool-starter-rule-liteflow`，以区别于新的通用规则决策框架。
+  使用方需要替换依赖坐标；`com.github.leyland.letool.rule.*` Java API、自动配置和
+  `RULE_001`/`RULE_002` 错误契约保持不变。旧坐标自当前未发布版本起不再由 Reactor 构建。
+
 - **BREAKING — `com.github.leyland:letool-starter-oss` 生产化（自
   `2.0.0-beta.2` 起）：** `OssProvider` 与 `OssTemplate` 改为使用不可变上传结果、
   可关闭下载对象和 `URI` 预签名结果；`delete` 改为无返回值的幂等操作。配置从

@@ -46,7 +46,7 @@
 | **letool-starter-excel** | Excel 操作 —— EasyExcel 原生能力薄封装、批量读取与轻量校验 | exception |
 | **letool-starter-mail** | 邮件发送 —— 显式启用的 Jakarta Mail、多账户、附件与同步/异步投递 | exception |
 | **letool-starter-distributed-lock** | 分布式锁 —— Redis 后端、`LockTemplate`、`@Lock`/`@Idempotent`；可替换 `DistributedLock` | tool |
-| **letool-starter-rule** | 规则执行 —— LiteFlow 原生能力薄封装、便捷执行与统一异常 | exception |
+| [**letool-starter-rule-liteflow**](letool-starter-rule-liteflow/README.md) | LiteFlow 规则链执行 —— 原生能力薄封装、便捷执行与统一异常 | exception |
 | **letool-starter-net** | 网络通信 —— Netty TCP、短连接/持久连接/有界连接池、可扩展分帧和载荷编解码 | exception |
 | **letool-starter-pay / pay-alipay / pay-wechat** | 支付统一契约与官方 SDK Provider —— 支持下单、查询、关单、退款及强制回调验签 | exception、支付宝/微信官方 SDK |
 | [**letool-starter-mq / mq-rabbit / mq-kafka / mq-rocketmq**](letool-starter-mq/README.md) | 消息队列便利门面 —— 不可变消息、Provider 路由与统一异常；RabbitMQ、Kafka、RocketMQ 由独立成熟 Binder Starter 按需提供 | exception、Spring Cloud Stream；按需选择一个 Provider 模块 |

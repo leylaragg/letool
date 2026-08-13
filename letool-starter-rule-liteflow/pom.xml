@@ -9,8 +9,8 @@
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>letool-starter-rule</artifactId>
-    <name>letool-starter-rule</name>
+    <artifactId>letool-starter-rule-liteflow</artifactId>
+    <name>letool-starter-rule-liteflow</name>
     <description>Letool 规则执行 Starter —— 提供 LiteFlow 规则链执行薄封装和统一异常</description>
     <packaging>jar</packaging>
 
