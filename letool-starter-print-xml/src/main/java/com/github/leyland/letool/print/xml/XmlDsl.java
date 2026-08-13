@@ -22,6 +22,27 @@ public final class XmlDsl {
     /** 单个文本节点允许的最大字符数。 */
     public static final int MAX_TEXT_CHARACTERS = 1_000_000;
 
+    /** 单条受限数据路径允许的最大字符数。 */
+    public static final int MAX_PATH_CHARACTERS = 256;
+
+    /** 单条受限数据路径允许的最大字段段数。 */
+    public static final int MAX_PATH_SEGMENTS = 32;
+
+    /** 动态控制结构允许的最大嵌套深度。 */
+    public static final int MAX_DYNAMIC_DEPTH = 16;
+
+    /** 单个循环允许的最大数组元素数。 */
+    public static final int MAX_LOOP_ITEMS = 10_000;
+
+    /** 单次绑定允许生成的最大文档节点数。 */
+    public static final int MAX_GENERATED_NODES = 100_000;
+
+    /** 单次绑定允许生成的最大文本字符数。 */
+    public static final int MAX_GENERATED_TEXT_CHARACTERS = 2_000_000;
+
+    /** 单次绑定允许执行的最大累计动态操作数。 */
+    public static final int MAX_DYNAMIC_OPERATIONS = 100_000;
+
     /** 工具类不允许实例化。 */
     private XmlDsl() {
     }

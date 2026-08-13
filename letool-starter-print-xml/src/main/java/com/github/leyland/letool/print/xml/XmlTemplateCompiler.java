@@ -17,6 +17,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -53,16 +54,22 @@ public final class XmlTemplateCompiler {
             "heading", Set.of("id", "level"),
             "paragraph", Set.of("id"),
             "text", Set.of(),
+            "field", Set.of("path"),
+            "if", Set.of("path", "operator", "value", "value-type"),
+            "for-each", Set.of("items", "var"),
             "page-break", Set.of());
 
     /** 每个父标签允许包含的直接子标签。 */
     private static final Map<String, Set<String>> ALLOWED_CHILDREN = Map.of(
             "document", Set.of("page"),
-            "page", Set.of("section", "heading", "paragraph", "page-break"),
-            "section", Set.of("section", "heading", "paragraph", "page-break"),
-            "heading", Set.of("text"),
-            "paragraph", Set.of("text"),
+            "page", Set.of("section", "heading", "paragraph", "page-break", "if", "for-each"),
+            "section", Set.of("section", "heading", "paragraph", "page-break", "if", "for-each"),
+            "heading", Set.of("text", "field"),
+            "paragraph", Set.of("text", "field"),
             "text", Set.of(),
+            "field", Set.of(),
+            "if", Set.of("section", "heading", "paragraph", "page-break", "if", "for-each"),
+            "for-each", Set.of("section", "heading", "paragraph", "page-break", "if", "for-each"),
             "page-break", Set.of());
 
     /** 允许直接保存文本内容的标签。 */
@@ -74,6 +81,9 @@ public final class XmlTemplateCompiler {
     /** 页面边距只接受最多三位小数的非负毫米值。 */
     private static final Pattern MILLIMETERS = Pattern.compile(
             "(?:0|[1-9][0-9]{0,3})(?:\\.[0-9]{1,3})?mm");
+
+    /** 循环变量名的稳定安全格式。 */
+    private static final Pattern LOOP_VARIABLE = Pattern.compile("[A-Za-z][A-Za-z0-9_]{0,63}");
 
     /**
      * 编译模板快照。
@@ -213,7 +223,7 @@ public final class XmlTemplateCompiler {
                     throw PrintCompilationException.invalid(templateCode + "：模板没有完整根元素");
                 }
                 validateDocument(template, root);
-                return root;
+                return compileDynamicTree(templateCode, root, "", Set.of());
             } finally {
                 reader.close();
             }
@@ -372,6 +382,70 @@ public final class XmlTemplateCompiler {
         }
     }
 
+    /** 把动态属性编译为不可执行的包内描述。 */
+    private CompiledXmlNode compileDynamicTree(
+            String templateCode,
+            CompiledXmlNode node,
+            String parentPath,
+            Set<String> variables) {
+        String tagPath = "#text".equals(node.name()) ? parentPath : parentPath + "/" + node.name();
+        CompiledDataPath dataPath = null;
+        CompiledCondition condition = null;
+        String variableName = null;
+        Set<String> childVariables = variables;
+        if ("for-each".equals(node.name())) {
+            variableName = node.attributes().get("var");
+            if (variableName == null || !LOOP_VARIABLE.matcher(variableName).matches()) {
+                throw nodeLocated(templateCode, node, "循环变量名不合法");
+            }
+            if (variables.contains(variableName)) {
+                throw nodeLocated(templateCode, node, "循环变量不能与外层变量重名");
+            }
+            dataPath = CompiledDataPath.compile(
+                    node.attributes().get("items"), variables, templateCode,
+                    tagPath, node.line(), node.column());
+            LinkedHashSet<String> nested = new LinkedHashSet<>(variables);
+            nested.add(variableName);
+            childVariables = Set.copyOf(nested);
+        }
+        List<CompiledXmlNode> children = new ArrayList<>(node.children().size());
+        for (CompiledXmlNode child : node.children()) {
+            children.add(compileDynamicTree(templateCode, child, tagPath, childVariables));
+        }
+        if ("field".equals(node.name())) {
+            dataPath = CompiledDataPath.compile(
+                    node.attributes().get("path"), variables, templateCode,
+                    tagPath, node.line(), node.column());
+        }
+        if ("if".equals(node.name())) {
+            if (children.isEmpty()) {
+                throw nodeLocated(templateCode, node, "if 至少包含一个块节点");
+            }
+            condition = CompiledCondition.compile(
+                    node.attributes(), variables, templateCode, tagPath, node.line(), node.column());
+        }
+        if ("for-each".equals(node.name())) {
+            if (children.isEmpty()) {
+                throw nodeLocated(templateCode, node, "for-each 至少包含一个块节点");
+            }
+            rejectLoopIds(templateCode, node, children);
+        }
+        return new CompiledXmlNode(
+                node.name(), node.attributes(), children, node.text(), node.line(), node.column(),
+                tagPath, dataPath, condition, variableName);
+    }
+
+    /** 禁止循环展开后产生重复静态 ID。 */
+    private void rejectLoopIds(
+            String templateCode, CompiledXmlNode loop, List<CompiledXmlNode> children) {
+        for (CompiledXmlNode child : children) {
+            if (child.attributes().containsKey("id")) {
+                throw nodeLocated(templateCode, loop, "for-each 后代不能声明静态 ID");
+            }
+            rejectLoopIds(templateCode, loop, child.children());
+        }
+    }
+
     /** 创建包含编译节点起始位置的异常。 */
     private PrintCompilationException nodeLocated(
             String templateCode,
@@ -495,7 +569,9 @@ public final class XmlTemplateCompiler {
                                 + " 行，第 " + Math.max(reader.getLocation().getColumnNumber(), 1)
                                 + " 列：section 至少包含一个块节点");
             }
-            if ("heading".equals(name) && children.stream()
+            if ("heading".equals(name)
+                    && children.stream().noneMatch(child -> "field".equals(child.name()))
+                    && children.stream()
                     .filter(child -> "#text".equals(child.name()) || "text".equals(child.name()))
                     .allMatch(child -> child.text().isBlank())) {
                 throw PrintCompilationException.invalid(

@@ -1,5 +1,6 @@
 package com.github.leyland.letool.print.xml;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.github.leyland.letool.print.context.PrintContext;
 import com.github.leyland.letool.print.document.DocumentMetadata;
 import com.github.leyland.letool.print.document.DocumentModel;
@@ -23,7 +24,7 @@ import java.util.Locale;
 /**
  * 将安全 XML 编译快照与只读上下文绑定为通用文档模型。
  *
- * <p>阶段 2A 只处理静态基础标签，上下文仅用于契约版本校验。</p>
+ * <p>阶段 2B 支持静态基础标签、受限字段、结构化条件和词法作用域循环。</p>
  *
  * @author leyland
  */
@@ -45,10 +46,12 @@ public final class XmlTemplateBinder {
         }
         CompiledXmlNode document = template.root();
         CompiledXmlNode page = document.children().get(0);
+        BindingGovernor governor = new BindingGovernor(template.templateCode());
         DocumentModel model = new DocumentModel(
                 metadata(document),
                 pageLayout(page),
-                bindBlocks(page.children()));
+                bindBlocks(page.children(), new BindingScope(context.root()),
+                        template.templateCode(), governor));
         model.validate();
         return model;
     }
@@ -83,45 +86,150 @@ public final class XmlTemplateBinder {
     }
 
     /** 绑定有序块级节点列表。 */
-    private List<BlockNode> bindBlocks(List<CompiledXmlNode> nodes) {
+    private List<BlockNode> bindBlocks(
+            List<CompiledXmlNode> nodes, BindingScope scope, String templateCode,
+            BindingGovernor governor) {
         List<BlockNode> blocks = new ArrayList<>(nodes.size());
         for (CompiledXmlNode node : nodes) {
-            blocks.add(bindBlock(node));
+            if ("if".equals(node.name())) {
+                governor.enterDynamic();
+                try {
+                    governor.addDynamicOperations(1);
+                    if (node.condition().matches(
+                            scope.resolve(node.condition().path()), node, templateCode)) {
+                        blocks.addAll(bindBlocks(
+                                node.children(), scope, templateCode, governor));
+                    }
+                } finally {
+                    governor.exitDynamic();
+                }
+            } else if ("for-each".equals(node.name())) {
+                governor.enterDynamic();
+                try {
+                    blocks.addAll(bindLoop(node, scope, templateCode, governor));
+                } finally {
+                    governor.exitDynamic();
+                }
+            } else {
+                blocks.addAll(bindBlock(node, scope, templateCode, governor));
+            }
+        }
+        return List.copyOf(blocks);
+    }
+
+    /** 按数组顺序展开一个块级循环。 */
+    private List<BlockNode> bindLoop(
+            CompiledXmlNode node, BindingScope scope, String templateCode,
+            BindingGovernor governor) {
+        BindingScope.ResolvedValue resolved = scope.resolve(node.dataPath());
+        if (resolved.isInvalid()) {
+            throw bindingError(templateCode, node,
+                    "循环数据路径无法继续遍历：" + node.dataPath().displayPath());
+        }
+        if (!resolved.isPresent()) {
+            throw bindingError(templateCode, node,
+                    "循环数据路径不存在：" + node.dataPath().displayPath());
+        }
+        JsonNode value = resolved.value();
+        if (value.isNull()) {
+            return List.of();
+        }
+        if (!value.isArray()) {
+            throw bindingError(templateCode, node,
+                    "循环数据路径必须指向数组：" + node.dataPath().displayPath());
+        }
+        governor.checkLoopItems(value.size());
+        governor.addDynamicOperations(value.size());
+        List<BlockNode> blocks = new ArrayList<>();
+        for (JsonNode item : value) {
+            blocks.addAll(bindBlocks(
+                    node.children(), scope.child(node.variableName(), item), templateCode, governor));
         }
         return List.copyOf(blocks);
     }
 
     /** 绑定一个静态块级标签。 */
-    private BlockNode bindBlock(CompiledXmlNode node) {
-        return switch (node.name()) {
-            case "section" -> new SectionNode(
-                    node.attributes().getOrDefault("id", ""),
-                    bindBlocks(node.children()));
+    private List<BlockNode> bindBlock(
+            CompiledXmlNode node, BindingScope scope, String templateCode,
+            BindingGovernor governor) {
+        if ("section".equals(node.name())) {
+            List<BlockNode> children = bindBlocks(
+                    node.children(), scope, templateCode, governor);
+            if (children.isEmpty()) {
+                return List.of();
+            }
+            governor.addNodes(1);
+            return List.of(new SectionNode(
+                    node.attributes().getOrDefault("id", ""), children));
+        }
+        BlockNode block = switch (node.name()) {
             case "heading" -> new HeadingNode(
                     node.attributes().getOrDefault("id", ""),
                     positiveInteger(node.attributes().getOrDefault("level", "1"), "heading.level"),
-                    bindInline(node.children()));
+                    bindInline(node.children(), scope, templateCode, governor));
             case "paragraph" -> new ParagraphNode(
                     node.attributes().getOrDefault("id", ""),
-                    bindInline(node.children()));
+                    bindInline(node.children(), scope, templateCode, governor));
             case "page-break" -> PageBreakNode.INSTANCE;
             default -> throw PrintValidationException.invalidDocument(
                     "不支持的基础块标签：" + node.name());
         };
+        governor.addNodes(1);
+        return List.of(block);
     }
 
     /** 绑定标题或段落中的有序文本。 */
-    private List<InlineNode> bindInline(List<CompiledXmlNode> nodes) {
+    private List<InlineNode> bindInline(
+            List<CompiledXmlNode> nodes, BindingScope scope, String templateCode,
+            BindingGovernor governor) {
         List<InlineNode> inline = new ArrayList<>(nodes.size());
         for (CompiledXmlNode node : nodes) {
             if ("#text".equals(node.name()) || "text".equals(node.name())) {
                 inline.add(new TextNode(node.text()));
+                governor.addText(node.text().length());
+            } else if ("field".equals(node.name())) {
+                String text = fieldText(node, scope, templateCode);
+                inline.add(new TextNode(text));
+                governor.addText(text.length());
             } else {
                 throw PrintValidationException.invalidDocument(
                         "不支持的基础行内标签：" + node.name());
             }
+            governor.addNodes(1);
         }
         return List.copyOf(inline);
+    }
+
+    /** 解析字段并转换为稳定标量文本。 */
+    private String fieldText(
+            CompiledXmlNode node, BindingScope scope, String templateCode) {
+        BindingScope.ResolvedValue resolved = scope.resolve(node.dataPath());
+        if (resolved.isInvalid()) {
+            throw bindingError(templateCode, node,
+                    "数据路径无法继续遍历：" + node.dataPath().displayPath());
+        }
+        if (!resolved.isPresent()) {
+            throw bindingError(templateCode, node, "数据路径不存在：" + node.dataPath().displayPath());
+        }
+        JsonNode value = resolved.value();
+        if (value.isNull()) {
+            return "";
+        }
+        if (value.isTextual()) {
+            return value.textValue();
+        }
+        if (value.isNumber() || value.isBoolean()) {
+            return value.asText();
+        }
+        throw bindingError(templateCode, node, "字段路径必须指向标量值：" + node.dataPath().displayPath());
+    }
+
+    /** 创建不包含业务值的安全绑定异常。 */
+    private PrintValidationException bindingError(
+            String templateCode, CompiledXmlNode node, String detail) {
+        return PrintValidationException.invalidDocument(
+                templateCode + "：" + node.tagPath() + "，第 " + node.line()
+                        + " 行，第 " + node.column() + " 列：" + detail);
     }
 
     /** 解析严格正整数属性。 */

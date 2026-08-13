@@ -28,15 +28,54 @@ final class CompiledXmlNode {
     /** 节点起始标签所在列。 */
     private final int column;
 
+    /** 当前节点的安全 XML 标签路径。 */
+    private final String tagPath;
+
+    /** 当前动态节点使用的可选受限数据路径。 */
+    private final CompiledDataPath dataPath;
+
+    /** 当前条件节点的可选结构化条件。 */
+    private final CompiledCondition condition;
+
+    /** 循环节点声明的可选变量名。 */
+    private final String variableName;
+
     /** 创建不可变编译节点。 */
     CompiledXmlNode(String name, Map<String, String> attributes,
                     List<CompiledXmlNode> children, String text, int line, int column) {
+        this(name, attributes, children, text, line, column, "", null);
+    }
+
+    /** 创建包含动态编译描述的不可变节点。 */
+    CompiledXmlNode(String name, Map<String, String> attributes,
+                    List<CompiledXmlNode> children, String text, int line, int column,
+                    String tagPath, CompiledDataPath dataPath) {
+        this(name, attributes, children, text, line, column, tagPath, dataPath, null);
+    }
+
+    /** 创建包含全部动态编译描述的不可变节点。 */
+    CompiledXmlNode(String name, Map<String, String> attributes,
+                    List<CompiledXmlNode> children, String text, int line, int column,
+                    String tagPath, CompiledDataPath dataPath, CompiledCondition condition) {
+        this(name, attributes, children, text, line, column,
+                tagPath, dataPath, condition, null);
+    }
+
+    /** 创建包含循环描述的不可变节点。 */
+    CompiledXmlNode(String name, Map<String, String> attributes,
+                    List<CompiledXmlNode> children, String text, int line, int column,
+                    String tagPath, CompiledDataPath dataPath, CompiledCondition condition,
+                    String variableName) {
         this.name = name;
         this.attributes = Map.copyOf(attributes);
         this.children = List.copyOf(children);
         this.text = text;
         this.line = line;
         this.column = column;
+        this.tagPath = tagPath;
+        this.dataPath = dataPath;
+        this.condition = condition;
+        this.variableName = variableName;
     }
 
     /** @return DSL 标签名 */
@@ -67,5 +106,25 @@ final class CompiledXmlNode {
     /** @return 节点起始标签所在列 */
     int column() {
         return column;
+    }
+
+    /** @return 安全 XML 标签路径 */
+    String tagPath() {
+        return tagPath;
+    }
+
+    /** @return 可选受限数据路径 */
+    CompiledDataPath dataPath() {
+        return dataPath;
+    }
+
+    /** @return 可选结构化条件 */
+    CompiledCondition condition() {
+        return condition;
+    }
+
+    /** @return 可选循环变量名 */
+    String variableName() {
+        return variableName;
     }
 }
