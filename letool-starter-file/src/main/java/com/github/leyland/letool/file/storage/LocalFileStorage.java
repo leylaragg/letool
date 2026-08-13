@@ -20,6 +20,7 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
 import java.nio.file.CopyOption;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
@@ -106,7 +107,11 @@ public final class LocalFileStorage implements FileStorageProvider {
 
             // 移动前再次校验所有已存在路径段，降低并发替换符号链接的风险。
             verifyNoSymbolicLink(target.getParent());
-            moveIntoPlace(temporaryFile, target, request.overwritePolicy());
+            try {
+                moveIntoPlace(temporaryFile, target, request.overwritePolicy());
+            } catch (FileAlreadyExistsException exception) {
+                throw FileException.of(FileErrorCode.UPLOAD_REJECTED, "目标文件已存在");
+            }
             temporaryFile = null;
             BasicFileAttributes attributes = Files.readAttributes(
                     target, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
@@ -370,16 +375,19 @@ public final class LocalFileStorage implements FileStorageProvider {
             Path temporaryFile,
             Path target,
             OverwritePolicy overwritePolicy) throws IOException {
-        CopyOption[] atomicOptions = overwritePolicy == OverwritePolicy.REPLACE
-                ? new CopyOption[]{StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING}
-                : new CopyOption[]{StandardCopyOption.ATOMIC_MOVE};
-        CopyOption[] fallbackOptions = overwritePolicy == OverwritePolicy.REPLACE
-                ? new CopyOption[]{StandardCopyOption.REPLACE_EXISTING}
-                : new CopyOption[0];
+        if (overwritePolicy == OverwritePolicy.FAIL) {
+            // 非覆盖移动用于保证并发出现的同名目标不会被 ATOMIC_MOVE 隐式替换。
+            Files.move(temporaryFile, target);
+            return;
+        }
+        CopyOption[] atomicOptions = {
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING
+        };
         try {
             Files.move(temporaryFile, target, atomicOptions);
         } catch (AtomicMoveNotSupportedException exception) {
-            Files.move(temporaryFile, target, fallbackOptions);
+            Files.move(temporaryFile, target, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 

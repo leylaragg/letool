@@ -105,4 +105,55 @@ class LocalFileStorageProductionTest {
             }
         }
     }
+
+    /**
+     * 验证禁止覆盖时，即使目标在预检查后才出现，也不会覆盖并发写入的内容。
+     *
+     * @throws IOException 准备并发目标文件失败时抛出
+     */
+    @Test
+    void shouldNotOverwriteTargetCreatedAfterPrecheck() throws IOException {
+        LocalFileStorage storage = new LocalFileStorage(temporaryDirectory);
+        Path target = temporaryDirectory.resolve("docs/race.txt");
+        byte[] uploadContent = "upload-content".getBytes(StandardCharsets.UTF_8);
+        byte[] concurrentContent = "concurrent-content".getBytes(StandardCharsets.UTF_8);
+        InputStream concurrentInputStream = new InputStream() {
+            private final ByteArrayInputStream delegate =
+                    new ByteArrayInputStream(uploadContent);
+            private boolean targetCreated;
+
+            @Override
+            public int read() throws IOException {
+                createConcurrentTarget();
+                return delegate.read();
+            }
+
+            @Override
+            public int read(byte[] buffer, int offset, int length) throws IOException {
+                createConcurrentTarget();
+                return delegate.read(buffer, offset, length);
+            }
+
+            /** 在存储预检查完成后的首次读取阶段创建竞争目标。 */
+            private void createConcurrentTarget() throws IOException {
+                if (!targetCreated) {
+                    Files.write(target, concurrentContent);
+                    targetCreated = true;
+                }
+            }
+        };
+
+        assertThatThrownBy(() -> storage.store(
+                new StoreRequest("docs/race.txt", uploadContent.length, "race.txt",
+                        "text/plain", OverwritePolicy.FAIL),
+                concurrentInputStream))
+                .isInstanceOf(FileException.class)
+                .extracting("code")
+                .isEqualTo("FILE_003");
+
+        assertThat(Files.readAllBytes(target)).isEqualTo(concurrentContent);
+        try (var files = Files.list(target.getParent())) {
+            assertThat(files).containsExactly(target);
+        }
+    }
 }
