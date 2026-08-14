@@ -1,0 +1,64 @@
+{
+  "properties": [
+    {
+      "name": "letool.rule-engine.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用通用规则引擎。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.rule-engine.limits.max-source-length",
+      "type": "java.lang.Integer",
+      "description": "单条规则源码允许的最大字符数。",
+      "defaultValue": 16384
+    },
+    {
+      "name": "letool.rule-engine.limits.max-tokens",
+      "type": "java.lang.Integer",
+      "description": "词法分析允许生成的最大词法单元数。",
+      "defaultValue": 2048
+    },
+    {
+      "name": "letool.rule-engine.limits.max-ast-depth",
+      "type": "java.lang.Integer",
+      "description": "表达式语法树允许的最大层数。",
+      "defaultValue": 128
+    },
+    {
+      "name": "letool.rule-engine.limits.max-function-calls",
+      "type": "java.lang.Integer",
+      "description": "单次求值允许执行的最大函数调用次数。",
+      "defaultValue": 1024
+    },
+    {
+      "name": "letool.rule-engine.limits.max-trace-nodes",
+      "type": "java.lang.Integer",
+      "description": "单次求值允许记录的最大跟踪节点数。",
+      "defaultValue": 4096
+    },
+    {
+      "name": "letool.rule-engine.limits.max-summary-length",
+      "type": "java.lang.Integer",
+      "description": "单个跟踪摘要允许保留的最大字符数。",
+      "defaultValue": 512
+    },
+    {
+      "name": "letool.rule-engine.limits.max-fact-depth",
+      "type": "java.lang.Integer",
+      "description": "事实值递归转换允许的最大层数。",
+      "defaultValue": 64
+    },
+    {
+      "name": "letool.rule-engine.limits.max-fact-nodes",
+      "type": "java.lang.Integer",
+      "description": "单次事实规范化允许展开的最大节点总数。",
+      "defaultValue": 100000
+    },
+    {
+      "name": "letool.rule-engine.limits.max-container-size",
+      "type": "java.lang.Integer",
+      "description": "单个容器允许包含的最大元素数。",
+      "defaultValue": 10000
+    }
+  ]
+}
