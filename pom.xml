@@ -61,6 +61,7 @@
         <module>letool-starter-swagger</module>
         <module>letool-starter-file</module>
         <module>letool-starter-print</module>
+        <module>letool-starter-print-template</module>
         <module>letool-starter-print-xml</module>
         <module>letool-starter-print-expression-spel</module>
         <module>letool-starter-excel</module>
@@ -278,6 +279,11 @@
             <dependency>
                 <groupId>com.github.leyland</groupId>
                 <artifactId>letool-starter-print</artifactId>
+                <version>${letool.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.leyland</groupId>
+                <artifactId>letool-starter-print-template</artifactId>
                 <version>${letool.version}</version>
             </dependency>
             <dependency>
