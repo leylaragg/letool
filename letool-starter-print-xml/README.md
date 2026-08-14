@@ -12,7 +12,7 @@
 </dependency>
 ```
 
-该模块依赖 `letool-starter-print` 和模板集合模块 `letool-starter-print-template`，不依赖 Spring、数据库、EDC 业务模型、OpenHTMLToPDF、PDFBox、docx4j、JasperReports 或表达式引擎。
+该模块依赖 `letool-starter-print`、模板集合模块 `letool-starter-print-template` 和 Caffeine。Caffeine 只用于模块内部的有界本地编译缓存，不会向公开 API 暴露，也不会启用 Redis、二级缓存或基于时间的过期策略。模块不依赖 Spring、数据库、EDC 业务模型、OpenHTMLToPDF、PDFBox、docx4j、JasperReports 或表达式引擎。
 
 ## 基础用法
 
@@ -30,6 +30,43 @@ DocumentModel document = new XmlTemplateBinder().bind(compiled, printContext);
 ```
 
 编译快照可以在上下文版本匹配的前提下重复绑定，不保存 DOM、StAX、业务 POJO 或 Spring 对象。
+
+## 版本解析与编译缓存
+
+运行时可以通过 `XmlTemplateCompilationService` 解析明确版本或仓库当前激活版本：
+
+```java
+XmlTemplateSetCompiler setCompiler = new XmlTemplateSetCompiler(xmlTemplateCompiler);
+XmlTemplateCompilationCache cache = new XmlTemplateCompilationCache(setCompiler);
+XmlTemplateCompilationService service = new XmlTemplateCompilationService(repository, cache);
+
+ResolvedXmlTemplate resolved = service.resolve(
+        templateSetVersion,
+        "patient-report",
+        rendererProfileVersion,
+        OutputFormat.PDF);
+```
+
+`resolveCurrent` 只读取一次仓库当前快照；`resolve` 也只读取一次指定版本。之后的集合编译和目标文档解析都围绕该不可变快照完成，不会在一次调用中追踪变化中的当前指针。
+
+缓存分为两层：
+
+- 集合层按 `templateSetVersion + templateSetDigest` 复用 `CompiledXmlTemplateSet`；
+- 文档层按完整 `TemplateCompilationKey` 复用 `ResolvedXmlTemplate`。
+
+默认最多保留 64 个集合和 1024 个已解析文档，也可以在构造 `XmlTemplateCompilationCache` 时指定正整数容量。缓存不提供公开写入、清空或失效接口；版本、摘要、DSL、上下文、渲染配置或输出格式变化后会自然使用新条目。编译异常和空结果不会被缓存。
+
+发布校验和运行时可以共享缓存：
+
+```java
+XmlTemplateCompilationCache cache = new XmlTemplateCompilationCache(setCompiler);
+TemplateSetPublisher publisher = new TemplateSetPublisher(
+        repository,
+        List.of(XmlTemplateSetValidator.using(cache)));
+XmlTemplateCompilationService service = new XmlTemplateCompilationService(repository, cache);
+```
+
+`cache.stats()` 返回两层缓存的条目估算、命中、未命中、装载成功和装载失败计数。统计模型不暴露 Caffeine 类型，宿主可以自行接入监控。热切换、集群同步、预热、回滚和管理接口不属于本阶段能力，仍由后续扩展或宿主系统负责。
 
 ## 模板片段与 include
 

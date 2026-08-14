@@ -60,7 +60,24 @@ TemplateSetPublisher publisher = new TemplateSetPublisher(
         List.of(new XmlTemplateSetValidator(setCompiler)));
 ```
 
-校验器会在仓库写入前完成全部 XML 定义解析、引用目标与版本检查、循环检测和容量治理。其他格式模板可以与 XML 文档共存，但不能作为 XML `include` 目标。阶段 3C 再提供按集合版本和摘要复用编译结果的缓存，本阶段校验器不会保留候选集合的编译快照。
+校验器会在仓库写入前完成全部 XML 定义解析、引用目标与版本检查、循环检测和容量治理。其他格式模板可以与 XML 文档共存，但不能作为 XML `include` 目标。XML 模块还允许发布校验与运行时共享同一份有界编译缓存，避免合法集合在首次打印时重复编译。
+
+## 编译键
+
+`TemplateCompilationKey` 描述一次可复用编译的完整条件：集合版本与摘要、模板代码、DSL 版本、上下文版本、渲染器配置版本和输出格式。模板模块只提供这个通用值对象，不依赖 XML 或具体缓存实现。
+
+```java
+TemplateCompilationKey key = new TemplateCompilationKey(
+        templateSet.version(),
+        templateSet.digest(),
+        template.templateCode(),
+        template.dslVersion(),
+        template.contextVersion(),
+        rendererProfileVersion,
+        OutputFormat.PDF);
+```
+
+集合摘要参与键比较，因此即使宿主错误地提供了相同版本号，不同内容也不会共享编译结果。渲染器配置或输出格式变化同样会形成新键。XML、JasperReports 和后续其它编译器可以复用这个身份契约，但各自维护自己的编译产物缓存。
 
 ## 内存仓库边界
 

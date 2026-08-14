@@ -24,6 +24,10 @@
             <groupId>com.github.leyland</groupId>
             <artifactId>letool-starter-print-template</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.junit.jupiter</groupId>

@@ -1,6 +1,7 @@
 package com.github.leyland.letool.print.xml;
 
 import com.github.leyland.letool.print.api.PrintTemplate;
+import com.github.leyland.letool.print.api.OutputFormat;
 import com.github.leyland.letool.print.api.TemplateFormat;
 import com.github.leyland.letool.print.exception.PrintValidationException;
 import com.github.leyland.letool.print.template.InMemoryTemplateRepository;
@@ -59,6 +60,43 @@ class XmlTemplateSetValidatorTest {
         PrintCompilationException exception = PrintCompilationException.invalid("main：安全详情");
 
         assertThat(exception.detail()).isEqualTo("main：安全详情");
+    }
+
+    /** 发布校验与运行时共用缓存时，合法集合无需再次完成整套编译。 */
+    @Test
+    void shouldShareCompilationCacheWithRuntimeResolution() {
+        InMemoryTemplateRepository repository = new InMemoryTemplateRepository();
+        XmlTemplateCompilationCache cache = new XmlTemplateCompilationCache(new XmlTemplateSetCompiler());
+        TemplateSetPublisher publisher = new TemplateSetPublisher(
+                repository, List.of(XmlTemplateSetValidator.using(cache)));
+        TemplateSet published = publisher.publishAndActivate(1, List.of(
+                document("<paragraph>正文</paragraph>")));
+        XmlTemplateCompilationService service = new XmlTemplateCompilationService(repository, cache);
+
+        ResolvedXmlTemplate resolved = service.resolveCurrent("main", 1, OutputFormat.PDF);
+
+        assertThat(resolved.key().templateSetDigest()).isEqualTo(published.digest());
+        assertThat(cache.stats().templateSetLoadSuccessCount()).isEqualTo(1);
+        assertThat(cache.stats().templateSetHitCount()).isEqualTo(1);
+    }
+
+    /** 发布校验失败不进入共享缓存，后续校验仍会重新编译。 */
+    @Test
+    void shouldRetryFailedCompilationThroughSharedValidator() {
+        XmlTemplateCompilationCache cache = new XmlTemplateCompilationCache(new XmlTemplateSetCompiler());
+        XmlTemplateSetValidator validator = XmlTemplateSetValidator.using(cache);
+        TemplateSet invalid = new TemplateSetPublisher(new InMemoryTemplateRepository(), List.of())
+                .publish(1, List.of(document("<paragraph>")));
+
+        assertThatThrownBy(() -> validator.validate(invalid))
+                .isInstanceOf(PrintValidationException.class)
+                .hasMessageNotContaining("<paragraph>");
+        assertThatThrownBy(() -> validator.validate(invalid))
+                .isInstanceOf(PrintValidationException.class)
+                .hasMessageNotContaining("<paragraph>");
+
+        assertThat(cache.stats().templateSetLoadFailureCount()).isEqualTo(2);
+        assertThat(cache.stats().templateSetEntries()).isZero();
     }
 
     /** 把块级 XML 包装成主文档定义。 */
