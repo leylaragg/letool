@@ -9,6 +9,9 @@ import com.github.leyland.letool.print.document.PageLayout;
 import com.github.leyland.letool.print.document.PageOrientation;
 import com.github.leyland.letool.print.document.PageSize;
 import com.github.leyland.letool.print.document.node.BlockNode;
+import com.github.leyland.letool.print.document.node.AnnotationNode;
+import com.github.leyland.letool.print.document.node.AnnotationPlacement;
+import com.github.leyland.letool.print.document.node.AnnotationType;
 import com.github.leyland.letool.print.document.node.BookmarkNode;
 import com.github.leyland.letool.print.document.node.DocumentNode;
 import com.github.leyland.letool.print.document.node.HeadingNode;
@@ -206,12 +209,68 @@ public final class XmlTemplateBinder {
             case "paragraph" -> new ParagraphNode(
                     node.attributes().getOrDefault("id", ""),
                     bindInline(node.children(), scope, templateCode, governor));
+            case "annotation" -> bindAnnotation(node, scope, templateCode, governor);
             case "page-break" -> PageBreakNode.INSTANCE;
             default -> throw PrintValidationException.invalidDocument(
                     "不支持的基础块标签：" + node.name());
         };
         governor.addNodes(1);
         return List.of(block);
+    }
+
+    /** 将受控属性和纯文本内容绑定为不含 PDF 类型的批注节点。 */
+    private AnnotationNode bindAnnotation(
+            CompiledXmlNode node,
+            BindingScope scope,
+            String templateCode,
+            BindingGovernor governor) {
+        AnnotationType type = switch (node.attributes().get("type").toLowerCase(Locale.ROOT)) {
+            case "text-note" -> AnnotationType.TEXT_NOTE;
+            case "free-text" -> AnnotationType.FREE_TEXT;
+            default -> throw bindingError(templateCode, node, "批注类型不受支持");
+        };
+        AnnotationPlacement placement = switch (node.attributes()
+                .getOrDefault("placement", "top-right").toLowerCase(Locale.ROOT)) {
+            case "top-left" -> AnnotationPlacement.TOP_LEFT;
+            case "top-right" -> AnnotationPlacement.TOP_RIGHT;
+            case "bottom-left" -> AnnotationPlacement.BOTTOM_LEFT;
+            case "bottom-right" -> AnnotationPlacement.BOTTOM_RIGHT;
+            default -> throw bindingError(templateCode, node, "批注方位不受支持");
+        };
+        String defaultWidth = type == AnnotationType.TEXT_NOTE ? "6mm" : "50mm";
+        String defaultHeight = type == AnnotationType.TEXT_NOTE ? "6mm" : "20mm";
+        return new AnnotationNode(
+                type,
+                node.attributes().get("target"),
+                placement,
+                annotationMillimeters(node.attributes().getOrDefault("width", defaultWidth), "annotation.width"),
+                annotationMillimeters(node.attributes().getOrDefault("height", defaultHeight), "annotation.height"),
+                annotationMillimeters(node.attributes().getOrDefault("offset-x", "0mm"), "annotation.offset-x"),
+                annotationMillimeters(node.attributes().getOrDefault("offset-y", "0mm"), "annotation.offset-y"),
+                node.attributes().getOrDefault("author", ""),
+                bindAnnotationContent(node.children(), scope, templateCode, governor));
+    }
+
+    /** 按模板顺序拼接批注允许的直接文本、text 和 field。 */
+    private String bindAnnotationContent(
+            List<CompiledXmlNode> nodes,
+            BindingScope scope,
+            String templateCode,
+            BindingGovernor governor) {
+        StringBuilder content = new StringBuilder();
+        for (CompiledXmlNode node : nodes) {
+            String text;
+            if ("#text".equals(node.name()) || "text".equals(node.name())) {
+                text = node.text();
+            } else if ("field".equals(node.name())) {
+                text = fieldText(node, scope, templateCode);
+            } else {
+                throw bindingError(templateCode, node, "annotation 只能包含文本和 field");
+            }
+            content.append(text);
+            governor.addText(text.length());
+        }
+        return content.toString();
     }
 
     /** 绑定静态或动态逻辑资源为不执行 IO 的图片描述。 */
@@ -557,5 +616,20 @@ public final class XmlTemplateBinder {
             throw PrintValidationException.invalidDocument(name + " 必须大于零");
         }
         return micrometers;
+    }
+
+    /** 解析编译阶段已经验证的带方向毫米值。 */
+    private int annotationMillimeters(String value, String name) {
+        String normalized = value.toLowerCase(Locale.ROOT);
+        if (!normalized.matches("[+-]?(?:0|[1-9][0-9]{0,3})(?:\\.[0-9]{1,3})?mm")) {
+            throw PrintValidationException.invalidDocument(name + " 必须使用 mm 单位");
+        }
+        try {
+            return new java.math.BigDecimal(normalized.substring(0, normalized.length() - 2))
+                    .movePointRight(3)
+                    .intValueExact();
+        } catch (ArithmeticException exception) {
+            throw PrintValidationException.invalidDocument(name + " 超出支持范围");
+        }
     }
 }

@@ -4,6 +4,9 @@ import com.github.leyland.letool.print.api.RenderOptions;
 import com.github.leyland.letool.print.document.DocumentMetadata;
 import com.github.leyland.letool.print.document.DocumentModel;
 import com.github.leyland.letool.print.document.PageLayout;
+import com.github.leyland.letool.print.document.node.AnnotationNode;
+import com.github.leyland.letool.print.document.node.AnnotationPlacement;
+import com.github.leyland.letool.print.document.node.AnnotationType;
 import com.github.leyland.letool.print.document.node.ParagraphNode;
 import com.github.leyland.letool.print.document.node.TextNode;
 import com.github.leyland.letool.print.render.RenderedDocument;
@@ -37,7 +40,18 @@ class PdfRendererConcurrencyTest {
         DocumentModel document = new DocumentModel(
                 DocumentMetadata.empty(),
                 PageLayout.a4Portrait(),
-                List.of(new ParagraphNode("", List.of(new TextNode("并发正文 concurrent PDF")))));
+                List.of(
+                        new ParagraphNode("summary", List.of(new TextNode("并发正文 concurrent PDF"))),
+                        new AnnotationNode(
+                                AnnotationType.TEXT_NOTE,
+                                "summary",
+                                AnnotationPlacement.TOP_RIGHT,
+                                6_000,
+                                6_000,
+                                0,
+                                0,
+                                "审核人",
+                                "并发批注")));
         ExecutorService executor = Executors.newFixedThreadPool(4);
 
         try {
@@ -51,6 +65,10 @@ class PdfRendererConcurrencyTest {
                     assertThat(pdf.getNumberOfPages()).isEqualTo(1);
                     assertThat(new PDFTextStripper().getText(pdf))
                             .contains("并发正文 concurrent PDF");
+                    assertThat(pdf.getPage(0).getAnnotations())
+                            .singleElement()
+                            .satisfies(annotation -> assertThat(annotation.getContents())
+                                    .isEqualTo("并发批注"));
                 }
             }
         } finally {

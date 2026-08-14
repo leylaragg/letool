@@ -5,6 +5,7 @@ import com.github.leyland.letool.print.api.RenderOptions;
 import com.github.leyland.letool.print.document.DocumentMetadata;
 import com.github.leyland.letool.print.document.DocumentModel;
 import com.github.leyland.letool.print.document.node.BookmarkNode;
+import com.github.leyland.letool.print.document.node.AnnotationNode;
 import com.github.leyland.letool.print.document.node.HeadingNode;
 import com.github.leyland.letool.print.document.node.InternalLinkNode;
 import com.github.leyland.letool.print.document.node.PageBreakNode;
@@ -13,11 +14,11 @@ import com.github.leyland.letool.print.document.node.SectionNode;
 import com.github.leyland.letool.print.document.node.TableNode;
 import com.github.leyland.letool.print.document.node.TextNode;
 import com.github.leyland.letool.print.exception.PrintRenderingException;
+import com.github.leyland.letool.print.exception.PrintValidationException;
 import com.github.leyland.letool.print.render.DocumentRenderer;
 import com.github.leyland.letool.print.render.OutputCapability;
 import com.github.leyland.letool.print.render.RenderedDocument;
 import com.openhtmltopdf.outputdevice.helper.ExternalResourceControlPriority;
-import com.openhtmltopdf.pdfboxout.PDFCreationListener;
 import com.openhtmltopdf.pdfboxout.PdfBoxRenderer;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -39,7 +40,7 @@ import java.util.Set;
  */
 public final class PdfDocumentRenderer implements DocumentRenderer {
 
-    /** 4A 阶段明确支持的通用文档节点。 */
+    /** 当前 PDF 纵向链路明确支持的通用文档节点。 */
     private static final OutputCapability CAPABILITY = new OutputCapability(Set.of(
             SectionNode.class,
             HeadingNode.class,
@@ -48,13 +49,17 @@ public final class PdfDocumentRenderer implements DocumentRenderer {
             PageBreakNode.class,
             TextNode.class,
             BookmarkNode.class,
-            InternalLinkNode.class));
+            InternalLinkNode.class,
+            AnnotationNode.class));
 
     /** 不可修改的宿主字体定义。 */
     private final List<PdfFont> fonts;
 
     /** 只产生固定 XHTML 的映射器。 */
     private final PdfXhtmlRenderer xhtmlRenderer;
+
+    /** 排版完成后写入两类受控 PDF 批注。 */
+    private final PdfAnnotationWriter annotationWriter;
 
     /**
      * 创建 PDF 渲染器。
@@ -64,6 +69,7 @@ public final class PdfDocumentRenderer implements DocumentRenderer {
     public PdfDocumentRenderer(List<PdfFont> fonts) {
         this.fonts = List.copyOf(Objects.requireNonNull(fonts, "fonts 不能为空"));
         this.xhtmlRenderer = new PdfXhtmlRenderer(this.fonts);
+        this.annotationWriter = new PdfAnnotationWriter(this.fonts);
     }
 
     /** @return PDF 输出格式 */
@@ -92,6 +98,7 @@ public final class PdfDocumentRenderer implements DocumentRenderer {
         document.validate();
         CAPABILITY.requireSupports(document);
 
+        List<AnnotationNode> annotations = annotationWriter.collect(document);
         String xhtml = xhtmlRenderer.render(document);
         PdfOutputBuffer output = new PdfOutputBuffer(options.maxOutputBytes());
         try {
@@ -102,11 +109,17 @@ public final class PdfDocumentRenderer implements DocumentRenderer {
                 if (pageCount > options.maxPages()) {
                     throw PrintRenderingException.pageLimitExceeded(options.maxPages());
                 }
-                renderer.setListener(new MetadataListener(document.metadata(), options));
-                renderer.createPDF();
+                // 页面绘制完成后保持 PDF 打开，批注才能复用最终排版坐标。
+                try (PDDocument pdf = renderer.createPDFKeepOpen()) {
+                    applyMetadata(pdf, document.metadata(), options);
+                    annotationWriter.write(renderer, pdf, annotations);
+                    pdf.save(output);
+                }
                 return renderedDocument(output, pageCount);
             }
         } catch (PrintRenderingException exception) {
+            throw exception;
+        } catch (PrintValidationException exception) {
             throw exception;
         } catch (IOException | RuntimeException exception) {
             if (causedByOutputLimit(exception)) {
@@ -178,35 +191,4 @@ public final class PdfDocumentRenderer implements DocumentRenderer {
         return false;
     }
 
-    /** 在 OpenHTMLToPDF 完成内部元数据初始化后写入框架元数据。 */
-    private static final class MetadataListener implements PDFCreationListener {
-
-        /** 当前文档元数据快照。 */
-        private final DocumentMetadata metadata;
-
-        /** 当前渲染选项。 */
-        private final RenderOptions options;
-
-        /** 创建单次渲染使用的元数据监听器。 */
-        private MetadataListener(DocumentMetadata metadata, RenderOptions options) {
-            this.metadata = metadata;
-            this.options = options;
-        }
-
-        /** PDF 打开前不需要额外处理。 */
-        @Override
-        public void preOpen(PdfBoxRenderer renderer) {
-        }
-
-        /** 页面绘制前不需要额外处理。 */
-        @Override
-        public void preWrite(PdfBoxRenderer renderer, int pageCount) {
-        }
-
-        /** 保存前覆盖库内默认元数据，确保渲染选项最终生效。 */
-        @Override
-        public void onClose(PdfBoxRenderer renderer) {
-            applyMetadata(renderer.getPdfDocument(), metadata, options);
-        }
-    }
 }

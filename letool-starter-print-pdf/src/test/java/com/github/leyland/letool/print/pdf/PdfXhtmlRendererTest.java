@@ -6,6 +6,9 @@ import com.github.leyland.letool.print.document.Margins;
 import com.github.leyland.letool.print.document.PageLayout;
 import com.github.leyland.letool.print.document.PageOrientation;
 import com.github.leyland.letool.print.document.PageSize;
+import com.github.leyland.letool.print.document.node.AnnotationNode;
+import com.github.leyland.letool.print.document.node.AnnotationPlacement;
+import com.github.leyland.letool.print.document.node.AnnotationType;
 import com.github.leyland.letool.print.document.node.BookmarkNode;
 import com.github.leyland.letool.print.document.node.HeadingNode;
 import com.github.leyland.letool.print.document.node.InternalLinkNode;
@@ -104,6 +107,30 @@ class PdfXhtmlRendererTest {
                 .contains("<tr><td><p>第二行</p></td></tr></tbody></table>")
                 .contains("<div class=\"page-break\"></div>")
                 .contains("</section>");
+    }
+
+    /** 批注由 PDF 后处理写入，不会成为 XHTML 页面正文。 */
+    @Test
+    void shouldKeepAnnotationContentOutOfXhtml() {
+        DocumentModel document = new DocumentModel(
+                DocumentMetadata.empty(),
+                PageLayout.a4Portrait(),
+                List.of(
+                        new ParagraphNode("summary", List.of(new TextNode("页面正文"))),
+                        new AnnotationNode(
+                                AnnotationType.TEXT_NOTE,
+                                "summary",
+                                AnnotationPlacement.TOP_RIGHT,
+                                6_000,
+                                6_000,
+                                0,
+                                0,
+                                "审核人",
+                                "secret-annotation-content")));
+
+        assertThat(renderer().render(document))
+                .contains("页面正文")
+                .doesNotContain("secret-annotation-content");
     }
 
     /** 创建带主字体和最终回退字体的映射器。 */

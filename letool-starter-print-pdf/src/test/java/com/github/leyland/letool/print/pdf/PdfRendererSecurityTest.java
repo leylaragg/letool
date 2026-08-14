@@ -4,6 +4,9 @@ import com.github.leyland.letool.print.api.RenderOptions;
 import com.github.leyland.letool.print.document.DocumentMetadata;
 import com.github.leyland.letool.print.document.DocumentModel;
 import com.github.leyland.letool.print.document.PageLayout;
+import com.github.leyland.letool.print.document.node.AnnotationNode;
+import com.github.leyland.letool.print.document.node.AnnotationPlacement;
+import com.github.leyland.letool.print.document.node.AnnotationType;
 import com.github.leyland.letool.print.document.node.BlockNode;
 import com.github.leyland.letool.print.document.node.ImageNode;
 import com.github.leyland.letool.print.document.node.PageBreakNode;
@@ -75,7 +78,7 @@ class PdfRendererSecurityTest {
                 .hasMessageNotContaining("secret-font-path");
     }
 
-    /** 图片资源尚未进入 4A 能力集合，资源 ID 不会触发任何加载。 */
+    /** 图片资源尚未进入 PDF 能力集合，资源 ID 不会触发任何加载。 */
     @Test
     void shouldRejectImageNodeBeforeRendering() {
         ImageNode image = new ImageNode(
@@ -107,6 +110,52 @@ class PdfRendererSecurityTest {
         }
     }
 
+    /** 批注数量在排版前受中央 PDF 容量限制。 */
+    @Test
+    void shouldRejectTooManyAnnotationsBeforeLayout() {
+        List<BlockNode> blocks = new java.util.ArrayList<>();
+        blocks.add(new ParagraphNode("summary", List.of(new TextNode("正文"))));
+        for (int index = 0; index <= PdfAnnotationWriter.MAX_ANNOTATIONS; index++) {
+            blocks.add(annotation(
+                    AnnotationType.TEXT_NOTE, 6_000, 6_000,
+                    0, 0, "secret-annotation-content"));
+        }
+
+        assertThatThrownBy(() -> renderer().render(document(blocks), RenderOptions.defaults()))
+                .isInstanceOf(PrintValidationException.class)
+                .hasMessageContaining("批注数量")
+                .hasMessageNotContaining("secret-annotation-content");
+    }
+
+    /** 最终矩形越出页面时拒绝产物，不替模板静默改写位置。 */
+    @Test
+    void shouldRejectAnnotationOutsidePage() {
+        DocumentModel document = document(List.of(
+                new ParagraphNode("summary", List.of(new TextNode("正文"))),
+                annotation(AnnotationType.TEXT_NOTE, 6_000, 6_000,
+                        -300_000, 0, "secret-position-content")));
+
+        assertThatThrownBy(() -> renderer().render(document, RenderOptions.defaults()))
+                .isInstanceOf(PrintValidationException.class)
+                .hasMessageContaining("超出页面")
+                .hasMessageNotContaining("secret-position-content");
+    }
+
+    /** 自由文本框没有宿主字体时安全失败，避免中文外观静默丢字。 */
+    @Test
+    void shouldRequireHostFontForFreeTextAnnotation() {
+        DocumentModel document = document(List.of(
+                new ParagraphNode("summary", List.of(new TextNode("body"))),
+                annotation(AnnotationType.FREE_TEXT, 50_000, 20_000,
+                        0, 0, "secret-free-text")));
+
+        assertThatThrownBy(() -> new PdfDocumentRenderer(List.of())
+                .render(document, RenderOptions.defaults()))
+                .isInstanceOf(PrintValidationException.class)
+                .hasMessageContaining("宿主字体")
+                .hasMessageNotContaining("secret-free-text");
+    }
+
     /** 创建普通测试文档。 */
     private DocumentModel document(List<? extends BlockNode> blocks) {
         return new DocumentModel(DocumentMetadata.empty(), PageLayout.a4Portrait(), List.copyOf(blocks));
@@ -115,6 +164,26 @@ class PdfRendererSecurityTest {
     /** 创建单段正文。 */
     private ParagraphNode paragraph(String text) {
         return new ParagraphNode("", List.of(new TextNode(text)));
+    }
+
+    /** 创建绑定到 summary 段落的测试批注。 */
+    private AnnotationNode annotation(
+            AnnotationType type,
+            int width,
+            int height,
+            int offsetX,
+            int offsetY,
+            String content) {
+        return new AnnotationNode(
+                type,
+                "summary",
+                AnnotationPlacement.TOP_LEFT,
+                width,
+                height,
+                offsetX,
+                offsetY,
+                "审核人",
+                content);
     }
 
     /** 创建使用测试专用字体的渲染器。 */

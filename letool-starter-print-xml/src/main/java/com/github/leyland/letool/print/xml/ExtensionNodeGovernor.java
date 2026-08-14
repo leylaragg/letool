@@ -1,6 +1,7 @@
 package com.github.leyland.letool.print.xml;
 
 import com.github.leyland.letool.print.document.node.BookmarkNode;
+import com.github.leyland.letool.print.document.node.AnnotationNode;
 import com.github.leyland.letool.print.document.node.DocumentNode;
 import com.github.leyland.letool.print.document.node.HeadingNode;
 import com.github.leyland.letool.print.document.node.ImageNode;
@@ -62,6 +63,8 @@ final class ExtensionNodeGovernor {
             Deque<Object> pending, DocumentNode node, BindingGovernor governor) {
         if (node instanceof TextNode text) {
             governor.addText(text.text().length());
+        } else if (node instanceof AnnotationNode annotation) {
+            governor.addText(annotation.content().length());
         } else if (node instanceof BookmarkNode bookmark) {
             governor.addText(bookmark.label().length());
         } else if (node instanceof ImageNode image) {

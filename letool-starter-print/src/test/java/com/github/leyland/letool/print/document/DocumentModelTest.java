@@ -1,6 +1,9 @@
 package com.github.leyland.letool.print.document;
 
 import com.github.leyland.letool.print.document.node.BlockNode;
+import com.github.leyland.letool.print.document.node.AnnotationNode;
+import com.github.leyland.letool.print.document.node.AnnotationPlacement;
+import com.github.leyland.letool.print.document.node.AnnotationType;
 import com.github.leyland.letool.print.document.node.HeadingNode;
 import com.github.leyland.letool.print.document.node.InternalLinkNode;
 import com.github.leyland.letool.print.document.node.PageBreakNode;
@@ -33,6 +36,7 @@ class DocumentModelTest {
     void shouldPreferRegularClassesForEvolvingDocumentStructure() {
         assertThat(List.of(
                 PageLayout.class,
+                AnnotationNode.class,
                 HeadingNode.class,
                 ParagraphNode.class,
                 SectionNode.class,
@@ -43,6 +47,61 @@ class DocumentModelTest {
                 BookmarkNode.class,
                 InternalLinkNode.class))
                 .allMatch(type -> !type.isRecord());
+    }
+
+    /** 验证批注只保存跨输出稳定的定位语义和纯文本内容。 */
+    @Test
+    void shouldCreateValidatedAnnotationNode() {
+        AnnotationNode annotation = new AnnotationNode(
+                AnnotationType.TEXT_NOTE,
+                "summary",
+                AnnotationPlacement.TOP_RIGHT,
+                6_000,
+                6_000,
+                1_000,
+                -1_000,
+                "审核人",
+                "请复核这一段");
+
+        assertThat(annotation.id()).isEmpty();
+        assertThat(annotation.type()).isEqualTo(AnnotationType.TEXT_NOTE);
+        assertThat(annotation.targetId()).isEqualTo("summary");
+        assertThat(annotation.placement()).isEqualTo(AnnotationPlacement.TOP_RIGHT);
+        assertThat(annotation.widthMicrometers()).isEqualTo(6_000);
+        assertThat(annotation.heightMicrometers()).isEqualTo(6_000);
+        assertThat(annotation.offsetXMicrometers()).isEqualTo(1_000);
+        assertThat(annotation.offsetYMicrometers()).isEqualTo(-1_000);
+        assertThat(annotation.author()).isEqualTo("审核人");
+        assertThat(annotation.content()).isEqualTo("请复核这一段");
+
+        assertThatThrownBy(() -> new AnnotationNode(
+                AnnotationType.TEXT_NOTE, "", AnnotationPlacement.TOP_RIGHT,
+                6_000, 6_000, 0, 0, "", "正文"))
+                .isInstanceOf(PrintValidationException.class);
+        assertThatThrownBy(() -> new AnnotationNode(
+                AnnotationType.FREE_TEXT, "summary", AnnotationPlacement.TOP_LEFT,
+                0, 6_000, 0, 0, "", "正文"))
+                .isInstanceOf(PrintValidationException.class);
+        assertThatThrownBy(() -> new AnnotationNode(
+                AnnotationType.FREE_TEXT, "summary", AnnotationPlacement.TOP_LEFT,
+                6_000, 6_000, 2_000_001, 0, "", "正文"))
+                .isInstanceOf(PrintValidationException.class);
+        assertThatThrownBy(() -> new AnnotationNode(
+                AnnotationType.FREE_TEXT, "summary", AnnotationPlacement.TOP_LEFT,
+                6_000, 6_000, 0, 0, "", " "))
+                .isInstanceOf(PrintValidationException.class);
+        assertThatThrownBy(() -> new AnnotationNode(
+                AnnotationType.FREE_TEXT, "summary", AnnotationPlacement.TOP_LEFT,
+                500_001, 6_000, 0, 0, "", "正文"))
+                .isInstanceOf(PrintValidationException.class);
+        assertThatThrownBy(() -> new AnnotationNode(
+                AnnotationType.FREE_TEXT, "summary", AnnotationPlacement.TOP_LEFT,
+                6_000, 6_000, 0, 0, "审".repeat(129), "正文"))
+                .isInstanceOf(PrintValidationException.class);
+        assertThatThrownBy(() -> new AnnotationNode(
+                AnnotationType.FREE_TEXT, "summary", AnnotationPlacement.TOP_LEFT,
+                6_000, 6_000, 0, 0, "", "字".repeat(50_001)))
+                .isInstanceOf(PrintValidationException.class);
     }
 
     /** 验证文档根节点与调用方可变集合隔离。 */
@@ -102,6 +161,28 @@ class DocumentModelTest {
         assertThat(DocumentTraversal.depthFirst(invalid))
                 .extracting(node -> node.getClass().getSimpleName())
                 .containsExactly("ParagraphNode", "InternalLinkNode", "TextNode");
+    }
+
+    /** 验证批注和内部链接一样只能引用真实存在的文档节点。 */
+    @Test
+    void shouldValidateAnnotationTarget() {
+        DocumentModel invalid = new DocumentModel(
+                DocumentMetadata.empty(),
+                PageLayout.a4Portrait(),
+                List.of(new AnnotationNode(
+                        AnnotationType.TEXT_NOTE,
+                        "missing",
+                        AnnotationPlacement.TOP_RIGHT,
+                        6_000,
+                        6_000,
+                        0,
+                        0,
+                        "审核人",
+                        "请复核")));
+
+        assertThatThrownBy(invalid::validate)
+                .isInstanceOf(PrintValidationException.class)
+                .hasMessageContaining("missing");
     }
 
     /** 验证默认页面使用稳定微米单位和 20 mm 页边距。 */

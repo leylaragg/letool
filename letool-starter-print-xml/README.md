@@ -134,6 +134,7 @@ CompiledXmlTemplate compiled = compiledSet.require("patient-report");
 - `table/header/body/row/cell`，支持动态完整行和严格跨行跨列网格；
 - 只保存逻辑资源引用的 `image` 描述；
 - 行内 `bookmark` 和文档内 `link`；
+- 块级 `annotation`，支持便签和自由文本框的目标、方位、毫米尺寸及偏移；
 - 可选 field 格式化计划和内置 `number/date/datetime` 格式化器；
 - 显式注册的条件表达式和可信自定义标签 SPI；
 - 块级 `fragment/include` 引用图和闭合作用域绑定；
@@ -201,7 +202,8 @@ CompiledXmlTemplate compiled = compiledSet.require("patient-report");
 - `image` 的 `resource-id` 与 `resource-path` 二选一；后者读取受限数据路径中的非空字符串；
 - 图片只保存 `ImageNode` 描述，不读取文件、classpath、URL 或字节，不探测 MIME；
 - `bookmark` 建立静态目标，`link` 只能以文本、`text` 和 `field` 作为标签；
-- 绑定完成后统一校验 ID 全局唯一和链接目标存在性。
+- `annotation` 只能包含直接文本、`text` 和 `field`，不能声明动作、附件或资源；
+- 绑定完成后统一校验 ID 全局唯一以及链接、批注目标存在性。
 
 图片实际资源解析属于后续独立扩展。渲染器没有配置受控资源解析能力时，应明确报告能力不支持，不能静默丢弃图片。
 

@@ -72,6 +72,8 @@ public final class XmlTemplateCompiler {
             Map.entry("section", Set.of("id")),
             Map.entry("heading", Set.of("id", "level")),
             Map.entry("paragraph", Set.of("id")),
+            Map.entry("annotation", Set.of("type", "target", "placement", "width", "height",
+                    "offset-x", "offset-y", "author")),
             Map.entry("table", Set.of("id")),
             Map.entry("header", Set.of()),
             Map.entry("body", Set.of()),
@@ -90,12 +92,12 @@ public final class XmlTemplateCompiler {
 
     /** 普通块级容器可以直接承载的标签。 */
     private static final Set<String> BLOCK_CHILDREN = Set.of(
-            "section", "heading", "paragraph", "table", "image",
+            "section", "heading", "paragraph", "annotation", "table", "image",
             "page-break", "if", "for-each", "include");
 
     /** 动态标签除了普通块节点，还可以在表格行结果域中承载 row。 */
     private static final Set<String> DYNAMIC_BLOCK_CHILDREN = Set.of(
-            "section", "heading", "paragraph", "table", "image",
+            "section", "heading", "paragraph", "annotation", "table", "image",
             "page-break", "row", "if", "for-each", "include");
 
     /** include 和块级扩展允许出现的位置。 */
@@ -110,6 +112,7 @@ public final class XmlTemplateCompiler {
             Map.entry("section", BLOCK_CHILDREN),
             Map.entry("heading", Set.of("text", "field", "bookmark", "link")),
             Map.entry("paragraph", Set.of("text", "field", "bookmark", "link")),
+            Map.entry("annotation", Set.of("text", "field")),
             Map.entry("table", Set.of("header", "body")),
             Map.entry("header", Set.of("row", "if", "for-each")),
             Map.entry("body", Set.of("row", "if", "for-each")),
@@ -127,7 +130,8 @@ public final class XmlTemplateCompiler {
             Map.entry("page-break", Set.of()));
 
     /** 允许直接保存文本内容的标签。 */
-    private static final Set<String> TEXT_CONTAINERS = Set.of("heading", "paragraph", "text", "link");
+    private static final Set<String> TEXT_CONTAINERS =
+            Set.of("heading", "paragraph", "annotation", "text", "link");
 
     /** 文档节点逻辑 ID 的稳定安全格式。 */
     private static final Pattern NODE_ID = Pattern.compile("[A-Za-z][A-Za-z0-9_.:-]{0,127}");
@@ -135,6 +139,10 @@ public final class XmlTemplateCompiler {
     /** 页面边距只接受最多三位小数的非负毫米值。 */
     private static final Pattern MILLIMETERS = Pattern.compile(
             "(?:0|[1-9][0-9]{0,3})(?:\\.[0-9]{1,3})?mm");
+
+    /** 批注偏移允许使用正负毫米值。 */
+    private static final Pattern SIGNED_MILLIMETERS = Pattern.compile(
+            "[+-]?(?:0|[1-9][0-9]{0,3})(?:\\.[0-9]{1,3})?mm");
 
     /** 循环变量名的稳定安全格式。 */
     private static final Pattern LOOP_VARIABLE = Pattern.compile("[A-Za-z][A-Za-z0-9_]{0,63}");
@@ -594,6 +602,9 @@ public final class XmlTemplateCompiler {
                 throw located(templateCode, reader, "link.target 不合法");
             }
         }
+        if ("annotation".equals(element)) {
+            validateAnnotation(templateCode, reader, attributes);
+        }
         if ("format-option".equals(element)) {
             String name = attributes.get("name");
             if (name == null || !FORMAT_OPTION_NAME.matcher(name).matches()) {
@@ -602,6 +613,82 @@ public final class XmlTemplateCompiler {
             if (!attributes.containsKey("value") || attributes.get("value").isEmpty()) {
                 throw located(templateCode, reader, "format-option.value 不能为空");
             }
+        }
+    }
+
+    /** 校验批注类型、目标和物理几何都来自受控集合。 */
+    private void validateAnnotation(
+            String templateCode,
+            XMLStreamReader reader,
+            Map<String, String> attributes) {
+        String type = attributes.get("type");
+        if (type == null || !Set.of("text-note", "free-text").contains(type.toLowerCase(Locale.ROOT))) {
+            throw located(templateCode, reader, "annotation.type 不受支持");
+        }
+        String target = attributes.get("target");
+        if (target == null || !NODE_ID.matcher(target).matches()) {
+            throw located(templateCode, reader, "annotation.target 不合法");
+        }
+        String placement = attributes.getOrDefault("placement", "top-right").toLowerCase(Locale.ROOT);
+        if (!Set.of("top-left", "top-right", "bottom-left", "bottom-right").contains(placement)) {
+            throw located(templateCode, reader, "annotation.placement 不受支持");
+        }
+        validateAnnotationSize(templateCode, reader, attributes, "width");
+        validateAnnotationSize(templateCode, reader, attributes, "height");
+        validateAnnotationOffset(templateCode, reader, attributes, "offset-x");
+        validateAnnotationOffset(templateCode, reader, attributes, "offset-y");
+    }
+
+    /** 校验可选批注尺寸可以精确转换且不超过 500 mm。 */
+    private void validateAnnotationSize(
+            String templateCode,
+            XMLStreamReader reader,
+            Map<String, String> attributes,
+            String name) {
+        String value = attributes.get(name);
+        if (value == null) {
+            return;
+        }
+        if (!MILLIMETERS.matcher(value.toLowerCase(Locale.ROOT)).matches()) {
+            throw located(templateCode, reader, "annotation." + name + " 必须使用正 mm 单位");
+        }
+        int micrometers = micrometers(templateCode, reader, value, "annotation." + name);
+        if (micrometers < 1 || micrometers > 500_000) {
+            throw located(templateCode, reader, "annotation." + name + " 超出支持范围");
+        }
+    }
+
+    /** 校验可选批注偏移可以精确转换且不超过正负 2,000 mm。 */
+    private void validateAnnotationOffset(
+            String templateCode,
+            XMLStreamReader reader,
+            Map<String, String> attributes,
+            String name) {
+        String value = attributes.get(name);
+        if (value == null) {
+            return;
+        }
+        if (!SIGNED_MILLIMETERS.matcher(value.toLowerCase(Locale.ROOT)).matches()) {
+            throw located(templateCode, reader, "annotation." + name + " 必须使用 mm 单位");
+        }
+        int micrometers = micrometers(templateCode, reader, value, "annotation." + name);
+        if (Math.abs((long) micrometers) > 2_000_000) {
+            throw located(templateCode, reader, "annotation." + name + " 超出支持范围");
+        }
+    }
+
+    /** 把已经通过格式检查的毫米值精确转换为微米。 */
+    private int micrometers(
+            String templateCode,
+            XMLStreamReader reader,
+            String value,
+            String name) {
+        try {
+            return new BigDecimal(value.substring(0, value.length() - 2))
+                    .movePointRight(3)
+                    .intValueExact();
+        } catch (ArithmeticException exception) {
+            throw located(templateCode, reader, name + " 超出支持范围");
         }
     }
 
@@ -1044,6 +1131,15 @@ public final class XmlTemplateCompiler {
                 throw PrintCompilationException.invalid(
                         templateCode + "：第 " + line + " 行，第 " + column
                                 + " 列：link 标签不能为空");
+            }
+            if ("annotation".equals(name)
+                    && children.stream().noneMatch(child -> "field".equals(child.name()))
+                    && children.stream()
+                    .filter(child -> "#text".equals(child.name()) || "text".equals(child.name()))
+                    .allMatch(child -> child.text().isBlank())) {
+                throw PrintCompilationException.invalid(
+                        templateCode + "：第 " + line + " 行，第 " + column
+                                + " 列：annotation 内容不能为空");
             }
             if ("heading".equals(name)
                     && children.stream().noneMatch(child -> Set.of(

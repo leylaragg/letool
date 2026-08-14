@@ -7,6 +7,7 @@ import com.github.leyland.letool.print.document.Margins;
 import com.github.leyland.letool.print.document.PageLayout;
 import com.github.leyland.letool.print.document.PageOrientation;
 import com.github.leyland.letool.print.document.node.BlockNode;
+import com.github.leyland.letool.print.document.node.AnnotationNode;
 import com.github.leyland.letool.print.document.node.BookmarkNode;
 import com.github.leyland.letool.print.document.node.HeadingNode;
 import com.github.leyland.letool.print.document.node.InlineNode;
@@ -162,6 +163,9 @@ final class PdfXhtmlRenderer {
             writeTable(output, table);
         } else if (block == PageBreakNode.INSTANCE) {
             output.append("<div class=\"page-break\"></div>");
+        } else if (block instanceof AnnotationNode) {
+            // 批注正文只进入 PDF 对象，不在页面正文中重复显示。
+            return;
         } else {
             throw unsupported(block);
         }

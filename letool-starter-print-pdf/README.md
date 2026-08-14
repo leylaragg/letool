@@ -37,11 +37,31 @@ byte[] pdf = rendered.content();
 - 章节、一至六级标题、段落和显式分页；
 - 严格网格表格、跨行跨列和跨页重复表头；
 - 文本、书签、PDF 大纲和文档内链接；
+- 便签批注和带嵌入字体外观的自由文本框批注；
 - 可选标题、作者和语言元数据；
 - 宿主字体注册、字体嵌入及最终回退字体；
 - 最大页数、最大输出字节数和安全渲染异常。
 
 `PdfDocumentRenderer` 只保存不可变字体配置。每次 `render` 都创建独立的 XHTML、输出缓冲区和第三方排版器，因此同一实例可以并发处理不可变文档。
+
+## PDF 批注
+
+XML 模板通过目标节点 ID 声明批注，正文只允许直接文本、`text` 和 `field`：
+
+```xml
+<paragraph id="summary">需要复核的正文</paragraph>
+<annotation type="text-note" target="summary" author="审核人">
+    请检查 <field path="review.reason"/>
+</annotation>
+<annotation type="free-text" target="summary" placement="bottom-left"
+            width="50mm" height="20mm" offset-x="1.5mm" offset-y="-2mm">
+    页面上可见的文本框内容
+</annotation>
+```
+
+`text-note` 默认使用 6mm × 6mm，`free-text` 默认使用 50mm × 20mm；默认方位为 `top-right`。还可使用 `top-left`、`bottom-left` 和 `bottom-right`。方位选择目标首个可见片段的对应角点，正负 `offset-x`、`offset-y` 再移动最终矩形；矩形越出页面时渲染失败，不会被静默夹取。
+
+自由文本框需要至少一个宿主字体生成中文外观，优先使用最终回退字体。批注正文不会进入 XHTML 页面正文；每个 PDF 最多包含 1,000 条批注，模板不能为批注配置脚本、动作、附件、颜色、资源或 PDF 原始坐标。
 
 ## 安全与资源边界
 
@@ -55,7 +75,6 @@ XHTML 标签、属性和 CSS 均由框架生成，文本和属性会分别转义
 
 - `ImageNode` 和其他资源显示尚未开放；
 - 多章节 PDF 合并和全局目录留在后续阶段；
-- 文本批注与自由文本框批注将在节点布局坐标稳定后由后续 PDF 阶段实现；
 - 不提供模板侧 HTML、CSS、脚本或任意 URI 扩展入口。
 
 测试目录中的 `DroidSansFallback.ttf` 仅用于验证中文字体嵌入，不会进入模块主产物；其 Apache-2.0 NOTICE 与字体文件一同保留。

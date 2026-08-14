@@ -6,5 +6,6 @@ package com.github.leyland.letool.print.document.node;
  * @author leyland
  */
 public sealed interface BlockNode extends DocumentNode
-        permits SectionNode, HeadingNode, ParagraphNode, TableNode, ImageNode, PageBreakNode {
+        permits SectionNode, HeadingNode, ParagraphNode, TableNode, ImageNode, PageBreakNode,
+        AnnotationNode {
 }

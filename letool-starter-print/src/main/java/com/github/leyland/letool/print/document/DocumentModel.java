@@ -1,6 +1,7 @@
 package com.github.leyland.letool.print.document;
 
 import com.github.leyland.letool.print.document.node.BlockNode;
+import com.github.leyland.letool.print.document.node.AnnotationNode;
 import com.github.leyland.letool.print.document.node.DocumentNode;
 import com.github.leyland.letool.print.document.node.InternalLinkNode;
 import com.github.leyland.letool.print.exception.PrintValidationException;
@@ -61,7 +62,7 @@ public final class DocumentModel {
     }
 
     /**
-     * 校验整棵文档树的 ID 唯一性和内部链接完整性。
+     * 校验整棵文档树的 ID 唯一性以及链接、批注引用完整性。
      *
      * @throws PrintValidationException 存在重复 ID、缺失链接目标或树规模越界时抛出
      */
@@ -75,11 +76,13 @@ public final class DocumentModel {
             }
             if (node instanceof InternalLinkNode link) {
                 targets.add(link.targetId());
+            } else if (node instanceof AnnotationNode annotation) {
+                targets.add(annotation.targetId());
             }
         }
         for (String target : targets) {
             if (!ids.contains(target)) {
-                throw PrintValidationException.invalidDocument("内部链接目标不存在：" + target);
+                throw PrintValidationException.invalidDocument("文档引用目标不存在：" + target);
             }
         }
     }
