@@ -191,7 +191,7 @@ XML 必须显式声明语言和表达式正文：
 - 表达式编译和求值异常会转换为安全框架异常，不回显正文、业务值或实现消息；
 - 每次求值计入动态操作 Governor，表达式正文受中央长度限制。
 
-本模块不内置任何通用表达式语言。后续显式引入独立的 `letool-starter-print-expression-spel` 并注册其提供方后，XML 才能使用 `expression-language="spel"`；不引入或不注册时，模板在编译阶段失败。
+本模块不内置任何通用表达式语言。显式引入独立的 `letool-starter-print-expression-spel` 并注册 `RestrictedSpelConditionExpression` 后，XML 才能使用 `expression-language="spel"`；不引入或不注册时，模板在编译阶段失败。完整语法和安全边界参见 [`letool-starter-print-expression-spel`](../letool-starter-print-expression-spel/README.md)。
 
 ## 可信自定义标签
 
