@@ -43,6 +43,9 @@ public final class XmlDsl {
     /** 单次绑定允许执行的最大累计动态操作数。 */
     public static final int MAX_DYNAMIC_OPERATIONS = 100_000;
 
+    /** 单条扩展条件表达式允许的最大字符数。 */
+    public static final int MAX_EXPRESSION_CHARACTERS = 4_096;
+
     /** 工具类不允许实例化。 */
     private XmlDsl() {
     }

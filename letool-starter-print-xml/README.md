@@ -67,6 +67,7 @@ DocumentModel document = new XmlTemplateBinder().bind(compiled, printContext);
 - 只保存逻辑资源引用的 `image` 描述；
 - 行内 `bookmark` 和文档内 `link`；
 - 可选 field 格式化计划和内置 `number/date/datetime` 格式化器；
+- 显式注册的条件表达式和可信自定义标签 SPI；
 - 标签、属性、父子关系、ID、标题层级、节点数量、深度和文本长度校验。
 
 ## 数据路径与空值
@@ -161,7 +162,69 @@ CompiledXmlTemplate compiled = new XmlTemplateCompiler(registry).compile(source)
 
 `PrintValueFormatter` 在编译阶段把静态选项转换为 `PrintFormatPlan`。计划会固化在编译快照中，绑定阶段不会再次查询注册表。格式化器和计划都应当无状态或线程安全，异常信息不得包含业务值。
 
-本模块不会解释 SpEL。后续只有显式引入独立的 `letool-starter-print-expression-spel` 并配置使用时，XML 才会获得 SpEL 能力；不引入该模块时，SpEL 标记仍按禁止的可执行表达式处理。自定义标签和条件表达式注册表属于后续阶段，`include` 属于模板集合与版本图能力阶段。
+## 条件表达式扩展
+
+默认结构化条件始终保留且不需要表达式引擎。可信 Java 代码可以显式注册额外条件语言：
+
+```java
+PrintConditionExpression expression = new MyConditionExpression();
+PrintExpressionRegistry expressions = new PrintExpressionRegistry(List.of(expression));
+
+XmlTemplateCompiler compiler = new XmlTemplateCompiler(
+        BuiltInPrintFormatters.registry(),
+        expressions,
+        new PrintTagRegistry(List.of()));
+```
+
+XML 必须显式声明语言和表达式正文：
+
+```xml
+<if expression-language="my-language" test="policy-active">
+    <paragraph>保单已生效</paragraph>
+</if>
+```
+
+- `expression-language/test` 必须同时出现，并与 `path/operator/value/value-type` 互斥；
+- 未注册语言在模板编译期失败，不会降级为结构化条件；
+- `PrintConditionExpression` 在编译期生成可并发复用的 `PrintExpressionPlan`；
+- 求值计划只接收 `PrintDataView`，其中根 JSON 和循环变量均为防御性副本；
+- 表达式编译和求值异常会转换为安全框架异常，不回显正文、业务值或实现消息；
+- 每次求值计入动态操作 Governor，表达式正文受中央长度限制。
+
+本模块不内置任何通用表达式语言。后续显式引入独立的 `letool-starter-print-expression-spel` 并注册其提供方后，XML 才能使用 `expression-language="spel"`；不引入或不注册时，模板在编译阶段失败。
+
+## 可信自定义标签
+
+自定义标签只能由可信 Java 代码注册，XML 不能填写处理器类名、Bean 名或类路径：
+
+```java
+PrintTagHandler notice = new NoticeTagHandler();
+PrintTagRegistry tags = new PrintTagRegistry(List.of(notice));
+
+XmlTemplateCompiler compiler = new XmlTemplateCompiler(
+        BuiltInPrintFormatters.registry(),
+        new PrintExpressionRegistry(List.of()),
+        tags);
+```
+
+处理器声明：
+
+- 稳定的小写标签名和静态属性白名单；
+- `BLOCK/INLINE` 放置位置；
+- `EMPTY/BLOCKS/INLINE` 子节点内容模型；
+- 编译期 `PrintTagPlan`，用于绑定时返回一个核心 `DocumentNode`。
+
+编译上下文只暴露白名单属性与安全位置说明；绑定上下文只暴露只读 `PrintDataView` 和框架已经绑定好的受控子节点。处理器不接触 DOM、StAX、业务 POJO、Spring 容器、内部 `BindingScope` 或 Governor。
+
+扩展返回结果仍由框架统一执行：
+
+- 块/行内节点类型校验；
+- 完整返回树的节点、表格行、单元格和文本容量计数；
+- 循环后代 ID 禁令；
+- 最终节点 ID 唯一性和内部链接目标校验；
+- 异常信息脱敏。
+
+自定义标签不能覆盖内置标签，不能作为 `link` 标签内容，也不能绕过 `table/header/body/row/cell` 的结构约束。实际资源解析仍属于后续独立扩展，`include` 属于模板集合与版本图阶段。
 
 ## 安全边界
 

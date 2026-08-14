@@ -1,5 +1,6 @@
 package com.github.leyland.letool.print.xml;
 
+import com.github.leyland.letool.print.xml.expression.PrintExpressionPlan;
 import com.github.leyland.letool.print.xml.format.PrintFormatPlan;
 
 import java.util.List;
@@ -45,6 +46,12 @@ final class CompiledXmlNode {
     /** 字段节点可选的已编译格式化计划。 */
     private final PrintFormatPlan formatPlan;
 
+    /** 条件节点可选的扩展表达式计划。 */
+    private final PrintExpressionPlan expressionPlan;
+
+    /** 自定义标签可选的已编译绑定计划。 */
+    private final CompiledTagPlan tagPlan;
+
     /** 创建不可变编译节点。 */
     CompiledXmlNode(String name, Map<String, String> attributes,
                     List<CompiledXmlNode> children, String text, int line, int column) {
@@ -63,7 +70,7 @@ final class CompiledXmlNode {
                     List<CompiledXmlNode> children, String text, int line, int column,
                     String tagPath, CompiledDataPath dataPath, CompiledCondition condition) {
         this(name, attributes, children, text, line, column,
-                tagPath, dataPath, condition, null, null);
+                tagPath, dataPath, condition, null, null, null, null);
     }
 
     /** 创建包含循环描述的不可变节点。 */
@@ -72,7 +79,7 @@ final class CompiledXmlNode {
                     String tagPath, CompiledDataPath dataPath, CompiledCondition condition,
                     String variableName) {
         this(name, attributes, children, text, line, column,
-                tagPath, dataPath, condition, variableName, null);
+                tagPath, dataPath, condition, variableName, null, null, null);
     }
 
     /** 创建包含循环描述和格式化计划的不可变节点。 */
@@ -80,6 +87,16 @@ final class CompiledXmlNode {
                     List<CompiledXmlNode> children, String text, int line, int column,
                     String tagPath, CompiledDataPath dataPath, CompiledCondition condition,
                     String variableName, PrintFormatPlan formatPlan) {
+        this(name, attributes, children, text, line, column, tagPath, dataPath,
+                condition, variableName, formatPlan, null, null);
+    }
+
+    /** 创建包含所有可选编译计划的不可变节点。 */
+    CompiledXmlNode(String name, Map<String, String> attributes,
+                    List<CompiledXmlNode> children, String text, int line, int column,
+                    String tagPath, CompiledDataPath dataPath, CompiledCondition condition,
+                    String variableName, PrintFormatPlan formatPlan,
+                    PrintExpressionPlan expressionPlan, CompiledTagPlan tagPlan) {
         this.name = name;
         this.attributes = Map.copyOf(attributes);
         this.children = List.copyOf(children);
@@ -91,6 +108,8 @@ final class CompiledXmlNode {
         this.condition = condition;
         this.variableName = variableName;
         this.formatPlan = formatPlan;
+        this.expressionPlan = expressionPlan;
+        this.tagPlan = tagPlan;
     }
 
     /** @return DSL 标签名 */
@@ -146,5 +165,15 @@ final class CompiledXmlNode {
     /** @return 字段节点可选的已编译格式化计划 */
     PrintFormatPlan formatPlan() {
         return formatPlan;
+    }
+
+    /** @return 条件节点可选的扩展表达式计划 */
+    PrintExpressionPlan expressionPlan() {
+        return expressionPlan;
+    }
+
+    /** @return 自定义标签可选的绑定计划 */
+    CompiledTagPlan tagPlan() {
+        return tagPlan;
     }
 }

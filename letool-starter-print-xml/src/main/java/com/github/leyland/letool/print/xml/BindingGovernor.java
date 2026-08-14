@@ -24,6 +24,9 @@ final class BindingGovernor {
     /** 已执行的累计动态操作数。 */
     private long dynamicOperations;
 
+    /** 本次绑定是否实际执行过可信自定义标签。 */
+    private boolean customTagUsed;
+
     /** 创建单次绑定计数器。 */
     BindingGovernor(String templateCode) {
         this.templateCode = templateCode;
@@ -56,6 +59,40 @@ final class BindingGovernor {
                 XmlDsl.MAX_DYNAMIC_OPERATIONS, "累计动态操作数量超过限制");
     }
 
+    /**
+     * 保存当前最终节点和文本计数，用于自定义标签重新统计返回树。
+     *
+     * @return 当前生成用量快照
+     */
+    GeneratedUsage checkpointGeneratedUsage() {
+        return new GeneratedUsage(generatedNodes, generatedTextCharacters);
+    }
+
+    /**
+     * 恢复最终节点和文本计数，动态操作数与深度不回退。
+     *
+     * @param usage 之前保存的生成用量快照
+     */
+    void restoreGeneratedUsage(GeneratedUsage usage) {
+        if (usage == null
+                || usage.nodes > generatedNodes
+                || usage.textCharacters > generatedTextCharacters) {
+            throw invalid("生成用量快照不合法");
+        }
+        generatedNodes = usage.nodes;
+        generatedTextCharacters = usage.textCharacters;
+    }
+
+    /** 标记本次绑定已经执行可信自定义标签。 */
+    void markCustomTagUsed() {
+        customTagUsed = true;
+    }
+
+    /** @return 本次绑定是否执行过可信自定义标签 */
+    boolean customTagUsed() {
+        return customTagUsed;
+    }
+
     /** 进入一个动态控制结构。 */
     void enterDynamic() {
         if (dynamicDepth >= XmlDsl.MAX_DYNAMIC_DEPTH) {
@@ -80,5 +117,25 @@ final class BindingGovernor {
     /** 创建不包含业务数据的绑定容量异常。 */
     private PrintValidationException invalid(String detail) {
         return PrintValidationException.invalidDocument(templateCode + "：" + detail);
+    }
+
+    /**
+     * 最终节点和文本计数的包内不可变快照。
+     *
+     * @author leyland
+     */
+    static final class GeneratedUsage {
+
+        /** 快照中的节点数。 */
+        private final long nodes;
+
+        /** 快照中的文本字符数。 */
+        private final long textCharacters;
+
+        /** 创建生成用量快照。 */
+        private GeneratedUsage(long nodes, long textCharacters) {
+            this.nodes = nodes;
+            this.textCharacters = textCharacters;
+        }
     }
 }

@@ -1,6 +1,7 @@
 package com.github.leyland.letool.print.xml;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.github.leyland.letool.print.xml.extension.PrintDataView;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -18,15 +19,32 @@ final class BindingScope {
     /** 当前可见循环变量。 */
     private final Map<String, JsonNode> variables;
 
+    /** 父词法作用域；根作用域为 {@code null}。 */
+    private final BindingScope parent;
+
+    /** 相对父作用域新增的变量名；根作用域为 {@code null}。 */
+    private final String boundName;
+
+    /** 相对父作用域新增的变量快照；根作用域为 {@code null}。 */
+    private final JsonNode boundValue;
+
+    /** 按需创建并复用的扩展数据视图。 */
+    private PrintDataView dataView;
+
     /** 创建根作用域。 */
     BindingScope(JsonNode root) {
-        this(root.deepCopy(), Map.of());
+        this(root.deepCopy(), Map.of(), null, null, null);
     }
 
     /** 创建不可变作用域。 */
-    private BindingScope(JsonNode root, Map<String, JsonNode> variables) {
+    private BindingScope(
+            JsonNode root, Map<String, JsonNode> variables, BindingScope parent,
+            String boundName, JsonNode boundValue) {
         this.root = root;
         this.variables = Map.copyOf(variables);
+        this.parent = parent;
+        this.boundName = boundName;
+        this.boundValue = boundValue;
     }
 
     /**
@@ -38,8 +56,9 @@ final class BindingScope {
      */
     BindingScope child(String name, JsonNode value) {
         Map<String, JsonNode> childVariables = new LinkedHashMap<>(variables);
-        childVariables.put(name, value.deepCopy());
-        return new BindingScope(root, childVariables);
+        JsonNode valueSnapshot = value.deepCopy();
+        childVariables.put(name, valueSnapshot);
+        return new BindingScope(root, childVariables, this, name, valueSnapshot);
     }
 
     /**
@@ -68,6 +87,20 @@ final class BindingScope {
             current = current.get(segment);
         }
         return ResolvedValue.present(current.deepCopy());
+    }
+
+    /**
+     * 为可信扩展创建与内部状态隔离的只读数据视图。
+     *
+     * @return 当前根数据和词法变量的防御性快照
+     */
+    PrintDataView dataView() {
+        if (dataView == null) {
+            dataView = parent == null
+                    ? PrintDataView.of(root, Map.of())
+                    : parent.dataView().withVariable(boundName, boundValue);
+        }
+        return dataView;
     }
 
     /**

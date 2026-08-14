@@ -10,6 +10,7 @@ import com.github.leyland.letool.print.document.PageOrientation;
 import com.github.leyland.letool.print.document.PageSize;
 import com.github.leyland.letool.print.document.node.BlockNode;
 import com.github.leyland.letool.print.document.node.BookmarkNode;
+import com.github.leyland.letool.print.document.node.DocumentNode;
 import com.github.leyland.letool.print.document.node.HeadingNode;
 import com.github.leyland.letool.print.document.node.ImageNode;
 import com.github.leyland.letool.print.document.node.InlineNode;
@@ -22,6 +23,10 @@ import com.github.leyland.letool.print.document.node.TableNode;
 import com.github.leyland.letool.print.document.node.TableRow;
 import com.github.leyland.letool.print.document.node.TextNode;
 import com.github.leyland.letool.print.exception.PrintValidationException;
+import com.github.leyland.letool.print.xml.expression.ExpressionEvaluationContext;
+import com.github.leyland.letool.print.xml.tag.TagBindingContext;
+import com.github.leyland.letool.print.xml.tag.TagContentModel;
+import com.github.leyland.letool.print.xml.tag.TagPlacement;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -30,7 +35,7 @@ import java.util.Locale;
 /**
  * 将安全 XML 编译快照与只读上下文绑定为通用文档模型。
  *
- * <p>阶段 2C-1 支持基础标签、受限动态结构、复杂节点和编译期格式化计划。</p>
+ * <p>阶段 2C-2 支持基础标签、受限动态结构、复杂节点、格式计划和可信扩展计划。</p>
  *
  * @author leyland
  */
@@ -58,7 +63,15 @@ public final class XmlTemplateBinder {
                 pageLayout(page),
                 bindBlocks(page.children(), new BindingScope(context.root()),
                         template.templateCode(), governor));
-        model.validate();
+        try {
+            model.validate();
+        } catch (PrintValidationException exception) {
+            if (governor.customTagUsed()) {
+                throw PrintValidationException.invalidDocument(
+                        template.templateCode() + "：自定义标签返回的文档模型校验失败");
+            }
+            throw exception;
+        }
         return model;
     }
 
@@ -101,8 +114,7 @@ public final class XmlTemplateBinder {
                 governor.enterDynamic();
                 try {
                     governor.addDynamicOperations(1);
-                    if (node.condition().matches(
-                            scope.resolve(node.condition().path()), node, templateCode)) {
+                    if (matchesCondition(node, scope, templateCode)) {
                         blocks.addAll(bindBlocks(
                                 node.children(), scope, templateCode, governor));
                     }
@@ -158,6 +170,9 @@ public final class XmlTemplateBinder {
     private List<BlockNode> bindBlock(
             CompiledXmlNode node, BindingScope scope, String templateCode,
             BindingGovernor governor) {
+        if (node.tagPlan() != null) {
+            return List.of(bindCustomBlock(node, scope, templateCode, governor));
+        }
         if ("section".equals(node.name())) {
             List<BlockNode> children = bindBlocks(
                     node.children(), scope, templateCode, governor);
@@ -256,8 +271,7 @@ public final class XmlTemplateBinder {
                 governor.enterDynamic();
                 try {
                     governor.addDynamicOperations(1);
-                    if (node.condition().matches(
-                            scope.resolve(node.condition().path()), node, templateCode)) {
+                    if (matchesCondition(node, scope, templateCode)) {
                         rows.addAll(bindTableRows(
                                 node.children(), scope, templateCode, governor));
                     }
@@ -276,6 +290,21 @@ public final class XmlTemplateBinder {
             }
         }
         return List.copyOf(rows);
+    }
+
+    /** 求值结构化条件或显式注册的扩展条件表达式。 */
+    private boolean matchesCondition(
+            CompiledXmlNode node, BindingScope scope, String templateCode) {
+        if (node.expressionPlan() == null) {
+            return node.condition().matches(
+                    scope.resolve(node.condition().path()), node, templateCode);
+        }
+        try {
+            return node.expressionPlan().evaluate(
+                    new ExpressionEvaluationContext(scope.dataView()));
+        } catch (RuntimeException exception) {
+            throw bindingError(templateCode, node, "表达式求值失败");
+        }
     }
 
     /** 按数组顺序展开表格行循环。 */
@@ -334,6 +363,10 @@ public final class XmlTemplateBinder {
             BindingGovernor governor) {
         List<InlineNode> inline = new ArrayList<>(nodes.size());
         for (CompiledXmlNode node : nodes) {
+            if (node.tagPlan() != null) {
+                inline.add(bindCustomInline(node, scope, templateCode, governor));
+                continue;
+            }
             if ("#text".equals(node.name()) || "text".equals(node.name())) {
                 inline.add(new TextNode(node.text()));
                 governor.addText(node.text().length());
@@ -356,6 +389,65 @@ public final class XmlTemplateBinder {
             governor.addNodes(1);
         }
         return List.copyOf(inline);
+    }
+
+    /** 绑定一个声明为块级位置的可信自定义标签。 */
+    private BlockNode bindCustomBlock(
+            CompiledXmlNode node, BindingScope scope, String templateCode,
+            BindingGovernor governor) {
+        if (node.tagPlan().placement() != TagPlacement.BLOCK) {
+            throw bindingError(templateCode, node, "自定义标签返回位置不是块级");
+        }
+        DocumentNode result = bindCustomTag(node, scope, templateCode, governor);
+        if (!(result instanceof BlockNode block)) {
+            throw bindingError(templateCode, node, "自定义标签返回了错误块节点类型");
+        }
+        return block;
+    }
+
+    /** 绑定一个声明为行内位置的可信自定义标签。 */
+    private InlineNode bindCustomInline(
+            CompiledXmlNode node, BindingScope scope, String templateCode,
+            BindingGovernor governor) {
+        if (node.tagPlan().placement() != TagPlacement.INLINE) {
+            throw bindingError(templateCode, node, "自定义标签返回位置不是行内");
+        }
+        DocumentNode result = bindCustomTag(node, scope, templateCode, governor);
+        if (!(result instanceof InlineNode inline)) {
+            throw bindingError(templateCode, node, "自定义标签返回了错误行内节点类型");
+        }
+        return inline;
+    }
+
+    /** 先绑定受控子节点，再对处理器组装的最终树重新执行中央容量治理。 */
+    private DocumentNode bindCustomTag(
+            CompiledXmlNode node, BindingScope scope, String templateCode,
+            BindingGovernor governor) {
+        governor.markCustomTagUsed();
+        BindingGovernor.GeneratedUsage checkpoint = governor.checkpointGeneratedUsage();
+        List<BlockNode> blockChildren = List.of();
+        List<InlineNode> inlineChildren = List.of();
+        TagContentModel contentModel = node.tagPlan().contentModel();
+        if (contentModel == TagContentModel.BLOCKS) {
+            blockChildren = bindBlocks(node.children(), scope, templateCode, governor);
+        } else if (contentModel == TagContentModel.INLINE) {
+            inlineChildren = bindInline(node.children(), scope, templateCode, governor);
+        } else if (!node.children().isEmpty()) {
+            throw bindingError(templateCode, node, "自定义空标签不能包含子节点");
+        }
+        DocumentNode result;
+        try {
+            result = node.tagPlan().plan().bind(new TagBindingContext(
+                    scope.dataView(), blockChildren, inlineChildren));
+        } catch (RuntimeException exception) {
+            throw bindingError(templateCode, node, "自定义标签绑定失败");
+        }
+        if (result == null) {
+            throw bindingError(templateCode, node, "自定义标签不能返回 null");
+        }
+        governor.restoreGeneratedUsage(checkpoint);
+        ExtensionNodeGovernor.govern(result, governor, node.tagPlan().idsAllowed());
+        return result;
     }
 
     /** 绑定只允许文本和字段的内部链接标签。 */

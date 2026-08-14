@@ -7,6 +7,16 @@ import com.github.leyland.letool.print.xml.format.FormatCompileContext;
 import com.github.leyland.letool.print.xml.format.PrintFormatPlan;
 import com.github.leyland.letool.print.xml.format.PrintFormatterRegistry;
 import com.github.leyland.letool.print.xml.format.PrintValueFormatter;
+import com.github.leyland.letool.print.xml.expression.ExpressionCompileContext;
+import com.github.leyland.letool.print.xml.expression.PrintConditionExpression;
+import com.github.leyland.letool.print.xml.expression.PrintExpressionPlan;
+import com.github.leyland.letool.print.xml.expression.PrintExpressionRegistry;
+import com.github.leyland.letool.print.xml.tag.PrintTagRegistry;
+import com.github.leyland.letool.print.xml.tag.PrintTagHandler;
+import com.github.leyland.letool.print.xml.tag.PrintTagPlan;
+import com.github.leyland.letool.print.xml.tag.TagCompileContext;
+import com.github.leyland.letool.print.xml.tag.TagContentModel;
+import com.github.leyland.letool.print.xml.tag.TagPlacement;
 
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLResolver;
@@ -69,7 +79,8 @@ public final class XmlTemplateCompiler {
             Map.entry("text", Set.of()),
             Map.entry("field", Set.of("path", "formatter")),
             Map.entry("format-option", Set.of("name", "value")),
-            Map.entry("if", Set.of("path", "operator", "value", "value-type")),
+            Map.entry("if", Set.of("path", "operator", "value", "value-type",
+                    "expression-language", "test")),
             Map.entry("for-each", Set.of("items", "var")),
             Map.entry("page-break", Set.of()));
 
@@ -114,9 +125,16 @@ public final class XmlTemplateCompiler {
     /** 编译阶段使用的不可变格式化器注册表。 */
     private final PrintFormatterRegistry formatterRegistry;
 
+    /** 编译阶段使用的不可变表达式注册表。 */
+    private final PrintExpressionRegistry expressionRegistry;
+
+    /** 编译阶段使用的不可变自定义标签注册表。 */
+    private final PrintTagRegistry tagRegistry;
+
     /** 使用内置格式化器创建编译器。 */
     public XmlTemplateCompiler() {
-        this(BuiltInPrintFormatters.registry());
+        this(BuiltInPrintFormatters.registry(),
+                new PrintExpressionRegistry(List.of()), new PrintTagRegistry(List.of()));
     }
 
     /**
@@ -125,8 +143,26 @@ public final class XmlTemplateCompiler {
      * @param formatterRegistry 编译阶段使用的不可变注册表
      */
     public XmlTemplateCompiler(PrintFormatterRegistry formatterRegistry) {
+        this(formatterRegistry,
+                new PrintExpressionRegistry(List.of()), new PrintTagRegistry(List.of()));
+    }
+
+    /**
+     * 使用显式格式化器、表达式和自定义标签注册表创建编译器。
+     *
+     * @param formatterRegistry 格式化器注册表
+     * @param expressionRegistry 条件表达式注册表
+     * @param tagRegistry 自定义标签注册表
+     */
+    public XmlTemplateCompiler(
+            PrintFormatterRegistry formatterRegistry,
+            PrintExpressionRegistry expressionRegistry,
+            PrintTagRegistry tagRegistry) {
         this.formatterRegistry = Objects.requireNonNull(
                 formatterRegistry, "formatterRegistry 不能为空");
+        this.expressionRegistry = Objects.requireNonNull(
+                expressionRegistry, "expressionRegistry 不能为空");
+        this.tagRegistry = Objects.requireNonNull(tagRegistry, "tagRegistry 不能为空");
     }
 
     /**
@@ -231,11 +267,16 @@ public final class XmlTemplateCompiler {
                         if (!stack.isEmpty()) {
                             stack.peek().flushText(templateCode, reader);
                         }
+                        PrintTagHandler customTag = customTag(name);
                         stack.push(new NodeBuilder(
                                 name,
                                 readAttributes(templateCode, reader),
                                 Math.max(reader.getLocation().getLineNumber(), 1),
-                                Math.max(reader.getLocation().getColumnNumber(), 1)));
+                                Math.max(reader.getLocation().getColumnNumber(), 1),
+                                customTag != null
+                                        && customTag.contentModel() == TagContentModel.INLINE,
+                                customTag != null
+                                        && customTag.contentModel() == TagContentModel.EMPTY));
                     } else if (event == XMLStreamReader.CHARACTERS
                             || event == XMLStreamReader.CDATA
                             || event == XMLStreamReader.SPACE) {
@@ -293,7 +334,8 @@ public final class XmlTemplateCompiler {
             throw located(templateCode, reader, "命名空间不受支持");
         }
         String name = reader.getLocalName();
-        if (!ALLOWED_ATTRIBUTES.containsKey(name)) {
+        PrintTagHandler handler = customTag(name);
+        if (!ALLOWED_ATTRIBUTES.containsKey(name) && handler == null) {
             throw located(templateCode, reader, "未知标签：" + name);
         }
         if (stack.isEmpty()) {
@@ -303,7 +345,7 @@ public final class XmlTemplateCompiler {
             return name;
         }
         String parent = stack.peek().name();
-        if (!ALLOWED_CHILDREN.get(parent).contains(name)) {
+        if (!allowsChild(parent, name)) {
             throw located(templateCode, reader, parent + " 不能包含 " + name);
         }
         return name;
@@ -312,7 +354,9 @@ public final class XmlTemplateCompiler {
     /** 读取并校验无命名空间的白名单属性。 */
     private Map<String, String> readAttributes(String templateCode, XMLStreamReader reader) {
         String element = reader.getLocalName();
-        Set<String> allowed = ALLOWED_ATTRIBUTES.get(element);
+        PrintTagHandler handler = customTag(element);
+        Set<String> allowed = handler == null
+                ? ALLOWED_ATTRIBUTES.get(element) : handler.allowedAttributes();
         Map<String, String> attributes = new LinkedHashMap<>();
         for (int index = 0; index < reader.getAttributeCount(); index++) {
             String namespace = reader.getAttributeNamespace(index);
@@ -328,6 +372,55 @@ public final class XmlTemplateCompiler {
         }
         validateStaticAttributes(templateCode, element, attributes, reader);
         return attributes;
+    }
+
+    /** 查找已经显式注册的自定义标签，内置标签始终返回空。 */
+    private PrintTagHandler customTag(String name) {
+        if (!tagRegistry.tagNames().contains(name)) {
+            return null;
+        }
+        return tagRegistry.require(name);
+    }
+
+    /** 校验内置父子关系或自定义标签声明的放置与内容模型。 */
+    private boolean allowsChild(String parent, String child) {
+        PrintTagHandler parentHandler = customTag(parent);
+        PrintTagHandler childHandler = customTag(child);
+        if (parentHandler != null) {
+            return switch (parentHandler.contentModel()) {
+                case EMPTY -> false;
+                case BLOCKS -> isBlockChild(child, childHandler);
+                case INLINE -> isInlineChild(child, childHandler);
+            };
+        }
+        Set<String> builtInChildren = ALLOWED_CHILDREN.get(parent);
+        if (builtInChildren != null && builtInChildren.contains(child)) {
+            return true;
+        }
+        if (childHandler == null) {
+            return false;
+        }
+        if (childHandler.placement() == TagPlacement.BLOCK) {
+            return Set.of("page", "section", "cell", "if", "for-each").contains(parent);
+        }
+        return Set.of("heading", "paragraph").contains(parent);
+    }
+
+    /** 判断一个子标签能否产生块级节点。 */
+    private boolean isBlockChild(String name, PrintTagHandler handler) {
+        if (handler != null) {
+            return handler.placement() == TagPlacement.BLOCK;
+        }
+        return Set.of("section", "heading", "paragraph", "table", "image",
+                "page-break", "if", "for-each").contains(name);
+    }
+
+    /** 判断一个子标签能否产生行内节点。 */
+    private boolean isInlineChild(String name, PrintTagHandler handler) {
+        if (handler != null) {
+            return handler.placement() == TagPlacement.INLINE;
+        }
+        return Set.of("text", "field", "bookmark", "link").contains(name);
     }
 
     /** 校验不依赖上下文的静态属性，保证发布编译即可发现错误。 */
@@ -487,6 +580,8 @@ public final class XmlTemplateCompiler {
         CompiledCondition condition = null;
         String variableName = null;
         PrintFormatPlan formatPlan = null;
+        PrintExpressionPlan expressionPlan = null;
+        CompiledTagPlan tagPlan = null;
         Set<String> childVariables = variables;
         if ("for-each".equals(node.name())) {
             variableName = node.attributes().get("var");
@@ -502,6 +597,24 @@ public final class XmlTemplateCompiler {
             LinkedHashSet<String> nested = new LinkedHashSet<>(variables);
             nested.add(variableName);
             childVariables = Set.copyOf(nested);
+        }
+        PrintTagHandler customTag = customTag(node.name());
+        if (customTag != null) {
+            if (domain == BindingDomain.TABLE_ROWS) {
+                throw nodeLocated(templateCode, node, "表格动态结构只能产生 row");
+            }
+            try {
+                PrintTagPlan plan = customTag.compile(new TagCompileContext(
+                        node.name(), node.attributes(), tagPath + "，第 " + node.line()
+                                + " 行，第 " + node.column() + " 列"));
+                if (plan == null) {
+                    throw new IllegalStateException("null plan");
+                }
+                tagPlan = new CompiledTagPlan(
+                        customTag.placement(), customTag.contentModel(), plan, variables.isEmpty());
+            } catch (RuntimeException exception) {
+                throw nodeLocated(templateCode, node, "自定义标签编译失败");
+            }
         }
         List<CompiledXmlNode> children = new ArrayList<>(node.children().size());
         BindingDomain childDomain = childBindingDomain(node.name(), domain);
@@ -524,8 +637,14 @@ public final class XmlTemplateCompiler {
             if (children.isEmpty()) {
                 throw nodeLocated(templateCode, node, "if 至少包含一个块节点");
             }
-            condition = CompiledCondition.compile(
-                    node.attributes(), variables, templateCode, tagPath, node.line(), node.column());
+            if (node.attributes().containsKey("expression-language")
+                    || node.attributes().containsKey("test")) {
+                expressionPlan = compileExpressionPlan(templateCode, node, tagPath);
+            } else {
+                condition = CompiledCondition.compile(
+                        node.attributes(), variables, templateCode,
+                        tagPath, node.line(), node.column());
+            }
         }
         if ("for-each".equals(node.name())) {
             if (children.isEmpty()) {
@@ -535,7 +654,43 @@ public final class XmlTemplateCompiler {
         }
         return new CompiledXmlNode(
                 node.name(), node.attributes(), children, node.text(), node.line(), node.column(),
-                tagPath, dataPath, condition, variableName, formatPlan);
+                tagPath, dataPath, condition, variableName, formatPlan, expressionPlan, tagPlan);
+    }
+
+    /** 将显式条件表达式编译为不持有 XML 对象的计划。 */
+    private PrintExpressionPlan compileExpressionPlan(
+            String templateCode, CompiledXmlNode node, String tagPath) {
+        Map<String, String> attributes = node.attributes();
+        String language = attributes.get("expression-language");
+        String test = attributes.get("test");
+        if (language == null || test == null) {
+            throw nodeLocated(templateCode, node,
+                    "expression-language 和 test 必须同时声明");
+        }
+        if (attributes.keySet().stream().anyMatch(
+                name -> Set.of("path", "operator", "value", "value-type").contains(name))) {
+            throw nodeLocated(templateCode, node, "扩展表达式不能与结构化条件属性混用");
+        }
+        if (test.isBlank() || test.length() > XmlDsl.MAX_EXPRESSION_CHARACTERS) {
+            throw nodeLocated(templateCode, node, "条件表达式不能为空白且不能超过长度限制");
+        }
+        PrintConditionExpression expression;
+        try {
+            expression = expressionRegistry.require(language);
+        } catch (RuntimeException exception) {
+            throw nodeLocated(templateCode, node, "条件表达式语言未注册");
+        }
+        try {
+            PrintExpressionPlan plan = expression.compile(new ExpressionCompileContext(
+                    language, test, tagPath + "，第 " + node.line()
+                            + " 行，第 " + node.column() + " 列"));
+            if (plan == null) {
+                throw new IllegalStateException("null plan");
+            }
+            return plan;
+        } catch (RuntimeException exception) {
+            throw nodeLocated(templateCode, node, "表达式提供方编译失败");
+        }
     }
 
     /** 确定子节点应遵循普通块还是表格行结果域。 */
@@ -688,12 +843,22 @@ public final class XmlTemplateCompiler {
         /** 当前标签起始列。 */
         private final int column;
 
+        /** 当前自定义标签是否允许直接行内文本。 */
+        private final boolean customTextContainer;
+
+        /** 当前自定义标签是否声明为空内容模型。 */
+        private final boolean customEmpty;
+
         /** 创建节点构建器。 */
-        private NodeBuilder(String name, Map<String, String> attributes, int line, int column) {
+        private NodeBuilder(
+                String name, Map<String, String> attributes, int line, int column,
+                boolean customTextContainer, boolean customEmpty) {
             this.name = name;
             this.attributes = attributes;
             this.line = line;
             this.column = column;
+            this.customTextContainer = customTextContainer;
+            this.customEmpty = customEmpty;
         }
 
         /** @return 当前标签名 */
@@ -719,7 +884,7 @@ public final class XmlTemplateCompiler {
             }
             String value = pendingText.toString();
             pendingText.setLength(0);
-            if (!TEXT_CONTAINERS.contains(name)) {
+            if (!TEXT_CONTAINERS.contains(name) && !customTextContainer) {
                 if (!value.isBlank()) {
                     throw PrintCompilationException.invalid(
                             templateCode + "：第 " + Math.max(reader.getLocation().getLineNumber(), 1)
@@ -759,6 +924,11 @@ public final class XmlTemplateCompiler {
                         templateCode + "：第 " + Math.max(reader.getLocation().getLineNumber(), 1)
                                 + " 行，第 " + Math.max(reader.getLocation().getColumnNumber(), 1)
                                 + " 列：section 至少包含一个块节点");
+            }
+            if (customEmpty && !children.isEmpty()) {
+                throw PrintCompilationException.invalid(
+                        templateCode + "：第 " + line + " 行，第 " + column
+                                + " 列：自定义空标签不能包含子节点");
             }
             if ("table".equals(name)) {
                 validateTableStructure(templateCode);
