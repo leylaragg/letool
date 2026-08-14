@@ -7,7 +7,7 @@
 一个集合由发布方分配正整数版本，并至少包含一个 `DOCUMENT`：
 
 - `DOCUMENT`：可直接发起打印的完整文档。
-- `FRAGMENT`：供完整文档引用的复用片段。片段引用将在阶段 3B 接入。
+- `FRAGMENT`：供完整文档或其他片段引用的复用内容。
 
 ```java
 long version = 2026081401L;
@@ -49,7 +49,18 @@ TemplateSet published = publisher.publishAndActivate(
 
 `TemplateSetValidator` 在集合进入仓库前执行，适合接入格式编译、引用图和业务无关的契约校验。校验器由可信 Java 代码注册，应支持并发调用，并且不能依赖修改候选集合。
 
-阶段 3B 会通过该 SPI 接入 XML `<include>` 和引用图校验，从而保持模板模块到 XML 模块的单向扩展关系。
+XML 模块通过 `XmlTemplateSetValidator` 接入 `<include>` 和引用图校验，从而保持模板模块到 XML 模块的单向扩展关系：
+
+```java
+XmlTemplateCompiler xmlCompiler = new XmlTemplateCompiler();
+XmlTemplateSetCompiler setCompiler = new XmlTemplateSetCompiler(xmlCompiler);
+
+TemplateSetPublisher publisher = new TemplateSetPublisher(
+        repository,
+        List.of(new XmlTemplateSetValidator(setCompiler)));
+```
+
+校验器会在仓库写入前完成全部 XML 定义解析、引用目标与版本检查、循环检测和容量治理。其他格式模板可以与 XML 文档共存，但不能作为 XML `include` 目标。阶段 3C 再提供按集合版本和摘要复用编译结果的缓存，本阶段校验器不会保留候选集合的编译快照。
 
 ## 内存仓库边界
 

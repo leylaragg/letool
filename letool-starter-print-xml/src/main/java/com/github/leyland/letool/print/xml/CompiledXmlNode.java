@@ -52,51 +52,82 @@ final class CompiledXmlNode {
     /** 自定义标签可选的已编译绑定计划。 */
     private final CompiledTagPlan tagPlan;
 
-    /** 创建不可变编译节点。 */
+    /** include 节点指向的已编译片段。 */
+    private final CompiledXmlFragment includedFragment;
+
+    /** 保存最基础的 XML 节点信息。 */
     CompiledXmlNode(String name, Map<String, String> attributes,
                     List<CompiledXmlNode> children, String text, int line, int column) {
         this(name, attributes, children, text, line, column, "", null);
     }
 
-    /** 创建包含动态编译描述的不可变节点。 */
+    /** 在基础节点上补充标签路径和数据路径。 */
     CompiledXmlNode(String name, Map<String, String> attributes,
                     List<CompiledXmlNode> children, String text, int line, int column,
                     String tagPath, CompiledDataPath dataPath) {
         this(name, attributes, children, text, line, column, tagPath, dataPath, null);
     }
 
-    /** 创建包含全部动态编译描述的不可变节点。 */
+    /** 在动态节点上补充结构化条件。 */
     CompiledXmlNode(String name, Map<String, String> attributes,
                     List<CompiledXmlNode> children, String text, int line, int column,
                     String tagPath, CompiledDataPath dataPath, CompiledCondition condition) {
         this(name, attributes, children, text, line, column,
-                tagPath, dataPath, condition, null, null, null, null);
+                tagPath, dataPath, condition, null, null, null, null, null);
     }
 
-    /** 创建包含循环描述的不可变节点。 */
+    /** 在动态节点上补充循环变量。 */
     CompiledXmlNode(String name, Map<String, String> attributes,
                     List<CompiledXmlNode> children, String text, int line, int column,
                     String tagPath, CompiledDataPath dataPath, CompiledCondition condition,
                     String variableName) {
         this(name, attributes, children, text, line, column,
-                tagPath, dataPath, condition, variableName, null, null, null);
+                tagPath, dataPath, condition, variableName, null, null, null, null);
     }
 
-    /** 创建包含循环描述和格式化计划的不可变节点。 */
+    /** 在动态节点上补充字段格式化计划。 */
     CompiledXmlNode(String name, Map<String, String> attributes,
                     List<CompiledXmlNode> children, String text, int line, int column,
                     String tagPath, CompiledDataPath dataPath, CompiledCondition condition,
                     String variableName, PrintFormatPlan formatPlan) {
         this(name, attributes, children, text, line, column, tagPath, dataPath,
-                condition, variableName, formatPlan, null, null);
+                condition, variableName, formatPlan, null, null, null);
     }
 
-    /** 创建包含所有可选编译计划的不可变节点。 */
+    /** 在动态节点上补齐表达式和自定义标签计划。 */
     CompiledXmlNode(String name, Map<String, String> attributes,
                     List<CompiledXmlNode> children, String text, int line, int column,
                     String tagPath, CompiledDataPath dataPath, CompiledCondition condition,
                     String variableName, PrintFormatPlan formatPlan,
                     PrintExpressionPlan expressionPlan, CompiledTagPlan tagPlan) {
+        this(name, attributes, children, text, line, column, tagPath, dataPath,
+                condition, variableName, formatPlan, expressionPlan, tagPlan, null);
+    }
+
+    /**
+     * 保存节点的完整编译信息，include 节点会额外携带目标片段。
+     *
+     * @param name DSL 标签名
+     * @param attributes 已校验属性
+     * @param children 子节点
+     * @param text 文本内容
+     * @param line 起始行
+     * @param column 起始列
+     * @param tagPath 安全标签路径
+     * @param dataPath 受限数据路径
+     * @param condition 结构化条件
+     * @param variableName 循环变量名
+     * @param formatPlan 格式化计划
+     * @param expressionPlan 表达式计划
+     * @param tagPlan 自定义标签计划
+     * @param includedFragment include 指向的片段
+     */
+    CompiledXmlNode(String name, Map<String, String> attributes,
+                    List<CompiledXmlNode> children, String text, int line, int column,
+                    String tagPath, CompiledDataPath dataPath, CompiledCondition condition,
+                    String variableName, PrintFormatPlan formatPlan,
+                    PrintExpressionPlan expressionPlan, CompiledTagPlan tagPlan,
+                    CompiledXmlFragment includedFragment) {
         this.name = name;
         this.attributes = Map.copyOf(attributes);
         this.children = List.copyOf(children);
@@ -110,6 +141,7 @@ final class CompiledXmlNode {
         this.formatPlan = formatPlan;
         this.expressionPlan = expressionPlan;
         this.tagPlan = tagPlan;
+        this.includedFragment = includedFragment;
     }
 
     /** @return DSL 标签名 */
@@ -175,5 +207,24 @@ final class CompiledXmlNode {
     /** @return 自定义标签可选的绑定计划 */
     CompiledTagPlan tagPlan() {
         return tagPlan;
+    }
+
+    /** @return include 节点指向的已编译片段 */
+    CompiledXmlFragment includedFragment() {
+        return includedFragment;
+    }
+
+    /**
+     * 保留当前节点信息，只替换解析后的子节点和片段引用。
+     *
+     * @param resolvedChildren 已解析 include 的子节点
+     * @param fragment 当前 include 指向的片段
+     * @return 新的不可变编译节点
+     */
+    CompiledXmlNode withChildrenAndFragment(List<CompiledXmlNode> resolvedChildren,
+                                            CompiledXmlFragment fragment) {
+        return new CompiledXmlNode(name, attributes, resolvedChildren, text, line, column,
+                tagPath, dataPath, condition, variableName, formatPlan,
+                expressionPlan, tagPlan, fragment);
     }
 }

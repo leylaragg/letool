@@ -12,7 +12,7 @@
 </dependency>
 ```
 
-该模块只依赖 `letool-starter-print`，不依赖 Spring、数据库、EDC 业务模型、OpenHTMLToPDF、PDFBox、docx4j、JasperReports 或表达式引擎。
+该模块依赖 `letool-starter-print` 和模板集合模块 `letool-starter-print-template`，不依赖 Spring、数据库、EDC 业务模型、OpenHTMLToPDF、PDFBox、docx4j、JasperReports 或表达式引擎。
 
 ## 基础用法
 
@@ -30,6 +30,37 @@ DocumentModel document = new XmlTemplateBinder().bind(compiled, printContext);
 ```
 
 编译快照可以在上下文版本匹配的前提下重复绑定，不保存 DOM、StAX、业务 POJO 或 Spring 对象。
+
+## 模板片段与 include
+
+模板集合可以声明块级 `FRAGMENT`，完整文档和其他片段通过空元素 `include` 引用：
+
+```xml
+<fragment xmlns="https://leyland.github.io/letool/print/v1">
+    <heading><field path="report.title"/></heading>
+    <paragraph>由共享片段生成</paragraph>
+</fragment>
+```
+
+```xml
+<document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
+    <page>
+        <include template="common-header"/>
+    </page>
+</document>
+```
+
+`include` 可放在 `fragment/page/section/cell/if/for-each` 的块级位置，不能放在标题、段落、表格行或 `header/body` 行域。片段只能读取根 `PrintContext` 和自己声明的循环变量，不会隐式捕获引用位置的 `$变量`。
+
+集合必须通过 `XmlTemplateSetCompiler` 编译；独立的 `XmlTemplateCompiler.compile()` 遇到 `include` 会明确失败：
+
+```java
+XmlTemplateSetCompiler compiler = new XmlTemplateSetCompiler(xmlTemplateCompiler);
+CompiledXmlTemplateSet compiledSet = compiler.compile(templateSet);
+CompiledXmlTemplate compiled = compiledSet.require("patient-report");
+```
+
+引用目标必须是同一 `TemplateSet` 中的 `letool-xml` `FRAGMENT`，并保持 DSL、集合和上下文版本一致。编译阶段会检查目标缺失、用途错误、循环引用、引用深度、集合节点总量，以及按引用出现次数计算的展开节点和结构深度。绑定阶段继续沿用同一个 Governor 统计动态操作、最终节点和文本容量。
 
 ## 基础与动态标签
 
@@ -68,6 +99,7 @@ DocumentModel document = new XmlTemplateBinder().bind(compiled, printContext);
 - 行内 `bookmark` 和文档内 `link`；
 - 可选 field 格式化计划和内置 `number/date/datetime` 格式化器；
 - 显式注册的条件表达式和可信自定义标签 SPI；
+- 块级 `fragment/include` 引用图和闭合作用域绑定；
 - 标签、属性、父子关系、ID、标题层级、节点数量、深度和文本长度校验。
 
 ## 数据路径与空值
@@ -224,7 +256,7 @@ XmlTemplateCompiler compiler = new XmlTemplateCompiler(
 - 最终节点 ID 唯一性和内部链接目标校验；
 - 异常信息脱敏。
 
-自定义标签不能覆盖内置标签，不能作为 `link` 标签内容，也不能绕过 `table/header/body/row/cell` 的结构约束。实际资源解析仍属于后续独立扩展，`include` 属于模板集合与版本图阶段。
+自定义标签不能覆盖内置标签，不能作为 `link` 标签内容，也不能绕过 `table/header/body/row/cell` 的结构约束。实际资源解析仍属于后续独立扩展。
 
 ## 安全边界
 
@@ -235,5 +267,6 @@ XmlTemplateCompiler compiler = new XmlTemplateCompiler(
 - XML 不能调用 Java、反射、Spring Bean、SQL、脚本、文件系统或网络。
 - 用户可见编译错误只包含模板代码、标签及安全行列位置，不回显模板正文或外部资源地址。
 - 动态绑定限制路径长度、路径段数、循环嵌套、单循环元素、累计动态操作、生成节点和生成文本总量。
+- 模板集合编译限制原始节点总量、引用链深度、展开节点总量和最终结构深度。
 
 宿主应用仍负责权限、数据查询、脱敏、字典翻译和业务计算；本模块不会为了 EDC 或其他首个使用方加入领域定制逻辑。

@@ -17,9 +17,14 @@ public final class PrintCompilationException extends BusinessException {
     @Serial
     private static final long serialVersionUID = 1L;
 
+    /** 可安全展示且不包含模板正文的编译详情。 */
+    private final String detail;
+
     /** 创建模板编译异常。 */
     private PrintCompilationException(String detail, Throwable cause) {
-        super(PrintErrorCode.TEMPLATE_COMPILATION_FAILED, new Object[]{requireDetail(detail)}, null, cause);
+        super(PrintErrorCode.TEMPLATE_COMPILATION_FAILED,
+                new Object[]{requireDetail(detail)}, null, cause);
+        this.detail = detail;
     }
 
     /**
@@ -44,6 +49,11 @@ public final class PrintCompilationException extends BusinessException {
             throw new IllegalArgumentException("cause 不能为空");
         }
         return new PrintCompilationException(detail, cause);
+    }
+
+    /** @return 可交给发布校验边界的安全编译详情 */
+    public String detail() {
+        return detail;
     }
 
     /** 校验可安全展示的错误详情。 */

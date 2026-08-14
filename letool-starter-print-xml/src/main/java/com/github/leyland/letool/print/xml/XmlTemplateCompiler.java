@@ -2,6 +2,8 @@ package com.github.leyland.letool.print.xml;
 
 import com.github.leyland.letool.print.api.PrintTemplate;
 import com.github.leyland.letool.print.api.TemplateFormat;
+import com.github.leyland.letool.print.template.TemplateDefinition;
+import com.github.leyland.letool.print.template.TemplateType;
 import com.github.leyland.letool.print.xml.format.BuiltInPrintFormatters;
 import com.github.leyland.letool.print.xml.format.FormatCompileContext;
 import com.github.leyland.letool.print.xml.format.PrintFormatPlan;
@@ -64,6 +66,8 @@ public final class XmlTemplateCompiler {
     /** 每个标签允许出现的属性。 */
     private static final Map<String, Set<String>> ALLOWED_ATTRIBUTES = Map.ofEntries(
             Map.entry("document", Set.of("context-version", "title", "author", "language")),
+            Map.entry("fragment", Set.of()),
+            Map.entry("include", Set.of("template")),
             Map.entry("page", Set.of("size", "orientation", "margin")),
             Map.entry("section", Set.of("id")),
             Map.entry("heading", Set.of("id", "level")),
@@ -84,26 +88,42 @@ public final class XmlTemplateCompiler {
             Map.entry("for-each", Set.of("items", "var")),
             Map.entry("page-break", Set.of()));
 
+    /** 普通块级容器可以直接承载的标签。 */
+    private static final Set<String> BLOCK_CHILDREN = Set.of(
+            "section", "heading", "paragraph", "table", "image",
+            "page-break", "if", "for-each", "include");
+
+    /** 动态标签除了普通块节点，还可以在表格行结果域中承载 row。 */
+    private static final Set<String> DYNAMIC_BLOCK_CHILDREN = Set.of(
+            "section", "heading", "paragraph", "table", "image",
+            "page-break", "row", "if", "for-each", "include");
+
+    /** include 和块级扩展允许出现的位置。 */
+    private static final Set<String> BLOCK_CONTAINERS =
+            Set.of("fragment", "page", "section", "cell", "if", "for-each");
+
     /** 每个父标签允许包含的直接子标签。 */
     private static final Map<String, Set<String>> ALLOWED_CHILDREN = Map.ofEntries(
             Map.entry("document", Set.of("page")),
-            Map.entry("page", Set.of("section", "heading", "paragraph", "table", "image", "page-break", "if", "for-each")),
-            Map.entry("section", Set.of("section", "heading", "paragraph", "table", "image", "page-break", "if", "for-each")),
+            Map.entry("fragment", BLOCK_CHILDREN),
+            Map.entry("page", BLOCK_CHILDREN),
+            Map.entry("section", BLOCK_CHILDREN),
             Map.entry("heading", Set.of("text", "field", "bookmark", "link")),
             Map.entry("paragraph", Set.of("text", "field", "bookmark", "link")),
             Map.entry("table", Set.of("header", "body")),
             Map.entry("header", Set.of("row", "if", "for-each")),
             Map.entry("body", Set.of("row", "if", "for-each")),
             Map.entry("row", Set.of("cell")),
-            Map.entry("cell", Set.of("section", "heading", "paragraph", "table", "image", "page-break", "if", "for-each")),
+            Map.entry("cell", BLOCK_CHILDREN),
             Map.entry("image", Set.of()),
             Map.entry("bookmark", Set.of()),
             Map.entry("link", Set.of("text", "field")),
             Map.entry("text", Set.of()),
             Map.entry("field", Set.of("format-option")),
             Map.entry("format-option", Set.of()),
-            Map.entry("if", Set.of("section", "heading", "paragraph", "table", "image", "page-break", "row", "if", "for-each")),
-            Map.entry("for-each", Set.of("section", "heading", "paragraph", "table", "image", "page-break", "row", "if", "for-each")),
+            Map.entry("if", DYNAMIC_BLOCK_CHILDREN),
+            Map.entry("for-each", DYNAMIC_BLOCK_CHILDREN),
+            Map.entry("include", Set.of()),
             Map.entry("page-break", Set.of()));
 
     /** 允许直接保存文本内容的标签。 */
@@ -121,6 +141,9 @@ public final class XmlTemplateCompiler {
 
     /** 格式选项名称的稳定安全格式。 */
     private static final Pattern FORMAT_OPTION_NAME = Pattern.compile("[A-Za-z][A-Za-z0-9_-]{0,63}");
+
+    /** include 引用使用与模板代码兼容的稳定格式。 */
+    private static final Pattern TEMPLATE_REFERENCE = Pattern.compile("[A-Za-z][A-Za-z0-9_.:-]{0,127}");
 
     /** 编译阶段使用的不可变格式化器注册表。 */
     private final PrintFormatterRegistry formatterRegistry;
@@ -174,6 +197,22 @@ public final class XmlTemplateCompiler {
      */
     public CompiledXmlTemplate compile(PrintTemplate template) {
         Objects.requireNonNull(template, "template 不能为空");
+        ParsedXmlTemplate parsed = parse(new TemplateDefinition(TemplateType.DOCUMENT, template));
+        CompiledXmlNode root = compileDynamicTree(
+                template.templateCode(), parsed.root(), "", Set.of(), BindingDomain.BLOCKS);
+        return new CompiledXmlTemplate(template.templateCode(), template.dslVersion(),
+                template.templateSetVersion(), template.contextVersion(), root);
+    }
+
+    /**
+     * 解析集合中的 XML 定义，按模板用途校验根结构并保留尚未解析的 include。
+     *
+     * @param definition 模板定义
+     * @return 完成安全和结构校验的解析快照
+     */
+    ParsedXmlTemplate parse(TemplateDefinition definition) {
+        Objects.requireNonNull(definition, "definition 不能为空");
+        PrintTemplate template = definition.template();
         if (!TemplateFormat.LETOOL_XML.equals(template.templateFormat())) {
             throw PrintCompilationException.invalid(template.templateCode() + "：模板格式不是 letool-xml");
         }
@@ -182,13 +221,39 @@ public final class XmlTemplateCompiler {
         }
         String source = decodeUtf8(template);
         rejectUnsafeSource(template.templateCode(), source);
-        CompiledXmlNode root = parse(template, source);
-        return new CompiledXmlTemplate(
-                template.templateCode(),
-                template.dslVersion(),
-                template.templateSetVersion(),
-                template.contextVersion(),
-                root);
+        return parse(definition, source);
+    }
+
+    /**
+     * 将已经解析引用的文档编译为可绑定快照。
+     *
+     * @param parsed 文档解析结果
+     * @param resolvedRoot 已解析 include 的文档根节点
+     * @return 可并发绑定的文档快照
+     */
+    CompiledXmlTemplate compileDocument(ParsedXmlTemplate parsed, CompiledXmlNode resolvedRoot) {
+        PrintTemplate template = parsed.template();
+        CompiledXmlNode root = compileDynamicTree(
+                template.templateCode(), resolvedRoot, "", Set.of(), BindingDomain.BLOCKS);
+        return new CompiledXmlTemplate(template.templateCode(), template.dslVersion(),
+                template.templateSetVersion(), template.contextVersion(), root);
+    }
+
+    /**
+     * 将已经解析引用的片段编译为闭合作用域的块节点。
+     *
+     * @param parsed 片段解析结果
+     * @param resolvedRoot 已解析 include 的片段根节点
+     * @return 可以被多个文档复用的编译片段
+     */
+    CompiledXmlFragment compileFragment(ParsedXmlTemplate parsed, CompiledXmlNode resolvedRoot) {
+        String templateCode = parsed.template().templateCode();
+        List<CompiledXmlNode> blocks = new ArrayList<>(resolvedRoot.children().size());
+        for (CompiledXmlNode child : resolvedRoot.children()) {
+            blocks.add(compileDynamicTree(
+                    templateCode, child, "/fragment", Set.of(), BindingDomain.BLOCKS));
+        }
+        return new CompiledXmlFragment(templateCode, blocks);
     }
 
     /** 使用严格 UTF-8 解码，不允许替换非法字节。 */
@@ -240,7 +305,8 @@ public final class XmlTemplateCompiler {
     }
 
     /** 使用关闭 DTD 和外部实体的 StAX 解析器读取模板。 */
-    private CompiledXmlNode parse(PrintTemplate template, String source) {
+    private ParsedXmlTemplate parse(TemplateDefinition definition, String source) {
+        PrintTemplate template = definition.template();
         String templateCode = template.templateCode();
         XMLInputFactory factory = XMLInputFactory.newFactory();
         setRequiredProperty(factory, XMLInputFactory.SUPPORT_DTD, false, templateCode);
@@ -263,7 +329,7 @@ public final class XmlTemplateCompiler {
                         if (stack.size() + 1 > XmlDsl.MAX_NODE_DEPTH) {
                             throw located(templateCode, reader, "节点深度超过 " + XmlDsl.MAX_NODE_DEPTH);
                         }
-                        String name = validateStartElement(template, reader, stack);
+                        String name = validateStartElement(definition, reader, stack);
                         if (!stack.isEmpty()) {
                             stack.peek().flushText(templateCode, reader);
                         }
@@ -307,9 +373,13 @@ public final class XmlTemplateCompiler {
                 if (root == null || !stack.isEmpty()) {
                     throw PrintCompilationException.invalid(templateCode + "：模板没有完整根元素");
                 }
-                validateDocument(template, root);
-                return compileDynamicTree(
-                        templateCode, root, "", Set.of(), BindingDomain.BLOCKS);
+                if (definition.type() == TemplateType.DOCUMENT) {
+                    validateDocument(template, root);
+                } else {
+                    validateFragment(template, root);
+                }
+                return new ParsedXmlTemplate(
+                        definition.type(), template, root, nodeCount);
             } finally {
                 reader.close();
             }
@@ -326,9 +396,10 @@ public final class XmlTemplateCompiler {
 
     /** 校验标签命名空间、名称及父子关系。 */
     private String validateStartElement(
-            PrintTemplate template,
+            TemplateDefinition definition,
             XMLStreamReader reader,
             Deque<NodeBuilder> stack) {
+        PrintTemplate template = definition.template();
         String templateCode = template.templateCode();
         if (!XmlDsl.NAMESPACE_V1.equals(reader.getNamespaceURI())) {
             throw located(templateCode, reader, "命名空间不受支持");
@@ -339,8 +410,10 @@ public final class XmlTemplateCompiler {
             throw located(templateCode, reader, "未知标签：" + name);
         }
         if (stack.isEmpty()) {
-            if (!"document".equals(name)) {
-                throw located(templateCode, reader, "根标签必须为 document");
+            String expected = definition.type() == TemplateType.DOCUMENT
+                    ? "document" : "fragment";
+            if (!expected.equals(name)) {
+                throw located(templateCode, reader, "根标签必须为 " + expected);
             }
             return name;
         }
@@ -384,6 +457,9 @@ public final class XmlTemplateCompiler {
 
     /** 校验内置父子关系或自定义标签声明的放置与内容模型。 */
     private boolean allowsChild(String parent, String child) {
+        if ("include".equals(child)) {
+            return BLOCK_CONTAINERS.contains(parent);
+        }
         PrintTagHandler parentHandler = customTag(parent);
         PrintTagHandler childHandler = customTag(child);
         if (parentHandler != null) {
@@ -401,7 +477,7 @@ public final class XmlTemplateCompiler {
             return false;
         }
         if (childHandler.placement() == TagPlacement.BLOCK) {
-            return Set.of("page", "section", "cell", "if", "for-each").contains(parent);
+            return BLOCK_CONTAINERS.contains(parent);
         }
         return Set.of("heading", "paragraph").contains(parent);
     }
@@ -411,8 +487,7 @@ public final class XmlTemplateCompiler {
         if (handler != null) {
             return handler.placement() == TagPlacement.BLOCK;
         }
-        return Set.of("section", "heading", "paragraph", "table", "image",
-                "page-break", "if", "for-each").contains(name);
+        return BLOCK_CHILDREN.contains(name);
     }
 
     /** 判断一个子标签能否产生行内节点。 */
@@ -440,6 +515,12 @@ public final class XmlTemplateCompiler {
             String version = attributes.get("context-version");
             if (version == null || !version.matches("[1-9][0-9]*")) {
                 throw located(templateCode, reader, "context-version 必须为正整数");
+            }
+        }
+        if ("include".equals(element)) {
+            String target = attributes.get("template");
+            if (target == null || !TEMPLATE_REFERENCE.matcher(target).matches()) {
+                throw located(templateCode, reader, "include.template 不合法");
             }
         }
         if ("page".equals(element)) {
@@ -575,6 +656,16 @@ public final class XmlTemplateCompiler {
         if (domain == BindingDomain.BLOCKS && "row".equals(node.name())) {
             throw nodeLocated(templateCode, node, "row 只能出现在表格 header 或 body 中");
         }
+        if ("include".equals(node.name())) {
+            if (node.includedFragment() == null) {
+                throw nodeLocated(templateCode, node, "include 必须通过模板集合编译器解析");
+            }
+            // include 只保留已编译片段，绑定阶段不会再访问模板仓库。
+            return new CompiledXmlNode(
+                    node.name(), node.attributes(), List.of(), "", node.line(), node.column(),
+                    parentPath + "/include", null, null, null, null, null, null,
+                    node.includedFragment());
+        }
         String tagPath = "#text".equals(node.name()) ? parentPath : parentPath + "/" + node.name();
         CompiledDataPath dataPath = null;
         CompiledCondition condition = null;
@@ -690,6 +781,16 @@ public final class XmlTemplateCompiler {
             return plan;
         } catch (RuntimeException exception) {
             throw nodeLocated(templateCode, node, "表达式提供方编译失败");
+        }
+    }
+
+    /** 校验片段根结构，片段只能提供非空块节点。 */
+    private void validateFragment(PrintTemplate template, CompiledXmlNode root) {
+        if (!"fragment".equals(root.name())) {
+            throw nodeLocated(template.templateCode(), root, "根标签必须为 fragment");
+        }
+        if (root.children().isEmpty()) {
+            throw nodeLocated(template.templateCode(), root, "fragment 至少包含一个块节点");
         }
     }
 
@@ -912,6 +1013,7 @@ public final class XmlTemplateCompiler {
         /** 完成空元素和文本标签结构校验。 */
         private CompiledXmlNode build(String templateCode, XMLStreamReader reader) {
             if (("page-break".equals(name) || "format-option".equals(name)
+                    || "include".equals(name)
                     || "image".equals(name) || "bookmark".equals(name))
                     && !children.isEmpty()) {
                 throw PrintCompilationException.invalid(

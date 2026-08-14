@@ -19,6 +19,15 @@ public final class XmlDsl {
     /** XML 元素允许的最大嵌套深度。 */
     public static final int MAX_NODE_DEPTH = 64;
 
+    /** 单个模板集合允许的最大 XML 节点总数。 */
+    public static final int MAX_TEMPLATE_SET_NODE_COUNT = 200_000;
+
+    /** 单个文档解析引用后允许的最大编译节点数。 */
+    public static final int MAX_EXPANDED_NODE_COUNT = 100_000;
+
+    /** 片段引用链允许的最大深度。 */
+    public static final int MAX_INCLUDE_DEPTH = 32;
+
     /** 单个文本节点允许的最大字符数。 */
     public static final int MAX_TEXT_CHARACTERS = 1_000_000;
 

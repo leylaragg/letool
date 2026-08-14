@@ -35,7 +35,7 @@ import java.util.Locale;
 /**
  * 将安全 XML 编译快照与只读上下文绑定为通用文档模型。
  *
- * <p>阶段 2C-2 支持基础标签、受限动态结构、复杂节点、格式计划和可信扩展计划。</p>
+ * <p>支持基础标签、受限动态结构、片段引用、格式计划和可信扩展计划。</p>
  *
  * @author leyland
  */
@@ -110,7 +110,14 @@ public final class XmlTemplateBinder {
             BindingGovernor governor) {
         List<BlockNode> blocks = new ArrayList<>(nodes.size());
         for (CompiledXmlNode node : nodes) {
-            if ("if".equals(node.name())) {
+            if ("include".equals(node.name())) {
+                CompiledXmlFragment fragment = node.includedFragment();
+                if (fragment == null) {
+                    throw bindingError(templateCode, node, "include 尚未解析");
+                }
+                // 共享片段只读取根数据，不能看到 include 所在循环的临时变量。
+                blocks.addAll(bindBlocks(fragment.blocks(), scope.rootOnly(), fragment.templateCode(), governor));
+            } else if ("if".equals(node.name())) {
                 governor.enterDynamic();
                 try {
                     governor.addDynamicOperations(1);

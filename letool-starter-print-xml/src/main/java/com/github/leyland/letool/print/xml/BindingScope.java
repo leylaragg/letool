@@ -62,6 +62,18 @@ final class BindingScope {
     }
 
     /**
+     * 为共享片段建立只包含根数据的闭合作用域。
+     *
+     * @return 不带调用方循环变量的作用域
+     */
+    BindingScope rootOnly() {
+        if (variables.isEmpty()) {
+            return this;
+        }
+        return new BindingScope(root, Map.of(), null, null, null);
+    }
+
+    /**
      * 解析已经编译的数据路径。
      *
      * @param path 受限路径
