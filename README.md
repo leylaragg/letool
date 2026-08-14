@@ -27,26 +27,32 @@
 | [Starter Auto-Configuration Rules](docs/starter-auto-configuration-rules.md) | starter 自动装配治理规则 |
 | [Starter Dependency Scope Audit](docs/starter-dependency-scope-audit.md) | starter 依赖作用域审计计划 |
 | [Verification Guide](docs/verification-guide.md) | 定向测试、模块测试、全仓验证和交付检查规范 |
+| [Rule Engine Documentation](letool-rule-engine-core/README.md) | 通用规则引擎架构、完整用法、Spring Boot 与 EDC 接入导航 |
 
 ## 模块总览
 
 | 模块 | 说明 | 依赖 |
 |------|------|------|
-| **letool-starter-exception** | 统一异常 —— 错误码、业务/系统异常、MessageSource 国际化解析 | 无 letool 内部依赖 |
+| **letool-exception-core** | 异常基础契约 —— 不依赖 Spring 的错误码、异常基类与消息格式化 | 无 letool 内部依赖 |
+| **letool-starter-exception** | 统一异常 —— 错误码、业务/系统异常、MessageSource 国际化解析 | exception-core |
 | **letool-starter-tool** | 核心工具 —— 可替换 JsonCodec、HTTP、ID 生成、字符串、集合、树工具；Spring/Redis helper 为可选适配器 | exception |
 | [**letool-starter-sensitive**](letool-starter-sensitive/README.md) | 数据脱敏工具 —— 常用策略、字段注解、可扩展注册表与 Jackson 自动脱敏 | exception, Jackson |
 | **letool-starter-log** | 日志封装 —— 请求链路追踪、审计日志、方法日志；异步 MDC 传播可直接搭配 thread | tool, sensitive |
 | **letool-starter-cache** | 二级缓存 —— KV 与 Redis 原生 List/Hash/Set/ZSet，自动降级与恢复 | tool, exception |
 | [**letool-starter-cipher-suite**](letool-starter-cipher-suite/README.md) | 加密工具 —— AES/SM4-GCM、RSA-OAEP/PSS、SM2/SM3、HMAC 与安全密钥生成 | exception, Bouncy Castle |
-| **letool-starter-web** | Web 增强 —— 全局异常处理、响应包装、XSS/SQL 注入防御 | tool, exception |
+| [**letool-starter-web**](letool-starter-web/README.md) | Web 便利能力 —— 统一异常协议、响应包装、API 主版本路由与受限可重复读请求体 | tool, exception, Spring Boot Web |
 | **letool-starter-security** | 安全认证 —— Resource Server、JWT 签发、角色与权限映射 | tool, exception |
 | **letool-starter-thread** | 线程管理 —— 动态线程池、MDC 与自定义上下文传播、虚拟线程 | exception |
 | **letool-starter-swagger** | API 文档 —— Springdoc OpenAPI 引擎、Knife4j 增强 UI 与开箱即用默认配置 | exception, Springdoc, Knife4j, Spring Boot Web |
 | [**letool-starter-file**](letool-starter-file/README.md) | 文件操作便利门面 —— Local/FTP/FTPS 流式存储、进度、单 Range、断点续传与 ZIP 安全处理 | exception |
+| [**letool-starter-print**](letool-starter-print/README.md) | 动态打印核心 —— 同步请求、只读上下文、通用文档模型、模板管线路由与渲染 SPI；当前不含具体 PDF/DOCX 渲染器 | exception（排除 Spring 集成）, Jackson |
+| [**letool-starter-print-xml**](letool-starter-print-xml/README.md) | 受控 XML DSL —— 安全编译静态与受限动态标签，并绑定为打印核心的 `DocumentModel` | print |
 | **letool-starter-excel** | Excel 操作 —— EasyExcel 原生能力薄封装、批量读取与轻量校验 | exception |
 | **letool-starter-mail** | 邮件发送 —— 显式启用的 Jakarta Mail、多账户、附件与同步/异步投递 | exception |
 | **letool-starter-distributed-lock** | 分布式锁 —— Redis 后端、`LockTemplate`、`@Lock`/`@Idempotent`；可替换 `DistributedLock` | tool |
-| [**letool-starter-rule-liteflow**](letool-starter-rule-liteflow/README.md) | LiteFlow 规则链执行 —— 原生能力薄封装、便捷执行与统一异常 | exception |
+| [**letool-rule-engine-core**](letool-rule-engine-core/README.md) | 纯 Java 强类型 DSL 表达式内核 —— 事实快照、先编译后求值、结构化诊断与有界追踪 | exception-core |
+| [**letool-starter-rule-engine**](letool-starter-rule-engine/README.md) | 通用规则表达式引擎 Spring Boot 自动配置 —— 限制绑定、函数 Bean 收集与诊断国际化 | rule-engine-core, exception starter, Spring Boot |
+| [**letool-starter-rule-liteflow**](letool-starter-rule-liteflow/README.md) | LiteFlow 规则链执行 —— 原生能力薄封装、便捷执行与统一异常 | exception, LiteFlow, Spring Boot |
 | **letool-starter-net** | 网络通信 —— Netty TCP、短连接/持久连接/有界连接池、可扩展分帧和载荷编解码 | exception |
 | **letool-starter-pay / pay-alipay / pay-wechat** | 支付统一契约与官方 SDK Provider —— 支持下单、查询、关单、退款及强制回调验签 | exception、支付宝/微信官方 SDK |
 | [**letool-starter-mq / mq-rabbit / mq-kafka / mq-rocketmq**](letool-starter-mq/README.md) | 消息队列便利门面 —— 不可变消息、Provider 路由与统一异常；RabbitMQ、Kafka、RocketMQ 由独立成熟 Binder Starter 按需提供 | exception、Spring Cloud Stream；按需选择一个 Provider 模块 |
@@ -287,7 +293,7 @@ letool:
 
 ## 示例项目
 
-完整示例代码见 [letool-sample](letool-sample/) 模块，包含 5 个演示控制器：
+完整示例代码见 [letool-sample](letool-sample/) 模块，包含 9 个演示控制器：
 
 | Controller | 演示内容 |
 |------------|---------|
@@ -296,6 +302,10 @@ letool:
 | `CipherController` | AES / SM2 加解密、哈希 |
 | `AuthController` | JWT 登录、Resource Server、@RequireRole |
 | `DataStructureController` | TreeBuilder 树构建、DecisionChain 决策链 |
+| `LogController` | `@MethodLog` 方法日志与 `@AuditLog` 审计日志 |
+| `RateLimiterController` | `@RateLimit` 接口限流与按用户热点参数限流 |
+| `ThreadController` | `@AsyncWithContext` 异步执行与 MDC 传播 |
+| `WebController` | 响应包装、`@ExcludeWrapper`、统一业务异常与 `@ApiVersion` 主版本路由 |
 
 启动方式：
 

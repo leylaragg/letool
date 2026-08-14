@@ -10,19 +10,19 @@
         <version>2.0.0-beta.1</version>
     </parent>
 
-    <artifactId>letool-starter-exception</artifactId>
-    <name>letool-starter-exception</name>
-    <description>letool 统一异常、错误码与国际化消息解析</description>
+    <artifactId>letool-starter-rule-engine</artifactId>
+    <name>letool-starter-rule-engine</name>
+    <description>Letool 通用规则引擎 Spring Boot 自动配置</description>
     <packaging>jar</packaging>
 
     <dependencies>
         <dependency>
             <groupId>com.github.leyland</groupId>
-            <artifactId>letool-exception-core</artifactId>
+            <artifactId>letool-rule-engine-core</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.springframework</groupId>
-            <artifactId>spring-context</artifactId>
+            <groupId>com.github.leyland</groupId>
+            <artifactId>letool-starter-exception</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -36,11 +36,6 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>ch.qos.logback</groupId>
-            <artifactId>logback-classic</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
