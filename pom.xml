@@ -61,6 +61,7 @@
         <module>letool-starter-swagger</module>
         <module>letool-starter-file</module>
         <module>letool-starter-print</module>
+        <module>letool-starter-print-pdf</module>
         <module>letool-starter-print-template</module>
         <module>letool-starter-print-xml</module>
         <module>letool-starter-print-expression-spel</module>
@@ -140,6 +141,10 @@
 
         <!-- Excel -->
         <easyexcel.version>4.0.3</easyexcel.version>
+
+        <!-- PDF -->
+        <openhtmltopdf.version>1.1.40</openhtmltopdf.version>
+        <pdfbox.version>3.0.8</pdfbox.version>
 
         <!-- 规则引擎 -->
         <liteflow.version>2.12.4</liteflow.version>
@@ -279,6 +284,11 @@
             <dependency>
                 <groupId>com.github.leyland</groupId>
                 <artifactId>letool-starter-print</artifactId>
+                <version>${letool.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.leyland</groupId>
+                <artifactId>letool-starter-print-pdf</artifactId>
                 <version>${letool.version}</version>
             </dependency>
             <dependency>
@@ -556,6 +566,23 @@
                 <groupId>com.alibaba</groupId>
                 <artifactId>easyexcel</artifactId>
                 <version>${easyexcel.version}</version>
+            </dependency>
+
+            <!-- PDF -->
+            <dependency>
+                <groupId>io.github.openhtmltopdf</groupId>
+                <artifactId>openhtmltopdf-pdfbox</artifactId>
+                <version>${openhtmltopdf.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.pdfbox</groupId>
+                <artifactId>pdfbox</artifactId>
+                <version>${pdfbox.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.pdfbox</groupId>
+                <artifactId>xmpbox</artifactId>
+                <version>${pdfbox.version}</version>
             </dependency>
 
             <!-- 数据库 -->

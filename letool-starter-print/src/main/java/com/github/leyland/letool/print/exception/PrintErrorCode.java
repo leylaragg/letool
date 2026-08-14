@@ -34,7 +34,13 @@ public enum PrintErrorCode implements ErrorCode {
     INVALID_PIPELINE_REGISTRATION("PRINT_008", "打印管线注册不合法：{0}"),
 
     /** 模板源不符合格式、安全或 DSL 结构约束。 */
-    TEMPLATE_COMPILATION_FAILED("PRINT_009", "打印模板编译失败：{0}");
+    TEMPLATE_COMPILATION_FAILED("PRINT_009", "打印模板编译失败：{0}"),
+
+    /** 文档模型无法渲染为目标格式。 */
+    RENDERING_FAILED("PRINT_010", "打印文档渲染失败：{0}"),
+
+    /** 渲染结果超过请求声明的最大页数。 */
+    PAGE_LIMIT_EXCEEDED("PRINT_011", "打印文档超过页数限制：{0}");
 
     /** 稳定错误码。 */
     private final String code;

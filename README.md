@@ -43,6 +43,10 @@
 | **letool-starter-thread** | 线程管理 —— 动态线程池、MDC 与自定义上下文传播、虚拟线程 | exception |
 | **letool-starter-swagger** | API 文档 —— Springdoc OpenAPI 引擎、Knife4j 增强 UI 与开箱即用默认配置 | exception, Springdoc, Knife4j, Spring Boot Web |
 | [**letool-starter-file**](letool-starter-file/README.md) | 文件操作便利门面 —— Local/FTP/FTPS 流式存储、进度、单 Range、断点续传与 ZIP 安全处理 | exception |
+| **letool-starter-print** | 动态打印核心 —— 只读上下文、通用文档模型、渲染与管线契约 | exception, Jackson |
+| [**letool-starter-print-pdf**](letool-starter-print-pdf/README.md) | PDF 输出 —— 受控 XHTML、字体、分页、表格、书签、内部链接与产物治理 | print, OpenHTMLToPDF, PDFBox |
+| [**letool-starter-print-xml**](letool-starter-print-xml/README.md) | 受控 XML 打印 DSL —— 模板集合、编译缓存、动态绑定和 Java 标签扩展 | print, print-template, Caffeine |
+| [**letool-starter-print-expression-spel**](letool-starter-print-expression-spel/README.md) | 可选受限 SpEL 条件表达式，仅在可信 Java 代码显式注册后启用 | print-xml, Spring Expression |
 | **letool-starter-excel** | Excel 操作 —— EasyExcel 原生能力薄封装、批量读取与轻量校验 | exception |
 | **letool-starter-mail** | 邮件发送 —— 显式启用的 Jakarta Mail、多账户、附件与同步/异步投递 | exception |
 | **letool-starter-distributed-lock** | 分布式锁 —— Redis 后端、`LockTemplate`、`@Lock`/`@Idempotent`；可替换 `DistributedLock` | tool |
