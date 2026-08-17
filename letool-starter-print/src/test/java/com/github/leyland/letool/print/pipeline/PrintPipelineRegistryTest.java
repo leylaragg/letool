@@ -19,11 +19,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class PrintPipelineRegistryTest {
 
+    /** 用来证明注册表不会把输出能力和模板格式混为一谈。 */
+    private static final OutputFormat HTML = new OutputFormat("html", "text/html", "html");
+
     /** 验证同一模板格式只能注册一条完整管线。 */
     @Test
     void shouldRejectDuplicateTemplateFormat() {
         PrintPipeline first = pipeline(TemplateFormat.LETOOL_XML, Set.of(OutputFormat.PDF));
-        PrintPipeline duplicate = pipeline(TemplateFormat.LETOOL_XML, Set.of(OutputFormat.DOCX));
+        PrintPipeline duplicate = pipeline(TemplateFormat.LETOOL_XML, Set.of(HTML));
 
         assertThatThrownBy(() -> new PrintPipelineRegistry(List.of(first, duplicate)))
                 .isInstanceOf(PrintPipelineException.class)

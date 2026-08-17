@@ -12,7 +12,7 @@
 </dependency>
 ```
 
-该模块依赖 `letool-starter-print`、模板集合模块 `letool-starter-print-template` 和 Caffeine。Caffeine 只用于模块内部的有界本地编译缓存，不会向公开 API 暴露，也不会启用 Redis、二级缓存或基于时间的过期策略。模块不依赖 Spring、数据库、EDC 业务模型、OpenHTMLToPDF、PDFBox、docx4j、JasperReports 或表达式引擎。
+该模块依赖 `letool-starter-print`、模板集合模块 `letool-starter-print-template` 和 Caffeine。Caffeine 只用于模块内部的有界本地编译缓存，不会向公开 API 暴露，也不会启用 Redis、二级缓存或基于时间的过期策略。模块不依赖 Spring、数据库、EDC 业务模型、具体输出库、JasperReports 或表达式引擎。
 
 ## 基础用法
 

@@ -1,6 +1,6 @@
 # letool-starter-print
 
-`letool-starter-print` 是 Letool 动态报表框架的纯核心模块，提供同步请求、只读上下文、通用文档模型、模板管线路由、输出渲染 SPI 和稳定错误契约。受控 XML 编译位于独立的 `letool-starter-print-xml` 模块；PDF、DOCX 和 JasperReports 渲染仍按后续阶段实现。
+`letool-starter-print` 是 Letool 动态报表框架的纯核心模块，提供同步请求、只读上下文、通用文档模型、模板管线路由、输出渲染 SPI 和稳定错误契约。受控 XML 编译位于独立的 `letool-starter-print-xml` 模块，当前内置输出由 `letool-starter-print-pdf` 提供，其他格式可按实际需求接入扩展点。
 
 ## Maven 坐标
 
@@ -64,15 +64,14 @@ PrintEngine printEngine = new DefaultPrintEngine(
 PrintEngine
 ├─ TemplateFormat.LETOOL_XML
 │  └─ XmlPrintPipeline → DocumentModel → DocumentRenderer
-│     ├─ PDF renderer
-│     └─ DOCX renderer
+│     └─ PDF renderer
 └─ TemplateFormat.JASPER_JRXML
    └─ JasperPrintPipeline → Jasper exporter
 ```
 
 - 能稳定消费 `DocumentModel` 的新格式实现 `DocumentRenderer`。
 - 具有独立报表模型的格式实现顶层 `PrintPipeline`，例如后续 JasperReports 包装或与流式文档语义不同的表格型导出。
-- `OutputFormat` 是开放值对象，核心不把框架永久限制为 PDF 和 DOCX。
+- `OutputFormat` 是开放值对象，核心预置 PDF，但不会把外部扩展永久限制为这一种格式。
 - JasperReports 借鉴其模板编译、数据填充、导出、缓存、虚拟化和 Governor 思想，但不会反向塑形 Letool XML 与 `DocumentModel`。
 
 ## 不可变性和资源边界
@@ -99,4 +98,4 @@ PrintEngine
 
 ## 后续路线
 
-后续按阶段增加安全 XML DSL、模板集合与编译缓存、JasperReports 同规格选型切片、PDF、DOCX、Spring Boot 业务适配、模板治理、JasperReports 并行管线和可选异步交付。各阶段保持同步核心不依赖 Spring、数据库和具体文档库。
+后续按阶段完善 Spring Boot 业务适配、模板治理、JasperReports 并行管线和可选异步交付。新增输出格式应先有明确场景与验收标准，并继续保持同步核心不依赖 Spring、数据库和具体文档库。

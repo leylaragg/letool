@@ -5,8 +5,11 @@ import com.github.leyland.letool.print.context.PrintContext;
 import com.github.leyland.letool.print.exception.PrintValidationException;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.time.ZoneId;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -22,6 +25,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * @author leyland
  */
 class PrintValueObjectTest {
+
+    /** 核心只预置已经稳定交付的 PDF，其他输出格式由扩展自行声明。 */
+    @Test
+    void shouldExposeOnlyPdfAsBuiltInOutputFormat() {
+        // 公开静态常量就是核心承诺的内置格式，构造器仍保留给外部扩展使用。
+        assertThat(Arrays.stream(OutputFormat.class.getFields())
+                .filter(field -> Modifier.isStatic(field.getModifiers()))
+                .filter(field -> field.getType() == OutputFormat.class)
+                .map(Field::getName))
+                .containsExactly("PDF");
+    }
 
     /** 验证可扩展公开 API 使用普通不可变类，避免将 record 作为默认建模方式。 */
     @Test

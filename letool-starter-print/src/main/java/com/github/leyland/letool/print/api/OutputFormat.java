@@ -31,12 +31,6 @@ public final class OutputFormat {
     /** PDF 输出格式。 */
     public static final OutputFormat PDF = new OutputFormat("pdf", "application/pdf", "pdf");
 
-    /** Office Open XML Word 输出格式。 */
-    public static final OutputFormat DOCX = new OutputFormat(
-            "docx",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "docx");
-
     /**
      * 创建并规范化输出格式。
      *

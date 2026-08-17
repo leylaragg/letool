@@ -25,6 +25,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class XmlTemplateCompilationCacheTest {
 
+    /** 模拟独立扩展输出，确保 XML 编译缓存按完整格式隔离。 */
+    private static final OutputFormat HTML = new OutputFormat("html", "text/html", "html");
+
     /** 相同条件应复用同一个解析快照，并留下可观测的命中记录。 */
     @Test
     void shouldReuseResolvedTemplateForSameKey() {
@@ -73,12 +76,12 @@ class XmlTemplateCompilationCacheTest {
                 set, key(set, "invoice", 3, OutputFormat.PDF));
         ResolvedXmlTemplate summaryPdf = cache.resolve(
                 set, key(set, "summary", 3, OutputFormat.PDF));
-        ResolvedXmlTemplate invoiceDocx = cache.resolve(
-                set, key(set, "invoice", 3, OutputFormat.DOCX));
+        ResolvedXmlTemplate invoiceHtml = cache.resolve(
+                set, key(set, "invoice", 3, HTML));
         XmlTemplateCompilationCacheStats stats = cache.stats();
 
         assertThat(summaryPdf).isNotSameAs(invoicePdf);
-        assertThat(invoiceDocx).isNotSameAs(invoicePdf);
+        assertThat(invoiceHtml).isNotSameAs(invoicePdf);
         assertThat(stats.templateSetEntries()).isEqualTo(1);
         assertThat(stats.templateEntries()).isEqualTo(3);
         assertThat(stats.templateSetLoadSuccessCount()).isEqualTo(1);

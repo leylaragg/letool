@@ -63,7 +63,6 @@
         <module>letool-starter-file</module>
         <module>letool-starter-print</module>
         <module>letool-starter-print-pdf</module>
-        <module>letool-starter-print-docx</module>
         <module>letool-starter-print-template</module>
         <module>letool-starter-print-xml</module>
         <module>letool-starter-print-expression-spel</module>
@@ -149,10 +148,6 @@
         <!-- PDF -->
         <openhtmltopdf.version>1.1.40</openhtmltopdf.version>
         <pdfbox.version>3.0.8</pdfbox.version>
-
-        <!-- Word -->
-        <docx4j.version>11.5.14</docx4j.version>
-        <docx4j-jaxb-runtime.version>4.0.8</docx4j-jaxb-runtime.version>
 
         <!-- 规则引擎 -->
         <liteflow.version>2.12.4</liteflow.version>
@@ -302,11 +297,6 @@
             <dependency>
                 <groupId>com.github.leyland</groupId>
                 <artifactId>letool-starter-print-pdf</artifactId>
-                <version>${letool.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.github.leyland</groupId>
-                <artifactId>letool-starter-print-docx</artifactId>
                 <version>${letool.version}</version>
             </dependency>
             <dependency>
@@ -611,13 +601,6 @@
                 <groupId>org.apache.pdfbox</groupId>
                 <artifactId>xmpbox</artifactId>
                 <version>${pdfbox.version}</version>
-            </dependency>
-
-            <!-- Word -->
-            <dependency>
-                <groupId>org.docx4j</groupId>
-                <artifactId>docx4j-JAXB-ReferenceImpl</artifactId>
-                <version>${docx4j.version}</version>
             </dependency>
 
             <!-- 数据库 -->

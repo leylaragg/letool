@@ -26,6 +26,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class XmlTemplateCompilationServiceTest {
 
+    /** 模拟宿主扩展提供的输出格式，验证服务不会收窄格式边界。 */
+    private static final OutputFormat HTML = new OutputFormat("html", "text/html", "html");
+
     /** 显式版本解析只读取一次仓库，并从模板元数据构造编译键。 */
     @Test
     void shouldResolveExplicitVersionWithSingleRepositoryLookup() {
@@ -48,12 +51,12 @@ class XmlTemplateCompilationServiceTest {
         CountingTemplateRepository repository = repositoryWithActiveSet();
         XmlTemplateCompilationService service = service(repository);
 
-        ResolvedXmlTemplate resolved = service.resolveCurrent("main", 4, OutputFormat.DOCX);
+        ResolvedXmlTemplate resolved = service.resolveCurrent("main", 4, HTML);
 
         assertThat(repository.currentCalls).isEqualTo(1);
         assertThat(repository.findCalls).isZero();
         assertThat(resolved.key().templateSetVersion()).isEqualTo(7);
-        assertThat(resolved.key().outputFormat()).isEqualTo(OutputFormat.DOCX);
+        assertThat(resolved.key().outputFormat()).isEqualTo(HTML);
     }
 
     /** 仓库没有目标快照时应返回稳定错误，不尝试临时切换版本。 */

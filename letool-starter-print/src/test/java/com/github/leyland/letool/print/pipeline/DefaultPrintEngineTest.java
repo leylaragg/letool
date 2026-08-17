@@ -30,6 +30,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class DefaultPrintEngineTest {
 
+    /** 模拟由外部渲染器声明的非内置输出。 */
+    private static final OutputFormat HTML = new OutputFormat("html", "text/html", "html");
+
     /** 验证引擎按模板格式选择管线并返回匹配产物。 */
     @Test
     void shouldRouteByTemplateFormat() {
@@ -48,7 +51,7 @@ class DefaultPrintEngineTest {
     @Test
     void shouldRejectUnsupportedOutputBeforeRendering() {
         AtomicBoolean called = new AtomicBoolean();
-        PrintPipeline pipeline = pipeline(Set.of(OutputFormat.DOCX), ignored -> {
+        PrintPipeline pipeline = pipeline(Set.of(HTML), ignored -> {
             called.set(true);
             throw new AssertionError("不应执行");
         });
@@ -65,7 +68,7 @@ class DefaultPrintEngineTest {
     @Test
     void shouldValidatePipelineArtifact() {
         PrintPipeline wrongFormat = pipeline(Set.of(OutputFormat.PDF), ignored ->
-                PrintArtifact.of(OutputFormat.DOCX, new byte[]{1}, Map.of()));
+                PrintArtifact.of(HTML, new byte[]{1}, Map.of()));
         assertThatThrownBy(() -> engine(wrongFormat).render(request(OutputFormat.PDF, 1024 * 1024)))
                 .isInstanceOf(PrintPipelineException.class)
                 .hasMessageContaining("PRINT_006");

@@ -13,6 +13,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class TemplateCompilationKeyTest {
 
+    /** 模拟独立扩展提供的输出格式，验证缓存键不会只认识内置格式。 */
+    private static final OutputFormat HTML = new OutputFormat("html", "text/html", "html");
+
     /** 测试使用的标准集合摘要。 */
     private static final String DIGEST = "0123456789abcdef0123456789abcdef"
             + "0123456789abcdef0123456789abcdef";
@@ -31,7 +34,7 @@ class TemplateCompilationKeyTest {
         assertThat(key).isNotEqualTo(key(7, DIGEST, "invoice", 5, 3, 4, OutputFormat.PDF));
         assertThat(key).isNotEqualTo(key(7, DIGEST, "invoice", 2, 5, 4, OutputFormat.PDF));
         assertThat(key).isNotEqualTo(key(7, DIGEST, "invoice", 2, 3, 5, OutputFormat.PDF));
-        assertThat(key).isNotEqualTo(key(7, DIGEST, "invoice", 2, 3, 4, OutputFormat.DOCX));
+        assertThat(key).isNotEqualTo(key(7, DIGEST, "invoice", 2, 3, 4, HTML));
     }
 
     /** 访问器应完整返回构造编译键时锁定的条件。 */
