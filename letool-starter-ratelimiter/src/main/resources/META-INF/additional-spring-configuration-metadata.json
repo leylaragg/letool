@@ -20,7 +20,7 @@
     },
     {
       "name": "letool.rate-limiter.policies",
-      "type": "java.util.Map<java.lang.String,com.github.leyland.letool.ratelimiter.config.RateLimiterProperties$Policy>",
+      "type": "java.util.Map<java.lang.String,io.github.leylaragg.letool.ratelimiter.config.RateLimiterProperties$Policy>",
       "description": "命名限流策略，键为策略名称，值包含每秒许可阈值。"
     },
     {

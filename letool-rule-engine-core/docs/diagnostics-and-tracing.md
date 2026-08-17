@@ -31,12 +31,12 @@
 core 内置 `ChineseDiagnosticMessageResolver`，使用诊断码自带的中文兜底文案。Starter 会在存在通用 `MessageResolver` 时适配国际化资源。统一格式包含机器码前缀，动态参数按安全边界追加，不交给通用对象 `toString()`。
 
 ```java
-import com.github.leyland.letool.ruleengine.api.ExpressionEngine;
-import com.github.leyland.letool.ruleengine.compile.CompiledExpression;
-import com.github.leyland.letool.ruleengine.compile.CompilationResult;
-import com.github.leyland.letool.ruleengine.diagnostic.ChineseDiagnosticMessageResolver;
-import com.github.leyland.letool.ruleengine.diagnostic.RuleDiagnostic;
-import com.github.leyland.letool.ruleengine.type.FactContract;
+import io.github.leylaragg.letool.ruleengine.api.ExpressionEngine;
+import io.github.leylaragg.letool.ruleengine.compile.CompiledExpression;
+import io.github.leylaragg.letool.ruleengine.compile.CompilationResult;
+import io.github.leylaragg.letool.ruleengine.diagnostic.ChineseDiagnosticMessageResolver;
+import io.github.leylaragg.letool.ruleengine.diagnostic.RuleDiagnostic;
+import io.github.leylaragg.letool.ruleengine.type.FactContract;
 
 import java.util.Locale;
 
@@ -60,17 +60,17 @@ if (!result.isSuccessful()) {
 默认 `EvaluationOptions.defaults()` 使用 `Locale.ROOT`、UTC、关闭追踪和默认限制。显式开启：
 
 ```java
-import com.github.leyland.letool.ruleengine.api.EngineLimits;
-import com.github.leyland.letool.ruleengine.api.ExpressionEngine;
-import com.github.leyland.letool.ruleengine.compile.CompiledExpression;
-import com.github.leyland.letool.ruleengine.evaluate.EvaluationOptions;
-import com.github.leyland.letool.ruleengine.evaluate.EvaluationTrace;
-import com.github.leyland.letool.ruleengine.evaluate.ExpressionEvaluationResult;
-import com.github.leyland.letool.ruleengine.evaluate.TraceNode;
-import com.github.leyland.letool.ruleengine.fact.RuleFacts;
-import com.github.leyland.letool.ruleengine.type.FactContract;
-import com.github.leyland.letool.ruleengine.type.TypeDescriptor;
-import com.github.leyland.letool.ruleengine.type.TypeKind;
+import io.github.leylaragg.letool.ruleengine.api.EngineLimits;
+import io.github.leylaragg.letool.ruleengine.api.ExpressionEngine;
+import io.github.leylaragg.letool.ruleengine.compile.CompiledExpression;
+import io.github.leylaragg.letool.ruleengine.evaluate.EvaluationOptions;
+import io.github.leylaragg.letool.ruleengine.evaluate.EvaluationTrace;
+import io.github.leylaragg.letool.ruleengine.evaluate.ExpressionEvaluationResult;
+import io.github.leylaragg.letool.ruleengine.evaluate.TraceNode;
+import io.github.leylaragg.letool.ruleengine.fact.RuleFacts;
+import io.github.leylaragg.letool.ruleengine.type.FactContract;
+import io.github.leylaragg.letool.ruleengine.type.TypeDescriptor;
+import io.github.leylaragg.letool.ruleengine.type.TypeKind;
 
 import java.time.ZoneId;
 import java.util.Locale;

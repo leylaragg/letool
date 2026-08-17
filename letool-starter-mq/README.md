@@ -20,7 +20,7 @@
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-mq-rabbit</artifactId>
     <version>${letool.version}</version>
 </dependency>

@@ -6,7 +6,7 @@ letool 示例项目，演示所有模块的集成使用方式。开箱即用，�
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-sample</artifactId>
     <version>${letool.version}</version>
 </dependency>
@@ -52,7 +52,7 @@ curl http://localhost:8080/api/datastructure/chain
 ## 项目结构
 
 ```
-letool-sample/src/main/java/com/github/leyland/letool/sample/
+letool-sample/src/main/java/io/github/leylaragg/letool/sample/
 ├── SampleApplication.java          # 启动类
 ├── config/
 │   └── SampleCacheConfig.java      # 缓存配置示例

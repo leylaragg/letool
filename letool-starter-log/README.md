@@ -14,7 +14,7 @@ Controller 切面、Ant 路径转换或请求体缓存等重复基础设施。
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-log</artifactId>
     <version>${letool.version}</version>
 </dependency>
@@ -26,7 +26,7 @@ Controller 切面、Ant 路径转换或请求体缓存等重复基础设施。
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-log</artifactId>
     <version>2.0.0-beta.1</version>
 </dependency>
@@ -44,7 +44,7 @@ Controller 切面、Ant 路径转换或请求体缓存等重复基础设施。
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-thread</artifactId>
     <version>${letool.version}</version>
 </dependency>
@@ -337,14 +337,14 @@ letool:
 ## 从旧版 MDC 装饰器迁移
 
 本次调整是破坏性变更。日志模块中的
-`com.github.leyland.letool.log.trace.MdcTaskDecorator` 及其自动配置 Bean
+`io.github.leylaragg.letool.log.trace.MdcTaskDecorator` 及其自动配置 Bean
 将在下一个 2.0 预发布版本移除，因为它与线程模块重复，并且会在两个 Starter
 同时启用时造成 `mdcTaskDecorator` Bean 重名。
 
 | 旧用法 | 迁移方式 |
 |---|---|
 | 仅引入日志模块并依赖自动创建的 `mdcTaskDecorator` | 增加 `letool-starter-thread`，默认自动传播 MDC |
-| 手动创建日志模块 `MdcTaskDecorator` | 改用 `com.github.leyland.letool.thread.propagation.MdcTaskDecorator` |
+| 手动创建日志模块 `MdcTaskDecorator` | 改用 `io.github.leylaragg.letool.thread.propagation.MdcTaskDecorator` |
 | 自定义上下文传播 | 继续声明 Spring `TaskDecorator`；线程模块会按 Spring 顺序规则组合用户装饰器 |
 
 该删除项是重复的具体实现，不是要求用户实现的预留接口。Spring `TaskDecorator`

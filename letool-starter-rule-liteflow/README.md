@@ -1,6 +1,6 @@
 # letool-starter-rule-liteflow
 
-`letool-starter-rule-liteflow` 是基于 LiteFlow 2.12.4 的规则链执行薄封装，不维护独立的规则引擎。模块重命名只用于明确 LiteFlow 技术边界，现有 `com.github.leyland.letool.rule.*` Java API 和配置保持不变。
+`letool-starter-rule-liteflow` 是基于 LiteFlow 2.12.4 的规则链执行薄封装，不维护独立的规则引擎。模块重命名只用于明确 LiteFlow 技术边界，现有 `io.github.leylaragg.letool.rule.*` Java API 和配置保持不变。
 
 模块只提供以下能力：
 
@@ -15,7 +15,7 @@
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-rule-liteflow</artifactId>
     <version>${letool.version}</version>
 </dependency>
@@ -79,7 +79,7 @@ public class AgeValidator extends NodeComponent {
 ### 3. 使用 `RuleTemplate` 执行规则链
 
 ```java
-import com.github.leyland.letool.rule.core.RuleTemplate;
+import io.github.leylaragg.letool.rule.core.RuleTemplate;
 import com.yomahub.liteflow.flow.LiteflowResponse;
 
 @Service

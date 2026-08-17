@@ -67,7 +67,7 @@ Modules that directly expose exception-framework types in their public API shoul
 ## Package Structure
 
 ```text
-com.github.leyland.letool.exception
+io.github.leylaragg.letool.exception
 ├─ code
 │  ├─ ErrorCode
 │  ├─ SimpleErrorCode
@@ -149,7 +149,7 @@ This guarantees that `getMessage()`, `getLocalizedMessage()`, Logback/Log4j thro
 The standard throwable rendering therefore includes the concrete class, code, and fallback message:
 
 ```text
-com.github.leyland.letool.lock.exception.LockAcquisitionException:
+io.github.leylaragg.letool.lock.exception.LockAcquisitionException:
 [LOCK_001] 获取分布式锁超时，lockKey=rule:patient:123，waitTime=30000ms
 ```
 
@@ -323,7 +323,7 @@ For operations that produce both a primary business failure and a cleanup failur
 The change intentionally removes:
 
 ```text
-com.github.leyland.letool.tool.exception.LetoolException
+io.github.leylaragg.letool.tool.exception.LetoolException
 ```
 
 No deprecated compatibility class remains.

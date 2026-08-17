@@ -20,7 +20,7 @@
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-cipher-suite</artifactId>
     <version>${letool.version}</version>
 </dependency>

@@ -6,7 +6,7 @@
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-rule-engine</artifactId>
     <version>2.0.0-beta.1</version>
 </dependency>

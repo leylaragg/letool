@@ -19,7 +19,7 @@
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-excel</artifactId>
     <version>${letool.version}</version>
 </dependency>
@@ -39,7 +39,7 @@ import com.alibaba.excel.annotation.ExcelProperty;
 import com.alibaba.excel.annotation.format.DateTimeFormat;
 import com.alibaba.excel.annotation.format.NumberFormat;
 import com.alibaba.excel.annotation.write.style.ColumnWidth;
-import com.github.leyland.letool.excel.annotation.ExcelValidation;
+import io.github.leylaragg.letool.excel.annotation.ExcelValidation;
 
 public class UserDto {
 

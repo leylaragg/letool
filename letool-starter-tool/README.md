@@ -12,7 +12,7 @@ Lambda 属性解析、统一响应体、分页模型及 Spring 容器辅助能�
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-tool</artifactId>
     <version>${letool.version}</version>
 </dependency>
@@ -24,7 +24,7 @@ Lambda 属性解析、统一响应体、分页模型及 Spring 容器辅助能�
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-tool</artifactId>
     <version>2.0.0-beta.1</version>
 </dependency>
@@ -110,13 +110,13 @@ Tool 模块不再维护重复的 `tool.model.TreeNode` 和 `tool.util.TreeUtil`�
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-data-structure</artifactId>
     <version>${letool.version}</version>
 </dependency>
 ```
 
-业务实体可以直接实现 `com.github.leyland.letool.datastructure.tree.TreeNode<T>`：
+业务实体可以直接实现 `io.github.leylaragg.letool.datastructure.tree.TreeNode<T>`：
 
 ```java
 List<Dept> tree = TreeBuilder.build(deptList);

@@ -65,4 +65,4 @@ letool:
 
 logging:
   level:
-    com.github.leyland: DEBUG
+    io.github.leylaragg: DEBUG

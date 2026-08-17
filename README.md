@@ -95,7 +95,7 @@ LoadBalancer、Sentinel 或 Resilience4j。具体用法和限制见
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-tool</artifactId>
     <version>2.0.0-beta.1</version>
 </dependency>

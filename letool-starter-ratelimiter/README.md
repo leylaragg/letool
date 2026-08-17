@@ -15,7 +15,7 @@ Spring Cloud Alibaba Sentinel。
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-ratelimiter</artifactId>
     <version>${letool.version}</version>
 </dependency>

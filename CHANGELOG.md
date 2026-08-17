@@ -88,20 +88,20 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
 
 ### Changed
 
-- **BREAKING — `com.github.leyland:letool-starter-rule` Maven coordinate:**
+- **BREAKING — `io.github.leylaragg:letool-starter-rule` Maven coordinate:**
   LiteFlow 薄封装模块重命名为
-  `com.github.leyland:letool-starter-rule-liteflow`，以区别于新的通用规则决策框架。
-  使用方需要替换依赖坐标；`com.github.leyland.letool.rule.*` Java API、自动配置和
+  `io.github.leylaragg:letool-starter-rule-liteflow`，以区别于新的通用规则决策框架。
+  使用方需要替换依赖坐标；`io.github.leylaragg.letool.rule.*` Java API、自动配置和
   `RULE_001`/`RULE_002` 错误契约保持不变。旧坐标自当前未发布版本起不再由 Reactor 构建。
 
-- **BREAKING — `com.github.leyland:letool-starter-oss` 生产化（自
+- **BREAKING — `io.github.leylaragg:letool-starter-oss` 生产化（自
   `2.0.0-beta.2` 起）：** `OssProvider` 与 `OssTemplate` 改为使用不可变上传结果、
   可关闭下载对象和 `URI` 预签名结果；`delete` 改为无返回值的幂等操作。配置从
   `letool.oss.default-provider` 与厂商独立 Bucket 迁移为
   `letool.oss.provider` 和统一 `letool.oss.bucket`。应用需按存储服务改为引入
   `letool-starter-oss-minio`、`letool-starter-oss-aliyun` 或
   `letool-starter-oss-tencent-cos`。
-- **BREAKING — `fix(swagger)!` / `com.github.leyland:letool-starter-swagger`
+- **BREAKING — `fix(swagger)!` / `io.github.leylaragg:letool-starter-swagger`
   API 文档便利能力纠偏（自 `2.0.0-beta.2` 起）：** Springdoc 2.8.17 继续负责 OpenAPI
   引擎、扫描、分组和原生扩展，新增 Knife4j 4.5.0 纯 UI 并恢复 `/doc.html`。恢复真实生效的
   `letool.swagger.enabled` 统一开关，关闭后标准或自定义的 OpenAPI、Knife4j 和 Swagger UI
@@ -111,13 +111,13 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
   和自动 `defaultGroupApi` 不恢复。27 项测试覆盖配置绑定、条件装配、用户退让、真实
   `/doc.html` 与 OpenAPI 文档、关闭语义、自定义上下文/Servlet 路径、自定义 Springdoc
   与真实分组入口，以及同前缀业务接口放行。
-- **BREAKING — `com.github.leyland:letool-starter-ai` Spring AI 迁移
+- **BREAKING — `io.github.leylaragg:letool-starter-ai` Spring AI 迁移
   （自 `2.0.0-beta.2` 起）：** 模块基于 Spring AI 1.1.8 重建为 Provider 中立薄封装，
   应用必须显式选择 Spring AI Provider Starter，并把 API Key、端点、模型参数、重试等
   迁移到 `spring.ai.<provider>.*`。旧 `AiTemplate.chat()` / `embedding()` 改为
   `chatClient(...)`、`chatModel(...)`、`embeddingModel(...)`，多模型默认项使用
   `letool.ai.default-chat-model` 与 `letool.ai.default-embedding-model` Bean 名称配置。
-- **BREAKING — `com.github.leyland:letool-starter-monitor` 指标与清理 API
+- **BREAKING — `io.github.leylaragg:letool-starter-monitor` 指标与清理 API
   （自 `2.0.0-beta.2` 起）：**
   `MetricsCollector` 改为 Micrometer `MeterRegistry` 的无私有存储门面，耗时使用
   `Duration`；旧占位清理类改为必须由应用实现的 `CleanupTask` SPI。Prometheus
@@ -126,7 +126,7 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
   `getCounterValue` 改为 `counterValue`，`recordTime(String, long)` 改为
   `recordTime(String, Duration, String...)`，`getTimerStats` 改为
   `timerSnapshot`；名称集合与全量 Map 导出改为直接查询 `MeterRegistry`。
-- **BREAKING — `com.github.leyland:letool-starter-security` 认证链：**
+- **BREAKING — `io.github.leylaragg:letool-starter-security` 认证链：**
   Bearer JWT 改由 Spring Security Resource Server 处理；公开路径应通过
   `letool.security.exclude-paths` 或业务 `SecurityFilterChain` 配置，
   AccessToken 与 RefreshToken 不再混用，JWT 密钥必须显式配置且至少
@@ -138,7 +138,7 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
   `exclude-paths` 按 Spring `PathPattern` 语法解析。
 - `JsonUtil` keeps its existing static methods and compact-output defaults, while
   adding explicit per-call `JsonCodec` overloads instead of mutable global state.
-- **BREAKING — `com.github.leyland:letool-starter-tool` JSON failure contract:**
+- **BREAKING — `io.github.leylaragg:letool-starter-tool` JSON failure contract:**
   code that previously caught Fastjson2 `JSONException` from `JsonUtil` must catch
   `JsonCodecException` instead. Direct provider exception leakage is removed in
   the next 2.0 prerelease; method names and successful JSON output remain compatible.
@@ -202,7 +202,7 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
   and heartbeat writes traverse both documented outbound layers.
 - `LocalFileStorage` now normalizes paths and rejects local path traversal outside the configured storage root.
 - `ZipUtil.decompress` now rejects ZIP entries that escape the extraction target directory.
-- **BREAKING — `com.github.leyland:letool-starter-excel` mapping contract:**
+- **BREAKING — `io.github.leylaragg:letool-starter-excel` mapping contract:**
   `@ExcelColumn`, `ExcelConverter`, `DateConverter`, and `EnumConverter` are
   removed in the next 2.0 prerelease. Use EasyExcel `@ExcelProperty`,
   `@DateTimeFormat`, `@NumberFormat`, `@ColumnWidth`, and `Converter<T>`;
@@ -213,7 +213,7 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
 - `MailTemplate` now implements `AutoCloseable` so its async executor can be shut down by Spring
   or standalone callers; delivery failures are exposed without leaking recipient, subject,
   credential, host, or provider error text.
-- **BREAKING — `com.github.leyland:letool-starter-cache` exception contract:**
+- **BREAKING — `io.github.leylaragg:letool-starter-cache` exception contract:**
   arbitrary-text `CacheException` constructors are removed in the next 2.0 prerelease.
   Catch `CacheException` and branch on stable `CACHE_001` through `CACHE_005` codes instead.
 - Native List, Hash, Set, and ZSet caches now create L1 entries only from complete Redis reads
@@ -240,14 +240,14 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
 - `JobResult.success(String, int)` records retry count for executions that eventually succeed.
 - `JobDefinition` now rejects out-of-range shard indexes during build.
 - `JobScheduler` now separates scheduled Cron futures from actively executing jobs, tracks concurrent same-name executions, rolls back failed Cron registrations, delegates Cron semantics to Spring `CronExpression`, and exposes an explicit shutdown lifecycle.
-- **BREAKING — `com.github.leyland:letool-starter-rule` Java API and configuration:**
+- **BREAKING — `io.github.leylaragg:letool-starter-rule` Java API and configuration:**
   the self-maintained rule engine is replaced by a LiteFlow 2.12.4 thin wrapper.
   Replace `RuleEngine#execute(...)` with `RuleTemplate#execute(...)` for the
   common path or inject LiteFlow `FlowExecutor` for advanced execution. Replace
   Letool rule components, contexts, results, parsers, stores, hot reload, scripts,
   monitoring, and management APIs with LiteFlow native extension points. Replace
   all `letool.rule.*` settings with the applicable `liteflow.*` settings.
-- **BREAKING — `com.github.leyland:letool-starter-rule` exception contract:**
+- **BREAKING — `io.github.leylaragg:letool-starter-rule` exception contract:**
   the public arbitrary-text `RuleException` constructors are removed. Replace
   `new RuleException(code, message, ...)` with `invalidChainId()` or
   `executionFailed(chainId, cause)`. `getErrorCode()` now returns the structured
@@ -258,24 +258,24 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
 
 ### Removed
 
-- **BREAKING — `com.github.leyland:letool-starter-oss` Stub Provider：** 删除
+- **BREAKING — `io.github.leylaragg:letool-starter-oss` Stub Provider：** 删除
   `MinioProvider`、`AliyunOssProvider`、`TencentCosProvider` 三个模拟实现及
   `letool.oss.stub-enabled`。启用 OSS 后必须存在官方 SDK Provider 模块或业务自定义
   `OssProvider`，不再返回模拟 URL、模拟下载流或伪成功结果。
-- **BREAKING — `com.github.leyland:letool-starter-ai` 重复实现：** 删除自研
+- **BREAKING — `io.github.leylaragg:letool-starter-ai` 重复实现：** 删除自研
   `AiProvider`、请求响应模型、Provider/HTTP/SSE 协议栈、Embedding Service、
   Function Calling、ChatSession、PromptTemplate、RAG/VectorStore 与旧
   `letool.ai` Provider 配置。对应能力迁移到 Spring AI 1.1.8 原生
   `ChatModel`、`EmbeddingModel`、`ChatClient`、`@Tool`、Advisor 和 VectorStore。
-- **BREAKING — `com.github.leyland:letool-starter-mq` 自研消息 API：** 删除
+- **BREAKING — `io.github.leylaragg:letool-starter-mq` 自研消息 API：** 删除
   `InMemoryMqProvider`、`@MqListener`、订阅 API 和自维护 Broker 配置；发送迁移到
   `MqTemplate` + Provider Binder 模块，消费迁移到 Spring Cloud Function。
-- **BREAKING — `com.github.leyland:letool-starter-monitor`
+- **BREAKING — `io.github.leylaragg:letool-starter-monitor`
   （自 `2.0.0-beta.2` 起）：** 删除自研
   `JvmMetrics`、`JvmMetricsSnapshot`、`HttpMetrics`、`ApiStatsCollector`、
   `ApiStatsAggregator`、`ApiStatsSummary` 与 `ApiErrorCollector`。JVM/HTTP
   指标迁移至 Actuator/Micrometer，业务 API 指标迁移至 `Counter`/`Timer`。
-- **BREAKING — `com.github.leyland:letool-starter-net` legacy Java API:**
+- **BREAKING — `io.github.leylaragg:letool-starter-net` legacy Java API:**
   removed `TcpShortClient`, `TcpLongClient`, mutable `TcpConfig`, the old
   `ProtocolCodec` hierarchy, `GenericConnectionPool`, `NetHttpTemplate`,
   `HttpLoadBalancer`, `HttpCircuitBreaker`, and gateway route classes. Replace
@@ -283,20 +283,20 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
   `FrameCodec`, and `PayloadCodec`. HTTP and gateway behavior will be rebuilt
   separately on mature frameworks; no deprecated shell or fake execution path
   is retained.
-- **BREAKING — `com.github.leyland:letool-starter-log` MDC task decorator:**
-  `com.github.leyland.letool.log.trace.MdcTaskDecorator` and the log starter's
+- **BREAKING — `io.github.leylaragg:letool-starter-log` MDC task decorator:**
+  `io.github.leylaragg.letool.log.trace.MdcTaskDecorator` and the log starter's
   automatic `mdcTaskDecorator` Bean are removed in the next 2.0 prerelease.
   Add `letool-starter-thread` for automatic async MDC propagation, instantiate
-  `com.github.leyland.letool.thread.propagation.MdcTaskDecorator` explicitly,
+  `io.github.leylaragg.letool.thread.propagation.MdcTaskDecorator` explicitly,
   or provide a Spring `TaskDecorator`. The removed class was a duplicate concrete
   implementation, not a user-reserved extension interface.
-- **BREAKING — `com.github.leyland:letool-starter-data` 模块：**
+- **BREAKING — `io.github.leylaragg:letool-starter-data` 模块：**
   删除自研的 `LetoolTemplate`、实体注解、Lambda 查询 DSL、分页模型、反射
   RowMapper 和数据库方言。项目应直接选择 MyBatis-Plus、Spring Data
   JDBC/JPA，或 Spring Framework 原生 `JdbcClient` / `JdbcTemplate`；
   不提供 Deprecated 空壳或替代包装模块。
 - `letool-starter-rule` 不再声明未使用的可选 `letool-starter-data` 依赖。
-- **BREAKING — `com.github.leyland:letool-starter-rule` self-maintained facilities:**
+- **BREAKING — `io.github.leylaragg:letool-starter-rule` self-maintained facilities:**
   removed `RuleEngine`, `ChainManager`, `ChainParser`, `ChainDefinition`, Letool
   `NodeComponent`, `RuleContext`, `RuleResult`, `GroovyScriptEngine`, `FileWatcher`,
   `RuleHotReloadListener`, `RuleStore`, `FileRuleStore`, `RuleMonitor`,
@@ -310,11 +310,11 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
   also excluded in favor of Spring's `spring-jcl`. LiteFlow and the shared
   exception module remain compile dependencies; Spring Boot auto-configuration
   APIs remain provided.
-- **BREAKING — `com.github.leyland:letool-starter-excel` auto configuration:**
+- **BREAKING — `io.github.leylaragg:letool-starter-excel` auto configuration:**
   the no-op `ExcelAutoConfiguration` and undocumented `letool.excel.enabled`
   setting are removed in the next 2.0 prerelease. `ExcelUtil` remains available
   directly and no Spring Bean replacement is required.
-- **BREAKING — `com.github.leyland:letool-starter-mail` template API and async setting:**
+- **BREAKING — `io.github.leylaragg:letool-starter-mail` template API and async setting:**
   `MailRequest.templateName`, `MailRequest.variables`, builder `template(...)`/
   `variable(...)`, and `letool.mail.async` are removed in the next 2.0 prerelease
   because they never performed template rendering or selected the send method.

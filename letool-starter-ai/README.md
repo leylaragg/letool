@@ -21,7 +21,7 @@ Provider、HTTP/SSE、模型重试、Tools、Advisor、RAG 与 `VectorStore` 都
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-ai</artifactId>
     <version>${letool.version}</version>
 </dependency>

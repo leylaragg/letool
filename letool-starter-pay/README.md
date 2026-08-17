@@ -9,14 +9,14 @@
 ```xml
 <!-- 支付宝 -->
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-pay-alipay</artifactId>
     <version>${letool.version}</version>
 </dependency>
 
 <!-- 微信支付（二选一或同时引用） -->
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-pay-wechat</artifactId>
     <version>${letool.version}</version>
 </dependency>

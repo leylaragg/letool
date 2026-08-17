@@ -15,7 +15,7 @@ Springdoc 原生配置或自定义 `OpenAPI` Bean 完全接管。
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-swagger</artifactId>
     <version>${letool.version}</version>
 </dependency>

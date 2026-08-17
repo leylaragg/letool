@@ -4,7 +4,7 @@ RocketMQ 消息队列便利 Starter，传递引入 `letool-starter-mq` 与 Sprin
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-mq-rocketmq</artifactId>
     <version>${letool.version}</version>
 </dependency>

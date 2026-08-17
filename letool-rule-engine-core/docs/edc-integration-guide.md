@@ -40,7 +40,7 @@ flowchart LR
 ```java
 package com.example.edc.rules;
 
-import com.github.leyland.letool.ruleengine.type.FactContract;
+import io.github.leylaragg.letool.ruleengine.type.FactContract;
 
 import java.util.Map;
 import java.util.Optional;
@@ -73,18 +73,18 @@ EDC 引入 Starter 后直接注入 `ExpressionEngine`。无状态业务函数可
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-rule-engine</artifactId>
     <version>2.0.0-beta.1</version>
 </dependency>
 ```
 
 ```java
-import com.github.leyland.letool.ruleengine.api.ExpressionEngine;
-import com.github.leyland.letool.ruleengine.compile.CompiledExpression;
-import com.github.leyland.letool.ruleengine.evaluate.EvaluationOptions;
-import com.github.leyland.letool.ruleengine.fact.RuleFacts;
-import com.github.leyland.letool.ruleengine.type.FactContract;
+import io.github.leylaragg.letool.ruleengine.api.ExpressionEngine;
+import io.github.leylaragg.letool.ruleengine.compile.CompiledExpression;
+import io.github.leylaragg.letool.ruleengine.evaluate.EvaluationOptions;
+import io.github.leylaragg.letool.ruleengine.fact.RuleFacts;
+import io.github.leylaragg.letool.ruleengine.type.FactContract;
 import org.springframework.stereotype.Service;
 
 @Service

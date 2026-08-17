@@ -1,2 +1,2 @@
-com.github.leyland.letool.print.autoconfigure.PrintSpelAutoConfiguration
-com.github.leyland.letool.print.autoconfigure.PrintAutoConfiguration
+io.github.leylaragg.letool.print.autoconfigure.PrintSpelAutoConfiguration
+io.github.leylaragg.letool.print.autoconfigure.PrintAutoConfiguration

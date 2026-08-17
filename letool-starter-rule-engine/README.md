@@ -6,7 +6,7 @@
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-rule-engine</artifactId>
     <version>2.0.0-beta.1</version>
 </dependency>
@@ -17,13 +17,13 @@
 引入依赖后，应用可直接注入自动配置的 `ExpressionEngine`：
 
 ```java
-import com.github.leyland.letool.ruleengine.api.ExpressionEngine;
-import com.github.leyland.letool.ruleengine.compile.CompiledExpression;
-import com.github.leyland.letool.ruleengine.evaluate.EvaluationOptions;
-import com.github.leyland.letool.ruleengine.fact.RuleFacts;
-import com.github.leyland.letool.ruleengine.type.FactContract;
-import com.github.leyland.letool.ruleengine.type.TypeDescriptor;
-import com.github.leyland.letool.ruleengine.type.TypeKind;
+import io.github.leylaragg.letool.ruleengine.api.ExpressionEngine;
+import io.github.leylaragg.letool.ruleengine.compile.CompiledExpression;
+import io.github.leylaragg.letool.ruleengine.evaluate.EvaluationOptions;
+import io.github.leylaragg.letool.ruleengine.fact.RuleFacts;
+import io.github.leylaragg.letool.ruleengine.type.FactContract;
+import io.github.leylaragg.letool.ruleengine.type.TypeDescriptor;
+import io.github.leylaragg.letool.ruleengine.type.TypeKind;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;

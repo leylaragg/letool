@@ -6,7 +6,7 @@
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-print-pdf</artifactId>
     <version>${letool.version}</version>
 </dependency>

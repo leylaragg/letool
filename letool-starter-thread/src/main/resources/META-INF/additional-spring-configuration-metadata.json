@@ -8,7 +8,7 @@
     },
     {
       "name": "letool.thread.pools",
-      "type": "java.util.Map<java.lang.String, com.github.leyland.letool.thread.config.ThreadPoolProperties$PoolConfig>",
+      "type": "java.util.Map<java.lang.String, io.github.leylaragg.letool.thread.config.ThreadPoolProperties$PoolConfig>",
       "description": "内置执行器配置映射，当前消费 task-executor 和 io-executor 两个 key。"
     },
     {

@@ -20,7 +20,7 @@
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-rule-engine-core</artifactId>
     <version>2.0.0-beta.1</version>
 </dependency>
@@ -31,13 +31,13 @@
 下面示例只使用当前公开 API，可直接放入 Java 17 方法中执行：
 
 ```java
-import com.github.leyland.letool.ruleengine.api.ExpressionEngine;
-import com.github.leyland.letool.ruleengine.compile.CompiledExpression;
-import com.github.leyland.letool.ruleengine.evaluate.EvaluationOptions;
-import com.github.leyland.letool.ruleengine.fact.RuleFacts;
-import com.github.leyland.letool.ruleengine.type.FactContract;
-import com.github.leyland.letool.ruleengine.type.TypeDescriptor;
-import com.github.leyland.letool.ruleengine.type.TypeKind;
+import io.github.leylaragg.letool.ruleengine.api.ExpressionEngine;
+import io.github.leylaragg.letool.ruleengine.compile.CompiledExpression;
+import io.github.leylaragg.letool.ruleengine.evaluate.EvaluationOptions;
+import io.github.leylaragg.letool.ruleengine.fact.RuleFacts;
+import io.github.leylaragg.letool.ruleengine.type.FactContract;
+import io.github.leylaragg.letool.ruleengine.type.TypeDescriptor;
+import io.github.leylaragg.letool.ruleengine.type.TypeKind;
 
 import java.math.BigDecimal;
 import java.util.Map;

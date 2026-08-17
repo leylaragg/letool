@@ -12,7 +12,7 @@ Local/FTP/FTPS 内置实现、上传安全限制、传输进度、HTTP 单区间
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-file</artifactId>
     <version>${letool.version}</version>
 </dependency>

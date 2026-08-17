@@ -49,20 +49,20 @@ RuleFunction create();
 ## 完整共享函数示例
 
 ```java
-import com.github.leyland.letool.ruleengine.api.ExpressionEngine;
-import com.github.leyland.letool.ruleengine.fact.FactValue;
-import com.github.leyland.letool.ruleengine.fact.FactValues;
-import com.github.leyland.letool.ruleengine.function.FunctionArguments;
-import com.github.leyland.letool.ruleengine.function.FunctionCharacteristics;
-import com.github.leyland.letool.ruleengine.function.FunctionContext;
-import com.github.leyland.letool.ruleengine.function.FunctionDeterminism;
-import com.github.leyland.letool.ruleengine.function.FunctionEffect;
-import com.github.leyland.letool.ruleengine.function.FunctionParameter;
-import com.github.leyland.letool.ruleengine.function.FunctionSignature;
-import com.github.leyland.letool.ruleengine.function.FunctionThreading;
-import com.github.leyland.letool.ruleengine.function.RuleFunction;
-import com.github.leyland.letool.ruleengine.type.TypeDescriptor;
-import com.github.leyland.letool.ruleengine.type.TypeKind;
+import io.github.leylaragg.letool.ruleengine.api.ExpressionEngine;
+import io.github.leylaragg.letool.ruleengine.fact.FactValue;
+import io.github.leylaragg.letool.ruleengine.fact.FactValues;
+import io.github.leylaragg.letool.ruleengine.function.FunctionArguments;
+import io.github.leylaragg.letool.ruleengine.function.FunctionCharacteristics;
+import io.github.leylaragg.letool.ruleengine.function.FunctionContext;
+import io.github.leylaragg.letool.ruleengine.function.FunctionDeterminism;
+import io.github.leylaragg.letool.ruleengine.function.FunctionEffect;
+import io.github.leylaragg.letool.ruleengine.function.FunctionParameter;
+import io.github.leylaragg.letool.ruleengine.function.FunctionSignature;
+import io.github.leylaragg.letool.ruleengine.function.FunctionThreading;
+import io.github.leylaragg.letool.ruleengine.function.RuleFunction;
+import io.github.leylaragg.letool.ruleengine.type.TypeDescriptor;
+import io.github.leylaragg.letool.ruleengine.type.TypeKind;
 
 import java.math.BigInteger;
 
@@ -113,21 +113,21 @@ public final class DoubleFunction implements RuleFunction {
 下面的恒等函数只是演示精确的工厂契约；实际使用工厂通常是为了隔离函数内部的短生命周期可变状态。
 
 ```java
-import com.github.leyland.letool.ruleengine.api.ExpressionEngine;
-import com.github.leyland.letool.ruleengine.fact.FactValue;
-import com.github.leyland.letool.ruleengine.function.FunctionArguments;
-import com.github.leyland.letool.ruleengine.function.FunctionCharacteristics;
-import com.github.leyland.letool.ruleengine.function.FunctionContext;
-import com.github.leyland.letool.ruleengine.function.FunctionDescriptor;
-import com.github.leyland.letool.ruleengine.function.FunctionDeterminism;
-import com.github.leyland.letool.ruleengine.function.FunctionEffect;
-import com.github.leyland.letool.ruleengine.function.FunctionParameter;
-import com.github.leyland.letool.ruleengine.function.FunctionSignature;
-import com.github.leyland.letool.ruleengine.function.FunctionThreading;
-import com.github.leyland.letool.ruleengine.function.RuleFunction;
-import com.github.leyland.letool.ruleengine.function.RuleFunctionFactory;
-import com.github.leyland.letool.ruleengine.type.TypeDescriptor;
-import com.github.leyland.letool.ruleengine.type.TypeKind;
+import io.github.leylaragg.letool.ruleengine.api.ExpressionEngine;
+import io.github.leylaragg.letool.ruleengine.fact.FactValue;
+import io.github.leylaragg.letool.ruleengine.function.FunctionArguments;
+import io.github.leylaragg.letool.ruleengine.function.FunctionCharacteristics;
+import io.github.leylaragg.letool.ruleengine.function.FunctionContext;
+import io.github.leylaragg.letool.ruleengine.function.FunctionDescriptor;
+import io.github.leylaragg.letool.ruleengine.function.FunctionDeterminism;
+import io.github.leylaragg.letool.ruleengine.function.FunctionEffect;
+import io.github.leylaragg.letool.ruleengine.function.FunctionParameter;
+import io.github.leylaragg.letool.ruleengine.function.FunctionSignature;
+import io.github.leylaragg.letool.ruleengine.function.FunctionThreading;
+import io.github.leylaragg.letool.ruleengine.function.RuleFunction;
+import io.github.leylaragg.letool.ruleengine.function.RuleFunctionFactory;
+import io.github.leylaragg.letool.ruleengine.type.TypeDescriptor;
+import io.github.leylaragg.letool.ruleengine.type.TypeKind;
 
 public final class IdentityFunctionFactory implements RuleFunctionFactory {
     private static final TypeDescriptor STRING =
@@ -175,7 +175,7 @@ public final class IdentityFunctionFactory implements RuleFunctionFactory {
 `letool-starter-rule-engine` 自动收集所有 `RuleFunction` 和 `RuleFunctionFactory` Bean，并按 Spring `@Order` 顺序注册。共享实例和工厂仍必须满足各自线程模型；`@Order` 不用于解决重复编码，重复编码会使引擎构建失败。
 
 ```java
-import com.github.leyland.letool.ruleengine.function.RuleFunction;
+import io.github.leylaragg.letool.ruleengine.function.RuleFunction;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;

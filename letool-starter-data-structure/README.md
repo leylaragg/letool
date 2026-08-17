@@ -7,7 +7,7 @@
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-data-structure</artifactId>
     <version>${letool.version}</version>
 </dependency>

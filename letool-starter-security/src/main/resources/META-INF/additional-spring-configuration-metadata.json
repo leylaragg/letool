@@ -8,7 +8,7 @@
     },
     {
       "name": "letool.security.auth-mode",
-      "type": "com.github.leyland.letool.security.enums.AuthMode",
+      "type": "io.github.leylaragg.letool.security.enums.AuthMode",
       "description": "认证模式；当前只支持由 Spring Security Resource Server 验证的 JWT。",
       "defaultValue": "JWT"
     },

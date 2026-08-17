@@ -8,7 +8,7 @@
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-sms-aliyun</artifactId>
 </dependency>
 ```
@@ -17,7 +17,7 @@
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-sms-tencent</artifactId>
 </dependency>
 ```

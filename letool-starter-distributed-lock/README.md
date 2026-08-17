@@ -8,7 +8,7 @@
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-distributed-lock</artifactId>
     <version>${letool.version}</version>
 </dependency>
@@ -106,8 +106,8 @@ public void deductStock(Long skuId, int quantity) {
 基于 Redis Lua 脚本（SET NX EX）原子标记，首次请求执行，TTL 内重复请求直接返回 null：
 
 ```java
-import com.github.leyland.letool.exception.code.ErrorCode;
-import com.github.leyland.letool.exception.core.BusinessException;
+import io.github.leylaragg.letool.exception.code.ErrorCode;
+import io.github.leylaragg.letool.exception.core.BusinessException;
 
 @Idempotent(key = "pay:#{#orderId}", ttl = 3600)
 public PaymentResult pay(Long orderId) {

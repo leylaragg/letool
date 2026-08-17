@@ -15,7 +15,7 @@
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-security</artifactId>
     <version>${letool.version}</version>
 </dependency>

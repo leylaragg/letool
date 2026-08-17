@@ -32,19 +32,19 @@
     },
     {
       "name": "letool.cache.consistency.mode",
-      "type": "com.github.leyland.letool.cache.consistency.CacheConsistencyMode",
+      "type": "io.github.leylaragg.letool.cache.consistency.CacheConsistencyMode",
       "description": "Database/cache consistency mode. DURABLE requires Redis, a transaction manager and a CacheInvalidationEventStore.",
       "defaultValue": "TRANSACTIONAL"
     },
     {
       "name": "letool.cache.consistency.read-validation",
-      "type": "com.github.leyland.letool.cache.consistency.CacheReadValidation",
+      "type": "io.github.leylaragg.letool.cache.consistency.CacheReadValidation",
       "description": "Validation performed before returning L1 entries.",
       "defaultValue": "VERSIONED"
     },
     {
       "name": "letool.cache.consistency.write-policy",
-      "type": "com.github.leyland.letool.cache.consistency.CacheWritePolicy",
+      "type": "io.github.leylaragg.letool.cache.consistency.CacheWritePolicy",
       "description": "Cache action after a successful database commit.",
       "defaultValue": "INVALIDATE"
     },
@@ -127,17 +127,17 @@
     },
     {
       "name": "letool.cache.instances.consistency-mode",
-      "type": "com.github.leyland.letool.cache.consistency.CacheConsistencyMode",
+      "type": "io.github.leylaragg.letool.cache.consistency.CacheConsistencyMode",
       "description": "Optional per-cache database consistency mode override."
     },
     {
       "name": "letool.cache.instances.read-validation",
-      "type": "com.github.leyland.letool.cache.consistency.CacheReadValidation",
+      "type": "io.github.leylaragg.letool.cache.consistency.CacheReadValidation",
       "description": "Optional per-cache L1 read validation override."
     },
     {
       "name": "letool.cache.instances.write-policy",
-      "type": "com.github.leyland.letool.cache.consistency.CacheWritePolicy",
+      "type": "io.github.leylaragg.letool.cache.consistency.CacheWritePolicy",
       "description": "Optional per-cache post-commit write policy override."
     },
     {

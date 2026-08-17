@@ -8,7 +8,7 @@ Web 层可以在生成响应时再按请求 Locale 解析展示文案。
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-exception</artifactId>
     <version>${letool.version}</version>
 </dependency>
@@ -20,7 +20,7 @@ Web 层可以在生成响应时再按请求 Locale 解析展示文案。
 `MessageFormat` 的 `{0}`、`{1}` 占位符：
 
 ```java
-import com.github.leyland.letool.exception.code.ErrorCode;
+import io.github.leylaragg.letool.exception.code.ErrorCode;
 
 public enum OrderErrorCode implements ErrorCode {
 
@@ -56,8 +56,8 @@ ErrorCode errorCode = ErrorCode.of("PAY_001", "支付渠道不可用");
 ## 抛出异常
 
 ```java
-import com.github.leyland.letool.exception.core.BusinessException;
-import com.github.leyland.letool.exception.core.SystemException;
+import io.github.leylaragg.letool.exception.core.BusinessException;
+import io.github.leylaragg.letool.exception.core.SystemException;
 
 // 可国际化的业务异常；orderId 会用于默认消息和本地化消息的占位符。
 throw BusinessException.of(OrderErrorCode.ORDER_NOT_FOUND, orderId);
@@ -163,7 +163,7 @@ try {
 其他 starter 或业务模块可以声明 `MessageBundleContributor`，把独立资源包加入统一解析链：
 
 ```java
-import com.github.leyland.letool.exception.message.MessageBundleContributor;
+import io.github.leylaragg.letool.exception.message.MessageBundleContributor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -183,7 +183,7 @@ class OrderExceptionConfiguration {
 
 ## 从旧异常类迁移
 
-`com.github.leyland.letool.tool.exception.LetoolException` 已删除，并且不提供兼容层。
+`io.github.leylaragg.letool.tool.exception.LetoolException` 已删除，并且不提供兼容层。
 旧代码需要根据异常语义迁移到新包和工厂方法：
 
 | 旧代码 | 新代码 |
@@ -197,10 +197,10 @@ class OrderExceptionConfiguration {
 对应的新包为：
 
 ```java
-com.github.leyland.letool.exception.code.ErrorCode
-com.github.leyland.letool.exception.core.BaseException
-com.github.leyland.letool.exception.core.BusinessException
-com.github.leyland.letool.exception.core.SystemException
+io.github.leylaragg.letool.exception.code.ErrorCode
+io.github.leylaragg.letool.exception.core.BaseException
+io.github.leylaragg.letool.exception.core.BusinessException
+io.github.leylaragg.letool.exception.core.SystemException
 ```
 
 若错误需要国际化，优先定义 `ErrorCode` 枚举并使用 `of(...)` / `causedBy(...)` 传递占位符参数；

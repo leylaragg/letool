@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>com.github.leyland</groupId>
+        <groupId>io.github.leylaragg</groupId>
         <artifactId>letool</artifactId>
         <version>2.0.0-beta.1</version>
     </parent>
@@ -24,31 +24,31 @@
     <dependencies>
         <!-- 核心模块 -->
         <dependency>
-            <groupId>com.github.leyland</groupId>
+            <groupId>io.github.leylaragg</groupId>
             <artifactId>letool-starter-tool</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.github.leyland</groupId>
+            <groupId>io.github.leylaragg</groupId>
             <artifactId>letool-starter-web</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.github.leyland</groupId>
+            <groupId>io.github.leylaragg</groupId>
             <artifactId>letool-starter-log</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.github.leyland</groupId>
+            <groupId>io.github.leylaragg</groupId>
             <artifactId>letool-starter-sensitive</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.github.leyland</groupId>
+            <groupId>io.github.leylaragg</groupId>
             <artifactId>letool-starter-cache</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.github.leyland</groupId>
+            <groupId>io.github.leylaragg</groupId>
             <artifactId>letool-starter-cipher-suite</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.github.leyland</groupId>
+            <groupId>io.github.leylaragg</groupId>
             <artifactId>letool-starter-security</artifactId>
         </dependency>
         <dependency>
@@ -56,19 +56,19 @@
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.github.leyland</groupId>
+            <groupId>io.github.leylaragg</groupId>
             <artifactId>letool-starter-data-structure</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.github.leyland</groupId>
+            <groupId>io.github.leylaragg</groupId>
             <artifactId>letool-starter-thread</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.github.leyland</groupId>
+            <groupId>io.github.leylaragg</groupId>
             <artifactId>letool-starter-ratelimiter</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.github.leyland</groupId>
+            <groupId>io.github.leylaragg</groupId>
             <artifactId>letool-starter-job</artifactId>
         </dependency>
 

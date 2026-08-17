@@ -6,7 +6,7 @@
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-job</artifactId>
     <version>${letool.version}</version>
 </dependency>
@@ -17,10 +17,10 @@ Starter 会自动引入 `spring-boot-starter-quartz`。线程池、JobStore、�
 ## 注解任务
 
 ```java
-import com.github.leyland.letool.job.annotation.JobHandler;
-import com.github.leyland.letool.job.annotation.LetoolJob;
-import com.github.leyland.letool.job.core.JobContext;
-import com.github.leyland.letool.job.core.MisfirePolicy;
+import io.github.leylaragg.letool.job.annotation.JobHandler;
+import io.github.leylaragg.letool.job.annotation.LetoolJob;
+import io.github.leylaragg.letool.job.core.JobContext;
+import io.github.leylaragg.letool.job.core.MisfirePolicy;
 import org.springframework.stereotype.Component;
 
 @Component

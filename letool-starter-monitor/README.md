@@ -17,7 +17,7 @@ Webhook 告警，以及用户数据清理任务的安全调度。
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-monitor</artifactId>
     <version>${letool.version}</version>
 </dependency>

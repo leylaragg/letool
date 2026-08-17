@@ -4,7 +4,7 @@ Kafka 消息队列便利 Starter，传递引入 `letool-starter-mq` 与 Spring C
 
 ```xml
 <dependency>
-    <groupId>com.github.leyland</groupId>
+    <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-mq-kafka</artifactId>
     <version>${letool.version}</version>
 </dependency>

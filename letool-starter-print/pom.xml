@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>com.github.leyland</groupId>
+        <groupId>io.github.leylaragg</groupId>
         <artifactId>letool</artifactId>
         <version>2.0.0-beta.1</version>
     </parent>
@@ -17,7 +17,7 @@
 
     <dependencies>
         <dependency>
-            <groupId>com.github.leyland</groupId>
+            <groupId>io.github.leylaragg</groupId>
             <artifactId>letool-starter-exception</artifactId>
             <exclusions>
                 <!-- 核心只复用异常值对象，不传递异常模块的 Spring 消息与自动配置集成层。 -->

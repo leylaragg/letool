@@ -8,7 +8,7 @@ letool currently publishes the root POM artifact as the dependency management en
 <dependencyManagement>
     <dependencies>
         <dependency>
-            <groupId>com.github.leyland</groupId>
+            <groupId>io.github.leylaragg</groupId>
             <artifactId>letool</artifactId>
             <version>2.0.0-beta.1</version>
             <type>pom</type>
@@ -23,11 +23,11 @@ After importing the POM, application projects can omit individual letool starter
 ```xml
 <dependencies>
     <dependency>
-        <groupId>com.github.leyland</groupId>
+        <groupId>io.github.leylaragg</groupId>
         <artifactId>letool-starter-web</artifactId>
     </dependency>
     <dependency>
-        <groupId>com.github.leyland</groupId>
+        <groupId>io.github.leylaragg</groupId>
         <artifactId>letool-starter-cache</artifactId>
     </dependency>
 </dependencies>
@@ -46,4 +46,4 @@ letool `2.0.0-beta.1` is aligned with Spring Boot `3.5.x`. In application projec
 
 ## Future Dedicated BOM
 
-A dedicated `letool-bom` artifact is recommended before the stable 2.0.0 release. Until then, use the root `com.github.leyland:letool:pom` import shown above.
+A dedicated `letool-bom` artifact is recommended before the stable 2.0.0 release. Until then, use the root `io.github.leylaragg:letool:pom` import shown above.
