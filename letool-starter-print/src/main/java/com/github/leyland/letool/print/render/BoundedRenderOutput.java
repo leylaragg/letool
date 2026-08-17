@@ -1,4 +1,4 @@
-package com.github.leyland.letool.print.pdf;
+package com.github.leyland.letool.print.render;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -8,13 +8,15 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * 写入前检查总量的分段 PDF 输出缓冲区。
+ * 写入前检查总量的分段渲染输出缓冲区。
+ *
+ * <p>缓冲区按固定分段保存内容，避免扩容时反复复制已经生成的产物。</p>
  *
  * @author leyland
  */
-final class PdfOutputBuffer extends OutputStream {
+public final class BoundedRenderOutput extends OutputStream {
 
-    /** 单个内存分段大小，避免持续复制已经生成的 PDF。 */
+    /** 单个内存分段大小。 */
     private static final int SEGMENT_SIZE = 16 * 1024;
 
     /** Java 数组可以安全分配的最大长度。 */
@@ -33,9 +35,11 @@ final class PdfOutputBuffer extends OutputStream {
     private long size;
 
     /**
+     * 创建受容量约束的渲染输出。
+     *
      * @param maxBytes 本次渲染允许的最大输出字节数
      */
-    PdfOutputBuffer(long maxBytes) {
+    public BoundedRenderOutput(long maxBytes) {
         if (maxBytes < 1) {
             throw new IllegalArgumentException("maxBytes 必须大于零");
         }
@@ -69,7 +73,7 @@ final class PdfOutputBuffer extends OutputStream {
     }
 
     /** @return 当前已经写入的字节数 */
-    long size() {
+    public long size() {
         return size;
     }
 
@@ -81,10 +85,10 @@ final class PdfOutputBuffer extends OutputStream {
     /**
      * 合并所有分段并返回新的字节数组。
      *
-     * @return PDF 内容副本
+     * @return 渲染产物内容副本
      * @throws OutputLimitExceededException 内容无法装入 Java 字节数组时抛出
      */
-    byte[] toByteArray() throws OutputLimitExceededException {
+    public byte[] toByteArray() throws OutputLimitExceededException {
         if (size > MAX_ARRAY_SIZE) {
             throw new OutputLimitExceededException();
         }
@@ -103,14 +107,14 @@ final class PdfOutputBuffer extends OutputStream {
         return content;
     }
 
-    /** 先验证完整写入，再允许后续分配和复制。 */
+    /** 在修改缓冲区前验证本次内容可以完整写入。 */
     private void reserve(int length) throws OutputLimitExceededException {
         if (length > maxBytes - size) {
             throw new OutputLimitExceededException();
         }
     }
 
-    /** 返回有剩余空间的分段，必要时按剩余上限创建新分段。 */
+    /** 返回有剩余空间的分段，必要时按剩余容量创建新分段。 */
     private byte[] writableSegment() {
         if (segments.isEmpty() || segmentOffset == segments.get(segments.size() - 1).length) {
             int capacity = (int) Math.min(SEGMENT_SIZE, maxBytes - size);
@@ -120,15 +124,15 @@ final class PdfOutputBuffer extends OutputStream {
         return segments.get(segments.size() - 1);
     }
 
-    /** PDF 写出超过治理上限时使用的内部信号。 */
-    static final class OutputLimitExceededException extends IOException {
+    /** 渲染输出超过容量限制时使用的稳定内部信号。 */
+    public static final class OutputLimitExceededException extends IOException {
 
         @Serial
         private static final long serialVersionUID = 1L;
 
-        /** 创建不携带业务内容的容量异常。 */
+        /** 创建不携带输出内容的容量异常。 */
         private OutputLimitExceededException() {
-            super("PDF 输出超过容量限制");
+            super("渲染输出超过容量限制");
         }
     }
 }

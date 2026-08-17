@@ -47,6 +47,7 @@
 | [**letool-starter-file**](letool-starter-file/README.md) | 文件操作便利门面 —— Local/FTP/FTPS 流式存储、进度、单 Range、断点续传与 ZIP 安全处理 | exception |
 | **letool-starter-print** | 动态打印核心 —— 只读上下文、通用文档模型、渲染与管线契约 | exception, Jackson |
 | [**letool-starter-print-pdf**](letool-starter-print-pdf/README.md) | PDF 输出 —— 受控 XHTML、全局目录、字体、分页、表格、导航、两类批注与产物治理 | print, OpenHTMLToPDF, PDFBox |
+| [**letool-starter-print-docx**](letool-starter-print-docx/README.md) | DOCX 输出 —— Word 样式、表格、目录、书签、兼容降级与 OOXML 治理 | print, docx4j |
 | [**letool-starter-print-xml**](letool-starter-print-xml/README.md) | 受控 XML 打印 DSL —— 模板集合、编译缓存、动态绑定和 Java 标签扩展 | print, print-template, Caffeine |
 | [**letool-starter-print-expression-spel**](letool-starter-print-expression-spel/README.md) | 可选受限 SpEL 条件表达式，仅在可信 Java 代码显式注册后启用 | print-xml, Spring Expression |
 | **letool-starter-excel** | Excel 操作 —— EasyExcel 原生能力薄封装、批量读取与轻量校验 | exception |

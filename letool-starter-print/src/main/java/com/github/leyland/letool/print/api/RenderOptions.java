@@ -7,7 +7,7 @@ package com.github.leyland.letool.print.api;
  */
 public final class RenderOptions {
 
-    /** 最大允许页数。 */
+    /** 能确定最终分页的输出格式所允许的最大页数。 */
     private final int maxPages;
 
     /** 最大允许产物字节数。 */
@@ -48,7 +48,7 @@ public final class RenderOptions {
         this.includeDocumentMetadata = includeDocumentMetadata;
     }
 
-    /** @return 最大允许页数 */
+    /** @return 能确定最终分页的输出格式所允许的最大页数 */
     public int maxPages() {
         return maxPages;
     }

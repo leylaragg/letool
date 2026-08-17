@@ -2,6 +2,7 @@ package com.github.leyland.letool.print.pdf;
 
 import com.github.leyland.letool.print.api.RenderOptions;
 import com.github.leyland.letool.print.document.DocumentModel;
+import com.github.leyland.letool.print.render.BoundedRenderOutput;
 import com.openhtmltopdf.outputdevice.helper.ExternalResourceControlPriority;
 import com.openhtmltopdf.pdfboxout.PdfBoxRenderer;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
@@ -56,7 +57,7 @@ final class PdfUnitRenderer {
     private PdfRendererBuilder builder(String xhtml, long maxOutputBytes) {
         PdfRendererBuilder builder = new PdfRendererBuilder();
         builder.withHtmlContent(xhtml, null)
-                .toStream(new PdfOutputBuffer(maxOutputBytes))
+                .toStream(new BoundedRenderOutput(maxOutputBytes))
                 .withProducer("letool")
                 .useUriResolver((baseUri, uri) -> null)
                 .useExternalResourceAccessControl((uri, type) -> false,

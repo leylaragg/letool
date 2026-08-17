@@ -17,6 +17,7 @@ import com.github.leyland.letool.print.document.node.TextNode;
 import com.github.leyland.letool.print.exception.PrintRenderingException;
 import com.github.leyland.letool.print.exception.PrintValidationException;
 import com.github.leyland.letool.print.render.DocumentRenderer;
+import com.github.leyland.letool.print.render.BoundedRenderOutput;
 import com.github.leyland.letool.print.render.OutputCapability;
 import com.github.leyland.letool.print.render.RenderedDocument;
 import com.openhtmltopdf.outputdevice.helper.ExternalResourceControlPriority;
@@ -128,7 +129,7 @@ public final class PdfDocumentRenderer implements DocumentRenderer {
 
         List<AnnotationNode> annotations = annotationWriter.collect(document);
         String xhtml = xhtmlRenderer.render(document);
-        PdfOutputBuffer output = new PdfOutputBuffer(options.maxOutputBytes());
+        BoundedRenderOutput output = new BoundedRenderOutput(options.maxOutputBytes());
         try {
             PdfRendererBuilder builder = createBuilder(xhtml, output);
             try (PdfBoxRenderer renderer = builder.buildPdfRenderer()) {
@@ -292,7 +293,7 @@ public final class PdfDocumentRenderer implements DocumentRenderer {
     }
 
     /** 创建只接收内存 XHTML、宿主字体和受限输出流的排版器。 */
-    private PdfRendererBuilder createBuilder(String xhtml, PdfOutputBuffer output) {
+    private PdfRendererBuilder createBuilder(String xhtml, BoundedRenderOutput output) {
         PdfRendererBuilder builder = new PdfRendererBuilder();
         builder.withHtmlContent(xhtml, null)
                 .toStream(output)
@@ -330,8 +331,8 @@ public final class PdfDocumentRenderer implements DocumentRenderer {
     }
 
     /** 将容量治理后的字节和不含业务正文的统计信息交给核心模型。 */
-    private RenderedDocument renderedDocument(PdfOutputBuffer output, int pageCount)
-            throws PdfOutputBuffer.OutputLimitExceededException {
+    private RenderedDocument renderedDocument(BoundedRenderOutput output, int pageCount)
+            throws BoundedRenderOutput.OutputLimitExceededException {
         byte[] content = output.toByteArray();
         Map<String, String> metadata = new LinkedHashMap<>();
         metadata.put("pageCount", Integer.toString(pageCount));
@@ -343,7 +344,7 @@ public final class PdfDocumentRenderer implements DocumentRenderer {
     private boolean causedByOutputLimit(Throwable exception) {
         Throwable current = exception;
         while (current != null) {
-            if (current instanceof PdfOutputBuffer.OutputLimitExceededException) {
+            if (current instanceof BoundedRenderOutput.OutputLimitExceededException) {
                 return true;
             }
             if (current instanceof PdfRenderWorkspace.CapacityExceededException) {
