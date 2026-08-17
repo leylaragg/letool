@@ -24,6 +24,7 @@ import com.github.leyland.letool.print.document.node.SectionNode;
 import com.github.leyland.letool.print.document.node.TableCell;
 import com.github.leyland.letool.print.document.node.TableNode;
 import com.github.leyland.letool.print.document.node.TableRow;
+import com.github.leyland.letool.print.document.node.TableOfContentsNode;
 import com.github.leyland.letool.print.document.node.TextNode;
 import com.github.leyland.letool.print.exception.PrintValidationException;
 import com.github.leyland.letool.print.xml.expression.ExpressionEvaluationContext;
@@ -211,6 +212,12 @@ public final class XmlTemplateBinder {
                     bindInline(node.children(), scope, templateCode, governor));
             case "annotation" -> bindAnnotation(node, scope, templateCode, governor);
             case "page-break" -> PageBreakNode.INSTANCE;
+            case "table-of-contents" -> new TableOfContentsNode(
+                    node.attributes().get("title"),
+                    positiveInteger(node.attributes().getOrDefault("min-level", "1"),
+                            "table-of-contents.min-level"),
+                    positiveInteger(node.attributes().getOrDefault("max-level", "3"),
+                            "table-of-contents.max-level"));
             default -> throw PrintValidationException.invalidDocument(
                     "不支持的基础块标签：" + node.name());
         };

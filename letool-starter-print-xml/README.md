@@ -128,6 +128,7 @@ CompiledXmlTemplate compiled = compiledSet.require("patient-report");
 - `document`：上下文版本以及可选标题、作者、语言；
 - `page`：A4/LETTER、portrait/landscape 和统一毫米边距；
 - `section`、`heading`、`paragraph`、`text` 和 `page-break`；
+- 根级 `table-of-contents`，支持可选标题和 1 至 6 级标题过滤；
 - 行内 `field`，只输出字符串、数字、布尔或显式空值；
 - 块级 `if`，支持存在性、布尔、相等和精确数字大小比较；
 - 块级 `for-each`，支持嵌套词法作用域和 `$变量` 路径；
@@ -139,6 +140,8 @@ CompiledXmlTemplate compiled = compiledSet.require("patient-report");
 - 显式注册的条件表达式和可信自定义标签 SPI；
 - 块级 `fragment/include` 引用图和闭合作用域绑定；
 - 标签、属性、父子关系、ID、标题层级、节点数量、深度和文本长度校验。
+
+目录只能作为 `page` 的直接子节点声明一次，不能放进 `section`、`if`、`for-each`、表格或扩展标签。省略 `min-level` 和 `max-level` 时使用 1 至 3；目录只收录其后出现的匹配标题，具体页码和链接由输出渲染器完成。
 
 ## 数据路径与空值
 

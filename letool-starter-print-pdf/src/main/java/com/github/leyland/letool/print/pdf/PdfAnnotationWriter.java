@@ -116,6 +116,41 @@ final class PdfAnnotationWriter {
         }
     }
 
+    /**
+     * 使用合并后的全局目标位置写入跨单元批注。
+     *
+     * @param pdf 最终 PDF
+     * @param annotations 待写入批注
+     * @param targets 已校验的全局目标位置
+     * @throws IOException 字体或外观写入失败时抛出
+     */
+    void writeMerged(
+            PDDocument pdf,
+            List<AnnotationNode> annotations,
+            java.util.Map<String, PdfNavigationWriter.GlobalPosition> targets) throws IOException {
+        if (annotations.isEmpty()) {
+            return;
+        }
+        List<ResolvedAnnotation> resolved = new ArrayList<>(annotations.size());
+        for (AnnotationNode annotation : annotations) {
+            PdfNavigationWriter.GlobalPosition target = targets.get(annotation.targetId());
+            if (target == null || target.pageIndex() < 0 || target.pageIndex() >= pdf.getNumberOfPages()) {
+                throw PrintValidationException.invalidDocument("PDF 批注目标没有可见页面");
+            }
+            PDPage page = pdf.getPage(target.pageIndex());
+            PDRectangle rectangle = place(annotation, target.rectangle());
+            requireInsidePage(rectangle, page.getCropBox(), annotation.targetId());
+            requireUsableFreeTextRectangle(annotation, rectangle);
+            resolved.add(new ResolvedAnnotation(annotation, page, rectangle));
+        }
+        PDFont freeTextFont = requiresFreeText(annotations) ? loadAppearanceFont(pdf) : null;
+        for (ResolvedAnnotation item : resolved) {
+            PDAnnotation value = item.node().type() == AnnotationType.TEXT_NOTE
+                    ? createTextNote(pdf, item) : createFreeText(pdf, item, freeTextFont);
+            item.page().getAnnotations().add(value);
+        }
+    }
+
     /** 在修改 PDF 前完成所有目标、页面和矩形校验。 */
     private List<ResolvedAnnotation> resolveAll(
             PdfBoxRenderer renderer,

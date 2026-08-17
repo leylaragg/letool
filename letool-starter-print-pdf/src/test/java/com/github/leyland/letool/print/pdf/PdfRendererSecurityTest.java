@@ -8,9 +8,11 @@ import com.github.leyland.letool.print.document.node.AnnotationNode;
 import com.github.leyland.letool.print.document.node.AnnotationPlacement;
 import com.github.leyland.letool.print.document.node.AnnotationType;
 import com.github.leyland.letool.print.document.node.BlockNode;
+import com.github.leyland.letool.print.document.node.HeadingNode;
 import com.github.leyland.letool.print.document.node.ImageNode;
 import com.github.leyland.letool.print.document.node.PageBreakNode;
 import com.github.leyland.letool.print.document.node.ParagraphNode;
+import com.github.leyland.letool.print.document.node.TableOfContentsNode;
 import com.github.leyland.letool.print.document.node.TextNode;
 import com.github.leyland.letool.print.exception.PrintRenderingException;
 import com.github.leyland.letool.print.exception.PrintValidationException;
@@ -20,8 +22,12 @@ import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.Test;
 
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -60,6 +66,28 @@ class PdfRendererSecurityTest {
                 .isInstanceOf(PrintRenderingException.class)
                 .hasMessageContaining("PRINT_007")
                 .hasCauseInstanceOf(Exception.class);
+    }
+
+    /** 分段排版容量越界后仍清理本次请求目录，并沿用输出容量错误码。 */
+    @Test
+    void shouldCleanSegmentedWorkspaceAfterOutputLimit() throws Exception {
+        Path temporaryRoot = Files.createDirectories(Path.of(
+                "target", "security-workspace", UUID.randomUUID().toString())
+                .toAbsolutePath().normalize());
+        DocumentModel document = document(List.of(
+                new TableOfContentsNode(null, 1, 1),
+                new HeadingNode("heading", 1, List.of(new TextNode("Heading"))),
+                paragraph(largeRandomText(1_600_000))));
+        PdfFont font = new PdfFont("Droid Sans Fallback", this::openTestFont, true);
+
+        assertThatThrownBy(() -> new PdfDocumentRenderer(List.of(font), temporaryRoot).render(
+                document, new RenderOptions(20_000, 1024L * 1024, true)))
+                .isInstanceOf(PrintRenderingException.class)
+                .hasMessageContaining("PRINT_007");
+        try (var files = Files.list(temporaryRoot)) {
+            assertThat(files).isEmpty();
+        }
+        Files.delete(temporaryRoot);
     }
 
     /** 字体供应器的路径或实现消息不会进入用户可见异常。 */
@@ -113,7 +141,7 @@ class PdfRendererSecurityTest {
     /** 批注数量在排版前受中央 PDF 容量限制。 */
     @Test
     void shouldRejectTooManyAnnotationsBeforeLayout() {
-        List<BlockNode> blocks = new java.util.ArrayList<>();
+        List<BlockNode> blocks = new ArrayList<>();
         blocks.add(new ParagraphNode("summary", List.of(new TextNode("正文"))));
         for (int index = 0; index <= PdfAnnotationWriter.MAX_ANNOTATIONS; index++) {
             blocks.add(annotation(

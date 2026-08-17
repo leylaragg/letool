@@ -2,8 +2,13 @@ package com.github.leyland.letool.print.document;
 
 import com.github.leyland.letool.print.document.node.BlockNode;
 import com.github.leyland.letool.print.document.node.AnnotationNode;
+import com.github.leyland.letool.print.document.node.BookmarkNode;
 import com.github.leyland.letool.print.document.node.DocumentNode;
+import com.github.leyland.letool.print.document.node.HeadingNode;
+import com.github.leyland.letool.print.document.node.InlineNode;
 import com.github.leyland.letool.print.document.node.InternalLinkNode;
+import com.github.leyland.letool.print.document.node.TableOfContentsNode;
+import com.github.leyland.letool.print.document.node.TextNode;
 import com.github.leyland.letool.print.exception.PrintValidationException;
 
 import java.util.HashSet;
@@ -84,6 +89,63 @@ public final class DocumentModel {
             if (!ids.contains(target)) {
                 throw PrintValidationException.invalidDocument("文档引用目标不存在：" + target);
             }
+        }
+        validateTableOfContents(nodes);
+    }
+
+    /** 校验目录只在根部出现一次，并且声明位置之后确实有可显示标题。 */
+    private void validateTableOfContents(List<DocumentNode> nodes) {
+        List<TableOfContentsNode> contents = nodes.stream()
+                .filter(TableOfContentsNode.class::isInstance)
+                .map(TableOfContentsNode.class::cast)
+                .toList();
+        if (contents.size() > 1) {
+            throw PrintValidationException.invalidDocument("文档最多只能声明一个目录");
+        }
+        if (contents.isEmpty()) {
+            return;
+        }
+        TableOfContentsNode tableOfContents = contents.get(0);
+        if (blocks.stream().filter(TableOfContentsNode.class::isInstance).count() != 1) {
+            throw PrintValidationException.invalidDocument("目录只能位于文档根节点");
+        }
+        boolean afterContents = false;
+        boolean foundHeading = false;
+        for (DocumentNode node : nodes) {
+            if (node == tableOfContents) {
+                afterContents = true;
+                continue;
+            }
+            if (!afterContents || !(node instanceof HeadingNode heading)
+                    || heading.level() < tableOfContents.minLevel()
+                    || heading.level() > tableOfContents.maxLevel()) {
+                continue;
+            }
+            if (visibleHeadingText(heading).isBlank()) {
+                throw PrintValidationException.invalidDocument("目录标题内容不能为空");
+            }
+            foundHeading = true;
+        }
+        if (!foundHeading) {
+            throw PrintValidationException.invalidDocument("目录声明之后没有可收录标题");
+        }
+    }
+
+    /** 提取标题最终呈现的文字，不带入链接或书签的导航属性。 */
+    private String visibleHeadingText(HeadingNode heading) {
+        StringBuilder text = new StringBuilder();
+        heading.children().forEach(child -> appendVisibleText(text, child));
+        return text.toString();
+    }
+
+    /** 按行内节点顺序拼接用户真正能看到的标题内容。 */
+    private void appendVisibleText(StringBuilder text, InlineNode inline) {
+        if (inline instanceof TextNode value) {
+            text.append(value.text());
+        } else if (inline instanceof BookmarkNode bookmark) {
+            text.append(bookmark.label());
+        } else if (inline instanceof InternalLinkNode link) {
+            link.label().forEach(child -> appendVisibleText(text, child));
         }
     }
 }

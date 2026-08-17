@@ -18,6 +18,7 @@ import com.github.leyland.letool.print.document.node.SectionNode;
 import com.github.leyland.letool.print.document.node.TableCell;
 import com.github.leyland.letool.print.document.node.TableNode;
 import com.github.leyland.letool.print.document.node.TableRow;
+import com.github.leyland.letool.print.document.node.TableOfContentsNode;
 import com.github.leyland.letool.print.document.node.TextNode;
 import com.github.leyland.letool.print.exception.PrintValidationException;
 
@@ -58,13 +59,31 @@ final class PdfXhtmlRenderer {
      */
     String render(DocumentModel document) {
         Objects.requireNonNull(document, "document 不能为空");
+        return render(document, PdfRenderIds.create(document), false);
+    }
+
+    /**
+     * 为分段管线写入稳定布局标记，并把导航交给最终 PDF 统一处理。
+     *
+     * @param document 本次排版的文档视图
+     * @param ids 完整文档建立的稳定 ID
+     * @param centralNavigation 是否关闭局部导航并保留源位置
+     * @return 受控 XHTML
+     */
+    String render(DocumentModel document, PdfRenderIds ids, boolean centralNavigation) {
+        Objects.requireNonNull(document, "document 不能为空");
+        Objects.requireNonNull(ids, "布局 ID 不能为空");
         StringBuilder output = new StringBuilder(4_096);
-        writeDocument(output, document);
+        writeDocument(output, document, ids, centralNavigation);
         return output.toString();
     }
 
     /** 写入 XHTML 外壳、固定样式和文档正文。 */
-    private void writeDocument(StringBuilder output, DocumentModel document) {
+    private void writeDocument(
+            StringBuilder output,
+            DocumentModel document,
+            PdfRenderIds ids,
+            boolean centralNavigation) {
         DocumentMetadata metadata = document.metadata();
         output.append("<!DOCTYPE html><html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"")
                 .append(escapeAttribute(metadata.language() == null ? "und" : metadata.language()))
@@ -73,12 +92,14 @@ final class PdfXhtmlRenderer {
             output.append(escapeText(metadata.title()));
         }
         output.append("</title>");
-        writeBookmarks(output, document);
+        if (!centralNavigation) {
+            writeBookmarks(output, document);
+        }
         output.append("<style>");
         writeStyle(output, document.pageLayout());
         output.append("</style></head><body>");
         for (BlockNode block : document.blocks()) {
-            writeBlock(output, block);
+            writeBlock(output, block, ids, centralNavigation);
         }
         output.append("</body></html>");
     }
@@ -139,69 +160,91 @@ final class PdfXhtmlRenderer {
     }
 
     /** 根据节点的跨格式语义写入固定块级标签。 */
-    private void writeBlock(StringBuilder output, BlockNode block) {
+    private void writeBlock(
+            StringBuilder output,
+            BlockNode block,
+            PdfRenderIds ids,
+            boolean centralNavigation) {
         if (block instanceof SectionNode section) {
             output.append("<section");
             writeId(output, section.id());
             output.append('>');
-            section.children().forEach(child -> writeBlock(output, child));
+            section.children().forEach(child -> writeBlock(output, child, ids, centralNavigation));
             output.append("</section>");
         } else if (block instanceof HeadingNode heading) {
             String tag = "h" + heading.level();
             output.append('<').append(tag);
-            writeId(output, heading.id());
+            writeId(output, ids.targetId(heading));
             output.append('>');
-            heading.children().forEach(child -> writeInline(output, child));
+            heading.children().forEach(child -> writeInline(output, child, ids, centralNavigation));
             output.append("</").append(tag).append('>');
         } else if (block instanceof ParagraphNode paragraph) {
             output.append("<p");
             writeId(output, paragraph.id());
             output.append('>');
-            paragraph.children().forEach(child -> writeInline(output, child));
+            paragraph.children().forEach(child -> writeInline(output, child, ids, centralNavigation));
             output.append("</p>");
         } else if (block instanceof TableNode table) {
-            writeTable(output, table);
+            writeTable(output, table, ids, centralNavigation);
         } else if (block == PageBreakNode.INSTANCE) {
             output.append("<div class=\"page-break\"></div>");
         } else if (block instanceof AnnotationNode) {
             // 批注正文只进入 PDF 对象，不在页面正文中重复显示。
             return;
+        } else if (block instanceof TableOfContentsNode) {
+            throw PrintValidationException.invalidDocument("目录节点必须由 PDF 目录渲染器处理");
         } else {
             throw unsupported(block);
         }
     }
 
     /** 表头与表体分区保持模型语义，表头可由排版器跨页重复。 */
-    private void writeTable(StringBuilder output, TableNode table) {
+    private void writeTable(
+            StringBuilder output,
+            TableNode table,
+            PdfRenderIds ids,
+            boolean centralNavigation) {
         output.append("<table");
         writeId(output, table.id());
         output.append('>');
         if (table.headerRowCount() > 0) {
             output.append("<thead>");
-            writeRows(output, table.rows().subList(0, table.headerRowCount()), true);
+            writeRows(output, table.rows().subList(0, table.headerRowCount()), true,
+                    ids, centralNavigation);
             output.append("</thead>");
         }
         if (table.headerRowCount() < table.rows().size()) {
             output.append("<tbody>");
-            writeRows(output, table.rows().subList(table.headerRowCount(), table.rows().size()), false);
+            writeRows(output, table.rows().subList(table.headerRowCount(), table.rows().size()), false,
+                    ids, centralNavigation);
             output.append("</tbody>");
         }
         output.append("</table>");
     }
 
     /** 写入一个连续表格分区中的行。 */
-    private void writeRows(StringBuilder output, List<TableRow> rows, boolean header) {
+    private void writeRows(
+            StringBuilder output,
+            List<TableRow> rows,
+            boolean header,
+            PdfRenderIds ids,
+            boolean centralNavigation) {
         for (TableRow row : rows) {
             output.append("<tr>");
             for (TableCell cell : row.cells()) {
-                writeCell(output, cell, header);
+                writeCell(output, cell, header, ids, centralNavigation);
             }
             output.append("</tr>");
         }
     }
 
     /** 写入单元格跨度及其块级内容。 */
-    private void writeCell(StringBuilder output, TableCell cell, boolean header) {
+    private void writeCell(
+            StringBuilder output,
+            TableCell cell,
+            boolean header,
+            PdfRenderIds ids,
+            boolean centralNavigation) {
         String tag = header ? "th" : "td";
         output.append('<').append(tag);
         if (cell.rowSpan() > 1) {
@@ -211,12 +254,16 @@ final class PdfXhtmlRenderer {
             output.append(" colspan=\"").append(cell.colSpan()).append('\"');
         }
         output.append('>');
-        cell.content().forEach(block -> writeBlock(output, block));
+        cell.content().forEach(block -> writeBlock(output, block, ids, centralNavigation));
         output.append("</").append(tag).append('>');
     }
 
     /** 根据节点语义写入转义文本、书签目标或内部链接。 */
-    private void writeInline(StringBuilder output, InlineNode inline) {
+    private void writeInline(
+            StringBuilder output,
+            InlineNode inline,
+            PdfRenderIds ids,
+            boolean centralNavigation) {
         if (inline instanceof TextNode text) {
             output.append(escapeText(text.text()));
         } else if (inline instanceof BookmarkNode bookmark) {
@@ -224,9 +271,16 @@ final class PdfXhtmlRenderer {
                     .append("\" class=\"bookmark\">").append(escapeText(bookmark.label()))
                     .append("</span>");
         } else if (inline instanceof InternalLinkNode link) {
-            output.append("<a href=\"#").append(escapeAttribute(link.targetId())).append("\">");
-            link.label().forEach(label -> writeInline(output, label));
-            output.append("</a>");
+            if (centralNavigation) {
+                output.append("<span id=\"").append(escapeAttribute(ids.sourceId(link)))
+                        .append("\" class=\"internal-link\">");
+                link.label().forEach(label -> writeInline(output, label, ids, true));
+                output.append("</span>");
+            } else {
+                output.append("<a href=\"#").append(escapeAttribute(link.targetId())).append("\">");
+                link.label().forEach(label -> writeInline(output, label, ids, false));
+                output.append("</a>");
+            }
         } else {
             throw unsupported(inline);
         }

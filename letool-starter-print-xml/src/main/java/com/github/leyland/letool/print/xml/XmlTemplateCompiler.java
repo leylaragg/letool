@@ -88,12 +88,18 @@ public final class XmlTemplateCompiler {
             Map.entry("if", Set.of("path", "operator", "value", "value-type",
                     "expression-language", "test")),
             Map.entry("for-each", Set.of("items", "var")),
-            Map.entry("page-break", Set.of()));
+            Map.entry("page-break", Set.of()),
+            Map.entry("table-of-contents", Set.of("title", "min-level", "max-level")));
 
     /** 普通块级容器可以直接承载的标签。 */
     private static final Set<String> BLOCK_CHILDREN = Set.of(
             "section", "heading", "paragraph", "annotation", "table", "image",
             "page-break", "if", "for-each", "include");
+
+    /** page 可以额外声明一个根级目录，普通块容器不会继承这项能力。 */
+    private static final Set<String> PAGE_CHILDREN = Set.of(
+            "section", "heading", "paragraph", "annotation", "table", "image",
+            "page-break", "if", "for-each", "include", "table-of-contents");
 
     /** 动态标签除了普通块节点，还可以在表格行结果域中承载 row。 */
     private static final Set<String> DYNAMIC_BLOCK_CHILDREN = Set.of(
@@ -108,7 +114,7 @@ public final class XmlTemplateCompiler {
     private static final Map<String, Set<String>> ALLOWED_CHILDREN = Map.ofEntries(
             Map.entry("document", Set.of("page")),
             Map.entry("fragment", BLOCK_CHILDREN),
-            Map.entry("page", BLOCK_CHILDREN),
+            Map.entry("page", PAGE_CHILDREN),
             Map.entry("section", BLOCK_CHILDREN),
             Map.entry("heading", Set.of("text", "field", "bookmark", "link")),
             Map.entry("paragraph", Set.of("text", "field", "bookmark", "link")),
@@ -127,7 +133,8 @@ public final class XmlTemplateCompiler {
             Map.entry("if", DYNAMIC_BLOCK_CHILDREN),
             Map.entry("for-each", DYNAMIC_BLOCK_CHILDREN),
             Map.entry("include", Set.of()),
-            Map.entry("page-break", Set.of()));
+            Map.entry("page-break", Set.of()),
+            Map.entry("table-of-contents", Set.of()));
 
     /** 允许直接保存文本内容的标签。 */
     private static final Set<String> TEXT_CONTAINERS =
@@ -570,6 +577,16 @@ public final class XmlTemplateCompiler {
                 throw located(templateCode, reader, "heading.level 必须在 1 到 6 之间");
             }
         }
+        if ("table-of-contents".equals(element)) {
+            int minLevel = tableOfContentsLevel(
+                    templateCode, reader, attributes.getOrDefault("min-level", "1"), "min-level");
+            int maxLevel = tableOfContentsLevel(
+                    templateCode, reader, attributes.getOrDefault("max-level", "3"), "max-level");
+            if (minLevel > maxLevel) {
+                throw located(templateCode, reader,
+                        "table-of-contents.min-level 不能大于 max-level");
+            }
+        }
         if ("cell".equals(element)) {
             validatePositiveSpan(templateCode, reader, attributes, "row-span");
             validatePositiveSpan(templateCode, reader, attributes, "col-span");
@@ -703,6 +720,19 @@ public final class XmlTemplateCompiler {
         if (value != null && (value.isBlank() || value.length() > maxLength)) {
             throw located(templateCode, reader, name + " 不能为空白且不能超过 " + maxLength + " 个字符");
         }
+    }
+
+    /** 目录层级与标题保持同一套 1 到 6 的边界。 */
+    private int tableOfContentsLevel(
+            String templateCode,
+            XMLStreamReader reader,
+            String value,
+            String name) {
+        if (!Set.of("1", "2", "3", "4", "5", "6").contains(value)) {
+            throw located(templateCode, reader,
+                    "table-of-contents." + name + " 必须在 1 到 6 之间");
+        }
+        return Integer.parseInt(value);
     }
 
     /** 拒绝 XML 解码后才显现的脚本或表达式标记。 */

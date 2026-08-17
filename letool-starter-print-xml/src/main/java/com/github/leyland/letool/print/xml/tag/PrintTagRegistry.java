@@ -26,7 +26,7 @@ public final class PrintTagRegistry {
     private static final Set<String> BUILT_IN_TAGS = Set.of(
             "document", "page", "section", "heading", "paragraph", "table", "header",
             "body", "row", "cell", "image", "bookmark", "link", "text", "field",
-            "format-option", "if", "for-each", "page-break");
+            "format-option", "if", "for-each", "page-break", "table-of-contents");
 
     /** 禁止由 XML 选择处理器实现的保留属性名称。 */
     private static final Set<String> IMPLEMENTATION_ATTRIBUTES = Set.of(

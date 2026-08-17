@@ -11,6 +11,7 @@ import com.github.leyland.letool.print.document.node.ParagraphNode;
 import com.github.leyland.letool.print.document.node.TableCell;
 import com.github.leyland.letool.print.document.node.TableNode;
 import com.github.leyland.letool.print.document.node.TableRow;
+import com.github.leyland.letool.print.document.node.TableOfContentsNode;
 import com.github.leyland.letool.print.document.node.SectionNode;
 import com.github.leyland.letool.print.document.node.BookmarkNode;
 import com.github.leyland.letool.print.document.node.ImageNode;
@@ -102,6 +103,69 @@ class DocumentModelTest {
                 AnnotationType.FREE_TEXT, "summary", AnnotationPlacement.TOP_LEFT,
                 6_000, 6_000, 0, 0, "", "字".repeat(50_001)))
                 .isInstanceOf(PrintValidationException.class);
+    }
+
+    /** 验证目录节点只保存跨输出稳定的标题和层级范围。 */
+    @Test
+    void shouldCreateValidatedTableOfContentsNode() {
+        TableOfContentsNode contents = new TableOfContentsNode("目录", 1, 3);
+
+        assertThat(TableOfContentsNode.class.isRecord()).isFalse();
+        assertThat(contents.id()).isEmpty();
+        assertThat(contents.title()).isEqualTo("目录");
+        assertThat(contents.minLevel()).isEqualTo(1);
+        assertThat(contents.maxLevel()).isEqualTo(3);
+        assertThat(new TableOfContentsNode(null, 2, 6).title()).isNull();
+
+        assertThatThrownBy(() -> new TableOfContentsNode(" ", 1, 3))
+                .isInstanceOf(PrintValidationException.class);
+        assertThatThrownBy(() -> new TableOfContentsNode("目".repeat(257), 1, 3))
+                .isInstanceOf(PrintValidationException.class);
+        assertThatThrownBy(() -> new TableOfContentsNode(null, 0, 3))
+                .isInstanceOf(PrintValidationException.class);
+        assertThatThrownBy(() -> new TableOfContentsNode(null, 1, 7))
+                .isInstanceOf(PrintValidationException.class);
+        assertThatThrownBy(() -> new TableOfContentsNode(null, 4, 3))
+                .isInstanceOf(PrintValidationException.class);
+    }
+
+    /** 验证目录唯一位于文档根部，并能找到声明位置之后的可见标题。 */
+    @Test
+    void shouldValidateTableOfContentsPlacementAndHeadings() {
+        DocumentModel valid = new DocumentModel(
+                DocumentMetadata.empty(),
+                PageLayout.a4Portrait(),
+                List.of(
+                        new HeadingNode("preface", 1, List.of(new TextNode("目录前标题"))),
+                        new TableOfContentsNode("目录", 1, 2),
+                        new SectionNode("chapter", List.of(new HeadingNode(
+                                "chapter-title", 2, List.of(new TextNode("第一章")))))));
+
+        valid.validate();
+
+        assertThatThrownBy(() -> new DocumentModel(
+                DocumentMetadata.empty(), PageLayout.a4Portrait(),
+                List.of(
+                        new TableOfContentsNode(null, 1, 3),
+                        new TableOfContentsNode(null, 1, 3),
+                        new HeadingNode("heading", 1, List.of(new TextNode("标题"))))).validate())
+                .isInstanceOf(PrintValidationException.class)
+                .hasMessageContaining("目录");
+        assertThatThrownBy(() -> new DocumentModel(
+                DocumentMetadata.empty(), PageLayout.a4Portrait(),
+                List.of(new SectionNode("chapter", List.of(
+                        new TableOfContentsNode(null, 1, 3),
+                        new HeadingNode("heading", 1, List.of(new TextNode("标题"))))))).validate())
+                .isInstanceOf(PrintValidationException.class)
+                .hasMessageContaining("目录");
+        assertThatThrownBy(() -> new DocumentModel(
+                DocumentMetadata.empty(), PageLayout.a4Portrait(),
+                List.of(
+                        new HeadingNode("before", 1, List.of(new TextNode("目录前标题"))),
+                        new TableOfContentsNode(null, 2, 3),
+                        new HeadingNode("after", 1, List.of(new TextNode("层级不匹配"))))).validate())
+                .isInstanceOf(PrintValidationException.class)
+                .hasMessageContaining("可收录标题");
     }
 
     /** 验证文档根节点与调用方可变集合隔离。 */

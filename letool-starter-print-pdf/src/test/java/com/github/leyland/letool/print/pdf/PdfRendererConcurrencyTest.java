@@ -7,7 +7,11 @@ import com.github.leyland.letool.print.document.PageLayout;
 import com.github.leyland.letool.print.document.node.AnnotationNode;
 import com.github.leyland.letool.print.document.node.AnnotationPlacement;
 import com.github.leyland.letool.print.document.node.AnnotationType;
+import com.github.leyland.letool.print.document.node.HeadingNode;
+import com.github.leyland.letool.print.document.node.InternalLinkNode;
+import com.github.leyland.letool.print.document.node.PageBreakNode;
 import com.github.leyland.letool.print.document.node.ParagraphNode;
+import com.github.leyland.letool.print.document.node.TableOfContentsNode;
 import com.github.leyland.letool.print.document.node.TextNode;
 import com.github.leyland.letool.print.render.RenderedDocument;
 import org.apache.pdfbox.Loader;
@@ -16,9 +20,12 @@ import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.Test;
 
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -36,12 +43,20 @@ class PdfRendererConcurrencyTest {
     /** 多个调用可以并行读取同一渲染器、字体配置和文档快照。 */
     @Test
     void shouldRenderSameDocumentConcurrently() throws Exception {
-        PdfDocumentRenderer renderer = renderer();
+        Path temporaryRoot = Files.createDirectories(Path.of(
+                "target", "concurrency-workspace", UUID.randomUUID().toString())
+                .toAbsolutePath().normalize());
+        PdfDocumentRenderer renderer = renderer(temporaryRoot);
         DocumentModel document = new DocumentModel(
                 DocumentMetadata.empty(),
                 PageLayout.a4Portrait(),
                 List.of(
-                        new ParagraphNode("summary", List.of(new TextNode("并发正文 concurrent PDF"))),
+                        new TableOfContentsNode("目录", 1, 2),
+                        new HeadingNode("first", 1, List.of(new TextNode("第一章"))),
+                        new ParagraphNode("", List.of(new InternalLinkNode(
+                                "summary", List.of(new TextNode("转到第二章"))))),
+                        PageBreakNode.INSTANCE,
+                        new HeadingNode("summary", 1, List.of(new TextNode("并发正文 concurrent PDF"))),
                         new AnnotationNode(
                                 AnnotationType.TEXT_NOTE,
                                 "summary",
@@ -62,10 +77,10 @@ class PdfRendererConcurrencyTest {
             List<Future<RenderedDocument>> futures = executor.invokeAll(tasks);
             for (Future<RenderedDocument> future : futures) {
                 try (PDDocument pdf = Loader.loadPDF(future.get().content())) {
-                    assertThat(pdf.getNumberOfPages()).isEqualTo(1);
+                    assertThat(pdf.getNumberOfPages()).isEqualTo(3);
                     assertThat(new PDFTextStripper().getText(pdf))
-                            .contains("并发正文 concurrent PDF");
-                    assertThat(pdf.getPage(0).getAnnotations())
+                            .contains("目录", "第一章", "并发正文 concurrent PDF");
+                    assertThat(pdf.getPage(2).getAnnotations())
                             .singleElement()
                             .satisfies(annotation -> assertThat(annotation.getContents())
                                     .isEqualTo("并发批注"));
@@ -74,12 +89,16 @@ class PdfRendererConcurrencyTest {
         } finally {
             executor.shutdownNow();
         }
+        try (var files = Files.list(temporaryRoot)) {
+            assertThat(files).isEmpty();
+        }
+        Files.delete(temporaryRoot);
     }
 
     /** 创建每次调用都能打开独立字体流的渲染器。 */
-    private PdfDocumentRenderer renderer() {
+    private PdfDocumentRenderer renderer(Path temporaryRoot) {
         PdfFont font = new PdfFont("Droid Sans Fallback", this::openTestFont, true);
-        return new PdfDocumentRenderer(List.of(font));
+        return new PdfDocumentRenderer(List.of(font), temporaryRoot);
     }
 
     /** 每次调用重新打开测试字体。 */
