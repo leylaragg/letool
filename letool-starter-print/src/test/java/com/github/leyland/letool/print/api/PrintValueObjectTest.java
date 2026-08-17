@@ -26,6 +26,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class PrintValueObjectTest {
 
+    /** 核心只预置当前真正实现的 XML 模板格式。 */
+    @Test
+    void shouldExposeOnlyLetoolXmlAsBuiltInTemplateFormat() {
+        assertThat(Arrays.stream(TemplateFormat.class.getFields())
+                .filter(field -> Modifier.isStatic(field.getModifiers()))
+                .filter(field -> field.getType() == TemplateFormat.class)
+                .map(Field::getName))
+                .containsExactly("LETOOL_XML");
+    }
+
     /** 核心只预置已经稳定交付的 PDF，其他输出格式由扩展自行声明。 */
     @Test
     void shouldExposeOnlyPdfAsBuiltInOutputFormat() {

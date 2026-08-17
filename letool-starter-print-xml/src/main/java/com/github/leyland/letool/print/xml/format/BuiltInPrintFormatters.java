@@ -9,11 +9,14 @@ import java.util.List;
  */
 public final class BuiltInPrintFormatters {
 
-    /** 进程内可安全复用的不可变默认注册表。 */
-    private static final PrintFormatterRegistry REGISTRY = new PrintFormatterRegistry(List.of(
+    /** 可与宿主扩展合并的不可变内置实例。 */
+    private static final List<PrintValueFormatter> FORMATTERS = List.of(
             new NumberValueFormatter(),
             new TemporalValueFormatter("date", false),
-            new TemporalValueFormatter("datetime", true)));
+            new TemporalValueFormatter("datetime", true));
+
+    /** 进程内可安全复用的不可变默认注册表。 */
+    private static final PrintFormatterRegistry REGISTRY = new PrintFormatterRegistry(FORMATTERS);
 
     /** 禁止实例化工具类。 */
     private BuiltInPrintFormatters() {
@@ -26,5 +29,14 @@ public final class BuiltInPrintFormatters {
      */
     public static PrintFormatterRegistry registry() {
         return REGISTRY;
+    }
+
+    /**
+     * 返回供宿主组合扩展的内置格式化器快照。
+     *
+     * @return 保持默认顺序的不可修改列表
+     */
+    public static List<PrintValueFormatter> formatters() {
+        return FORMATTERS;
     }
 }

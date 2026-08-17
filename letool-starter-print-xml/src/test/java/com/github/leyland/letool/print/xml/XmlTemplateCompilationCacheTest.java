@@ -28,6 +28,9 @@ class XmlTemplateCompilationCacheTest {
     /** 模拟独立扩展输出，确保 XML 编译缓存按完整格式隔离。 */
     private static final OutputFormat HTML = new OutputFormat("html", "text/html", "html");
 
+    /** 模拟不属于 Letool XML 的开放模板格式。 */
+    private static final TemplateFormat OTHER_FORMAT = new TemplateFormat("other-template");
+
     /** 相同条件应复用同一个解析快照，并留下可观测的命中记录。 */
     @Test
     void shouldReuseResolvedTemplateForSameKey() {
@@ -117,15 +120,15 @@ class XmlTemplateCompilationCacheTest {
                 TemplateFormat.LETOOL_XML, "<paragraph>正文</paragraph>");
         TemplateSet fragmentSet = set(7, main, definition(TemplateType.FRAGMENT, "shared", 7,
                 TemplateFormat.LETOOL_XML, "<paragraph>片段</paragraph>"));
-        TemplateSet jasperSet = set(8, definition(TemplateType.DOCUMENT, "main", 8,
-                TemplateFormat.JASPER_JRXML, "<jasperReport/>"));
+        TemplateSet otherFormatSet = set(8, definition(TemplateType.DOCUMENT, "main", 8,
+                OTHER_FORMAT, "other document"));
         XmlTemplateCompilationCache cache = new XmlTemplateCompilationCache(new XmlTemplateSetCompiler());
 
         assertThatThrownBy(() -> cache.resolve(
                 fragmentSet, key(fragmentSet, "shared", 1, OutputFormat.PDF)))
                 .isInstanceOf(PrintValidationException.class);
         assertThatThrownBy(() -> cache.resolve(
-                jasperSet, key(jasperSet, "main", 1, OutputFormat.PDF)))
+                otherFormatSet, key(otherFormatSet, "main", 1, OutputFormat.PDF)))
                 .isInstanceOf(PrintValidationException.class);
     }
 

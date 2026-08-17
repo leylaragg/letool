@@ -18,6 +18,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class BuiltInPrintFormatterTest {
 
+    /** Starter 可以取得内置实例快照，并与宿主格式化器一次性合并。 */
+    @Test
+    void shouldExposeImmutableBuiltInFormatterList() {
+        assertThat(BuiltInPrintFormatters.formatters())
+                .extracting(PrintValueFormatter::name)
+                .containsExactly("number", "date", "datetime");
+        assertThatThrownBy(() -> BuiltInPrintFormatters.formatters().clear())
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
+
     /** 验证数字格式化器支持固定区域、模式和舍入方式。 */
     @Test
     void shouldFormatNumberWithStaticOptions() {

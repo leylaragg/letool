@@ -22,6 +22,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class XmlTemplateSetSyntaxTest {
 
+    /** 模拟由外部管线声明的其它模板格式。 */
+    private static final TemplateFormat OTHER_FORMAT = new TemplateFormat("other-template");
+
     /** include 只允许出现在块级容器，并且自身必须为空。 */
     @Test
     void shouldRejectInlineAndNonEmptyInclude() {
@@ -57,18 +60,18 @@ class XmlTemplateSetSyntaxTest {
     /** 其他格式文档可以共存，但不能成为 XML include 目标。 */
     @Test
     void shouldIgnoreOtherDocumentsAndRejectOtherFormatFragment() {
-        TemplateDefinition jasperDocument = definition(
-                TemplateType.DOCUMENT, "jasper", TemplateFormat.JASPER_JRXML,
-                1, 1, "<jasperReport/>");
+        TemplateDefinition otherDocument = definition(
+                TemplateType.DOCUMENT, "other", OTHER_FORMAT,
+                1, 1, "other document");
         CompiledXmlTemplateSet compiled = compile(
-                document("<paragraph>xml</paragraph>"), jasperDocument);
+                document("<paragraph>xml</paragraph>"), otherDocument);
         assertThat(compiled.documentCodes()).containsExactly("main");
 
-        TemplateDefinition jasperFragment = definition(
-                TemplateType.FRAGMENT, "part", TemplateFormat.JASPER_JRXML,
-                1, 1, "<component/>");
+        TemplateDefinition otherFragment = definition(
+                TemplateType.FRAGMENT, "part", OTHER_FORMAT,
+                1, 1, "other fragment");
         assertThatThrownBy(() -> compile(
-                document("<include template=\"part\"/>"), jasperFragment))
+                document("<include template=\"part\"/>"), otherFragment))
                 .isInstanceOf(PrintCompilationException.class)
                 .hasMessageContaining("letool-xml");
     }

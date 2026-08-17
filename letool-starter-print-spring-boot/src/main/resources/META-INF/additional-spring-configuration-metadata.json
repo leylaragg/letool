@@ -1,0 +1,70 @@
+{
+  "properties": [
+    {
+      "name": "letool.print.enabled",
+      "type": "java.lang.Boolean",
+      "defaultValue": true,
+      "description": "是否启用动态打印 Starter 的默认装配。"
+    },
+    {
+      "name": "letool.print.renderer-profile-version",
+      "type": "java.lang.Long",
+      "defaultValue": 1,
+      "description": "参与 XML 编译缓存键的渲染器配置版本。"
+    },
+    {
+      "name": "letool.print.locale",
+      "type": "java.lang.String",
+      "defaultValue": "zh-CN",
+      "description": "业务打印请求默认使用的 IETF BCP 47 区域标识。"
+    },
+    {
+      "name": "letool.print.zone-id",
+      "type": "java.lang.String",
+      "defaultValue": "Asia/Shanghai",
+      "description": "业务打印请求默认使用的日期时间时区。"
+    },
+    {
+      "name": "letool.print.max-pages",
+      "type": "java.lang.Integer",
+      "defaultValue": 2500,
+      "description": "单份打印产物允许的最大页数。"
+    },
+    {
+      "name": "letool.print.max-output-bytes",
+      "type": "java.lang.Long",
+      "defaultValue": 104857600,
+      "description": "单份打印产物允许的最大字节数。"
+    },
+    {
+      "name": "letool.print.include-document-metadata",
+      "type": "java.lang.Boolean",
+      "defaultValue": true,
+      "description": "是否把安全文档元数据写入最终产物。"
+    },
+    {
+      "name": "letool.print.template-set-cache-capacity",
+      "type": "java.lang.Integer",
+      "defaultValue": 64,
+      "description": "XML 模板集合编译缓存容量。"
+    },
+    {
+      "name": "letool.print.template-cache-capacity",
+      "type": "java.lang.Integer",
+      "defaultValue": 1024,
+      "description": "XML 单文档解析缓存容量。"
+    },
+    {
+      "name": "letool.print.temporary-directory",
+      "type": "java.lang.String",
+      "defaultValue": "",
+      "description": "可信 PDF 临时根目录；空值使用 PDF 模块默认目录。"
+    },
+    {
+      "name": "letool.print.spel.enabled",
+      "type": "java.lang.Boolean",
+      "defaultValue": false,
+      "description": "额外依赖存在时是否显式启用受限 SpEL。"
+    }
+  ]
+}

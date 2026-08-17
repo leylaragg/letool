@@ -40,7 +40,10 @@ public enum PrintErrorCode implements ErrorCode {
     RENDERING_FAILED("PRINT_010", "打印文档渲染失败：{0}"),
 
     /** 渲染结果超过请求声明的最大页数。 */
-    PAGE_LIMIT_EXCEEDED("PRINT_011", "打印文档超过页数限制：{0}");
+    PAGE_LIMIT_EXCEEDED("PRINT_011", "打印文档超过页数限制：{0}"),
+
+    /** 宿主业务数据适配器发生未分类故障。 */
+    ADAPTER_EXECUTION_FAILED("PRINT_012", "打印数据适配失败：{0}");
 
     /** 稳定错误码。 */
     private final String code;

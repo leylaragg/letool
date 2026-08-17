@@ -59,6 +59,54 @@ class XmlTemplateCompilationServiceTest {
         assertThat(resolved.key().outputFormat()).isEqualTo(HTML);
     }
 
+    /** 请求已经锁定模板时，服务仍需回到同版本仓库核对完整快照。 */
+    @Test
+    void shouldResolveMatchingRequestSnapshotWithSingleRepositoryLookup() {
+        CountingTemplateRepository repository = repositoryWithActiveSet();
+        XmlTemplateCompilationService service = service(repository);
+
+        ResolvedXmlTemplate resolved = service.resolve(
+                repository.template("main"), 5, OutputFormat.PDF);
+
+        assertThat(repository.findCalls).isEqualTo(1);
+        assertThat(repository.currentCalls).isZero();
+        assertThat(resolved.key().rendererProfileVersion()).isEqualTo(5);
+    }
+
+    /** 相同版本和代码不能掩盖正文或编译元数据被调用方替换。 */
+    @Test
+    void shouldRejectRequestSnapshotDifferentFromRepository() {
+        CountingTemplateRepository repository = repositoryWithActiveSet();
+        XmlTemplateCompilationService service = service(repository);
+        PrintTemplate stored = repository.template("main");
+        PrintTemplate changedContent = new PrintTemplate(
+                stored.templateCode(), stored.templateFormat(), stored.dslVersion(),
+                stored.templateSetVersion(), stored.contextVersion(), "changed".getBytes(StandardCharsets.UTF_8));
+        PrintTemplate changedFormat = new PrintTemplate(
+                stored.templateCode(), new TemplateFormat("other-template"), stored.dslVersion(),
+                stored.templateSetVersion(), stored.contextVersion(), stored.content());
+        PrintTemplate changedDsl = new PrintTemplate(
+                stored.templateCode(), stored.templateFormat(), 2,
+                stored.templateSetVersion(), stored.contextVersion(), stored.content());
+        PrintTemplate changedContext = new PrintTemplate(
+                stored.templateCode(), stored.templateFormat(), stored.dslVersion(),
+                stored.templateSetVersion(), 2, stored.content());
+
+        assertThatThrownBy(() -> service.resolve(changedContent, 1, OutputFormat.PDF))
+                .isInstanceOf(PrintValidationException.class)
+                .hasMessageContaining("模板快照不一致")
+                .hasMessageNotContaining("changed");
+        assertThatThrownBy(() -> service.resolve(changedFormat, 1, OutputFormat.PDF))
+                .isInstanceOf(PrintValidationException.class)
+                .hasMessageContaining("模板快照不一致");
+        assertThatThrownBy(() -> service.resolve(changedDsl, 1, OutputFormat.PDF))
+                .isInstanceOf(PrintValidationException.class)
+                .hasMessageContaining("模板快照不一致");
+        assertThatThrownBy(() -> service.resolve(changedContext, 1, OutputFormat.PDF))
+                .isInstanceOf(PrintValidationException.class)
+                .hasMessageContaining("模板快照不一致");
+    }
+
     /** 仓库没有目标快照时应返回稳定错误，不尝试临时切换版本。 */
     @Test
     void shouldRejectMissingVersionOrCurrentSet() {
@@ -162,6 +210,11 @@ class XmlTemplateCompilationServiceTest {
         private void resetLookupCounts() {
             findCalls = 0;
             currentCalls = 0;
+        }
+
+        /** 不计入解析调用次数地读取准备好的模板。 */
+        private PrintTemplate template(String templateCode) {
+            return delegate.current().orElseThrow().require(templateCode).template();
         }
     }
 }

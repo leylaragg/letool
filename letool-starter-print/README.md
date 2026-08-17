@@ -65,8 +65,8 @@ PrintEngine
 ├─ TemplateFormat.LETOOL_XML
 │  └─ XmlPrintPipeline → DocumentModel → DocumentRenderer
 │     └─ PDF renderer
-└─ TemplateFormat.JASPER_JRXML
-   └─ JasperPrintPipeline → Jasper exporter
+└─ 自定义 TemplateFormat
+   └─ 独立模型对应的自定义 PrintPipeline
 ```
 
 - 能稳定消费 `DocumentModel` 的新格式实现 `DocumentRenderer`。

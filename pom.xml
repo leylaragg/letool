@@ -66,6 +66,7 @@
         <module>letool-starter-print-template</module>
         <module>letool-starter-print-xml</module>
         <module>letool-starter-print-expression-spel</module>
+        <module>letool-starter-print-spring-boot</module>
         <module>letool-starter-excel</module>
         <module>letool-starter-mail</module>
         <module>letool-starter-distributed-lock</module>
@@ -312,6 +313,11 @@
             <dependency>
                 <groupId>com.github.leyland</groupId>
                 <artifactId>letool-starter-print-expression-spel</artifactId>
+                <version>${letool.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.leyland</groupId>
+                <artifactId>letool-starter-print-spring-boot</artifactId>
                 <version>${letool.version}</version>
             </dependency>
             <dependency>

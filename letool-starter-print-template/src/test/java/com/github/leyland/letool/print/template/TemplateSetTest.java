@@ -20,6 +20,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class TemplateSetTest {
 
+    /** 用于验证开放模板格式也会进入摘要。 */
+    private static final TemplateFormat OTHER_FORMAT = new TemplateFormat("other-template");
+
     /** 集合应按模板代码排序并隔离调用方集合。 */
     @Test
     void shouldCreateSortedImmutableTemplateSet() {
@@ -100,7 +103,7 @@ class TemplateSetTest {
         assertThat(createSingle(1, document("main", 1, "B")).digest())
                 .isNotEqualTo(base);
         assertThat(createSingle(1, definition(TemplateType.DOCUMENT, "main", 1,
-                TemplateFormat.JASPER_JRXML, 1, 1, "A")).digest())
+                OTHER_FORMAT, 1, 1, "A")).digest())
                 .isNotEqualTo(base);
         assertThat(createSingle(1, definition(TemplateType.DOCUMENT, "main", 1,
                 TemplateFormat.LETOOL_XML, 2, 1, "A")).digest())

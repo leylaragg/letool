@@ -22,9 +22,6 @@ public final class TemplateFormat {
     /** Letool 受控 XML 模板格式。 */
     public static final TemplateFormat LETOOL_XML = new TemplateFormat("letool-xml");
 
-    /** JasperReports JRXML 模板格式。 */
-    public static final TemplateFormat JASPER_JRXML = new TemplateFormat("jasper-jrxml");
-
     /**
      * 创建并规范化模板格式。
      *
