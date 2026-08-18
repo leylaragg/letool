@@ -12,6 +12,7 @@ import io.github.leylaragg.letool.print.service.PrintDefinition;
 import io.github.leylaragg.letool.print.service.PrintDefinitionRegistry;
 import io.github.leylaragg.letool.print.service.PrintRuntimeSettings;
 import io.github.leylaragg.letool.print.service.PrintService;
+import io.github.leylaragg.letool.print.service.PrintTelemetry;
 import io.github.leylaragg.letool.print.template.InMemoryTemplateRepository;
 import io.github.leylaragg.letool.print.template.TemplateRepository;
 import io.github.leylaragg.letool.print.template.TemplateSetPublisher;
@@ -218,6 +219,19 @@ public class PrintAutoConfiguration {
     }
 
     /**
+     * @param repository 模板仓库
+     * @param fonts 宿主配置的字体
+     * @param properties 严格启动开关与临时目录配置
+     * @return 默认宽松、可按需启用的启动校验器
+     */
+    @Bean
+    @ConditionalOnMissingBean(PrintStartupValidator.class)
+    public PrintStartupValidator printStartupValidator(TemplateRepository repository, ObjectProvider<PdfFont> fonts,
+                                                        PrintProperties properties) {
+        return new PrintStartupValidator(repository, fonts.orderedStream().toList(), properties);
+    }
+
+    /**
      * @param renderers 默认 PDF 与宿主自定义文档渲染器
      * @return 按输出格式冻结的渲染器注册表
      */
@@ -286,15 +300,15 @@ public class PrintAutoConfiguration {
      * @param definitionRegistry 业务打印定义注册表
      * @param engine 通用打印引擎
      * @param settings 不可变运行时配置
+     * @param telemetryProvider 可选安全观测端口
      * @return 使用当前或历史模板版本生成 PDF 的业务门面
      */
     @Bean
     @ConditionalOnMissingBean(PrintService.class)
-    public PrintService printService(
-            TemplateRepository repository,
-            PrintDefinitionRegistry definitionRegistry,
-            PrintEngine engine,
-            PrintRuntimeSettings settings) {
-        return new PrintService(repository, definitionRegistry, engine, settings);
+    public PrintService printService(TemplateRepository repository, PrintDefinitionRegistry definitionRegistry,
+                                     PrintEngine engine, PrintRuntimeSettings settings,
+                                     ObjectProvider<PrintTelemetry> telemetryProvider) {
+        PrintTelemetry telemetry = telemetryProvider.getIfAvailable(() -> PrintTelemetry.NO_OP);
+        return new PrintService(repository, definitionRegistry, engine, settings, telemetry);
     }
 }

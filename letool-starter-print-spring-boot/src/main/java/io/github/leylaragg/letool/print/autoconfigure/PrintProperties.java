@@ -54,6 +54,15 @@ public class PrintProperties {
     /** PDF 渲染使用的可信临时根目录，空值沿用模块默认目录。 */
     private String temporaryDirectory = "";
 
+    /** 启动阶段按需执行的严格检查。 */
+    private Startup startup = new Startup();
+
+    /** Micrometer 指标开关。 */
+    private Metrics metrics = new Metrics();
+
+    /** Actuator 健康检查开关。 */
+    private Health health = new Health();
+
     /** 可选受限 SpEL 的显式开关。 */
     private Spel spel = new Spel();
 
@@ -155,6 +164,57 @@ public class PrintProperties {
     /** @param temporaryDirectory 可信 PDF 临时根目录 */
     public void setTemporaryDirectory(String temporaryDirectory) {
         this.temporaryDirectory = temporaryDirectory;
+    }
+
+    /** @return 可继续绑定的严格启动配置 */
+    public Startup getStartup() {
+        return startup;
+    }
+
+    /**
+     * 替换整组严格启动配置。
+     *
+     * @param startup 非空启动配置
+     */
+    public void setStartup(Startup startup) {
+        if (startup == null) {
+            throw new IllegalArgumentException("letool.print.startup 配置不能为空");
+        }
+        this.startup = startup;
+    }
+
+    /** @return 可继续绑定的指标配置 */
+    public Metrics getMetrics() {
+        return metrics;
+    }
+
+    /**
+     * 替换整组指标配置。
+     *
+     * @param metrics 非空指标配置
+     */
+    public void setMetrics(Metrics metrics) {
+        if (metrics == null) {
+            throw new IllegalArgumentException("letool.print.metrics 配置不能为空");
+        }
+        this.metrics = metrics;
+    }
+
+    /** @return 可继续绑定的健康检查配置 */
+    public Health getHealth() {
+        return health;
+    }
+
+    /**
+     * 替换整组健康检查配置。
+     *
+     * @param health 非空健康检查配置
+     */
+    public void setHealth(Health health) {
+        if (health == null) {
+            throw new IllegalArgumentException("letool.print.health 配置不能为空");
+        }
+        this.health = health;
     }
 
     /** @return 可继续绑定的 SpEL 配置 */
@@ -268,6 +328,82 @@ public class PrintProperties {
      */
     private IllegalArgumentException invalid(String property) {
         return new IllegalArgumentException("letool.print." + property + " 配置不合法");
+    }
+
+    /**
+     * 可选的启动期基础设施检查。
+     *
+     * @author leyland
+     */
+    public static class Startup {
+
+        /** 是否要求仓库已经存在活动模板集合。 */
+        private boolean requireActiveTemplate;
+
+        /** 是否打开字体流并检查配置的临时目录。 */
+        private boolean validateFonts;
+
+        /** @return 是否要求活动模板集合 */
+        public boolean isRequireActiveTemplate() {
+            return requireActiveTemplate;
+        }
+
+        /** @param requireActiveTemplate 是否要求活动模板集合 */
+        public void setRequireActiveTemplate(boolean requireActiveTemplate) {
+            this.requireActiveTemplate = requireActiveTemplate;
+        }
+
+        /** @return 是否检查字体和临时目录 */
+        public boolean isValidateFonts() {
+            return validateFonts;
+        }
+
+        /** @param validateFonts 是否检查字体和临时目录 */
+        public void setValidateFonts(boolean validateFonts) {
+            this.validateFonts = validateFonts;
+        }
+    }
+
+    /**
+     * 可选 Micrometer 指标配置。
+     *
+     * @author leyland
+     */
+    public static class Metrics {
+
+        /** 类路径具备 Micrometer 时是否注册打印指标。 */
+        private boolean enabled = true;
+
+        /** @return 是否启用打印指标 */
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        /** @param enabled 是否启用打印指标 */
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+    }
+
+    /**
+     * 可选 Actuator 健康检查配置。
+     *
+     * @author leyland
+     */
+    public static class Health {
+
+        /** 类路径具备 Actuator 时是否注册打印健康检查。 */
+        private boolean enabled = true;
+
+        /** @return 是否启用打印健康检查 */
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        /** @param enabled 是否启用打印健康检查 */
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
     }
 
     /**

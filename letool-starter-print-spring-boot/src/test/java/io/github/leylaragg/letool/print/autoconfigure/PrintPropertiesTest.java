@@ -34,6 +34,10 @@ class PrintPropertiesTest {
         assertThat(properties.getTemplateCacheCapacity())
                 .isEqualTo(XmlTemplateCompilationCache.DEFAULT_TEMPLATE_CAPACITY);
         assertThat(properties.getTemporaryDirectory()).isEmpty();
+        assertThat(properties.getStartup().isRequireActiveTemplate()).isFalse();
+        assertThat(properties.getStartup().isValidateFonts()).isFalse();
+        assertThat(properties.getMetrics().isEnabled()).isTrue();
+        assertThat(properties.getHealth().isEnabled()).isTrue();
         assertThat(properties.getSpel().isEnabled()).isFalse();
     }
 

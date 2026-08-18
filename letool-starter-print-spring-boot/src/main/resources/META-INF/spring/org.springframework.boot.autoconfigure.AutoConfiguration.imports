@@ -1,2 +1,4 @@
 io.github.leylaragg.letool.print.autoconfigure.PrintSpelAutoConfiguration
 io.github.leylaragg.letool.print.autoconfigure.PrintAutoConfiguration
+io.github.leylaragg.letool.print.autoconfigure.PrintMetricsAutoConfiguration
+io.github.leylaragg.letool.print.autoconfigure.PrintHealthAutoConfiguration

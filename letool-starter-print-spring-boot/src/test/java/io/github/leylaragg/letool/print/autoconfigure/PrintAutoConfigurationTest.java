@@ -68,8 +68,22 @@ class PrintAutoConfigurationTest {
             assertThat(context).hasSingleBean(PrintEngine.class);
             assertThat(context).hasSingleBean(PrintDefinitionRegistry.class);
             assertThat(context).hasSingleBean(PrintService.class);
+            assertThat(context).hasSingleBean(PrintStartupValidator.class);
             assertThat(context.getBean(PrintDefinitionRegistry.class).registeredCodes()).isEmpty();
         });
+    }
+
+    /** 严格模板检查通过真实自动配置链路阻止空仓库启动。 */
+    @Test
+    void shouldFailStartupWhenActiveTemplateIsRequiredButMissing() {
+        contextRunner
+                .withPropertyValues("letool.print.startup.require-active-template=true")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .isInstanceOf(IllegalStateException.class)
+                            .hasMessageContaining("require-active-template");
+                });
     }
 
     /** 总开关关闭后不留下属性、注册表或业务门面。 */

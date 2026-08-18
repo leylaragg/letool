@@ -61,6 +61,30 @@
       "description": "可信 PDF 临时根目录；空值使用 PDF 模块默认目录。"
     },
     {
+      "name": "letool.print.startup.require-active-template",
+      "type": "java.lang.Boolean",
+      "defaultValue": false,
+      "description": "启动时是否要求模板仓库已经存在活动集合。"
+    },
+    {
+      "name": "letool.print.startup.validate-fonts",
+      "type": "java.lang.Boolean",
+      "defaultValue": false,
+      "description": "启动时是否检查字体流和已配置临时目录。"
+    },
+    {
+      "name": "letool.print.metrics.enabled",
+      "type": "java.lang.Boolean",
+      "defaultValue": true,
+      "description": "Micrometer 存在时是否注册打印执行和编译缓存指标。"
+    },
+    {
+      "name": "letool.print.health.enabled",
+      "type": "java.lang.Boolean",
+      "defaultValue": true,
+      "description": "Actuator 存在时是否注册模板和 PDF 基础设施健康检查。"
+    },
+    {
       "name": "letool.print.spel.enabled",
       "type": "java.lang.Boolean",
       "defaultValue": false,

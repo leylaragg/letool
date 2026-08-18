@@ -68,6 +68,20 @@ class InMemoryTemplateRepositoryTest {
         assertThatNullPointerException().isThrownBy(() -> repository.publish(null));
     }
 
+    /** 发布失败只拒绝新内容，当前激活快照不能被连带改变。 */
+    @Test
+    void shouldKeepCurrentSnapshotWhenPublishingFails() {
+        InMemoryTemplateRepository repository = new InMemoryTemplateRepository();
+        TemplateSet current = templateSet(1, "ONE");
+        repository.publishAndActivate(current);
+
+        assertThatThrownBy(() -> repository.publish(templateSet(1, "OTHER")))
+                .isInstanceOf(PrintValidationException.class);
+
+        assertThat(repository.current()).containsSame(current);
+        assertThat(repository.find(1)).containsSame(current);
+    }
+
     /** 激活已发布版本时只切换指针，不复制或替换集合。 */
     @Test
     void shouldActivatePublishedVersion() {

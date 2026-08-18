@@ -30,13 +30,15 @@ class PrintStarterDependencyBoundaryTest {
         assertThat(dependencies).extracting(Dependency::artifactId)
                 .doesNotContain(
                         "letool-rule-engine-core", "letool-starter-rule-engine",
-                        "letool-starter-job", "jasperreports");
+                        "letool-starter-job", "letool-starter-monitor", "jasperreports");
         assertThat(dependencies)
-                .filteredOn(dependency -> dependency.artifactId()
-                        .equals("letool-starter-print-expression-spel"))
-                .singleElement()
+                .filteredOn(dependency -> List.of(
+                        "letool-starter-print-expression-spel",
+                        "micrometer-core",
+                        "spring-boot-actuator").contains(dependency.artifactId()))
+                .hasSize(3)
                 .extracting(Dependency::optional)
-                .isEqualTo("true");
+                .containsOnly("true");
     }
 
     /** 底层打印模块不能反向依赖 Spring Boot 主 Starter。 */
