@@ -28,6 +28,10 @@
 | [Starter Dependency Scope Audit](docs/starter-dependency-scope-audit.md) | starter 依赖作用域审计计划 |
 | [Verification Guide](docs/verification-guide.md) | 定向测试、模块测试、全仓验证和交付检查规范 |
 | [Rule Engine Documentation](letool-rule-engine-core/README.md) | 通用规则引擎架构、完整用法、Spring Boot 与 EDC 接入导航 |
+| [Dynamic Print Template Author Guide](docs/dynamic-print-template-author-guide.md) | XML 模板、数据路径、格式化、目录、批注与治理边界 |
+| [Dynamic Print Extension Guide](docs/dynamic-print-extension-guide.md) | 标签、格式化器、表达式、渲染器、管线与仓库扩展 |
+| [Dynamic Print Production Guide](docs/dynamic-print-production-guide.md) | 版本、字体、缓存、指标、健康检查与生产排障 |
+| [Dynamic Print Capacity Baseline](docs/dynamic-print-capacity-baseline.md) | 固定 PDF 场景的环境、结果与复测方式 |
 
 ## 模块总览
 

@@ -145,3 +145,25 @@ git status --short
 建议审查顺序：
 提交状态：未提交，由用户审查后手动提交
 ```
+
+## 9. 动态打印专项验证
+
+打印安全回归从 Starter 公开入口覆盖 XML、include、受限 SpEL、扩展数据视图、外部资源标识、PDF 页数与临时目录清理：
+
+```powershell
+mvn --% -pl letool-starter-print-spring-boot -am -Dtest=PrintSecurityRegressionTest -Dsurefire.failIfNoSpecifiedTests=false test
+```
+
+模板作者指南中的 XML 会由 `PrintDocumentationExampleTest` 原样发布并生成 PDF。修改指南示例、DSL 或发布链路后应执行：
+
+```powershell
+mvn --% -pl letool-starter-print-spring-boot -am -Dtest=PrintDocumentationExampleTest -Dsurefire.failIfNoSpecifiedTests=false test
+```
+
+容量基线默认被普通测试排除，只能通过专用 Profile 显式运行：
+
+```powershell
+mvn --% -P print-capacity -pl letool-starter-print-spring-boot -am -Dtest=PrintCapacityBaselineTest -Dsurefire.failIfNoSpecifiedTests=false test
+```
+
+容量报告保存在 `letool-starter-print-spring-boot/target/print-capacity/capacity-baseline.md`，不提交到 Git。报告中的机器耗时用于同环境前后比较，不作为跨机器的固定通过阈值。

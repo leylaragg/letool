@@ -762,6 +762,10 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>${maven-surefire-plugin.version}</version>
+                    <configuration>
+                        <!-- 容量基线耗时较长，只允许通过专用 Profile 显式运行。 -->
+                        <excludedGroups>print-capacity</excludedGroups>
+                    </configuration>
                 </plugin>
 
                 <!-- 统一版本号插件 -->
@@ -795,6 +799,25 @@
     </build>
 
     <profiles>
+        <!-- 只运行固定 PDF 容量场景，并把报告保留在模块 target 目录。 -->
+        <profile>
+            <id>print-capacity</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration combine.self="override">
+                            <groups>print-capacity</groups>
+                            <systemPropertyVariables>
+                                <letool.print.capacity.enabled>true</letool.print.capacity.enabled>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
         <!--
             只负责生成 Maven Central 发布所需的源码、Javadoc 和签名制品。
             仓库地址、Central Portal Token 与 GPG 私钥由发布环境显式提供。

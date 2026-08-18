@@ -39,6 +39,13 @@ letool:
     template-set-cache-capacity: 64
     template-cache-capacity: 1024
     temporary-directory: ""
+    startup:
+      require-active-template: false
+      validate-fonts: false
+    metrics:
+      enabled: true
+    health:
+      enabled: true
     spel:
       enabled: false
 ```
@@ -46,6 +53,14 @@ letool:
 `renderer-profile-version` 参与编译缓存键。字体、样式或渲染配置发生不兼容变化时应提升版本。`temporary-directory` 为空时沿用 PDF 模块的受控临时目录策略。
 
 引入 SpEL 模块本身不会启用表达式；只有依赖存在且 `letool.print.spel.enabled=true` 时，XML 才接受 `expression-language="spel"`。显式开启但缺少模块会在启动阶段失败，避免不同环境悄悄使用不同模板语义。
+
+## 生产观测
+
+项目同时引入 Micrometer 时，Starter 会记录渲染耗时、失败分类、产物页数与字节数，以及两层 XML 编译缓存统计；没有 `MeterRegistry` 时不会创建指标组件。项目引入 Actuator 后还会检查当前模板集合、字体流和临时目录。两组能力都可分别关闭。
+
+`startup.require-active-template` 用于要求应用启动时已经存在活动模板，`startup.validate-fonts` 会实际打开字体流并检查已配置临时目录。默认保持宽松启动，适合模板在应用就绪后由外部系统发布的部署方式。
+
+指标名、健康详情、告警建议和严格启动边界见[生产运维指南](../docs/dynamic-print-production-guide.md)。
 
 ## 声明业务打印定义
 
@@ -142,3 +157,10 @@ String sha256 = current.sha256();
 - 宿主可以替换仓库、注册表、编译器、渲染器、管线、引擎或 `PrintService`；默认 Bean 会退让。
 - `PrintService` 当前固定输出 PDF。其他输出格式通过核心 `PrintEngine` 和相应渲染器/管线扩展，不把业务判断写进通用框架。
 - JasperReports 不是内置依赖。需要接入时应实现独立 `PrintPipeline` 适配模块，通过 `TemplateFormat` 扩展，不修改 XML 主链路。
+
+## 进一步阅读
+
+- [模板作者指南](../docs/dynamic-print-template-author-guide.md)
+- [扩展开发指南](../docs/dynamic-print-extension-guide.md)
+- [生产运维指南](../docs/dynamic-print-production-guide.md)
+- [容量基线](../docs/dynamic-print-capacity-baseline.md)
