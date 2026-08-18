@@ -35,6 +35,7 @@ public class PrintHealthAutoConfiguration {
      * @return 不读取模板正文的仓库健康检查
      */
     @Bean
+    @ConditionalOnBean({TemplateRepository.class, PrintProperties.class})
     @ConditionalOnMissingBean(PrintTemplateHealthIndicator.class)
     public PrintTemplateHealthIndicator printTemplateHealthIndicator(TemplateRepository repository,
                                                                       PrintProperties properties) {
@@ -47,6 +48,7 @@ public class PrintHealthAutoConfiguration {
      * @return 不暴露字体内容和目录路径的基础设施健康检查
      */
     @Bean
+    @ConditionalOnBean(PrintProperties.class)
     @ConditionalOnMissingBean(PrintInfrastructureHealthIndicator.class)
     public PrintInfrastructureHealthIndicator printInfrastructureHealthIndicator(ObjectProvider<PdfFont> fonts,
                                                                                   PrintProperties properties) {

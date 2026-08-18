@@ -9,9 +9,15 @@ import io.github.leylaragg.letool.print.service.PrintService;
 import io.github.leylaragg.letool.print.service.PrintTelemetry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.actuate.autoconfigure.metrics.CompositeMeterRegistryAutoConfiguration;
+import org.springframework.boot.actuate.autoconfigure.metrics.MetricsAutoConfiguration;
+import org.springframework.boot.actuate.autoconfigure.metrics.export.simple.SimpleMetricsExportAutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -19,6 +25,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 
 /**
  * 打印 Micrometer 条件装配与低基数指标测试。
@@ -35,6 +42,13 @@ class PrintMetricsAutoConfigurationTest {
     /** 在基础上下文中加入供指标测试使用的内存注册表。 */
     private final ApplicationContextRunner contextRunner = baseContextRunner
             .withUserConfiguration(MeterRegistryConfiguration.class);
+
+    /** 使用 Boot 默认注册表链路验证真实 Actuator 装配顺序。 */
+    private final ApplicationContextRunner actuatorContextRunner = new ApplicationContextRunner()
+            .withConfiguration(AutoConfigurations.of(PrintSpelAutoConfiguration.class,
+                    PrintAutoConfiguration.class, PrintMetricsAutoConfiguration.class,
+                    MetricsAutoConfiguration.class, SimpleMetricsExportAutoConfiguration.class,
+                    CompositeMeterRegistryAutoConfiguration.class));
 
     /** 注册表存在时提供观测端口和双层缓存统计。 */
     @Test
@@ -119,6 +133,39 @@ class PrintMetricsAutoConfigurationTest {
         });
     }
 
+    /** Actuator 自动配置注册表时，打印指标应等待注册表定义完成后再装配。 */
+    @Test
+    void shouldUseMeterRegistryProvidedByActuatorAutoConfiguration() {
+        actuatorContextRunner.run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context).hasSingleBean(SimpleMeterRegistry.class);
+            assertThat(context).hasSingleBean(MicrometerPrintTelemetry.class);
+            assertThat(context).hasSingleBean(XmlTemplateCacheMetrics.class);
+        });
+    }
+
+    /** Boot 已接管 MeterBinder 时，缓存指标不应再次手动注册。 */
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void shouldBindCacheMetricsOnlyOnceWithActuator(CapturedOutput output) {
+        actuatorContextRunner.run(context -> assertThat(context).hasNotFailed());
+
+        assertThat(output).doesNotContain("This Gauge has been already registered");
+    }
+
+    /** 宿主只接入打印门面时，执行指标可用，XML 缓存指标主动退让。 */
+    @Test
+    void shouldBackOffCacheMetricsWhenCompilationCacheIsMissing() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(PrintMetricsAutoConfiguration.class))
+                .withUserConfiguration(MeterRegistryConfiguration.class, CustomPrintServiceConfiguration.class)
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(MicrometerPrintTelemetry.class);
+                    assertThat(context).doesNotHaveBean(XmlTemplateCacheMetrics.class);
+                });
+    }
+
     /** 提供测试使用的内存指标注册表。 */
     @Configuration(proxyBeanMethods = false)
     static class MeterRegistryConfiguration {
@@ -127,6 +174,17 @@ class PrintMetricsAutoConfigurationTest {
         @Bean
         SimpleMeterRegistry meterRegistry() {
             return new SimpleMeterRegistry();
+        }
+    }
+
+    /** 模拟宿主完全接管打印门面的最小配置。 */
+    @Configuration(proxyBeanMethods = false)
+    static class CustomPrintServiceConfiguration {
+
+        /** @return 不触发默认 XML 基础设施装配的打印门面 */
+        @Bean
+        PrintService printService() {
+            return mock(PrintService.class);
         }
     }
 }

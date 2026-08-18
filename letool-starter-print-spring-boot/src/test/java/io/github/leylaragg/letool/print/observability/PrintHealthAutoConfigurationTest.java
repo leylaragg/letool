@@ -21,6 +21,8 @@ import org.springframework.boot.actuate.health.Status;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -29,6 +31,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 /**
  * 打印健康检查的条件装配和脱敏测试。
@@ -149,12 +152,60 @@ class PrintHealthAutoConfigurationTest {
                 });
     }
 
+    /** 宿主只接管打印门面时，不完整的默认健康检查应主动退让。 */
+    @Test
+    void shouldBackOffWhenHealthDependenciesAreMissing() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(PrintHealthAutoConfiguration.class))
+                .withUserConfiguration(CustomPrintServiceConfiguration.class)
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).doesNotHaveBean(PrintTemplateHealthIndicator.class);
+                    assertThat(context).doesNotHaveBean(PrintInfrastructureHealthIndicator.class);
+                });
+    }
+
+    /** 只有打印配置时仍可检查 PDF 基础设施，不强求模板仓库存在。 */
+    @Test
+    void shouldCreateInfrastructureHealthWithoutTemplateRepository() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(PrintHealthAutoConfiguration.class))
+                .withUserConfiguration(CustomPrintServiceConfiguration.class, PrintPropertiesConfiguration.class)
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).doesNotHaveBean(PrintTemplateHealthIndicator.class);
+                    assertThat(context).hasSingleBean(PrintInfrastructureHealthIndicator.class);
+                });
+    }
+
     /** 创建健康详情中不能出现正文的文档模板。 */
     private TemplateDefinition template(long version) {
         PrintTemplate template = new PrintTemplate(
                 "main", TemplateFormat.LETOOL_XML, 1, version, 1,
                 "secret-template-body".getBytes(StandardCharsets.UTF_8));
         return new TemplateDefinition(TemplateType.DOCUMENT, template);
+    }
+
+    /** 模拟宿主完全接管打印门面的最小配置。 */
+    @Configuration(proxyBeanMethods = false)
+    static class CustomPrintServiceConfiguration {
+
+        /** @return 不依赖默认打印基础设施的门面 */
+        @Bean
+        PrintService printService() {
+            return mock(PrintService.class);
+        }
+    }
+
+    /** 单独提供基础设施健康检查所需的外部化配置。 */
+    @Configuration(proxyBeanMethods = false)
+    static class PrintPropertiesConfiguration {
+
+        /** @return 使用默认宽松设置的打印配置 */
+        @Bean
+        PrintProperties printProperties() {
+            return new PrintProperties();
+        }
     }
 
     /** 只在读取活动模板时模拟底层仓储故障。 */
