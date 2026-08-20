@@ -33,7 +33,7 @@ class PdfChapterMergeTest {
     /** 根分页切开的两个单元仍共享最终目标坐标。 */
     @Test
     void shouldRepairCrossChapterNavigationAfterMerge() throws Exception {
-        DocumentModel document = new DocumentModel(
+        DocumentModel document = DocumentModel.singleSequence(
                 DocumentMetadata.empty(), PageLayout.a4Portrait(), List.of(
                 new HeadingNode("first", 1, List.of(new BookmarkNode("outline", "First"))),
                 new ParagraphNode("", List.of(new InternalLinkNode(

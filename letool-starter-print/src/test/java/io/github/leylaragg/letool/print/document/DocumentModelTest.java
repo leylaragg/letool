@@ -16,6 +16,7 @@ import io.github.leylaragg.letool.print.document.node.SectionNode;
 import io.github.leylaragg.letool.print.document.node.BookmarkNode;
 import io.github.leylaragg.letool.print.document.node.ImageNode;
 import io.github.leylaragg.letool.print.document.node.TextNode;
+import io.github.leylaragg.letool.print.document.style.StyleSheet;
 import io.github.leylaragg.letool.print.exception.PrintValidationException;
 import org.junit.jupiter.api.Test;
 
@@ -37,6 +38,9 @@ class DocumentModelTest {
     void shouldPreferRegularClassesForEvolvingDocumentStructure() {
         assertThat(List.of(
                 PageLayout.class,
+                PageSequence.class,
+                PageRegion.class,
+                PageNumbering.class,
                 AnnotationNode.class,
                 HeadingNode.class,
                 ParagraphNode.class,
@@ -132,38 +136,38 @@ class DocumentModelTest {
     /** 验证目录唯一位于文档根部，并能找到声明位置之后的可见标题。 */
     @Test
     void shouldValidateTableOfContentsPlacementAndHeadings() {
-        DocumentModel valid = new DocumentModel(
+        DocumentModel valid = document(
                 DocumentMetadata.empty(),
                 PageLayout.a4Portrait(),
                 List.of(
-                        new HeadingNode("preface", 1, List.of(new TextNode("目录前标题"))),
+                        new HeadingNode("preface", 1, "", List.of(new TextNode("目录前标题", ""))),
                         new TableOfContentsNode("目录", 1, 2),
                         new SectionNode("chapter", List.of(new HeadingNode(
-                                "chapter-title", 2, List.of(new TextNode("第一章")))))));
+                                "chapter-title", 2, "", List.of(new TextNode("第一章", "")))))));
 
-        valid.validate();
+        assertThat(valid.pageSequences()).hasSize(1);
 
-        assertThatThrownBy(() -> new DocumentModel(
+        assertThatThrownBy(() -> document(
                 DocumentMetadata.empty(), PageLayout.a4Portrait(),
                 List.of(
                         new TableOfContentsNode(null, 1, 3),
                         new TableOfContentsNode(null, 1, 3),
-                        new HeadingNode("heading", 1, List.of(new TextNode("标题"))))).validate())
+                        new HeadingNode("heading", 1, "", List.of(new TextNode("标题", ""))))))
                 .isInstanceOf(PrintValidationException.class)
                 .hasMessageContaining("目录");
-        assertThatThrownBy(() -> new DocumentModel(
+        assertThatThrownBy(() -> document(
                 DocumentMetadata.empty(), PageLayout.a4Portrait(),
                 List.of(new SectionNode("chapter", List.of(
                         new TableOfContentsNode(null, 1, 3),
-                        new HeadingNode("heading", 1, List.of(new TextNode("标题"))))))).validate())
+                        new HeadingNode("heading", 1, "", List.of(new TextNode("标题", ""))))))))
                 .isInstanceOf(PrintValidationException.class)
                 .hasMessageContaining("目录");
-        assertThatThrownBy(() -> new DocumentModel(
+        assertThatThrownBy(() -> document(
                 DocumentMetadata.empty(), PageLayout.a4Portrait(),
                 List.of(
-                        new HeadingNode("before", 1, List.of(new TextNode("目录前标题"))),
+                        new HeadingNode("before", 1, "", List.of(new TextNode("目录前标题", ""))),
                         new TableOfContentsNode(null, 2, 3),
-                        new HeadingNode("after", 1, List.of(new TextNode("层级不匹配"))))).validate())
+                        new HeadingNode("after", 1, "", List.of(new TextNode("层级不匹配", ""))))))
                 .isInstanceOf(PrintValidationException.class)
                 .hasMessageContaining("可收录标题");
     }
@@ -172,39 +176,36 @@ class DocumentModelTest {
     @Test
     void shouldBuildImmutableDocumentTree() {
         List<BlockNode> blocks = new ArrayList<>();
-        blocks.add(new HeadingNode("title", 1, List.of(new TextNode("合同标题"))));
+        blocks.add(new HeadingNode("title", 1, "", List.of(new TextNode("合同标题", ""))));
 
-        DocumentModel model = new DocumentModel(
+        DocumentModel model = document(
                 new DocumentMetadata("合同", "Letool", "zh-CN"),
                 PageLayout.a4Portrait(),
                 blocks);
         blocks.clear();
 
-        assertThat(model.blocks()).hasSize(1);
-        assertThatThrownBy(() -> model.blocks().add(PageBreakNode.INSTANCE))
+        assertThat(model.pageSequences().get(0).body()).hasSize(1);
+        assertThatThrownBy(() -> model.pageSequences().get(0).body().add(PageBreakNode.INSTANCE))
                 .isInstanceOf(UnsupportedOperationException.class);
     }
 
     /** 验证节点级结构边界。 */
     @Test
     void shouldRejectInvalidHeadingAndTableSpan() {
-        assertThatThrownBy(() -> new HeadingNode("h", 0, List.of(new TextNode("x"))))
+        assertThatThrownBy(() -> new HeadingNode("h", 0, "", List.of(new TextNode("x", ""))))
                 .isInstanceOf(PrintValidationException.class);
-        assertThatThrownBy(() -> new TableCell(List.of(), 0, 1))
+        assertThatThrownBy(() -> new TableCell("", List.of(), 0, 1))
                 .isInstanceOf(PrintValidationException.class);
     }
 
     /** 验证整棵文档树拒绝重复逻辑 ID。 */
     @Test
     void shouldRejectDuplicateDocumentNodeIds() {
-        DocumentModel model = new DocumentModel(
-                DocumentMetadata.empty(),
-                PageLayout.a4Portrait(),
+        assertThatThrownBy(() -> document(
+                DocumentMetadata.empty(), PageLayout.a4Portrait(),
                 List.of(
-                        new HeadingNode("same", 1, List.of(new TextNode("A"))),
-                        new ParagraphNode("same", List.of(new TextNode("B")))));
-
-        assertThatThrownBy(model::validate)
+                        new HeadingNode("same", 1, "", List.of(new TextNode("A", ""))),
+                        new ParagraphNode("same", "", List.of(new TextNode("B", ""))))))
                 .isInstanceOf(PrintValidationException.class)
                 .hasMessageContaining("same");
     }
@@ -212,17 +213,17 @@ class DocumentModelTest {
     /** 验证内部链接目标必须真实存在，并且遍历包含链接标签。 */
     @Test
     void shouldValidateInternalLinkTargetsAndTraversalOrder() {
-        DocumentModel invalid = new DocumentModel(
-                DocumentMetadata.empty(),
-                PageLayout.a4Portrait(),
-                List.of(new ParagraphNode(
-                        "paragraph",
-                        List.of(new InternalLinkNode("missing", List.of(new TextNode("跳转")))))));
-
-        assertThatThrownBy(invalid::validate)
+        assertThatThrownBy(() -> document(
+                DocumentMetadata.empty(), PageLayout.a4Portrait(),
+                List.of(new ParagraphNode("paragraph", "", List.of(
+                        new InternalLinkNode("missing", List.of(new TextNode("跳转", ""))))))))
                 .isInstanceOf(PrintValidationException.class)
                 .hasMessageContaining("missing");
-        assertThat(DocumentTraversal.depthFirst(invalid))
+        DocumentModel valid = document(
+                DocumentMetadata.empty(), PageLayout.a4Portrait(),
+                List.of(new ParagraphNode("paragraph", "", List.of(
+                        new InternalLinkNode("paragraph", List.of(new TextNode("跳转", "")))))));
+        assertThat(DocumentTraversal.depthFirst(valid))
                 .extracting(node -> node.getClass().getSimpleName())
                 .containsExactly("ParagraphNode", "InternalLinkNode", "TextNode");
     }
@@ -230,10 +231,8 @@ class DocumentModelTest {
     /** 验证批注和内部链接一样只能引用真实存在的文档节点。 */
     @Test
     void shouldValidateAnnotationTarget() {
-        DocumentModel invalid = new DocumentModel(
-                DocumentMetadata.empty(),
-                PageLayout.a4Portrait(),
-                List.of(new AnnotationNode(
+        assertThatThrownBy(() -> document(
+                DocumentMetadata.empty(), PageLayout.a4Portrait(), List.of(new AnnotationNode(
                         AnnotationType.TEXT_NOTE,
                         "missing",
                         AnnotationPlacement.TOP_RIGHT,
@@ -242,9 +241,7 @@ class DocumentModelTest {
                         0,
                         0,
                         "审核人",
-                        "请复核")));
-
-        assertThatThrownBy(invalid::validate)
+                        "请复核"))))
                 .isInstanceOf(PrintValidationException.class)
                 .hasMessageContaining("missing");
     }
@@ -257,5 +254,12 @@ class DocumentModelTest {
         assertThat(layout.pageSize()).isEqualTo(PageSize.A4);
         assertThat(layout.orientation()).isEqualTo(PageOrientation.PORTRAIT);
         assertThat(layout.margins()).isEqualTo(new Margins(20_000, 20_000, 20_000, 20_000));
+    }
+
+    /** 用新根模型创建单页面序列文档。 */
+    private static DocumentModel document(
+            DocumentMetadata metadata, PageLayout pageLayout, List<BlockNode> blocks) {
+        return new DocumentModel(metadata, StyleSheet.empty(),
+                List.of(PageSequence.body(pageLayout, blocks)));
     }
 }

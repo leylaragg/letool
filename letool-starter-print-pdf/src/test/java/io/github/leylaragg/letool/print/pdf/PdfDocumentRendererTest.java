@@ -5,6 +5,7 @@ import io.github.leylaragg.letool.print.api.RenderOptions;
 import io.github.leylaragg.letool.print.document.DocumentMetadata;
 import io.github.leylaragg.letool.print.document.DocumentModel;
 import io.github.leylaragg.letool.print.document.PageLayout;
+import io.github.leylaragg.letool.print.document.PageSequence;
 import io.github.leylaragg.letool.print.document.node.BookmarkNode;
 import io.github.leylaragg.letool.print.document.node.HeadingNode;
 import io.github.leylaragg.letool.print.document.node.InternalLinkNode;
@@ -14,6 +15,8 @@ import io.github.leylaragg.letool.print.document.node.TableCell;
 import io.github.leylaragg.letool.print.document.node.TableNode;
 import io.github.leylaragg.letool.print.document.node.TableRow;
 import io.github.leylaragg.letool.print.document.node.TextNode;
+import io.github.leylaragg.letool.print.document.style.StyleSheet;
+import io.github.leylaragg.letool.print.exception.PrintValidationException;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -29,6 +32,7 @@ import java.util.List;
 import java.util.Objects;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * 通用文档模型到真实 PDF 产物的闭环测试。
@@ -41,7 +45,7 @@ class PdfDocumentRendererTest {
     @Test
     void shouldRenderReadablePdfWithMetadataAndInternalLink() throws Exception {
         PdfDocumentRenderer renderer = renderer();
-        DocumentModel document = new DocumentModel(
+        DocumentModel document = DocumentModel.singleSequence(
                 new DocumentMetadata("阶段报告", "leyland", "zh-CN"),
                 PageLayout.a4Portrait(),
                 List.of(
@@ -85,7 +89,7 @@ class PdfDocumentRendererTest {
         for (int index = 1; index <= 120; index++) {
             rows.add(row("数据行 " + index));
         }
-        DocumentModel document = new DocumentModel(
+        DocumentModel document = DocumentModel.singleSequence(
                 DocumentMetadata.empty(),
                 PageLayout.a4Portrait(),
                 List.of(new TableNode("records", 1, rows)));
@@ -106,7 +110,7 @@ class PdfDocumentRendererTest {
     /** 宿主关闭文档元数据后，业务标题、作者和语言不会写入 PDF。 */
     @Test
     void shouldOmitDocumentMetadataWhenDisabled() throws Exception {
-        DocumentModel document = new DocumentModel(
+        DocumentModel document = DocumentModel.singleSequence(
                 new DocumentMetadata("secret-title", "secret-author", "zh-CN"),
                 PageLayout.a4Portrait(),
                 List.of(new ParagraphNode("", List.of(new TextNode("正文")))));
@@ -121,6 +125,21 @@ class PdfDocumentRendererTest {
             assertThat(pdf.getDocumentInformation().getAuthor()).isNull();
             assertThat(pdf.getDocumentCatalog().getLanguage()).isNull();
         }
+    }
+
+    /** PDF 尚未实现页面序列时应明确拒绝，不能把第二个序列悄悄丢掉。 */
+    @Test
+    void shouldRejectUnsupportedPageSequences() {
+        DocumentModel document = new DocumentModel(
+                DocumentMetadata.empty(),
+                StyleSheet.empty(),
+                List.of(
+                        PageSequence.body(PageLayout.a4Portrait(), List.of(paragraph("第一段"))),
+                        PageSequence.body(PageLayout.a4Portrait(), List.of(paragraph("第二段")))));
+
+        assertThatThrownBy(() -> RenderedPdf.render(renderer(), document, RenderOptions.defaults()))
+                .isInstanceOf(PrintValidationException.class)
+                .hasMessageContaining("MULTIPLE_PAGE_SEQUENCES");
     }
 
     /** 创建使用测试专用 Apache 2.0 字体的渲染器。 */
@@ -138,8 +157,13 @@ class PdfDocumentRendererTest {
 
     /** 创建单列表格行。 */
     private TableRow row(String text) {
-        ParagraphNode paragraph = new ParagraphNode("", List.of(new TextNode(text)));
+        ParagraphNode paragraph = paragraph(text);
         return new TableRow(List.of(new TableCell(List.of(paragraph), 1, 1)));
+    }
+
+    /** 创建使用默认样式的正文段落。 */
+    private ParagraphNode paragraph(String text) {
+        return new ParagraphNode("", List.of(new TextNode(text)));
     }
 
     /** 检查至少一个页面字体已经嵌入产物。 */

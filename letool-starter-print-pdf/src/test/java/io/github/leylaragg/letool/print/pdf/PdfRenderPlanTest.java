@@ -4,6 +4,7 @@ import io.github.leylaragg.letool.print.document.DocumentMetadata;
 import io.github.leylaragg.letool.print.document.DocumentModel;
 import io.github.leylaragg.letool.print.document.PageLayout;
 import io.github.leylaragg.letool.print.document.node.BlockNode;
+import io.github.leylaragg.letool.print.document.node.HeadingNode;
 import io.github.leylaragg.letool.print.document.node.PageBreakNode;
 import io.github.leylaragg.letool.print.document.node.ParagraphNode;
 import io.github.leylaragg.letool.print.document.node.SectionNode;
@@ -28,7 +29,9 @@ class PdfRenderPlanTest {
     @Test
     void shouldCreateOrderedRenderUnits() {
         SectionNode nested = new SectionNode("chapter", List.of(
-                paragraph("章节一"), PageBreakNode.INSTANCE, paragraph("章节二")));
+                new HeadingNode("chapter-title", 1, List.of(new TextNode("章节一"))),
+                PageBreakNode.INSTANCE,
+                paragraph("章节二")));
         DocumentModel document = document(List.of(
                 paragraph("封面"),
                 new TableOfContentsNode(null, 1, 3),
@@ -92,6 +95,6 @@ class PdfRenderPlanTest {
 
     /** 创建固定页面布局的测试文档。 */
     private static DocumentModel document(List<BlockNode> blocks) {
-        return new DocumentModel(DocumentMetadata.empty(), PageLayout.a4Portrait(), blocks);
+        return DocumentModel.singleSequence(DocumentMetadata.empty(), PageLayout.a4Portrait(), blocks);
     }
 }

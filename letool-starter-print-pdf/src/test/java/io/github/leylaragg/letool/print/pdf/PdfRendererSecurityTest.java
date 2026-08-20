@@ -193,7 +193,8 @@ class PdfRendererSecurityTest {
 
     /** 创建普通测试文档。 */
     private DocumentModel document(List<? extends BlockNode> blocks) {
-        return new DocumentModel(DocumentMetadata.empty(), PageLayout.a4Portrait(), List.copyOf(blocks));
+        return DocumentModel.singleSequence(
+                DocumentMetadata.empty(), PageLayout.a4Portrait(), List.copyOf(blocks));
     }
 
     /** 创建单段正文。 */

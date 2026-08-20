@@ -42,7 +42,7 @@ class XmlDynamicBindingTest {
                 {"policy":{"name":"张三","amount":12.50,"active":true,"note":null}}
                 """);
 
-        assertThat(model.blocks()).containsExactly(new ParagraphNode("", List.of(
+        assertThat(XmlTestDocuments.body(model)).containsExactly(new ParagraphNode("", List.of(
                 new TextNode("姓名："), new TextNode("张三"),
                 new TextNode("，金额："), new TextNode("12.5"),
                 new TextNode("，有效："), new TextNode("true"),
@@ -56,7 +56,7 @@ class XmlDynamicBindingTest {
                 "<page><heading><field path=\"title\"/></heading></page>",
                 "{\"title\":\"动态标题\"}");
 
-        assertThat(model.blocks()).containsExactly(
+        assertThat(XmlTestDocuments.body(model)).containsExactly(
                 new HeadingNode("", 1, List.of(new TextNode("动态标题"))));
     }
 
@@ -99,7 +99,7 @@ class XmlDynamicBindingTest {
                 {"policy":{"status":"ACTIVE","amount":12.5,"active":true,"note":null}}
                 """);
 
-        assertThat(model.blocks()).containsExactly(
+        assertThat(XmlTestDocuments.body(model)).containsExactly(
                 paragraph("状态"), paragraph("金额"), paragraph("有效"),
                 paragraph("空值"), paragraph("缺失"));
     }
@@ -122,9 +122,9 @@ class XmlDynamicBindingTest {
                 </page>
                 """, "{\"present\":null,\"yes\":true,\"no\":false,\"amount\":10}");
 
-        assertThat(model.blocks()).extracting(Object::toString)
+        assertThat(XmlTestDocuments.body(model)).extracting(Object::toString)
                 .allSatisfy(value -> assertThat(value).doesNotContain("missing"));
-        assertThat(model.blocks()).hasSize(10);
+        assertThat(XmlTestDocuments.body(model)).hasSize(10);
     }
 
     /** 验证存在性判断不会把无法继续遍历的路径误判为字段缺失。 */
@@ -155,7 +155,7 @@ class XmlDynamicBindingTest {
                 </page>
                 """, "{\"active\":false,\"empty\":[],\"none\":null}");
 
-        assertThat(model.blocks()).containsExactly(paragraph("保留"));
+        assertThat(XmlTestDocuments.body(model)).containsExactly(paragraph("保留"));
     }
 
     /** 验证字段和循环来源会区分缺失路径与无法继续遍历。 */
@@ -229,7 +229,7 @@ class XmlDynamicBindingTest {
                 {"policy":{"names":["甲","乙"],"coverages":[{"name":"寿险"},{"name":"医疗险"}],"none":null}}
                 """);
 
-        assertThat(model.blocks()).containsExactly(
+        assertThat(XmlTestDocuments.body(model)).containsExactly(
                 paragraph("甲"), paragraph("乙"), paragraph("寿险"), paragraph("医疗险"));
     }
 
@@ -248,7 +248,7 @@ class XmlDynamicBindingTest {
                 {"groups":[{"name":"A","items":[1,2]},{"name":"B","items":[3]}]}
                 """);
 
-        assertThat(model.blocks()).containsExactly(
+        assertThat(XmlTestDocuments.body(model)).containsExactly(
                 new ParagraphNode("", List.of(new TextNode("A"), new TextNode("："), new TextNode("1"))),
                 new ParagraphNode("", List.of(new TextNode("A"), new TextNode("："), new TextNode("2"))),
                 new ParagraphNode("", List.of(new TextNode("B"), new TextNode("："), new TextNode("3"))));
@@ -301,7 +301,7 @@ class XmlDynamicBindingTest {
                                 .put("name", "name-" + index);
                         DocumentModel model = new XmlTemplateBinder().bind(
                                 template, PrintContext.of(1, root));
-                        ParagraphNode paragraph = (ParagraphNode) model.blocks().get(0);
+                        ParagraphNode paragraph = (ParagraphNode) XmlTestDocuments.body(model).get(0);
                         return ((TextNode) paragraph.children().get(0)).text();
                     })
                     .toList();

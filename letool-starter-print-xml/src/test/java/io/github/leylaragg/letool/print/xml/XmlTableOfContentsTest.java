@@ -28,7 +28,7 @@ class XmlTableOfContentsTest {
                 <heading level="2">第一章</heading>
                 """));
 
-        assertThat(document.blocks().get(0))
+        assertThat(XmlTestDocuments.body(document).get(0))
                 .isEqualTo(new TableOfContentsNode("目录", 1, 2));
     }
 
@@ -40,7 +40,7 @@ class XmlTableOfContentsTest {
                 <heading>第一章</heading>
                 """));
 
-        TableOfContentsNode contents = (TableOfContentsNode) document.blocks().get(0);
+        TableOfContentsNode contents = (TableOfContentsNode) XmlTestDocuments.body(document).get(0);
         assertThat(contents.title()).isNull();
         assertThat(contents.minLevel()).isEqualTo(1);
         assertThat(contents.maxLevel()).isEqualTo(3);

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.leylaragg.letool.print.api.PrintTemplate;
 import io.github.leylaragg.letool.print.api.TemplateFormat;
 import io.github.leylaragg.letool.print.context.PrintContext;
+import io.github.leylaragg.letool.print.document.DocumentModel;
 import io.github.leylaragg.letool.print.document.node.ParagraphNode;
 import io.github.leylaragg.letool.print.document.node.TextNode;
 import io.github.leylaragg.letool.print.xml.format.FormatCompileContext;
@@ -41,10 +42,10 @@ class XmlFormattedFieldTest {
                 </document>
                 """);
 
-        ParagraphNode paragraph = (ParagraphNode) new XmlTemplateBinder().bind(
+        DocumentModel document = new XmlTemplateBinder().bind(
                 template,
-                PrintContext.of(1, JsonNodeFactory.instance.objectNode().put("amount", 1234.5)))
-                .blocks().get(0);
+                PrintContext.of(1, JsonNodeFactory.instance.objectNode().put("amount", 1234.5)));
+        ParagraphNode paragraph = (ParagraphNode) XmlTestDocuments.body(document).get(0);
 
         assertThat(paragraph.children()).containsExactly(new TextNode("1,234.50"));
     }
@@ -64,10 +65,10 @@ class XmlFormattedFieldTest {
                 </document>
                 """);
 
-        ParagraphNode paragraph = (ParagraphNode) new XmlTemplateBinder().bind(
+        DocumentModel document = new XmlTemplateBinder().bind(
                 template,
-                PrintContext.of(1, JsonNodeFactory.instance.objectNode().putNull("value")))
-                .blocks().get(0);
+                PrintContext.of(1, JsonNodeFactory.instance.objectNode().putNull("value")));
+        ParagraphNode paragraph = (ParagraphNode) XmlTestDocuments.body(document).get(0);
 
         assertThat(paragraph.children()).containsExactly(new TextNode(""));
         assertThat(calls).hasValue(0);
@@ -101,8 +102,8 @@ class XmlFormattedFieldTest {
                 """);
 
         new XmlTemplateBinder().bind(template, context("A"));
-        ParagraphNode second = (ParagraphNode) new XmlTemplateBinder()
-                .bind(template, context("B")).blocks().get(0);
+        DocumentModel secondDocument = new XmlTemplateBinder().bind(template, context("B"));
+        ParagraphNode second = (ParagraphNode) XmlTestDocuments.body(secondDocument).get(0);
 
         assertThat(compilations).hasValue(1);
         assertThat(second.children()).containsExactly(new TextNode("ID-B"));
@@ -191,8 +192,9 @@ class XmlFormattedFieldTest {
         List<String> values = IntStream.range(0, 100).parallel()
                 .mapToObj(index -> {
                     ObjectNode root = JsonNodeFactory.instance.objectNode().put("value", index);
-                    ParagraphNode paragraph = (ParagraphNode) new XmlTemplateBinder()
-                            .bind(template, PrintContext.of(1, root)).blocks().get(0);
+                    DocumentModel document = new XmlTemplateBinder()
+                            .bind(template, PrintContext.of(1, root));
+                    ParagraphNode paragraph = (ParagraphNode) XmlTestDocuments.body(document).get(0);
                     return ((TextNode) paragraph.children().get(0)).text();
                 })
                 .sorted()

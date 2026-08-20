@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.leylaragg.letool.print.api.PrintTemplate;
 import io.github.leylaragg.letool.print.api.TemplateFormat;
 import io.github.leylaragg.letool.print.context.PrintContext;
+import io.github.leylaragg.letool.print.document.DocumentModel;
 import io.github.leylaragg.letool.print.document.node.BookmarkNode;
 import io.github.leylaragg.letool.print.document.node.ImageNode;
 import io.github.leylaragg.letool.print.document.node.InternalLinkNode;
@@ -42,8 +43,9 @@ class XmlImageNavigationBindingTest {
         ObjectNode root = JsonNodeFactory.instance.objectNode();
         root.putObject("signature").put("resourceId", "signature-2026");
 
+        DocumentModel document = new XmlTemplateBinder().bind(template, PrintContext.of(1, root));
         List<io.github.leylaragg.letool.print.document.node.BlockNode> blocks =
-                new XmlTemplateBinder().bind(template, PrintContext.of(1, root)).blocks();
+                XmlTestDocuments.body(document);
 
         assertThat(blocks).containsExactly(
                 new ImageNode("logo", "brand.logo", "公司标识", 30_000, 12_500),
@@ -60,8 +62,8 @@ class XmlImageNavigationBindingTest {
                 """);
         ObjectNode root = JsonNodeFactory.instance.objectNode().put("caption", "首页");
 
-        ParagraphNode paragraph = (ParagraphNode) new XmlTemplateBinder()
-                .bind(template, PrintContext.of(1, root)).blocks().get(0);
+        DocumentModel document = new XmlTemplateBinder().bind(template, PrintContext.of(1, root));
+        ParagraphNode paragraph = (ParagraphNode) XmlTestDocuments.body(document).get(0);
 
         assertThat(paragraph.children()).containsExactly(
                 new BookmarkNode("summary", "汇总"),

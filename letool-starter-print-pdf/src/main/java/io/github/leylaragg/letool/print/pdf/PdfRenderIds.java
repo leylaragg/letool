@@ -35,8 +35,18 @@ final class PdfRenderIds {
      */
     static PdfRenderIds create(DocumentModel document) {
         Objects.requireNonNull(document, "document 不能为空");
+        return create(DocumentTraversal.depthFirst(document));
+    }
+
+    /** 为目录等受控局部视图分配布局 ID。 */
+    static PdfRenderIds create(PdfRenderView view) {
+        Objects.requireNonNull(view, "view 不能为空");
+        return create(DocumentTraversal.depthFirstBlocks(view.blocks()));
+    }
+
+    /** 按稳定遍历结果建立最终 ID 快照。 */
+    private static PdfRenderIds create(Iterable<DocumentNode> nodes) {
         ListState state = new ListState();
-        var nodes = DocumentTraversal.depthFirst(document);
         for (DocumentNode node : nodes) {
             if (!node.id().isEmpty()) {
                 state.usedIds.add(node.id());

@@ -48,7 +48,8 @@ class PdfNavigationWriterTest {
         PdfRenderIds ids = PdfRenderIds.create(document);
 
         assertThat(ids.sourceId(firstLink)).isNotEqualTo(ids.sourceId(secondLink));
-        String xhtml = new PdfXhtmlRenderer(List.of()).render(document, ids, true);
+        String xhtml = new PdfXhtmlRenderer(List.of())
+                .render(PdfRenderView.complete(document), ids, true);
         assertThat(xhtml).contains("class=\"internal-link\"")
                 .contains("id=\"" + ids.sourceId(firstLink) + "\"")
                 .doesNotContain("href=\"#target\"")
@@ -64,6 +65,6 @@ class PdfNavigationWriterTest {
     }
 
     private static DocumentModel document(List<BlockNode> blocks) {
-        return new DocumentModel(DocumentMetadata.empty(), PageLayout.a4Portrait(), blocks);
+        return DocumentModel.singleSequence(DocumentMetadata.empty(), PageLayout.a4Portrait(), blocks);
     }
 }

@@ -6,6 +6,7 @@ import io.github.leylaragg.letool.print.api.PrintTemplate;
 import io.github.leylaragg.letool.print.api.TemplateFormat;
 import io.github.leylaragg.letool.print.context.PrintContext;
 import io.github.leylaragg.letool.print.document.DocumentModel;
+import io.github.leylaragg.letool.print.document.node.BlockNode;
 import io.github.leylaragg.letool.print.document.node.ParagraphNode;
 import io.github.leylaragg.letool.print.document.node.TextNode;
 import io.github.leylaragg.letool.print.exception.PrintValidationException;
@@ -76,7 +77,7 @@ class RestrictedSpelXmlIntegrationTest {
                 {"status":"ACTIVE","items":[{"enabled":true}],"remark":null}
                 """);
 
-        assertThat(model.blocks()).containsExactly(
+        assertThat(body(model)).containsExactly(
                 paragraph("启用"), paragraph("无备注"));
     }
 
@@ -103,7 +104,7 @@ class RestrictedSpelXmlIntegrationTest {
                 }
                 """);
 
-        assertThat(model.blocks()).containsExactly(paragraph("A"));
+        assertThat(body(model)).containsExactly(paragraph("A"));
     }
 
     /**
@@ -117,7 +118,7 @@ class RestrictedSpelXmlIntegrationTest {
                 </if></page>
                 """);
 
-        assertThat(bind(structured, "{\"enabled\":true}").blocks())
+        assertThat(body(bind(structured, "{\"enabled\":true}")))
                 .containsExactly(paragraph("结构化"));
         assertThatThrownBy(() -> compile(spelCompiler(), """
                 <page><if expression-language="spel" test="enabled == true"
@@ -151,8 +152,8 @@ class RestrictedSpelXmlIntegrationTest {
                 </if></page>
                 """);
 
-        assertThat(bind(template, "{\"enabled\":true}").blocks()).hasSize(1);
-        assertThat(bind(template, "{\"enabled\":false}").blocks()).isEmpty();
+        assertThat(body(bind(template, "{\"enabled\":true}"))).hasSize(1);
+        assertThat(body(bind(template, "{\"enabled\":false}"))).isEmpty();
     }
 
     /**
@@ -168,9 +169,8 @@ class RestrictedSpelXmlIntegrationTest {
         ExecutorService executor = Executors.newFixedThreadPool(4);
         try {
             List<Callable<Integer>> tasks = java.util.stream.IntStream.range(0, 24)
-                    .mapToObj(index -> (Callable<Integer>) () -> bind(
-                            template, "{\"enabled\":" + (index % 2 == 0) + "}")
-                            .blocks().size())
+                    .mapToObj(index -> (Callable<Integer>) () -> body(bind(
+                            template, "{\"enabled\":" + (index % 2 == 0) + "}")).size())
                     .toList();
 
             List<Integer> sizes = executor.invokeAll(tasks).stream()
@@ -220,6 +220,12 @@ class RestrictedSpelXmlIntegrationTest {
                 .hasMessageNotContaining(secret)
                 .hasMessageNotContaining("missing")
                 .hasMessageNotContaining("RestrictedSpelDataNode");
+    }
+
+    /** XML 绑定器当前只生成一个页面序列，测试从该序列读取正文。 */
+    private List<BlockNode> body(DocumentModel document) {
+        assertThat(document.pageSequences()).hasSize(1);
+        return document.pageSequences().get(0).body();
     }
 
     /**

@@ -56,7 +56,7 @@ class XmlCustomTagExtensionTest {
         DocumentModel model = new XmlTemplateBinder().bind(template, PrintContext.of(
                 1, JsonNodeFactory.instance.objectNode().put("suffix", "one")));
 
-        assertThat(model.blocks()).containsExactly(new SectionNode(
+        assertThat(XmlTestDocuments.body(model)).containsExactly(new SectionNode(
                 "notice-one", List.of(new ParagraphNode("", List.of(new TextNode("正文"))))));
     }
 
@@ -78,7 +78,7 @@ class XmlCustomTagExtensionTest {
         DocumentModel model = new XmlTemplateBinder().bind(template, PrintContext.of(
                 1, JsonNodeFactory.instance.objectNode().put("name", "张三")));
 
-        assertThat(model.blocks()).containsExactly(new ParagraphNode(
+        assertThat(XmlTestDocuments.body(model)).containsExactly(new ParagraphNode(
                 "", List.of(new TextNode("[名称：张三"))));
     }
 
@@ -97,7 +97,7 @@ class XmlCustomTagExtensionTest {
         DocumentModel model = new XmlTemplateBinder().bind(visible, PrintContext.of(1,
                 new com.fasterxml.jackson.databind.ObjectMapper().readTree(
                         "{\"items\":[{\"name\":\"A\"},{\"name\":\"B\"}]}")));
-        assertThat(model.blocks()).containsExactly(
+        assertThat(XmlTestDocuments.body(model)).containsExactly(
                 new ParagraphNode("", List.of(new TextNode("A"))),
                 new ParagraphNode("", List.of(new TextNode("B"))));
 
@@ -247,7 +247,7 @@ class XmlCustomTagExtensionTest {
 
         DocumentModel recovered = new XmlTemplateBinder().bind(template, PrintContext.of(
                 1, JsonNodeFactory.instance.objectNode().put("large", false)));
-        assertThat(recovered.blocks()).containsExactly(
+        assertThat(XmlTestDocuments.body(recovered)).containsExactly(
                 new ParagraphNode("", List.of(new TextNode("ok"))));
     }
 

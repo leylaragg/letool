@@ -50,9 +50,9 @@ class XmlExpressionExtensionTest {
         DocumentModel hidden = new XmlTemplateBinder().bind(template, PrintContext.of(
                 1, JsonNodeFactory.instance.objectNode().put("enabled", false)));
 
-        assertThat(shown.blocks()).containsExactly(
+        assertThat(XmlTestDocuments.body(shown)).containsExactly(
                 new ParagraphNode("", List.of(new TextNode("显示"))));
-        assertThat(hidden.blocks()).isEmpty();
+        assertThat(XmlTestDocuments.body(hidden)).isEmpty();
     }
 
     /** 验证循环变量通过只读数据视图提供给表达式计划。 */
@@ -74,7 +74,7 @@ class XmlExpressionExtensionTest {
                         {"items":[{"name":"A","visible":true},{"name":"B","visible":false}]}
                         """)));
 
-        assertThat(model.blocks()).containsExactly(
+        assertThat(XmlTestDocuments.body(model)).containsExactly(
                 new ParagraphNode("", List.of(new TextNode("A"))));
     }
 
@@ -157,9 +157,12 @@ class XmlExpressionExtensionTest {
         var executor = Executors.newFixedThreadPool(4);
         try {
             List<Callable<Integer>> tasks = java.util.stream.IntStream.range(0, 20)
-                    .mapToObj(index -> (Callable<Integer>) () -> new XmlTemplateBinder().bind(
-                            template, PrintContext.of(1, JsonNodeFactory.instance.objectNode()
-                                    .put("value", index))).blocks().size())
+                    .mapToObj(index -> (Callable<Integer>) () -> {
+                        DocumentModel model = new XmlTemplateBinder().bind(
+                                template, PrintContext.of(1, JsonNodeFactory.instance.objectNode()
+                                        .put("value", index)));
+                        return XmlTestDocuments.body(model).size();
+                    })
                     .toList();
 
             List<Integer> sizes = executor.invokeAll(tasks).stream().map(future -> {

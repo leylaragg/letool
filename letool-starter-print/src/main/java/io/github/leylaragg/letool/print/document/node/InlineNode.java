@@ -6,5 +6,6 @@ package io.github.leylaragg.letool.print.document.node;
  * @author leyland
  */
 public sealed interface InlineNode extends DocumentNode
-        permits TextNode, BookmarkNode, InternalLinkNode {
+        permits TextNode, BookmarkNode, InternalLinkNode, PageNumberNode, PageCountNode,
+        LineBreakNode {
 }

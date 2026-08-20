@@ -31,7 +31,7 @@ class PdfTableOfContentsTest {
     /** 封面后的目录独占一页，并显示标题最终所在的一基页码。 */
     @Test
     void shouldRenderConvergedLinkedTableOfContents() throws Exception {
-        DocumentModel document = new DocumentModel(
+        DocumentModel document = DocumentModel.singleSequence(
                 DocumentMetadata.empty(),
                 PageLayout.a4Portrait(),
                 List.of(
@@ -74,6 +74,6 @@ class PdfTableOfContentsTest {
         for (int index = 0; index < count; index++) {
             blocks.add(new HeadingNode("", 1, List.of(new TextNode("Heading " + index))));
         }
-        return new DocumentModel(DocumentMetadata.empty(), PageLayout.a4Portrait(), blocks);
+        return DocumentModel.singleSequence(DocumentMetadata.empty(), PageLayout.a4Portrait(), blocks);
     }
 }

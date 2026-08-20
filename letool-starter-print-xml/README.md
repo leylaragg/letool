@@ -31,6 +31,8 @@ DocumentModel document = new XmlTemplateBinder().bind(compiled, printContext);
 
 编译快照可以在上下文版本匹配的前提下重复绑定，不保存 DOM、StAX、业务 POJO 或 Spring 对象。
 
+当前 XML DSL 会生成一个正文页面序列并使用核心默认样式表。核心模型已经支持多页面序列、页眉页脚、逻辑页码和强类型命名样式；这些声明进入 XML 前不会通过隐藏属性或自定义 CSS 临时开放，程序化构建者和其他模板前端可以直接使用核心能力。
+
 ## 版本解析与编译缓存
 
 运行时可以通过 `XmlTemplateCompilationService` 解析明确版本或仓库当前激活版本：

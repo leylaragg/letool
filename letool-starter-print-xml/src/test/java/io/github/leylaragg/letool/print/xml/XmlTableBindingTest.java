@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.leylaragg.letool.print.api.PrintTemplate;
 import io.github.leylaragg.letool.print.api.TemplateFormat;
 import io.github.leylaragg.letool.print.context.PrintContext;
+import io.github.leylaragg.letool.print.document.DocumentModel;
 import io.github.leylaragg.letool.print.document.node.ParagraphNode;
 import io.github.leylaragg.letool.print.document.node.TableNode;
 import io.github.leylaragg.letool.print.document.node.TextNode;
@@ -46,8 +47,8 @@ class XmlTableBindingTest {
         items.addObject().put("name", "纸张").put("amount", 12.50);
         items.addObject().put("name", "墨盒").put("amount", 88);
 
-        TableNode table = (TableNode) new XmlTemplateBinder()
-                .bind(template, PrintContext.of(1, root)).blocks().get(0);
+        DocumentModel document = new XmlTemplateBinder().bind(template, PrintContext.of(1, root));
+        TableNode table = (TableNode) XmlTestDocuments.body(document).get(0);
 
         assertThat(table.id()).isEqualTo("items");
         assertThat(table.headerRowCount()).isEqualTo(1);
@@ -69,8 +70,8 @@ class XmlTableBindingTest {
         ObjectNode root = JsonNodeFactory.instance.objectNode();
         root.putArray("items");
 
-        assertThat(new XmlTemplateBinder().bind(template, PrintContext.of(1, root)).blocks())
-                .isEmpty();
+        DocumentModel document = new XmlTemplateBinder().bind(template, PrintContext.of(1, root));
+        assertThat(XmlTestDocuments.body(document)).isEmpty();
     }
 
     /** 验证表体为空时仍可保留仅包含表头的表格。 */
@@ -88,8 +89,8 @@ class XmlTableBindingTest {
                 """);
         ObjectNode root = JsonNodeFactory.instance.objectNode().put("visible", false);
 
-        TableNode table = (TableNode) new XmlTemplateBinder()
-                .bind(template, PrintContext.of(1, root)).blocks().get(0);
+        DocumentModel document = new XmlTemplateBinder().bind(template, PrintContext.of(1, root));
+        TableNode table = (TableNode) XmlTestDocuments.body(document).get(0);
 
         assertThat(table.headerRowCount()).isEqualTo(1);
         assertThat(table.rows()).hasSize(1);

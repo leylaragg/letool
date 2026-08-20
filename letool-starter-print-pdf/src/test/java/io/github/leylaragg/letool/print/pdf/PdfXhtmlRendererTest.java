@@ -40,7 +40,7 @@ class PdfXhtmlRendererTest {
                 PageSize.A4,
                 PageOrientation.LANDSCAPE,
                 new Margins(10_000, 20_000, 30_000, 40_000));
-        DocumentModel document = new DocumentModel(
+        DocumentModel document = DocumentModel.singleSequence(
                 DocumentMetadata.empty(),
                 layout,
                 List.of(new ParagraphNode("", List.of(new TextNode("正文")))));
@@ -55,7 +55,7 @@ class PdfXhtmlRendererTest {
     /** 文本和属性分别转义，业务内容无法改变 XHTML 结构。 */
     @Test
     void shouldEscapeMetadataAndText() {
-        DocumentModel document = new DocumentModel(
+        DocumentModel document = DocumentModel.singleSequence(
                 new DocumentMetadata("报告 <一> & \"PDF\"", "作者", "zh-CN"),
                 PageLayout.a4Portrait(),
                 List.of(new HeadingNode(
@@ -88,10 +88,8 @@ class PdfXhtmlRendererTest {
                 navigation,
                 table,
                 PageBreakNode.INSTANCE));
-        DocumentModel document = new DocumentModel(
-                DocumentMetadata.empty(),
-                PageLayout.a4Portrait(),
-                List.of(section));
+        DocumentModel document = DocumentModel.singleSequence(
+                DocumentMetadata.empty(), PageLayout.a4Portrait(), List.of(section));
 
         String xhtml = renderer().render(document);
 
@@ -112,7 +110,7 @@ class PdfXhtmlRendererTest {
     /** 批注由 PDF 后处理写入，不会成为 XHTML 页面正文。 */
     @Test
     void shouldKeepAnnotationContentOutOfXhtml() {
-        DocumentModel document = new DocumentModel(
+        DocumentModel document = DocumentModel.singleSequence(
                 DocumentMetadata.empty(),
                 PageLayout.a4Portrait(),
                 List.of(

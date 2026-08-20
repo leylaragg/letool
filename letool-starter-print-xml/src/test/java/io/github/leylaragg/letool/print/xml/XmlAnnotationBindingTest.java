@@ -37,8 +37,8 @@ class XmlAnnotationBindingTest {
         DocumentModel document = new XmlTemplateBinder()
                 .bind(template, PrintContext.of(1, data));
 
-        assertThat(document.blocks()).hasSize(2);
-        assertThat(document.blocks().get(1)).isEqualTo(new AnnotationNode(
+        assertThat(XmlTestDocuments.body(document)).hasSize(2);
+        assertThat(XmlTestDocuments.body(document).get(1)).isEqualTo(new AnnotationNode(
                 AnnotationType.TEXT_NOTE,
                 "summary",
                 AnnotationPlacement.TOP_RIGHT,
@@ -59,9 +59,9 @@ class XmlAnnotationBindingTest {
                             width="50mm" height="20mm" offset-x="1.5mm" offset-y="-2mm">文本框内容</annotation>
                 """));
 
-        AnnotationNode annotation = (AnnotationNode) new XmlTemplateBinder()
-                .bind(template, PrintContext.of(1, JsonNodeFactory.instance.objectNode()))
-                .blocks().get(1);
+        DocumentModel document = new XmlTemplateBinder()
+                .bind(template, PrintContext.of(1, JsonNodeFactory.instance.objectNode()));
+        AnnotationNode annotation = (AnnotationNode) XmlTestDocuments.body(document).get(1);
 
         assertThat(annotation.type()).isEqualTo(AnnotationType.FREE_TEXT);
         assertThat(annotation.placement()).isEqualTo(AnnotationPlacement.BOTTOM_LEFT);

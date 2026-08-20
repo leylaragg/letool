@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.leylaragg.letool.print.api.PrintTemplate;
 import io.github.leylaragg.letool.print.api.TemplateFormat;
 import io.github.leylaragg.letool.print.context.PrintContext;
+import io.github.leylaragg.letool.print.document.DocumentModel;
 import io.github.leylaragg.letool.print.document.node.ParagraphNode;
 import io.github.leylaragg.letool.print.document.node.TextNode;
 import io.github.leylaragg.letool.print.template.InMemoryTemplateRepository;
@@ -42,10 +43,10 @@ class XmlTemplateSetConcurrencyTest {
                 int value = index;
                 tasks.add(() -> {
                     CompiledXmlTemplate concurrent = compiler.compile(source).require("main");
-                    ParagraphNode paragraph = (ParagraphNode) new XmlTemplateBinder().bind(
+                    DocumentModel document = new XmlTemplateBinder().bind(
                             value % 2 == 0 ? template : concurrent,
-                            PrintContext.of(1, json.readTree("{\"name\":\"N" + value + "\"}")))
-                            .blocks().get(0);
+                            PrintContext.of(1, json.readTree("{\"name\":\"N" + value + "\"}")));
+                    ParagraphNode paragraph = (ParagraphNode) XmlTestDocuments.body(document).get(0);
                     return ((TextNode) paragraph.children().get(0)).text();
                 });
             }

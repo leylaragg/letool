@@ -46,7 +46,7 @@ class PdfAnnotationWriterTest {
                     AnnotationType.TEXT_NOTE, AnnotationPlacement.TOP_LEFT,
                     6_000, 6_000, "审核人", "批注 " + index));
         }
-        DocumentModel document = new DocumentModel(
+        DocumentModel document = DocumentModel.singleSequence(
                 DocumentMetadata.empty(), PageLayout.a4Portrait(), blocks);
 
         assertThat(new PdfAnnotationWriter(List.of()).collect(document))
@@ -56,7 +56,7 @@ class PdfAnnotationWriterTest {
     /** 两类批注都能被 PDFBox 重新读取，正文只进入批注对象。 */
     @Test
     void shouldWriteTextNoteAndFreeTextAnnotations() throws Exception {
-        DocumentModel document = new DocumentModel(
+        DocumentModel document = DocumentModel.singleSequence(
                 DocumentMetadata.empty(),
                 PageLayout.a4Portrait(),
                 List.of(
@@ -96,7 +96,7 @@ class PdfAnnotationWriterTest {
         for (int index = 0; index < 120; index++) {
             children.add(new ParagraphNode("", List.of(new TextNode("跨页正文 " + index))));
         }
-        DocumentModel document = new DocumentModel(
+        DocumentModel document = DocumentModel.singleSequence(
                 DocumentMetadata.empty(),
                 PageLayout.a4Portrait(),
                 List.of(

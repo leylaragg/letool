@@ -49,7 +49,7 @@ class XmlIncludeBindingTest {
                 template, PrintContext.of(1, JSON.readTree(
                         "{\"title\":\"清单\",\"items\":[{\"name\":\"A\"},{\"name\":\"B\"}]}")));
 
-        assertThat(model.blocks()).containsExactly(
+        assertThat(XmlTestDocuments.body(model)).containsExactly(
                 new HeadingNode("", 1, List.of(new TextNode("清单"))),
                 new ParagraphNode("", List.of(new TextNode("A"))),
                 new ParagraphNode("", List.of(new TextNode("B"))));

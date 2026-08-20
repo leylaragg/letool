@@ -1,7 +1,6 @@
 package io.github.leylaragg.letool.print.pdf;
 
 import io.github.leylaragg.letool.print.api.RenderOptions;
-import io.github.leylaragg.letool.print.document.DocumentModel;
 import com.openhtmltopdf.outputdevice.helper.ExternalResourceControlPriority;
 import com.openhtmltopdf.pdfboxout.PdfBoxRenderer;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
@@ -29,7 +28,7 @@ final class PdfUnitRenderer {
 
     /** 排版文档视图并在登记前完成页数检查。 */
     PdfUnitResult render(
-            DocumentModel view,
+            PdfRenderView view,
             PdfRenderIds ids,
             RenderOptions options,
             PdfRenderWorkspace workspace) throws IOException {

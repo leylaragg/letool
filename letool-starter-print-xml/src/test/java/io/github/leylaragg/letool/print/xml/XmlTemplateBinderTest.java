@@ -54,18 +54,21 @@ class XmlTemplateBinderTest {
         assertThat(model.metadata().title()).isEqualTo("保险合同");
         assertThat(model.metadata().author()).isEqualTo("Letool");
         assertThat(model.metadata().language()).isEqualTo("zh-CN");
-        assertThat(model.pageLayout().pageSize()).isEqualTo(PageSize.LETTER);
-        assertThat(model.pageLayout().orientation()).isEqualTo(PageOrientation.LANDSCAPE);
-        assertThat(model.pageLayout().margins())
+        assertThat(model.pageSequences()).hasSize(1);
+        assertThat(model.styleSheet().hasNamedStyles()).isFalse();
+        assertThat(XmlTestDocuments.sequence(model).pageLayout().pageSize())
+                .isEqualTo(PageSize.LETTER);
+        assertThat(XmlTestDocuments.sequence(model).pageLayout().orientation())
+                .isEqualTo(PageOrientation.LANDSCAPE);
+        assertThat(XmlTestDocuments.sequence(model).pageLayout().margins())
                 .isEqualTo(new Margins(18_000, 18_000, 18_000, 18_000));
-        assertThat(model.blocks()).containsExactly(
+        assertThat(XmlTestDocuments.body(model)).containsExactly(
                 new SectionNode("summary", List.of(
                         new HeadingNode("title", 2, List.of(new TextNode("合同摘要"))),
                         new ParagraphNode("intro", List.of(
                                 new TextNode("投保人："),
                                 new TextNode("张三"))),
                         PageBreakNode.INSTANCE)));
-        model.validate();
     }
 
     /** 验证同一编译快照可以安全绑定不同但同版本的上下文。 */

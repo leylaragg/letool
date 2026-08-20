@@ -42,6 +42,35 @@ try (OutputStream output = Files.newOutputStream(target)) {
 
 调用方拥有并负责关闭输出流，框架只会刷新，不会替业务代码关闭。小文档需要直接取得字节数组时，仍可调用 `printEngine.render(request)` 返回 `PrintArtifact`。
 
+## 通用文档模型
+
+`DocumentModel` 由文档元数据、强类型 `StyleSheet` 和一个或多个 `PageSequence` 组成。每个页面序列拥有自己的物理页面布局、可重复页眉页脚、逻辑页码规则和正文，适合合同封面、正文、附录使用不同页面规则的场景：
+
+```java
+StyleSheet styles = StyleSheet.builder()
+        .text("body-text", TextStyle.builder()
+                .fontSize(DocumentLength.points(10.5))
+                .build())
+        .paragraph("body", ParagraphStyle.builder()
+                .textStyleName("body-text")
+                .alignment(TextAlignment.JUSTIFY)
+                .build())
+        .build();
+
+PageSequence sequence = new PageSequence(
+        PageLayout.a4Portrait(),
+        new PageRegion(List.of(headerParagraph)),
+        new PageRegion(List.of(footerParagraph)),
+        PageNumbering.countedFrom(1),
+        List.of(new ParagraphNode("content", "body", List.of(new TextNode("正文")))));
+
+DocumentModel document = new DocumentModel(metadata, styles, List.of(sequence));
+```
+
+只有一个正文序列且不需要命名样式时，可使用 `DocumentModel.singleSequence(...)`。模型在构造时完成结构、ID、链接、目录、样式引用、表格网格和页码语义校验，不再要求调用方额外执行 `validate()`。
+
+命名样式分为文本、段落、表格和单元格四类，节点只能引用对应类型。框架不接受 CSS、未知样式键或样式继承；空字符串表示使用稳定的框架默认样式。页眉页脚允许段落、表格、图片和章节，但不能声明逻辑 ID，也不能包含标题、目录、批注或显式分页。
+
 阶段 1 可以使用自定义假管线验证完整门面：
 
 ```java
@@ -79,6 +108,7 @@ PrintEngine
 - 具有独立报表模型的格式实现顶层 `PrintPipeline`，例如后续 JasperReports 包装或与流式文档语义不同的表格型导出。
 - `OutputFormat` 是开放值对象，核心预置 PDF，但不会把外部扩展永久限制为这一种格式。
 - JasperReports 借鉴其模板编译、数据填充、导出、缓存、虚拟化和 Governor 思想，但不会反向塑形 Letool XML 与 `DocumentModel`。
+- 输出能力除节点类型外还要声明 `DocumentFeature`；页面序列、页眉页脚、逻辑页码、命名样式和文字流控制等语义未实现时会在渲染前明确失败。
 
 ## 不可变性和资源边界
 

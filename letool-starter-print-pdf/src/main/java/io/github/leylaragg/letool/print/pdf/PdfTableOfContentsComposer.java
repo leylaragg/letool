@@ -31,7 +31,7 @@ final class PdfTableOfContentsComposer {
 
     /** 目录只收录声明之后、层级范围内的标题。 */
     List<PdfTocEntry> collect(DocumentModel document, PdfRenderIds ids) {
-        TableOfContentsNode contents = document.blocks().stream()
+        TableOfContentsNode contents = document.pageSequences().get(0).body().stream()
                 .filter(TableOfContentsNode.class::isInstance)
                 .map(TableOfContentsNode.class::cast)
                 .findFirst().orElseThrow();
@@ -54,17 +54,18 @@ final class PdfTableOfContentsComposer {
     }
 
     /** 为物理分段管线建立只包含目录内容的独立排版视图。 */
-    DocumentModel composeContents(
+    PdfRenderView composeContents(
             DocumentModel document,
             TableOfContentsNode contents,
             List<PdfTocEntry> entries,
             Map<HeadingNode, Integer> pageNumbers) {
         List<BlockNode> blocks = new ArrayList<>();
         if (contents.title() != null) {
-            blocks.add(new ParagraphNode("", List.of(new TextNode(contents.title()))));
+            blocks.add(new ParagraphNode(
+                    "", "", List.of(new TextNode(contents.title(), ""))));
         }
         blocks.add(table(entries, pageNumbers));
-        return new DocumentModel(document.metadata(), document.pageLayout(), blocks);
+        return PdfRenderView.segment(document, blocks);
     }
 
     /** 两列表格让标题、点引导和页码保持稳定顺序。 */
@@ -73,14 +74,16 @@ final class PdfTableOfContentsComposer {
         for (PdfTocEntry entry : entries) {
             int pageNumber = pageNumbers.getOrDefault(entry.heading(), 1);
             String indent = "  ".repeat(Math.max(0, entry.heading().level() - 1));
-            ParagraphNode label = new ParagraphNode("", List.of(new InternalLinkNode(
-                    entry.targetId(), List.of(new TextNode(indent + entry.title() + " ........")))));
-            ParagraphNode page = new ParagraphNode("", List.of(new TextNode(Integer.toString(pageNumber))));
+            ParagraphNode label = new ParagraphNode("", "", List.of(new InternalLinkNode(
+                    entry.targetId(),
+                    List.of(new TextNode(indent + entry.title() + " ........", "")))));
+            ParagraphNode page = new ParagraphNode(
+                    "", "", List.of(new TextNode(Integer.toString(pageNumber), "")));
             rows.add(new TableRow(List.of(
-                    new TableCell(List.of(label), 1, 1),
-                    new TableCell(List.of(page), 1, 1))));
+                    new TableCell("", List.of(label), 1, 1),
+                    new TableCell("", List.of(page), 1, 1))));
         }
-        return new TableNode("", 0, rows);
+        return new TableNode("", "", 0, rows);
     }
 
     /** 目录标题沿用通用行内节点的可见文字语义。 */

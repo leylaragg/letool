@@ -59,7 +59,7 @@ final class PdfXhtmlRenderer {
      */
     String render(DocumentModel document) {
         Objects.requireNonNull(document, "document 不能为空");
-        return render(document, PdfRenderIds.create(document), false);
+        return render(PdfRenderView.complete(document), PdfRenderIds.create(document), false);
     }
 
     /**
@@ -70,20 +70,21 @@ final class PdfXhtmlRenderer {
      * @param centralNavigation 是否关闭局部导航并保留源位置
      * @return 受控 XHTML
      */
-    String render(DocumentModel document, PdfRenderIds ids, boolean centralNavigation) {
-        Objects.requireNonNull(document, "document 不能为空");
+    String render(PdfRenderView view, PdfRenderIds ids, boolean centralNavigation) {
+        Objects.requireNonNull(view, "view 不能为空");
         Objects.requireNonNull(ids, "布局 ID 不能为空");
         StringBuilder output = new StringBuilder(4_096);
-        writeDocument(output, document, ids, centralNavigation);
+        writeDocument(output, view, ids, centralNavigation);
         return output.toString();
     }
 
     /** 写入 XHTML 外壳、固定样式和文档正文。 */
     private void writeDocument(
             StringBuilder output,
-            DocumentModel document,
+            PdfRenderView view,
             PdfRenderIds ids,
             boolean centralNavigation) {
+        DocumentModel document = view.document();
         DocumentMetadata metadata = document.metadata();
         output.append("<!DOCTYPE html><html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"")
                 .append(escapeAttribute(metadata.language() == null ? "und" : metadata.language()))
@@ -96,9 +97,9 @@ final class PdfXhtmlRenderer {
             writeBookmarks(output, document);
         }
         output.append("<style>");
-        writeStyle(output, document.pageLayout());
+        writeStyle(output, view.pageLayout());
         output.append("</style></head><body>");
-        for (BlockNode block : document.blocks()) {
+        for (BlockNode block : view.blocks()) {
             writeBlock(output, block, ids, centralNavigation);
         }
         output.append("</body></html>");

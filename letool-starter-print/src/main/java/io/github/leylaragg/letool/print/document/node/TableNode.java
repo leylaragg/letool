@@ -21,18 +21,34 @@ public final class TableNode implements BlockNode {
     /** 表头行数。 */
     private final int headerRowCount;
 
+    /** 可选表格样式名。 */
+    private final String styleName;
+
     /** 不可变表格行。 */
     private final List<TableRow> rows;
 
     /**
-     * 创建并校验表格。
+     * 创建使用框架默认表格样式的表格。
      *
      * @param id 表格逻辑 ID
      * @param headerRowCount 表头行数
      * @param rows 非空表格行
      */
     public TableNode(String id, int headerRowCount, List<TableRow> rows) {
+        this(id, "", headerRowCount, rows);
+    }
+
+    /**
+     * 创建并校验表格。
+     *
+     * @param id 表格逻辑 ID
+     * @param styleName 表格样式名；空字符串表示使用框架默认样式
+     * @param headerRowCount 表头行数
+     * @param rows 非空表格行
+     */
+    public TableNode(String id, String styleName, int headerRowCount, List<TableRow> rows) {
         this.id = NodeValidation.optionalId(id);
+        this.styleName = styleName == null ? "" : styleName;
         this.rows = List.copyOf(rows);
         if (this.rows.isEmpty()) {
             throw PrintValidationException.invalidDocument("表格至少包含一行");
@@ -143,9 +159,23 @@ public final class TableNode implements BlockNode {
         return headerRowCount;
     }
 
+    /** @return 表格样式名 */
+    public String styleName() {
+        return styleName;
+    }
+
     /** @return 不可变表格行 */
     public List<TableRow> rows() {
         return rows;
+    }
+
+    /**
+     * 返回经过网格校验的有效列数。
+     *
+     * @return 表格有效列数
+     */
+    public int effectiveColumnCount() {
+        return (int) rows.get(0).effectiveColumns();
     }
 
     @Override
@@ -156,17 +186,18 @@ public final class TableNode implements BlockNode {
         if (!(object instanceof TableNode that)) {
             return false;
         }
-        return headerRowCount == that.headerRowCount && id.equals(that.id) && rows.equals(that.rows);
+        return headerRowCount == that.headerRowCount && id.equals(that.id)
+                && styleName.equals(that.styleName) && rows.equals(that.rows);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, headerRowCount, rows);
+        return Objects.hash(id, styleName, headerRowCount, rows);
     }
 
     @Override
     public String toString() {
-        return "TableNode[id=" + id
+        return "TableNode[id=" + id + ", styleName=" + styleName
                 + ", headerRowCount=" + headerRowCount + ", rows=" + rows + "]";
     }
 }

@@ -34,7 +34,7 @@ final class PdfRenderPlan {
         Objects.requireNonNull(document, "document 不能为空");
         List<PdfRenderUnit> units = new ArrayList<>();
         List<BlockNode> body = new ArrayList<>();
-        List<BlockNode> blocks = document.blocks();
+        List<BlockNode> blocks = document.pageSequences().get(0).body();
         int tocIndex = -1;
         int bodyCount = 0;
 

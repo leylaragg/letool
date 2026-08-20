@@ -133,7 +133,8 @@ public final class PlainTextRenderer implements DocumentRenderer {
             new OutputFormat("text", "text/plain", "txt");
 
     private static final OutputCapability CAPABILITY = new OutputCapability(
-            Set.of(ParagraphNode.class, TextNode.class));
+            Set.of(ParagraphNode.class, TextNode.class),
+            Set.of());
 
     @Override
     public OutputFormat outputFormat() {
@@ -161,7 +162,7 @@ public final class PlainTextRenderer implements DocumentRenderer {
 }
 ```
 
-能力集合必须列出实际支持的具体节点类型。框架会在调用前再次检查，渲染器不能静默忽略未知节点。示例为了简洁先构造小文本；大产物应分批写入 `PrintOutput`，需要临时文件时还要在实际写入处治理工作区总量。
+能力集合必须列出实际支持的具体节点类型和 `DocumentFeature`。第二个集合为空表示渲染器不接受多页面序列、页眉页脚、逻辑页码、命名样式等高级语义；框架会在调用前再次检查，渲染器不能静默忽略未知节点或文档能力。示例为了简洁先构造小文本；大产物应分批写入 `PrintOutput`，需要临时文件时还要在实际写入处治理工作区总量。
 
 ## 自定义顶层管线
 

@@ -46,7 +46,7 @@ class PdfRendererConcurrencyTest {
                 "target", "concurrency-workspace", UUID.randomUUID().toString())
                 .toAbsolutePath().normalize());
         PdfDocumentRenderer renderer = renderer(temporaryRoot);
-        DocumentModel document = new DocumentModel(
+        DocumentModel document = DocumentModel.singleSequence(
                 DocumentMetadata.empty(),
                 PageLayout.a4Portrait(),
                 List.of(

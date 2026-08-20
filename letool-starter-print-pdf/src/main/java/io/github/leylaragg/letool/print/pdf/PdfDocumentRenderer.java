@@ -124,7 +124,6 @@ public final class PdfDocumentRenderer implements DocumentRenderer {
         Objects.requireNonNull(document, "document 不能为空");
         Objects.requireNonNull(options, "options 不能为空");
         Objects.requireNonNull(output, "output 不能为空");
-        document.validate();
         CAPABILITY.requireSupports(document);
 
         try (PdfRenderWorkspace workspace = PdfRenderWorkspace.open(
@@ -160,8 +159,7 @@ public final class PdfDocumentRenderer implements DocumentRenderer {
         for (int index = 0; index < plan.units().size(); index++) {
             PdfRenderUnit unit = plan.units().get(index);
             if (unit.kind() == PdfRenderUnit.Kind.BODY) {
-                DocumentModel view = new DocumentModel(
-                        document.metadata(), document.pageLayout(), unit.blocks());
+                PdfRenderView view = PdfRenderView.segment(document, unit.blocks());
                 byIndex.put(index, unitRenderer.render(view, fullIds, options, workspace));
             }
         }
@@ -173,7 +171,7 @@ public final class PdfDocumentRenderer implements DocumentRenderer {
             for (int pass = 0; pass < 5; pass++) {
                 Map<HeadingNode, Integer> pages = segmentedPages(
                         plan, byIndex, entries, assumedPages);
-                DocumentModel tocView = composer.composeContents(
+                PdfRenderView tocView = composer.composeContents(
                         document, plan.units().get(plan.tableOfContentsIndex()).tableOfContents(),
                         entries, pages);
                 tocIds = PdfRenderIds.create(tocView);

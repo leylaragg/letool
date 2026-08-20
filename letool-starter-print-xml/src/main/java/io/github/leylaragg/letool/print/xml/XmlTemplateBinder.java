@@ -62,13 +62,10 @@ public final class XmlTemplateBinder {
         CompiledXmlNode document = template.root();
         CompiledXmlNode page = document.children().get(0);
         BindingGovernor governor = new BindingGovernor(template.templateCode());
-        DocumentModel model = new DocumentModel(
-                metadata(document),
-                pageLayout(page),
-                bindBlocks(page.children(), new BindingScope(context.root()),
-                        template.templateCode(), governor));
+        List<BlockNode> blocks = bindBlocks(
+                page.children(), new BindingScope(context.root()), template.templateCode(), governor);
         try {
-            model.validate();
+            return DocumentModel.singleSequence(metadata(document), pageLayout(page), blocks);
         } catch (PrintValidationException exception) {
             if (governor.customTagUsed()) {
                 throw PrintValidationException.invalidDocument(
@@ -76,7 +73,6 @@ public final class XmlTemplateBinder {
             }
             throw exception;
         }
-        return model;
     }
 
     /** 绑定可选文档元数据。 */
