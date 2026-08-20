@@ -106,11 +106,21 @@ class PrintValueObjectTest {
     @Test
     void shouldValidateRenderLimits() {
         assertThat(RenderOptions.defaults())
-                .isEqualTo(new RenderOptions(2_500, 100L * 1024 * 1024, true));
+                .isEqualTo(new RenderOptions(
+                        2_500,
+                        100L * 1024 * 1024,
+                        300L * 1024 * 1024,
+                        true));
         assertThatIllegalArgumentException().isThrownBy(
-                () -> new RenderOptions(0, 10L * 1024 * 1024, true));
+                () -> new RenderOptions(0, 10L * 1024 * 1024, 30L * 1024 * 1024, true));
         assertThatIllegalArgumentException().isThrownBy(
-                () -> new RenderOptions(100, 1024, true));
+                () -> new RenderOptions(100, 1024, 30L * 1024 * 1024, true));
+        assertThatIllegalArgumentException().isThrownBy(
+                () -> new RenderOptions(
+                        100, 10L * 1024 * 1024, 9L * 1024 * 1024, true));
+        assertThatIllegalArgumentException().isThrownBy(
+                () -> new RenderOptions(
+                        100, 10L * 1024 * 1024, 8L * 1024 * 1024 * 1024 + 1, true));
     }
 
     /** 验证请求拒绝模板与上下文版本不一致。 */

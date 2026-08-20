@@ -2,8 +2,9 @@ package io.github.leylaragg.letool.print.xml;
 
 import io.github.leylaragg.letool.exception.core.BaseException;
 import io.github.leylaragg.letool.print.api.OutputFormat;
-import io.github.leylaragg.letool.print.api.PrintArtifact;
+import io.github.leylaragg.letool.print.api.PrintOutput;
 import io.github.leylaragg.letool.print.api.PrintRequest;
+import io.github.leylaragg.letool.print.api.PrintResult;
 import io.github.leylaragg.letool.print.api.TemplateFormat;
 import io.github.leylaragg.letool.print.document.DocumentModel;
 import io.github.leylaragg.letool.print.exception.PrintPipelineException;
@@ -11,7 +12,6 @@ import io.github.leylaragg.letool.print.exception.PrintValidationException;
 import io.github.leylaragg.letool.print.pipeline.PrintPipeline;
 import io.github.leylaragg.letool.print.render.DocumentRenderer;
 import io.github.leylaragg.letool.print.render.DocumentRendererRegistry;
-import io.github.leylaragg.letool.print.render.RenderedDocument;
 
 import java.util.Objects;
 import java.util.Set;
@@ -79,13 +79,17 @@ public final class XmlPrintPipeline implements PrintPipeline {
      * 按请求锁定的仓库快照完成 XML 编译、绑定、能力检查和渲染。
      *
      * @param request 已锁定模板和只读上下文的同步请求
-     * @return 与请求输出格式一致的不可变产物
+     * @param output 由打印引擎创建的受控输出
+     * @return 由当前输出完成的结果
      * @throws BaseException 已分类的模板、绑定、能力或渲染异常
      */
     @Override
-    public PrintArtifact render(PrintRequest request) {
+    public PrintResult render(PrintRequest request, PrintOutput output) {
         if (request == null) {
             throw PrintValidationException.invalidRequest("请求不能为空");
+        }
+        if (output == null) {
+            throw PrintValidationException.invalidRequest("打印输出不能为空");
         }
         if (!TemplateFormat.LETOOL_XML.equals(request.template().templateFormat())) {
             throw PrintValidationException.invalidRequest("XML 管线收到不匹配的模板格式");
@@ -98,12 +102,12 @@ public final class XmlPrintPipeline implements PrintPipeline {
             DocumentRenderer renderer = rendererRegistry.require(request.outputFormat());
             // 第三方渲染器不能依靠自身实现决定是否忽略未知文档节点。
             renderer.capability().requireSupports(document);
-            RenderedDocument rendered = renderer.render(document, request.options());
-            if (rendered == null || !request.outputFormat().equals(rendered.outputFormat())) {
-                throw new IllegalStateException("文档渲染器返回空结果或错误输出格式");
+            PrintResult result = renderer.render(document, request.options(), output);
+            if (!output.completedWith(result)
+                    || !request.outputFormat().equals(result.outputFormat())) {
+                throw new IllegalStateException("文档渲染器没有正确完成当前输出");
             }
-            return PrintArtifact.of(
-                    rendered.outputFormat(), rendered.content(), rendered.metadata());
+            return result;
         } catch (BaseException exception) {
             throw exception;
         } catch (RuntimeException exception) {

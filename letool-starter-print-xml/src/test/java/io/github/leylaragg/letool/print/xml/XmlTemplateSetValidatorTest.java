@@ -62,6 +62,16 @@ class XmlTemplateSetValidatorTest {
         assertThat(exception.detail()).isEqualTo("main：安全详情");
     }
 
+    /** 未知编译故障对外保持安全消息，同时在原因链中留给宿主排查。 */
+    @Test
+    void shouldPreserveUnexpectedCompilationCause() {
+        assertThatThrownBy(() -> new XmlTemplateSetValidator().validate(null))
+                .isInstanceOf(PrintValidationException.class)
+                .hasMessageContaining("XML 模板集合校验失败")
+                .hasMessageNotContaining("NullPointerException")
+                .hasCauseInstanceOf(NullPointerException.class);
+    }
+
     /** 发布校验与运行时共用缓存时，合法集合无需再次完成整套编译。 */
     @Test
     void shouldShareCompilationCacheWithRuntimeResolution() {

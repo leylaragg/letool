@@ -1,5 +1,6 @@
 package io.github.leylaragg.letool.print.pdf;
 
+import io.github.leylaragg.letool.print.api.PrintOutput;
 import io.github.leylaragg.letool.print.api.RenderOptions;
 import io.github.leylaragg.letool.print.document.DocumentMetadata;
 import io.github.leylaragg.letool.print.document.DocumentModel;
@@ -21,6 +22,7 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -47,9 +49,9 @@ class PdfRendererSecurityTest {
                 PageBreakNode.INSTANCE,
                 paragraph("第二页")));
 
-        assertThatThrownBy(() -> renderer().render(
-                document,
-                new RenderOptions(1, 10L * 1024 * 1024, true)))
+        assertThatThrownBy(() -> RenderedPdf.render(
+                renderer(), document,
+                new RenderOptions(1, 10L * 1024 * 1024, 30L * 1024 * 1024, true)))
                 .isInstanceOf(PrintRenderingException.class)
                 .hasMessageContaining("PRINT_011")
                 .hasMessageNotContaining("secret-page-content");
@@ -60,9 +62,9 @@ class PdfRendererSecurityTest {
     void shouldStopWritingBeyondOutputLimit() {
         DocumentModel document = document(List.of(paragraph(largeRandomText(1_600_000))));
 
-        assertThatThrownBy(() -> renderer().render(
-                document,
-                new RenderOptions(20_000, 1024L * 1024, true)))
+        assertThatThrownBy(() -> RenderedPdf.render(
+                renderer(), document,
+                new RenderOptions(20_000, 1024L * 1024, 3L * 1024 * 1024, true)))
                 .isInstanceOf(PrintRenderingException.class)
                 .hasMessageContaining("PRINT_007")
                 .hasCauseInstanceOf(Exception.class);
@@ -79,11 +81,17 @@ class PdfRendererSecurityTest {
                 new HeadingNode("heading", 1, List.of(new TextNode("Heading"))),
                 paragraph(largeRandomText(1_600_000))));
         PdfFont font = new PdfFont("Droid Sans Fallback", this::openTestFont, true);
+        RenderOptions options = new RenderOptions(
+                20_000, 2L * 1024 * 1024, 2L * 1024 * 1024, true);
+        ByteArrayOutputStream target = new ByteArrayOutputStream();
+        PrintOutput output = new PrintOutput(target, options.maxOutputBytes());
 
         assertThatThrownBy(() -> new PdfDocumentRenderer(List.of(font), temporaryRoot).render(
-                document, new RenderOptions(20_000, 1024L * 1024, true)))
+                document, options, output))
                 .isInstanceOf(PrintRenderingException.class)
-                .hasMessageContaining("PRINT_007");
+                .hasMessageContaining("PRINT_007")
+                .hasRootCauseInstanceOf(PdfRenderWorkspace.CapacityExceededException.class);
+        assertThat(target.size()).isZero();
         try (var files = Files.list(temporaryRoot)) {
             assertThat(files).isEmpty();
         }
@@ -98,9 +106,8 @@ class PdfRendererSecurityTest {
         }, true);
         PdfDocumentRenderer renderer = new PdfDocumentRenderer(List.of(brokenFont));
 
-        assertThatThrownBy(() -> renderer.render(
-                document(List.of(paragraph("正文"))),
-                RenderOptions.defaults()))
+        assertThatThrownBy(() -> RenderedPdf.render(
+                renderer, document(List.of(paragraph("正文"))), RenderOptions.defaults()))
                 .isInstanceOf(PrintRenderingException.class)
                 .hasMessageContaining("PRINT_010")
                 .hasMessageNotContaining("secret-font-path");
@@ -116,9 +123,8 @@ class PdfRendererSecurityTest {
                 20_000,
                 20_000);
 
-        assertThatThrownBy(() -> renderer().render(
-                document(List.of(image)),
-                RenderOptions.defaults()))
+        assertThatThrownBy(() -> RenderedPdf.render(
+                renderer(), document(List.of(image)), RenderOptions.defaults()))
                 .isInstanceOf(PrintValidationException.class)
                 .hasMessageContaining("ImageNode")
                 .hasMessageNotContaining("secret-image.png");
@@ -129,9 +135,8 @@ class PdfRendererSecurityTest {
     void shouldKeepMarkupAndUrlAsPlainText() throws Exception {
         String text = "外部内容 <img src=\"http://127.0.0.1/secret\"/> file:///C:/secret";
 
-        byte[] content = renderer().render(
-                document(List.of(paragraph(text))),
-                RenderOptions.defaults()).content();
+        byte[] content = RenderedPdf.render(
+                renderer(), document(List.of(paragraph(text))), RenderOptions.defaults()).content();
 
         try (PDDocument pdf = Loader.loadPDF(content)) {
             assertThat(new PDFTextStripper().getText(pdf)).contains(text);
@@ -149,7 +154,8 @@ class PdfRendererSecurityTest {
                     0, 0, "secret-annotation-content"));
         }
 
-        assertThatThrownBy(() -> renderer().render(document(blocks), RenderOptions.defaults()))
+        assertThatThrownBy(() -> RenderedPdf.render(
+                renderer(), document(blocks), RenderOptions.defaults()))
                 .isInstanceOf(PrintValidationException.class)
                 .hasMessageContaining("批注数量")
                 .hasMessageNotContaining("secret-annotation-content");
@@ -163,7 +169,8 @@ class PdfRendererSecurityTest {
                 annotation(AnnotationType.TEXT_NOTE, 6_000, 6_000,
                         -300_000, 0, "secret-position-content")));
 
-        assertThatThrownBy(() -> renderer().render(document, RenderOptions.defaults()))
+        assertThatThrownBy(() -> RenderedPdf.render(
+                renderer(), document, RenderOptions.defaults()))
                 .isInstanceOf(PrintValidationException.class)
                 .hasMessageContaining("超出页面")
                 .hasMessageNotContaining("secret-position-content");
@@ -177,8 +184,8 @@ class PdfRendererSecurityTest {
                 annotation(AnnotationType.FREE_TEXT, 50_000, 20_000,
                         0, 0, "secret-free-text")));
 
-        assertThatThrownBy(() -> new PdfDocumentRenderer(List.of())
-                .render(document, RenderOptions.defaults()))
+        assertThatThrownBy(() -> RenderedPdf.render(
+                new PdfDocumentRenderer(List.of()), document, RenderOptions.defaults()))
                 .isInstanceOf(PrintValidationException.class)
                 .hasMessageContaining("宿主字体")
                 .hasMessageNotContaining("secret-free-text");

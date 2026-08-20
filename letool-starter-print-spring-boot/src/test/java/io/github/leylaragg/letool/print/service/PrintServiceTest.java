@@ -5,7 +5,9 @@ import io.github.leylaragg.letool.exception.core.BaseException;
 import io.github.leylaragg.letool.print.api.OutputFormat;
 import io.github.leylaragg.letool.print.api.PrintArtifact;
 import io.github.leylaragg.letool.print.api.PrintEngine;
+import io.github.leylaragg.letool.print.api.PrintOutput;
 import io.github.leylaragg.letool.print.api.PrintRequest;
+import io.github.leylaragg.letool.print.api.PrintResult;
 import io.github.leylaragg.letool.print.api.PrintTemplate;
 import io.github.leylaragg.letool.print.api.RenderOptions;
 import io.github.leylaragg.letool.print.api.TemplateFormat;
@@ -19,6 +21,8 @@ import io.github.leylaragg.letool.print.template.TemplateSetPublisher;
 import io.github.leylaragg.letool.print.template.TemplateType;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayOutputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.ZoneId;
 import java.util.List;
@@ -50,6 +54,38 @@ class PrintServiceTest {
         service.render(1, "invoice", 43L);
         assertThat(engine.request.get().template().templateSetVersion()).isEqualTo(1);
         assertThat(engine.request.get().context().root().path("id").longValue()).isEqualTo(43);
+    }
+
+    /** 当前和指定版本的流式入口都把内容写给调用方，并锁定正确模板。 */
+    @Test
+    void shouldRenderCurrentAndExplicitVersionToCallerOutput() {
+        TemplateRepository repository = repositoryWithVersions();
+        CapturingEngine engine = new CapturingEngine();
+        PrintService service = service(repository, engine, request -> context(1, request));
+        ByteArrayOutputStream current = new ByteArrayOutputStream();
+
+        PrintResult currentResult = service.renderTo("invoice", 42L, current);
+
+        assertThat(currentResult.contentLength()).isEqualTo(current.size());
+        assertThat(engine.request.get().template().templateSetVersion()).isEqualTo(2);
+
+        ByteArrayOutputStream explicit = new ByteArrayOutputStream();
+        service.renderTo(1, "invoice", 43L, explicit);
+        assertThat(engine.request.get().template().templateSetVersion()).isEqualTo(1);
+        assertThat(engine.request.get().context().root().path("id").longValue()).isEqualTo(43);
+    }
+
+    /** 空输出流在业务适配和引擎调用前被拒绝。 */
+    @Test
+    void shouldRejectNullCallerOutput() {
+        CapturingEngine engine = new CapturingEngine();
+        PrintService service = service(
+                repositoryWithVersions(), engine, request -> context(1, request));
+
+        assertThatThrownBy(() -> service.renderTo("invoice", 42L, null))
+                .isInstanceOf(PrintValidationException.class)
+                .hasMessageContaining("输出流");
+        assertThat(engine.request).hasNullValue();
     }
 
     /** 业务异常保持原类型，未知运行时异常只在原因链保留原始消息。 */
@@ -147,6 +183,15 @@ class PrintServiceTest {
         public PrintArtifact render(PrintRequest request) {
             this.request.set(request);
             return PrintArtifact.of(OutputFormat.PDF, new byte[]{1}, java.util.Map.of());
+        }
+
+        /** 捕获流式请求并通过受控输出返回最小 PDF 内容。 */
+        @Override
+        public PrintResult renderTo(PrintRequest request, OutputStream target) {
+            this.request.set(request);
+            PrintOutput output = new PrintOutput(target, request.options().maxOutputBytes());
+            output.write(1);
+            return output.complete(OutputFormat.PDF, java.util.Map.of());
         }
     }
 }

@@ -85,7 +85,7 @@ public final class TemplateSetPublisher {
                 throw exception;
             } catch (RuntimeException exception) {
                 throw PrintValidationException.invalidRequest(
-                        "模板集合发布校验失败");
+                        "模板集合发布校验失败", exception);
             }
         }
         return candidate;

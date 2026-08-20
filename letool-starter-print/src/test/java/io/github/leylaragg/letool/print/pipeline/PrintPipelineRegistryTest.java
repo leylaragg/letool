@@ -1,8 +1,9 @@
 package io.github.leylaragg.letool.print.pipeline;
 
 import io.github.leylaragg.letool.print.api.OutputFormat;
-import io.github.leylaragg.letool.print.api.PrintArtifact;
+import io.github.leylaragg.letool.print.api.PrintOutput;
 import io.github.leylaragg.letool.print.api.PrintRequest;
+import io.github.leylaragg.letool.print.api.PrintResult;
 import io.github.leylaragg.letool.print.api.TemplateFormat;
 import io.github.leylaragg.letool.print.exception.PrintPipelineException;
 import org.junit.jupiter.api.Test;
@@ -57,7 +58,7 @@ class PrintPipelineRegistryTest {
             }
 
             @Override
-            public PrintArtifact render(PrintRequest request) {
+            public PrintResult render(PrintRequest request, PrintOutput output) {
                 throw new UnsupportedOperationException("注册测试不会执行渲染");
             }
         };

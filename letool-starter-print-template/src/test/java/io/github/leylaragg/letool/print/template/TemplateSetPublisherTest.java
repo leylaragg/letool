@@ -80,7 +80,7 @@ class TemplateSetPublisherTest {
                 .isInstanceOf(PrintValidationException.class)
                 .hasMessageNotContaining("secret-business-value")
                 .hasMessageNotContaining("IllegalStateException")
-                .hasNoCause();
+                .hasCauseInstanceOf(IllegalStateException.class);
         assertThat(repository.find(1)).isEmpty();
     }
 

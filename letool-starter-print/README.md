@@ -34,8 +34,13 @@ PrintRequest request = new PrintRequest(
         ZoneId.of("Asia/Shanghai"),
         RenderOptions.defaults());
 
-PrintArtifact artifact = printEngine.render(request);
+try (OutputStream output = Files.newOutputStream(target)) {
+    PrintResult result = printEngine.renderTo(request, output);
+    log.info("打印完成：bytes={}, sha256={}", result.contentLength(), result.sha256());
+}
 ```
+
+调用方拥有并负责关闭输出流，框架只会刷新，不会替业务代码关闭。小文档需要直接取得字节数组时，仍可调用 `printEngine.render(request)` 返回 `PrintArtifact`。
 
 阶段 1 可以使用自定义假管线验证完整门面：
 
@@ -49,8 +54,9 @@ PrintPipeline pipeline = new PrintPipeline() {
         return Set.of(OutputFormat.PDF);
     }
 
-    public PrintArtifact render(PrintRequest request) {
-        return PrintArtifact.of(OutputFormat.PDF, generatedBytes, Map.of());
+    public PrintResult render(PrintRequest request, PrintOutput output) {
+        output.write(generatedBytes);
+        return output.complete(OutputFormat.PDF, Map.of());
     }
 };
 
@@ -76,11 +82,11 @@ PrintEngine
 
 ## 不可变性和资源边界
 
-- `PrintTemplate`、`PrintContext`、`PrintArtifact` 和文档树在输入输出边界进行防御性复制。
+- `PrintTemplate`、`PrintContext`、内存 `PrintArtifact` 和文档树在输入输出边界进行防御性复制。
 - `PrintContext` 版本必须与模板声明的上下文版本一致。
-- `DefaultPrintEngine` 在管线执行前检查输出能力，执行后检查产物格式和大小。
-- 当前产物为有界内存字节数组。大文档流式输出、临时文件和虚拟化策略将在 PDF 技术切片中确定。
-- API 当前没有接收调用方流，因此不存在关闭调用方流的行为；以后增加流 API 时会显式说明所有权。
+- `DefaultPrintEngine` 在管线执行前检查输出能力，写入时限制产物大小，完成后核对结果确实来自当前输出。
+- `PrintOutput` 持续计算 64 位内容长度和 SHA-256，不保存完整正文；失败或完成后不能继续写入。
+- 内存入口复用同一条流式主链路，仅适合明确可放入堆内的小文档。
 
 ## Letool 模块复用
 

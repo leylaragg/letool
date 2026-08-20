@@ -1,6 +1,7 @@
 package io.github.leylaragg.letool.print.service;
 
 import io.github.leylaragg.letool.print.exception.PrintAdapterException;
+import io.github.leylaragg.letool.print.exception.PrintOutputException;
 import io.github.leylaragg.letool.print.exception.PrintPipelineException;
 import io.github.leylaragg.letool.print.exception.PrintRenderingException;
 import io.github.leylaragg.letool.print.exception.PrintValidationException;
@@ -35,6 +36,9 @@ public enum PrintFailureCategory {
     /** 字体、文件或其他 IO 资源失败。 */
     RESOURCE("resource"),
 
+    /** 调用方提供的最终输出目标写入失败。 */
+    OUTPUT("output"),
+
     /** 打印管线路由或执行失败。 */
     PIPELINE("pipeline"),
 
@@ -65,6 +69,9 @@ public enum PrintFailureCategory {
      * @return 对应的稳定失败分类
      */
     static PrintFailureCategory from(RuntimeException failure) {
+        if (failure instanceof PrintOutputException) {
+            return OUTPUT;
+        }
         if (failure instanceof PrintValidationException) {
             return VALIDATION;
         }

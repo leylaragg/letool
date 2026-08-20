@@ -13,7 +13,6 @@ import io.github.leylaragg.letool.print.document.node.PageBreakNode;
 import io.github.leylaragg.letool.print.document.node.ParagraphNode;
 import io.github.leylaragg.letool.print.document.node.TableOfContentsNode;
 import io.github.leylaragg.letool.print.document.node.TextNode;
-import io.github.leylaragg.letool.print.render.RenderedDocument;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
@@ -70,12 +69,12 @@ class PdfRendererConcurrencyTest {
         ExecutorService executor = Executors.newFixedThreadPool(4);
 
         try {
-            List<Callable<RenderedDocument>> tasks = new ArrayList<>();
+            List<Callable<RenderedPdf>> tasks = new ArrayList<>();
             for (int index = 0; index < 8; index++) {
-                tasks.add(() -> renderer.render(document, RenderOptions.defaults()));
+                tasks.add(() -> RenderedPdf.render(renderer, document, RenderOptions.defaults()));
             }
-            List<Future<RenderedDocument>> futures = executor.invokeAll(tasks);
-            for (Future<RenderedDocument> future : futures) {
+            List<Future<RenderedPdf>> futures = executor.invokeAll(tasks);
+            for (Future<RenderedPdf> future : futures) {
                 try (PDDocument pdf = Loader.loadPDF(future.get().content())) {
                     assertThat(pdf.getNumberOfPages()).isEqualTo(3);
                     assertThat(new PDFTextStripper().getText(pdf))

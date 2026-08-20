@@ -44,8 +44,8 @@ class PdfChapterMergeTest {
                         AnnotationPlacement.TOP_RIGHT, 6_000, 6_000,
                         0, 0, "reviewer", "check")));
 
-        byte[] content = new PdfDocumentRenderer(List.of())
-                .render(document, RenderOptions.defaults()).content();
+        byte[] content = RenderedPdf.render(
+                new PdfDocumentRenderer(List.of()), document, RenderOptions.defaults()).content();
 
         try (PDDocument pdf = Loader.loadPDF(content)) {
             assertThat(pdf.getNumberOfPages()).isEqualTo(2);

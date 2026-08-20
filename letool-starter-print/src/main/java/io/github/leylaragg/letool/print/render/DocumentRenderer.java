@@ -1,6 +1,8 @@
 package io.github.leylaragg.letool.print.render;
 
 import io.github.leylaragg.letool.print.api.OutputFormat;
+import io.github.leylaragg.letool.print.api.PrintOutput;
+import io.github.leylaragg.letool.print.api.PrintResult;
 import io.github.leylaragg.letool.print.api.RenderOptions;
 import io.github.leylaragg.letool.print.document.DocumentModel;
 
@@ -25,7 +27,8 @@ public interface DocumentRenderer {
      *
      * @param document 不可变通用文档模型
      * @param options 通用渲染限制
-     * @return 不可变渲染输出
+     * @param output 由打印引擎创建的受控输出
+     * @return 由当前输出完成的渲染结果
      */
-    RenderedDocument render(DocumentModel document, RenderOptions options);
+    PrintResult render(DocumentModel document, RenderOptions options, PrintOutput output);
 }

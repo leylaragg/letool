@@ -2,8 +2,9 @@ package io.github.leylaragg.letool.print.xml;
 
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import io.github.leylaragg.letool.print.api.OutputFormat;
-import io.github.leylaragg.letool.print.api.PrintArtifact;
+import io.github.leylaragg.letool.print.api.PrintOutput;
 import io.github.leylaragg.letool.print.api.PrintRequest;
+import io.github.leylaragg.letool.print.api.PrintResult;
 import io.github.leylaragg.letool.print.api.PrintTemplate;
 import io.github.leylaragg.letool.print.api.RenderOptions;
 import io.github.leylaragg.letool.print.api.TemplateFormat;
@@ -18,6 +19,7 @@ import io.github.leylaragg.letool.print.template.TemplateSetPublisher;
 import io.github.leylaragg.letool.print.template.TemplateType;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.ZoneId;
 import java.util.List;
@@ -40,13 +42,15 @@ class XmlPrintPipelineTest {
         PrintTemplate template = publish(repository, 1, "Hello XML pipeline");
         XmlPrintPipeline pipeline = pipeline(repository, 7);
 
-        PrintArtifact artifact = pipeline.render(request(template));
+        ByteArrayOutputStream target = new ByteArrayOutputStream();
+        PrintOutput output = new PrintOutput(target, RenderOptions.DEFAULT_MAX_OUTPUT_BYTES);
+        PrintResult result = pipeline.render(request(template), output);
 
         assertThat(pipeline.templateFormat()).isEqualTo(TemplateFormat.LETOOL_XML);
         assertThat(pipeline.supportedOutputs()).containsExactly(OutputFormat.PDF);
-        assertThat(artifact.outputFormat()).isEqualTo(OutputFormat.PDF);
-        assertThat(artifact.content()).startsWith("%PDF".getBytes(StandardCharsets.US_ASCII));
-        assertThat(artifact.metadata()).containsKeys("pageCount", "contentLength");
+        assertThat(result.outputFormat()).isEqualTo(OutputFormat.PDF);
+        assertThat(target.toByteArray()).startsWith("%PDF".getBytes(StandardCharsets.US_ASCII));
+        assertThat(result.metadata()).containsKeys("pageCount", "contentLength");
     }
 
     /** 已经锁定的请求不能在同版本仓库之外替换模板正文。 */
@@ -59,7 +63,7 @@ class XmlPrintPipelineTest {
                 stored.templateSetVersion(), stored.contextVersion(), xml("secret changed"));
         XmlPrintPipeline pipeline = pipeline(repository, 1);
 
-        assertThatThrownBy(() -> pipeline.render(request(changed)))
+        assertThatThrownBy(() -> pipeline.render(request(changed), output()))
                 .isInstanceOf(PrintValidationException.class)
                 .hasMessageContaining("模板快照不一致")
                 .hasMessageNotContaining("secret changed");
@@ -73,7 +77,7 @@ class XmlPrintPipelineTest {
                 "main", new TemplateFormat("other-template"), 1, 1, 1,
                 "other".getBytes(StandardCharsets.UTF_8));
 
-        assertThatThrownBy(() -> pipeline(repository, 1).render(request(other)))
+        assertThatThrownBy(() -> pipeline(repository, 1).render(request(other), output()))
                 .isInstanceOf(PrintValidationException.class)
                 .hasMessageContaining("模板格式");
     }
@@ -108,6 +112,11 @@ class XmlPrintPipelineTest {
                 Locale.CHINA,
                 ZoneId.of("Asia/Shanghai"),
                 RenderOptions.defaults());
+    }
+
+    /** 创建测试使用的受控内存输出。 */
+    private PrintOutput output() {
+        return new PrintOutput(new ByteArrayOutputStream(), RenderOptions.DEFAULT_MAX_OUTPUT_BYTES);
     }
 
     /** 将测试正文包进最小可打印 XML。 */

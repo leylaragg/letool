@@ -13,6 +13,9 @@ public final class RenderOptions {
     /** 最大允许产物字节数。 */
     private final long maxOutputBytes;
 
+    /** 单次渲染允许占用的最大临时空间。 */
+    private final long maxTemporaryBytes;
+
     /** 是否输出文档元数据。 */
     private final boolean includeDocumentMetadata;
 
@@ -22,29 +25,41 @@ public final class RenderOptions {
     /** 默认最大产物大小：100 MiB。 */
     public static final long DEFAULT_MAX_OUTPUT_BYTES = 100L * 1024 * 1024;
 
+    /** 默认最大临时空间：300 MiB。 */
+    public static final long DEFAULT_MAX_TEMPORARY_BYTES = 300L * 1024 * 1024;
+
     /** 最小产物大小：1 MiB。 */
     private static final long MIN_OUTPUT_BYTES = 1024L * 1024;
 
     /** 最大产物大小：2 GiB。 */
     private static final long MAX_OUTPUT_BYTES = 2L * 1024 * 1024 * 1024;
 
+    /** 最大临时空间：8 GiB。 */
+    private static final long MAX_TEMPORARY_BYTES = 8L * 1024 * 1024 * 1024;
+
     /**
      * 创建渲染限制。
      *
      * @param maxPages 允许范围为 1 至 20,000
      * @param maxOutputBytes 允许范围为 1 MiB 至 2 GiB
+     * @param maxTemporaryBytes 临时空间上限，不得小于产物上限且最多为 8 GiB
      * @param includeDocumentMetadata 是否输出文档元数据
-     * @throws IllegalArgumentException 页数或字节限制越界时抛出
+     * @throws IllegalArgumentException 页数、产物或临时空间限制不合理时抛出
      */
-    public RenderOptions(int maxPages, long maxOutputBytes, boolean includeDocumentMetadata) {
+    public RenderOptions(int maxPages, long maxOutputBytes, long maxTemporaryBytes,
+            boolean includeDocumentMetadata) {
         if (maxPages < 1 || maxPages > 20_000) {
             throw new IllegalArgumentException("maxPages 必须在 1 到 20000 之间");
         }
         if (maxOutputBytes < MIN_OUTPUT_BYTES || maxOutputBytes > MAX_OUTPUT_BYTES) {
             throw new IllegalArgumentException("maxOutputBytes 必须在 1 MiB 到 2 GiB 之间");
         }
+        if (maxTemporaryBytes < maxOutputBytes || maxTemporaryBytes > MAX_TEMPORARY_BYTES) {
+            throw new IllegalArgumentException("maxTemporaryBytes 必须不少于 maxOutputBytes 且不超过 8 GiB");
+        }
         this.maxPages = maxPages;
         this.maxOutputBytes = maxOutputBytes;
+        this.maxTemporaryBytes = maxTemporaryBytes;
         this.includeDocumentMetadata = includeDocumentMetadata;
     }
 
@@ -56,6 +71,11 @@ public final class RenderOptions {
     /** @return 最大允许产物字节数 */
     public long maxOutputBytes() {
         return maxOutputBytes;
+    }
+
+    /** @return 单次渲染允许占用的最大临时空间 */
+    public long maxTemporaryBytes() {
+        return maxTemporaryBytes;
     }
 
     /** @return 是否输出文档元数据 */
@@ -73,6 +93,7 @@ public final class RenderOptions {
         }
         return maxPages == that.maxPages
                 && maxOutputBytes == that.maxOutputBytes
+                && maxTemporaryBytes == that.maxTemporaryBytes
                 && includeDocumentMetadata == that.includeDocumentMetadata;
     }
 
@@ -80,6 +101,7 @@ public final class RenderOptions {
     public int hashCode() {
         int result = Integer.hashCode(maxPages);
         result = 31 * result + Long.hashCode(maxOutputBytes);
+        result = 31 * result + Long.hashCode(maxTemporaryBytes);
         result = 31 * result + Boolean.hashCode(includeDocumentMetadata);
         return result;
     }
@@ -88,6 +110,7 @@ public final class RenderOptions {
     public String toString() {
         return "RenderOptions[maxPages=" + maxPages
                 + ", maxOutputBytes=" + maxOutputBytes
+                + ", maxTemporaryBytes=" + maxTemporaryBytes
                 + ", includeDocumentMetadata=" + includeDocumentMetadata + "]";
     }
 
@@ -97,6 +120,7 @@ public final class RenderOptions {
      * @return 默认渲染选项
      */
     public static RenderOptions defaults() {
-        return new RenderOptions(DEFAULT_MAX_PAGES, DEFAULT_MAX_OUTPUT_BYTES, true);
+        return new RenderOptions(DEFAULT_MAX_PAGES, DEFAULT_MAX_OUTPUT_BYTES,
+                DEFAULT_MAX_TEMPORARY_BYTES, true);
     }
 }

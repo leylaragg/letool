@@ -1,0 +1,9 @@
+spring:
+  application:
+    name: letool-print-consumer-verification
+
+letool:
+  print:
+    enabled: true
+    spel:
+      enabled: false

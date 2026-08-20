@@ -43,7 +43,10 @@ public enum PrintErrorCode implements ErrorCode {
     PAGE_LIMIT_EXCEEDED("PRINT_011", "打印文档超过页数限制：{0}"),
 
     /** 宿主业务数据适配器发生未分类故障。 */
-    ADAPTER_EXECUTION_FAILED("PRINT_012", "打印数据适配失败：{0}");
+    ADAPTER_EXECUTION_FAILED("PRINT_012", "打印数据适配失败：{0}"),
+
+    /** 调用方提供的输出目标写入或刷新失败。 */
+    OUTPUT_WRITE_FAILED("PRINT_013", "打印产物写出失败");
 
     /** 稳定错误码。 */
     private final String code;

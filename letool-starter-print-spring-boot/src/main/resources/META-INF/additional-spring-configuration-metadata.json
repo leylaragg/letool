@@ -37,6 +37,12 @@
       "description": "单份打印产物允许的最大字节数。"
     },
     {
+      "name": "letool.print.max-temporary-bytes",
+      "type": "java.lang.Long",
+      "defaultValue": 314572800,
+      "description": "单次 PDF 请求活动临时文件的总字节上限，不得小于最终产物上限。"
+    },
+    {
       "name": "letool.print.include-document-metadata",
       "type": "java.lang.Boolean",
       "defaultValue": true,

@@ -56,6 +56,24 @@ public final class PrintArtifact {
         return new PrintArtifact(outputFormat, content, metadata);
     }
 
+    /**
+     * 从流式结果创建内存产物，并核对内容没有脱离原结果。
+     *
+     * @param result 当前流式输出完成的结果
+     * @param content 同一输出收集到的完整内容
+     * @return 不可变内存产物
+     * @throws IllegalArgumentException 长度或摘要与流式结果不一致时抛出
+     */
+    public static PrintArtifact from(PrintResult result, byte[] content) {
+        Objects.requireNonNull(result, "result 不能为空");
+        PrintArtifact artifact = of(result.outputFormat(), content, result.metadata());
+        if (artifact.contentLength() != result.contentLength()
+                || !artifact.sha256().equals(result.sha256())) {
+            throw new IllegalArgumentException("流式结果与内存内容不一致");
+        }
+        return artifact;
+    }
+
     /** @return 产物格式 */
     public OutputFormat outputFormat() {
         return outputFormat;

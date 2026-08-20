@@ -14,7 +14,6 @@ import io.github.leylaragg.letool.print.document.node.TableCell;
 import io.github.leylaragg.letool.print.document.node.TableNode;
 import io.github.leylaragg.letool.print.document.node.TableRow;
 import io.github.leylaragg.letool.print.document.node.TextNode;
-import io.github.leylaragg.letool.print.render.RenderedDocument;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -55,14 +54,15 @@ class PdfDocumentRendererTest {
                         PageBreakNode.INSTANCE,
                         new ParagraphNode("", List.of(new TextNode("第二页内容")))));
 
-        RenderedDocument rendered = renderer.render(
+        RenderedPdf rendered = RenderedPdf.render(
+                renderer,
                 document,
-                new RenderOptions(10, 10L * 1024 * 1024, true));
+                new RenderOptions(10, 10L * 1024 * 1024, 30L * 1024 * 1024, true));
 
-        assertThat(rendered.outputFormat()).isEqualTo(OutputFormat.PDF);
+        assertThat(rendered.result().outputFormat()).isEqualTo(OutputFormat.PDF);
         assertThat(rendered.content()).startsWith('%', 'P', 'D', 'F');
-        assertThat(rendered.metadata()).containsEntry("pageCount", "2");
-        assertThat(rendered.metadata()).containsKey("contentLength");
+        assertThat(rendered.result().metadata()).containsEntry("pageCount", "2");
+        assertThat(rendered.result().metadata()).containsKey("contentLength");
         try (PDDocument pdf = Loader.loadPDF(rendered.content())) {
             assertThat(pdf.getNumberOfPages()).isEqualTo(2);
             assertThat(pdf.getDocumentInformation().getTitle()).isEqualTo("阶段报告");
@@ -90,7 +90,7 @@ class PdfDocumentRendererTest {
                 PageLayout.a4Portrait(),
                 List.of(new TableNode("records", 1, rows)));
 
-        RenderedDocument rendered = renderer().render(document, RenderOptions.defaults());
+        RenderedPdf rendered = RenderedPdf.render(renderer(), document, RenderOptions.defaults());
 
         try (PDDocument pdf = Loader.loadPDF(rendered.content())) {
             assertThat(pdf.getNumberOfPages()).isGreaterThan(1);
@@ -111,9 +111,10 @@ class PdfDocumentRendererTest {
                 PageLayout.a4Portrait(),
                 List.of(new ParagraphNode("", List.of(new TextNode("正文")))));
 
-        RenderedDocument rendered = renderer().render(
+        RenderedPdf rendered = RenderedPdf.render(
+                renderer(),
                 document,
-                new RenderOptions(10, 10L * 1024 * 1024, false));
+                new RenderOptions(10, 10L * 1024 * 1024, 30L * 1024 * 1024, false));
 
         try (PDDocument pdf = Loader.loadPDF(rendered.content())) {
             assertThat(pdf.getDocumentInformation().getTitle()).isNull();

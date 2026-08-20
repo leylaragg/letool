@@ -66,7 +66,7 @@ class PdfAnnotationWriterTest {
                         annotation(AnnotationType.FREE_TEXT, AnnotationPlacement.BOTTOM_LEFT,
                                 50_000, 20_000, "复核人", "文本框中文内容")));
 
-        byte[] content = renderer().render(document, RenderOptions.defaults()).content();
+        byte[] content = RenderedPdf.render(renderer(), document, RenderOptions.defaults()).content();
 
         try (PDDocument pdf = Loader.loadPDF(content)) {
             PDPage page = pdf.getPage(0);
@@ -112,7 +112,7 @@ class PdfAnnotationWriterTest {
                                 "审核人",
                                 "首段批注")));
 
-        byte[] content = renderer().render(document, RenderOptions.defaults()).content();
+        byte[] content = RenderedPdf.render(renderer(), document, RenderOptions.defaults()).content();
 
         try (PDDocument pdf = Loader.loadPDF(content)) {
             assertThat(pdf.getNumberOfPages()).isGreaterThan(1);

@@ -1,8 +1,9 @@
 package io.github.leylaragg.letool.print.pipeline;
 
 import io.github.leylaragg.letool.print.api.OutputFormat;
-import io.github.leylaragg.letool.print.api.PrintArtifact;
+import io.github.leylaragg.letool.print.api.PrintOutput;
 import io.github.leylaragg.letool.print.api.PrintRequest;
+import io.github.leylaragg.letool.print.api.PrintResult;
 import io.github.leylaragg.letool.print.api.TemplateFormat;
 
 import java.util.Set;
@@ -27,7 +28,8 @@ public interface PrintPipeline {
      * 执行完整打印生命周期。
      *
      * @param request 已校验的打印请求
-     * @return 与请求输出格式一致的产物
+     * @param output 由打印引擎创建的受控输出
+     * @return 必须由当前输出完成的结果
      */
-    PrintArtifact render(PrintRequest request);
+    PrintResult render(PrintRequest request, PrintOutput output);
 }

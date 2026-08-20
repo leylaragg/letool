@@ -35,6 +35,7 @@ letool:
     zone-id: Asia/Shanghai
     max-pages: 2500
     max-output-bytes: 104857600
+    max-temporary-bytes: 314572800
     include-document-metadata: true
     template-set-cache-capacity: 64
     template-cache-capacity: 1024
@@ -50,7 +51,7 @@ letool:
       enabled: false
 ```
 
-`renderer-profile-version` 参与编译缓存键。字体、样式或渲染配置发生不兼容变化时应提升版本。`temporary-directory` 为空时沿用 PDF 模块的受控临时目录策略。
+`renderer-profile-version` 参与编译缓存键。字体、样式或渲染配置发生不兼容变化时应提升版本。`max-temporary-bytes` 限制单次 PDF 请求的活动临时文件总量，不能小于 `max-output-bytes`；`temporary-directory` 为空时沿用 PDF 模块的受控临时目录策略。
 
 引入 SpEL 模块本身不会启用表达式；只有依赖存在且 `letool.print.spel.enabled=true` 时，XML 才接受 `expression-language="spel"`。显式开启但缺少模块会在启动阶段失败，避免不同环境悄悄使用不同模板语义。
 
@@ -141,14 +142,19 @@ templateSetPublisher.publishAndActivate(
 ## 生成 PDF
 
 ```java
-PrintArtifact current = printService.render("invoice", invoiceId);
-PrintArtifact historical = printService.render(1, "invoice", invoiceId);
+try (OutputStream output = Files.newOutputStream(target)) {
+    PrintResult current = printService.renderTo("invoice", invoiceId, output);
+}
 
-byte[] pdf = current.content();
-String sha256 = current.sha256();
+try (OutputStream output = Files.newOutputStream(historicalTarget)) {
+    PrintResult historical = printService.renderTo(1, "invoice", invoiceId, output);
+}
+
+PrintArtifact smallDocument = printService.render("invoice", invoiceId);
+byte[] pdf = smallDocument.content();
 ```
 
-不带版本的方法在请求开始时锁定当前模板集合快照；明确版本的方法用于重打历史文档。运行中的模板切换不会把两个版本混进同一份产物。
+流式入口适合生产下载、文件交付和大文档；调用方负责关闭输出流。内存入口保留给明确较小的文档。不带版本的方法在请求开始时锁定当前模板集合快照，明确版本的方法用于重打历史文档，运行中的模板切换不会把两个版本混进同一份产物。
 
 ## 扩展与边界
 

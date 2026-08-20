@@ -146,7 +146,8 @@ public final class PlainTextRenderer implements DocumentRenderer {
     }
 
     @Override
-    public RenderedDocument render(DocumentModel document, RenderOptions options) {
+    public PrintResult render(
+            DocumentModel document, RenderOptions options, PrintOutput output) {
         CAPABILITY.requireSupports(document);
         String text = DocumentTraversal.depthFirst(document).stream()
                 .filter(TextNode.class::isInstance)
@@ -154,15 +155,13 @@ public final class PlainTextRenderer implements DocumentRenderer {
                 .map(TextNode::text)
                 .collect(Collectors.joining(System.lineSeparator()));
         byte[] content = text.getBytes(StandardCharsets.UTF_8);
-        if (content.length > options.maxOutputBytes()) {
-            throw PrintPipelineException.outputLimitExceeded(options.maxOutputBytes());
-        }
-        return new RenderedDocument(TEXT, content, Map.of("encoding", "UTF-8"));
+        output.write(content);
+        return output.complete(TEXT, Map.of("encoding", "UTF-8"));
     }
 }
 ```
 
-能力集合必须列出实际支持的具体节点类型。框架会在调用前再次检查，渲染器不能静默忽略未知节点。生成大产物时应在缓冲区扩容、临时文件写入或第三方导出前检查上限，而不是等完整字节数组生成后再判断。
+能力集合必须列出实际支持的具体节点类型。框架会在调用前再次检查，渲染器不能静默忽略未知节点。示例为了简洁先构造小文本；大产物应分批写入 `PrintOutput`，需要临时文件时还要在实际写入处治理工作区总量。
 
 ## 自定义顶层管线
 
@@ -185,12 +184,10 @@ public final class PlainTemplatePipeline implements PrintPipeline {
     }
 
     @Override
-    public PrintArtifact render(PrintRequest request) {
+    public PrintResult render(PrintRequest request, PrintOutput output) {
         byte[] content = request.template().content();
-        if (content.length > request.options().maxOutputBytes()) {
-            throw PrintPipelineException.outputLimitExceeded(request.options().maxOutputBytes());
-        }
-        return PrintArtifact.of(TEXT, content, Map.of("source", "plain-template"));
+        output.write(content);
+        return output.complete(TEXT, Map.of("source", "plain-template"));
     }
 }
 ```

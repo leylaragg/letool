@@ -25,8 +25,11 @@ PdfFont font = new PdfFont(
         true);
 
 PdfDocumentRenderer renderer = new PdfDocumentRenderer(List.of(font));
-RenderedDocument rendered = renderer.render(document, RenderOptions.defaults());
-byte[] pdf = rendered.content();
+RenderOptions options = RenderOptions.defaults();
+try (OutputStream target = Files.newOutputStream(pdfPath)) {
+    PrintOutput output = new PrintOutput(target, options.maxOutputBytes());
+    PrintResult result = renderer.render(document, options, output);
+}
 ```
 
 分段排版会在宿主可信目录下创建随机请求子目录。默认根目录为
@@ -51,9 +54,9 @@ PdfDocumentRenderer renderer = new PdfDocumentRenderer(
 - 便签批注和带嵌入字体外观的自由文本框批注；
 - 可选标题、作者和语言元数据；
 - 宿主字体注册、字体嵌入及最终回退字体；
-- 最大页数、最大输出字节数和安全渲染异常。
+- 最大页数、最大输出字节数、最大临时空间和安全渲染异常。
 
-`PdfDocumentRenderer` 只保存不可变字体和临时根目录配置。每次 `render` 都创建独立的 XHTML、输出缓冲区、请求工作区和第三方排版器，因此同一实例可以并发处理不可变文档。
+`PdfDocumentRenderer` 只保存不可变字体和临时根目录配置。每次 `render` 都创建独立的 XHTML、请求工作区和第三方排版器，因此同一实例可以并发处理不可变文档。
 
 ## 全局目录
 
@@ -92,7 +95,9 @@ XML 模板通过目标节点 ID 声明批注，正文只允许直接文本、`te
 
 XHTML 标签、属性和 CSS 均由框架生成，文本和属性会分别转义。渲染器在 URI 解析前后都拒绝外部资源访问，不读取 HTTP、文件系统或 classpath 内容；字体流是宿主通过可信 Java 配置显式提供的唯一二进制输入。
 
-输出采用分段缓冲，在扩容和复制前检查 `RenderOptions.maxOutputBytes`。中间 PDF 的活动字节总量使用同一上限，单次最多建立 1,000 个排版单元。布局完成后、PDF 写出前检查 `maxPages`。第三方异常原文、XHTML、业务正文、字体路径和临时路径不会成为用户可见消息参数。
+PDF 会先写入本次请求独占的受控工作区，重新打开检查结构和页数后，再复制到调用方输出。`RenderOptions.maxOutputBytes` 限制每个最终 PDF，`maxTemporaryBytes` 限制单次请求所有活动临时文件的总量；两项都在实际写入前检查，单次最多建立 1,000 个排版单元。渲染失败时不会向调用方留下半份最终 PDF，第三方异常原文、XHTML、业务正文、字体路径和临时路径也不会成为用户可见消息参数。
+
+调用方始终负责关闭最终输出流。框架只清理自己创建的请求工作区，不会删除宿主配置的临时根目录。
 
 ## 当前限制
 

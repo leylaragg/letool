@@ -61,10 +61,11 @@ public final class XmlTemplateSetValidator implements TemplateSetValidator {
             cache.compileSet(candidate);
         } catch (PrintCompilationException exception) {
             // 编译异常只携带经过约束的定位信息，可以交给发布接口展示。
-            throw PrintValidationException.invalidRequest("XML 模板集合校验失败：" + exception.detail());
+            throw PrintValidationException.invalidRequest(
+                    "XML 模板集合校验失败：" + exception.detail(), exception);
         } catch (RuntimeException exception) {
             // 未知扩展异常可能包含业务数据，这里只保留稳定的校验结果。
-            throw PrintValidationException.invalidRequest("XML 模板集合校验失败");
+            throw PrintValidationException.invalidRequest("XML 模板集合校验失败", exception);
         }
     }
 }

@@ -15,8 +15,11 @@ public final class PrintValidationException extends BusinessException {
     private static final long serialVersionUID = 1L;
 
     /** 创建打印校验异常。 */
-    private PrintValidationException(PrintErrorCode errorCode, Object[] messageArgs) {
-        super(errorCode, messageArgs, null, null);
+    private PrintValidationException(
+            PrintErrorCode errorCode,
+            Object[] messageArgs,
+            Throwable cause) {
+        super(errorCode, messageArgs, null, cause);
     }
 
     /**
@@ -28,7 +31,22 @@ public final class PrintValidationException extends BusinessException {
     public static PrintValidationException invalidRequest(String detail) {
         return new PrintValidationException(
                 PrintErrorCode.INVALID_REQUEST,
-                new Object[]{requireDetail(detail)});
+                new Object[]{requireDetail(detail)},
+                null);
+    }
+
+    /**
+     * 创建保留内部原因的请求校验异常。
+     *
+     * @param detail 不包含敏感数据的错误详情
+     * @param cause 只供受控日志排查的底层原因
+     * @return 请求校验异常
+     */
+    public static PrintValidationException invalidRequest(String detail, Throwable cause) {
+        return new PrintValidationException(
+                PrintErrorCode.INVALID_REQUEST,
+                new Object[]{requireDetail(detail)},
+                requireCause(cause));
     }
 
     /**
@@ -40,7 +58,22 @@ public final class PrintValidationException extends BusinessException {
     public static PrintValidationException invalidDocument(String detail) {
         return new PrintValidationException(
                 PrintErrorCode.INVALID_DOCUMENT,
-                new Object[]{requireDetail(detail)});
+                new Object[]{requireDetail(detail)},
+                null);
+    }
+
+    /**
+     * 创建保留内部原因的文档模型校验异常。
+     *
+     * @param detail 不包含业务正文的错误详情
+     * @param cause 只供受控日志排查的底层原因
+     * @return 文档模型校验异常
+     */
+    public static PrintValidationException invalidDocument(String detail, Throwable cause) {
+        return new PrintValidationException(
+                PrintErrorCode.INVALID_DOCUMENT,
+                new Object[]{requireDetail(detail)},
+                requireCause(cause));
     }
 
     /** 校验可安全展示的详情。 */
@@ -49,5 +82,13 @@ public final class PrintValidationException extends BusinessException {
             throw new IllegalArgumentException("detail 不能为空");
         }
         return detail;
+    }
+
+    /** 保证原因链确实包含可排查的异常。 */
+    private static Throwable requireCause(Throwable cause) {
+        if (cause == null) {
+            throw new IllegalArgumentException("cause 不能为空");
+        }
+        return cause;
     }
 }

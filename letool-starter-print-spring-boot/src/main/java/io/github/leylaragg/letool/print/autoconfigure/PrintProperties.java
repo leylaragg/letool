@@ -42,6 +42,9 @@ public class PrintProperties {
     /** 单份产物允许的最大字节数。 */
     private long maxOutputBytes = RenderOptions.DEFAULT_MAX_OUTPUT_BYTES;
 
+    /** 单次 PDF 渲染允许占用的最大临时空间。 */
+    private long maxTemporaryBytes = RenderOptions.DEFAULT_MAX_TEMPORARY_BYTES;
+
     /** 是否把安全文档元数据写入产物。 */
     private boolean includeDocumentMetadata = true;
 
@@ -124,6 +127,16 @@ public class PrintProperties {
     /** @param maxOutputBytes 单份产物最大字节数 */
     public void setMaxOutputBytes(long maxOutputBytes) {
         this.maxOutputBytes = maxOutputBytes;
+    }
+
+    /** @return 单次渲染最大临时空间字节数 */
+    public long getMaxTemporaryBytes() {
+        return maxTemporaryBytes;
+    }
+
+    /** @param maxTemporaryBytes 单次 PDF 请求的活动临时文件总上限 */
+    public void setMaxTemporaryBytes(long maxTemporaryBytes) {
+        this.maxTemporaryBytes = maxTemporaryBytes;
     }
 
     /** @return 是否输出文档元数据 */
@@ -247,10 +260,11 @@ public class PrintProperties {
         RenderOptions options;
         try {
             options = new RenderOptions(
-                    maxPages, maxOutputBytes, includeDocumentMetadata);
+                    maxPages, maxOutputBytes, maxTemporaryBytes, includeDocumentMetadata);
         } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException(
-                    "letool.print.max-pages 或 max-output-bytes 配置不合法", exception);
+                    "letool.print.max-pages、max-output-bytes 或 max-temporary-bytes 配置不合法",
+                    exception);
         }
         return new PrintRuntimeSettings(
                 rendererProfileVersion, resolvedLocale, resolvedZone, options);

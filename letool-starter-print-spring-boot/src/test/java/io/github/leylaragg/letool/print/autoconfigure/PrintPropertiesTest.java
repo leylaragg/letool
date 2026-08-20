@@ -50,6 +50,7 @@ class PrintPropertiesTest {
         properties.setZoneId("UTC");
         properties.setMaxPages(100);
         properties.setMaxOutputBytes(10L * 1024 * 1024);
+        properties.setMaxTemporaryBytes(30L * 1024 * 1024);
         properties.setIncludeDocumentMetadata(false);
 
         PrintRuntimeSettings settings = properties.toRuntimeSettings();
@@ -58,7 +59,8 @@ class PrintPropertiesTest {
         assertThat(settings.locale()).isEqualTo(Locale.US);
         assertThat(settings.zoneId()).isEqualTo(ZoneId.of("UTC"));
         assertThat(settings.renderOptions())
-                .isEqualTo(new RenderOptions(100, 10L * 1024 * 1024, false));
+                .isEqualTo(new RenderOptions(
+                        100, 10L * 1024 * 1024, 30L * 1024 * 1024, false));
     }
 
     /** 非法区域、时区和容量只报告属性名，不回显配置内容。 */
@@ -85,5 +87,18 @@ class PrintPropertiesTest {
         assertThatThrownBy(invalidCapacity::validateInfrastructureSettings)
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("template-cache-capacity");
+
+        PrintProperties temporaryBelowOutput = new PrintProperties();
+        temporaryBelowOutput.setMaxOutputBytes(10L * 1024 * 1024);
+        temporaryBelowOutput.setMaxTemporaryBytes(9L * 1024 * 1024);
+        assertThatThrownBy(temporaryBelowOutput::toRuntimeSettings)
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("max-temporary-bytes");
+
+        PrintProperties oversizedTemporary = new PrintProperties();
+        oversizedTemporary.setMaxTemporaryBytes(8L * 1024 * 1024 * 1024 + 1);
+        assertThatThrownBy(oversizedTemporary::toRuntimeSettings)
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("max-temporary-bytes");
     }
 }

@@ -15,6 +15,7 @@ letool:
     zone-id: Asia/Shanghai
     max-pages: 2500
     max-output-bytes: 104857600
+    max-temporary-bytes: 314572800
     include-document-metadata: true
     template-set-cache-capacity: 64
     template-cache-capacity: 1024
@@ -32,7 +33,7 @@ letool:
 
 `renderer-profile-version` 是渲染环境的显式版本。字体、样式、渲染器参数或扩展能力发生不兼容变化时提升它，旧编译结果便不会被新环境继续复用。`locale` 和 `zone-id` 是业务门面构造请求时的默认值；模板格式化器仍可在受控选项中覆盖。
 
-`max-output-bytes` 最低为 1 MiB，默认 100 MiB。框架会同时检查渲染器中间输出和最终产物，但生产接口仍应限制并发、请求数据规模和响应传输时间。
+`max-output-bytes` 最低为 1 MiB，默认 100 MiB，用于限制单份最终产物。`max-temporary-bytes` 默认 300 MiB，用于限制单次 PDF 请求所有活动临时文件，不能小于最终产物上限且最多为 8 GiB。两项都在实际写入前检查，生产接口仍应限制并发、请求数据规模和响应传输时间。
 
 ## 模板发布与版本切换
 
@@ -41,7 +42,7 @@ letool:
 1. 组装完整文档和片段；
 2. 调用 `publish(version, definitions)` 完成发布校验；
 3. 在受控变更窗口调用 `activate(version)`；
-4. 用不带版本的 `PrintService.render` 处理新请求；
+4. 用不带版本的 `PrintService.renderTo` 处理新请求；
 5. 重打历史文档时显式传入历史版本。
 
 `publishAndActivate` 适合发布与启用必须一次完成的场景。单次打印开始时会锁定一个不可变模板集合，切换当前版本不会让进行中的文档混入新模板。默认内存仓库只适合单实例、启动期固定模板和测试；多实例生产环境应实现 `TemplateRepository`，并自行提供事务、CAS 或其他一致性保证。
@@ -58,7 +59,7 @@ letool:
 
 `temporary-directory` 为空时使用 PDF 模块的默认受控目录。显式配置时请为每个应用准备独立、可写、配额受控的目录，不要和上传区、静态资源或其他应用共享。
 
-渲染任务使用独立工作目录，并在成功和失败路径清理。开启 `startup.validate-fonts` 且配置了临时目录时，启动检查还会创建并删除探针文件。运维侧仍应监控磁盘容量和异常残留，不要用宽泛的系统临时目录作为长期兜底。
+渲染任务使用独立工作目录，并在成功和失败路径清理。PDF 通过最终结构检查后才写入调用方流，因此渲染或验证失败不会留下半份响应；如果调用方输出流在传输中失败，框架会停止写入并保留原因，但不能回滚已经接收的字节。开启 `startup.validate-fonts` 且配置了临时目录时，启动检查还会创建并删除探针文件。运维侧仍应监控磁盘容量和异常残留，不要用宽泛的系统临时目录作为长期兜底。
 
 ## 编译缓存
 

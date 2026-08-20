@@ -1,6 +1,8 @@
 package io.github.leylaragg.letool.print.render;
 
 import io.github.leylaragg.letool.print.api.OutputFormat;
+import io.github.leylaragg.letool.print.api.PrintOutput;
+import io.github.leylaragg.letool.print.api.PrintResult;
 import io.github.leylaragg.letool.print.api.RenderOptions;
 import io.github.leylaragg.letool.print.document.DocumentModel;
 import io.github.leylaragg.letool.print.document.node.TextNode;
@@ -8,7 +10,6 @@ import io.github.leylaragg.letool.print.exception.PrintPipelineException;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -78,8 +79,11 @@ class DocumentRendererRegistryTest {
             }
 
             @Override
-            public RenderedDocument render(DocumentModel document, RenderOptions options) {
-                return new RenderedDocument(outputFormat, new byte[]{1}, Map.of());
+            public PrintResult render(
+                    DocumentModel document,
+                    RenderOptions options,
+                    PrintOutput output) {
+                throw new UnsupportedOperationException("注册测试不会执行渲染");
             }
         };
     }

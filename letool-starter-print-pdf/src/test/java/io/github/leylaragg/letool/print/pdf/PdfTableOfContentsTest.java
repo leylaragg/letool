@@ -9,7 +9,6 @@ import io.github.leylaragg.letool.print.document.node.HeadingNode;
 import io.github.leylaragg.letool.print.document.node.ParagraphNode;
 import io.github.leylaragg.letool.print.document.node.TableOfContentsNode;
 import io.github.leylaragg.letool.print.document.node.TextNode;
-import io.github.leylaragg.letool.print.render.RenderedDocument;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink;
@@ -41,8 +40,8 @@ class PdfTableOfContentsTest {
                         new HeadingNode("", 1, List.of(new TextNode("Chapter One"))),
                         new ParagraphNode("", List.of(new TextNode("Body")))));
 
-        RenderedDocument rendered = new PdfDocumentRenderer(List.of())
-                .render(document, RenderOptions.defaults());
+        RenderedPdf rendered = RenderedPdf.render(
+                new PdfDocumentRenderer(List.of()), document, RenderOptions.defaults());
 
         try (PDDocument pdf = Loader.loadPDF(rendered.content())) {
             String text = new PDFTextStripper().getText(pdf);

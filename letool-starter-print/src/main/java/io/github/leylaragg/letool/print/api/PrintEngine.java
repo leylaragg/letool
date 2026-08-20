@@ -1,5 +1,7 @@
 package io.github.leylaragg.letool.print.api;
 
+import java.io.OutputStream;
+
 /**
  * 同步打印统一门面。
  *
@@ -17,4 +19,14 @@ public interface PrintEngine {
      * @throws io.github.leylaragg.letool.exception.core.BaseException 请求、路由或执行失败时抛出
      */
     PrintArtifact render(PrintRequest request);
+
+    /**
+     * 把产物写入调用方提供的目标，不在框架内保留完整内容。
+     *
+     * @param request 同步打印请求
+     * @param output 调用方拥有并负责关闭的输出流
+     * @return 产物格式、长度、摘要和安全元数据
+     * @throws io.github.leylaragg.letool.exception.core.BaseException 请求、路由、渲染或写出失败时抛出
+     */
+    PrintResult renderTo(PrintRequest request, OutputStream output);
 }
