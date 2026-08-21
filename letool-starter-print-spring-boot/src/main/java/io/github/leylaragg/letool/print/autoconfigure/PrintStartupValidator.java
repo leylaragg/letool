@@ -1,11 +1,12 @@
 package io.github.leylaragg.letool.print.autoconfigure;
 
 import io.github.leylaragg.letool.print.pdf.PdfFont;
-import io.github.leylaragg.letool.print.template.TemplateRepository;
+import io.github.leylaragg.letool.print.pdf.PdfFontCatalog;
+import io.github.leylaragg.letool.print.pdf.PdfFontResourceValidator;
+import io.github.leylaragg.letool.print.template.TemplateSource;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -20,11 +21,11 @@ import java.util.Objects;
  */
 public final class PrintStartupValidator implements SmartInitializingSingleton {
 
-    /** 启动时读取的模板仓库。 */
-    private final TemplateRepository repository;
+    /** 启动时读取的模板来源。 */
+    private final TemplateSource templateSource;
 
-    /** 宿主交给 PDF 渲染器使用的字体。 */
-    private final List<PdfFont> fonts;
+    /** 宿主交给 PDF 渲染器使用的字体目录。 */
+    private final PdfFontCatalog fontCatalog;
 
     /** 决定哪些严格检查需要执行。 */
     private final PrintProperties properties;
@@ -32,13 +33,17 @@ public final class PrintStartupValidator implements SmartInitializingSingleton {
     /**
      * 创建无请求状态的启动校验器。
      *
-     * @param repository 模板仓库
+     * @param templateSource 模板只读来源
      * @param fonts 已按 Spring 顺序收集的字体
      * @param properties 打印外部化配置
      */
-    public PrintStartupValidator(TemplateRepository repository, List<PdfFont> fonts, PrintProperties properties) {
-        this.repository = Objects.requireNonNull(repository, "repository 不能为空");
-        this.fonts = List.copyOf(Objects.requireNonNull(fonts, "fonts 不能为空"));
+    public PrintStartupValidator(
+            TemplateSource templateSource,
+            List<PdfFont> fonts,
+            PrintProperties properties) {
+        this.templateSource = Objects.requireNonNull(templateSource, "templateSource 不能为空");
+        this.fontCatalog = PdfFontCatalog.of(
+                List.copyOf(Objects.requireNonNull(fonts, "fonts 不能为空")));
         this.properties = Objects.requireNonNull(properties, "properties 不能为空");
     }
 
@@ -46,7 +51,7 @@ public final class PrintStartupValidator implements SmartInitializingSingleton {
     @Override
     public void afterSingletonsInstantiated() {
         PrintProperties.Startup startup = properties.getStartup();
-        if (startup.isRequireActiveTemplate() && repository.current().isEmpty()) {
+        if (startup.isRequireActiveTemplate() && templateSource.current().isEmpty()) {
             throw failure("startup.require-active-template");
         }
         if (startup.isValidateFonts()) {
@@ -55,16 +60,13 @@ public final class PrintStartupValidator implements SmartInitializingSingleton {
         }
     }
 
-    /** 逐个读取少量字体头部，并及时归还宿主拥有的流。 */
+    /** 真实解析字体，并按配置文本检查回退链覆盖。 */
     private void validateFonts() {
-        for (PdfFont font : fonts) {
-            try (InputStream stream = font.openStream()) {
-                if (stream.readNBytes(32).length == 0) {
-                    throw failure("startup.validate-fonts");
-                }
-            } catch (IOException | RuntimeException exception) {
-                throw failure("startup.validate-fonts");
-            }
+        try {
+            new PdfFontResourceValidator(fontCatalog).validate(
+                    properties.getStartup().getFontProbeText());
+        } catch (RuntimeException exception) {
+            throw failure("startup.validate-fonts");
         }
     }
 

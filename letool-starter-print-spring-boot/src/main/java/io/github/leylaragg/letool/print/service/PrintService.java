@@ -10,7 +10,7 @@ import io.github.leylaragg.letool.print.context.PrintContext;
 import io.github.leylaragg.letool.print.exception.PrintAdapterException;
 import io.github.leylaragg.letool.print.exception.PrintValidationException;
 import io.github.leylaragg.letool.print.template.TemplateDefinition;
-import io.github.leylaragg.letool.print.template.TemplateRepository;
+import io.github.leylaragg.letool.print.template.TemplateSource;
 import io.github.leylaragg.letool.print.template.TemplateSet;
 import io.github.leylaragg.letool.print.template.TemplateType;
 
@@ -30,7 +30,7 @@ import java.util.function.Supplier;
 public final class PrintService {
 
     /** 提供当前和历史模板集合快照。 */
-    private final TemplateRepository repository;
+    private final TemplateSource templateSource;
 
     /** 保存宿主声明的业务打印定义。 */
     private final PrintDefinitionRegistry definitionRegistry;
@@ -47,28 +47,35 @@ public final class PrintService {
     /**
      * 创建不持有请求状态的业务打印门面。
      *
-     * @param repository 模板集合仓库
+     * @param templateSource 模板集合只读来源
      * @param definitionRegistry 业务定义注册表
      * @param engine 通用打印引擎
      * @param settings 不可变运行时配置
      */
-    public PrintService(TemplateRepository repository, PrintDefinitionRegistry definitionRegistry,
-                        PrintEngine engine, PrintRuntimeSettings settings) {
-        this(repository, definitionRegistry, engine, settings, PrintTelemetry.NO_OP);
+    public PrintService(
+            TemplateSource templateSource,
+            PrintDefinitionRegistry definitionRegistry,
+            PrintEngine engine,
+            PrintRuntimeSettings settings) {
+        this(templateSource, definitionRegistry, engine, settings, PrintTelemetry.NO_OP);
     }
 
     /**
      * 创建带安全观测端口的业务打印门面。
      *
-     * @param repository 模板集合仓库
+     * @param templateSource 模板集合只读来源
      * @param definitionRegistry 业务定义注册表
      * @param engine 通用打印引擎
      * @param settings 不可变运行时配置
      * @param telemetry 不接收请求正文的观测端口
      */
-    public PrintService(TemplateRepository repository, PrintDefinitionRegistry definitionRegistry,
-                        PrintEngine engine, PrintRuntimeSettings settings, PrintTelemetry telemetry) {
-        this.repository = Objects.requireNonNull(repository, "repository 不能为空");
+    public PrintService(
+            TemplateSource templateSource,
+            PrintDefinitionRegistry definitionRegistry,
+            PrintEngine engine,
+            PrintRuntimeSettings settings,
+            PrintTelemetry telemetry) {
+        this.templateSource = Objects.requireNonNull(templateSource, "templateSource 不能为空");
         this.definitionRegistry = Objects.requireNonNull(definitionRegistry, "definitionRegistry 不能为空");
         this.engine = Objects.requireNonNull(engine, "engine 不能为空");
         this.settings = Objects.requireNonNull(settings, "settings 不能为空");
@@ -85,7 +92,7 @@ public final class PrintService {
      */
     public PrintArtifact render(String definitionCode, Object request) {
         return observe(() -> {
-            TemplateSet templateSet = repository.current()
+            TemplateSet templateSet = templateSource.current()
                     .orElseThrow(() -> PrintValidationException.invalidRequest(
                             "当前没有已激活的模板集合"));
             return renderTemplateSet(templateSet, definitionCode, request);
@@ -103,7 +110,7 @@ public final class PrintService {
      */
     public PrintArtifact render(long templateSetVersion, String definitionCode, Object request) {
         return observe(() -> {
-            TemplateSet templateSet = repository.find(templateSetVersion)
+            TemplateSet templateSet = templateSource.find(templateSetVersion)
                     .orElseThrow(() -> PrintValidationException.invalidRequest(
                             "模板集合版本尚未发布：" + templateSetVersion));
             return renderTemplateSet(templateSet, definitionCode, request);
@@ -122,7 +129,7 @@ public final class PrintService {
     public PrintResult renderTo(String definitionCode, Object request, OutputStream output) {
         return observe(() -> {
             requireOutput(output);
-            TemplateSet templateSet = repository.current()
+            TemplateSet templateSet = templateSource.current()
                     .orElseThrow(() -> PrintValidationException.invalidRequest(
                             "当前没有已激活的模板集合"));
             return renderTemplateSetTo(templateSet, definitionCode, request, output);
@@ -146,7 +153,7 @@ public final class PrintService {
             OutputStream output) {
         return observe(() -> {
             requireOutput(output);
-            TemplateSet templateSet = repository.find(templateSetVersion)
+            TemplateSet templateSet = templateSource.find(templateSetVersion)
                     .orElseThrow(() -> PrintValidationException.invalidRequest(
                             "模板集合版本尚未发布：" + templateSetVersion));
             return renderTemplateSetTo(templateSet, definitionCode, request, output);

@@ -5,7 +5,7 @@ import io.github.leylaragg.letool.print.api.PrintTemplate;
 import io.github.leylaragg.letool.print.exception.PrintValidationException;
 import io.github.leylaragg.letool.print.template.TemplateCompilationKey;
 import io.github.leylaragg.letool.print.template.TemplateDefinition;
-import io.github.leylaragg.letool.print.template.TemplateRepository;
+import io.github.leylaragg.letool.print.template.TemplateSource;
 import io.github.leylaragg.letool.print.template.TemplateSet;
 
 import java.util.Arrays;
@@ -20,8 +20,8 @@ import java.util.Objects;
  */
 public final class XmlTemplateCompilationService {
 
-    /** 提供已发布模板集合快照的仓库。 */
-    private final TemplateRepository repository;
+    /** 提供当前和历史模板集合快照的只读来源。 */
+    private final TemplateSource source;
 
     /** 复用集合和文档编译结果的本地缓存。 */
     private final XmlTemplateCompilationCache cache;
@@ -29,13 +29,13 @@ public final class XmlTemplateCompilationService {
     /**
      * 创建运行时 XML 模板解析服务。
      *
-     * @param repository 模板集合仓库
+     * @param source 模板集合只读来源
      * @param cache 可与发布校验共享的编译缓存
      * @throws NullPointerException 任一依赖为空时抛出
      */
     public XmlTemplateCompilationService(
-            TemplateRepository repository, XmlTemplateCompilationCache cache) {
-        this.repository = Objects.requireNonNull(repository, "repository 不能为空");
+            TemplateSource source, XmlTemplateCompilationCache cache) {
+        this.source = Objects.requireNonNull(source, "source 不能为空");
         this.cache = Objects.requireNonNull(cache, "cache 不能为空");
     }
 
@@ -57,7 +57,7 @@ public final class XmlTemplateCompilationService {
             String templateCode,
             long rendererProfileVersion,
             OutputFormat outputFormat) {
-        TemplateSet templateSet = repository.find(templateSetVersion)
+        TemplateSet templateSet = source.find(templateSetVersion)
                 .orElseThrow(() -> PrintValidationException.invalidRequest(
                         "模板集合版本尚未发布：" + templateSetVersion));
         return resolveSnapshot(templateSet, templateCode, rendererProfileVersion, outputFormat);
@@ -82,7 +82,7 @@ public final class XmlTemplateCompilationService {
             long rendererProfileVersion,
             OutputFormat outputFormat) {
         Objects.requireNonNull(template, "template 不能为空");
-        TemplateSet templateSet = repository.find(template.templateSetVersion())
+        TemplateSet templateSet = source.find(template.templateSetVersion())
                 .orElseThrow(() -> PrintValidationException.invalidRequest(
                         "模板集合版本尚未发布：" + template.templateSetVersion()));
         PrintTemplate stored = templateSet.require(template.templateCode()).template();
@@ -109,7 +109,7 @@ public final class XmlTemplateCompilationService {
             String templateCode,
             long rendererProfileVersion,
             OutputFormat outputFormat) {
-        TemplateSet templateSet = repository.current()
+        TemplateSet templateSet = source.current()
                 .orElseThrow(() -> PrintValidationException.invalidRequest("当前没有已激活的模板集合"));
         return resolveSnapshot(templateSet, templateCode, rendererProfileVersion, outputFormat);
     }

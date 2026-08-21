@@ -40,7 +40,16 @@ final class PdfLayoutSnapshotter {
                 sources.put(sourceId, visibleFragments(renderer, context, box));
             }
         }
-        return new PdfLayoutSnapshot(targets, sources);
+        float dotsPerPoint = renderer.getDotsPerPoint();
+        float headerHeight = regionHeight(renderer, PdfXhtmlRenderer.HEADER_REGION_ID, dotsPerPoint);
+        float footerHeight = regionHeight(renderer, PdfXhtmlRenderer.FOOTER_REGION_ID, dotsPerPoint);
+        return new PdfLayoutSnapshot(targets, sources, headerHeight, footerHeight);
+    }
+
+    /** 读取 running element 原始盒子的高度，缺少区域时返回零。 */
+    private float regionHeight(PdfBoxRenderer renderer, String id, float dotsPerPoint) {
+        Box box = renderer.getSharedContext().getBoxById(id);
+        return box == null ? 0F : box.getHeight() / dotsPerPoint;
     }
 
     /** 目标只使用第一个可见片段，目录和跳转落点保持一致。 */
@@ -57,13 +66,20 @@ final class PdfLayoutSnapshotter {
                 box.getAbsX(), box.getAbsY(), box.getEffectiveWidth(), box.getHeight());
         List<PdfLayoutSnapshot.Position> positions = new ArrayList<>();
         for (PageBox page : renderer.getRootBox().getLayer().getPages()) {
-            Rectangle visible = bounds.intersection(page.getDocumentCoordinatesContentBounds(context));
+            Rectangle visible = bounds.intersection(pageContentBounds(context, page));
             if (!visible.isEmpty()) {
                 positions.add(new PdfLayoutSnapshot.Position(
                         page.getPageNo(), toPdfRectangle(renderer, context, page, visible)));
             }
         }
         return List.copyOf(positions);
+    }
+
+    /** OpenHTMLToPDF 返回页内内容框，这里补上页面在整份文档中的纵向偏移。 */
+    private Rectangle pageContentBounds(LayoutContext context, PageBox page) {
+        Rectangle bounds = page.getDocumentCoordinatesContentBounds(context);
+        bounds.translate(0, page.getTop());
+        return bounds;
     }
 
     /** 沿用 OpenHTMLToPDF 的页面边距和坐标原点换算。 */

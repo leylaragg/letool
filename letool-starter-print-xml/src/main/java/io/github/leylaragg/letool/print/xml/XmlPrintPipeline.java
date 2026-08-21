@@ -7,11 +7,15 @@ import io.github.leylaragg.letool.print.api.PrintRequest;
 import io.github.leylaragg.letool.print.api.PrintResult;
 import io.github.leylaragg.letool.print.api.TemplateFormat;
 import io.github.leylaragg.letool.print.document.DocumentModel;
+import io.github.leylaragg.letool.print.document.node.DocumentNode;
 import io.github.leylaragg.letool.print.exception.PrintPipelineException;
+import io.github.leylaragg.letool.print.exception.PrintRenderingException;
 import io.github.leylaragg.letool.print.exception.PrintValidationException;
 import io.github.leylaragg.letool.print.pipeline.PrintPipeline;
 import io.github.leylaragg.letool.print.render.DocumentRenderer;
 import io.github.leylaragg.letool.print.render.DocumentRendererRegistry;
+import io.github.leylaragg.letool.print.render.OutputCapability;
+import io.github.leylaragg.letool.print.template.inspection.TemplateInspection;
 
 import java.util.Objects;
 import java.util.Set;
@@ -98,11 +102,14 @@ public final class XmlPrintPipeline implements PrintPipeline {
         try {
             ResolvedXmlTemplate resolved = compilationService.resolve(
                     request.template(), rendererProfileVersion, request.outputFormat());
-            DocumentModel document = binder.bind(resolved.template(), request.context());
             DocumentRenderer renderer = rendererRegistry.require(request.outputFormat());
-            // 第三方渲染器不能依靠自身实现决定是否忽略未知文档节点。
-            renderer.capability().requireSupports(document);
-            PrintResult result = renderer.render(document, request.options(), output);
+            OutputCapability capability = Objects.requireNonNull(
+                    renderer.capability(), "文档渲染器能力不能为空");
+            requireStaticCapability(resolved.inspection(), capability);
+            DocumentModel document = binder.bind(resolved.template(), request.context());
+            // 绑定后再核对一次，可信扩展的实际结果也不能越过输出能力。
+            capability.requireSupports(document);
+            PrintResult result = renderDocument(renderer, document, request, output);
             if (!output.completedWith(result)
                     || !request.outputFormat().equals(result.outputFormat())) {
                 throw new IllegalStateException("文档渲染器没有正确完成当前输出");
@@ -113,6 +120,38 @@ public final class XmlPrintPipeline implements PrintPipeline {
         } catch (RuntimeException exception) {
             // 未知扩展消息只留在原因链，公开异常使用稳定的管线错误。
             throw PrintPipelineException.executionFailed(TemplateFormat.LETOOL_XML, exception);
+        }
+    }
+
+    /** 静态检查覆盖模板所有分支，失败时不会读取请求中的业务上下文。 */
+    private void requireStaticCapability(
+            TemplateInspection inspection, OutputCapability capability) {
+        for (Class<? extends DocumentNode> nodeType : inspection.nodeTypes()) {
+            if (!capability.supports(nodeType)) {
+                throw PrintValidationException.invalidDocument(
+                        "输出实现不支持节点类型：" + nodeType.getSimpleName());
+            }
+        }
+        for (var feature : inspection.features()) {
+            if (!capability.supports(feature)) {
+                throw PrintValidationException.invalidDocument(
+                        "输出实现不支持文档特性：" + feature);
+            }
+        }
+    }
+
+    /** 第三方渲染器的未知异常按输出格式分类，具体消息只保留在原因链。 */
+    private PrintResult renderDocument(
+            DocumentRenderer renderer,
+            DocumentModel document,
+            PrintRequest request,
+            PrintOutput output) {
+        try {
+            return renderer.render(document, request.options(), output);
+        } catch (BaseException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw PrintRenderingException.renderFailed(request.outputFormat(), exception);
         }
     }
 }

@@ -4,7 +4,7 @@ import io.github.leylaragg.letool.print.observability.PrintInfrastructureHealthI
 import io.github.leylaragg.letool.print.observability.PrintTemplateHealthIndicator;
 import io.github.leylaragg.letool.print.pdf.PdfFont;
 import io.github.leylaragg.letool.print.service.PrintService;
-import io.github.leylaragg.letool.print.template.TemplateRepository;
+import io.github.leylaragg.letool.print.template.TemplateSource;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.actuate.health.HealthIndicator;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -30,16 +30,16 @@ import org.springframework.context.annotation.Bean;
 public class PrintHealthAutoConfiguration {
 
     /**
-     * @param repository 模板仓库
+     * @param source 模板只读来源
      * @param properties 打印配置
      * @return 不读取模板正文的仓库健康检查
      */
     @Bean
-    @ConditionalOnBean({TemplateRepository.class, PrintProperties.class})
+    @ConditionalOnBean({TemplateSource.class, PrintProperties.class})
     @ConditionalOnMissingBean(PrintTemplateHealthIndicator.class)
-    public PrintTemplateHealthIndicator printTemplateHealthIndicator(TemplateRepository repository,
-                                                                      PrintProperties properties) {
-        return new PrintTemplateHealthIndicator(repository, properties);
+    public PrintTemplateHealthIndicator printTemplateHealthIndicator(
+            TemplateSource source, PrintProperties properties) {
+        return new PrintTemplateHealthIndicator(source, properties);
     }
 
     /**
@@ -50,8 +50,8 @@ public class PrintHealthAutoConfiguration {
     @Bean
     @ConditionalOnBean(PrintProperties.class)
     @ConditionalOnMissingBean(PrintInfrastructureHealthIndicator.class)
-    public PrintInfrastructureHealthIndicator printInfrastructureHealthIndicator(ObjectProvider<PdfFont> fonts,
-                                                                                  PrintProperties properties) {
+    public PrintInfrastructureHealthIndicator printInfrastructureHealthIndicator(
+            ObjectProvider<PdfFont> fonts, PrintProperties properties) {
         return new PrintInfrastructureHealthIndicator(fonts.orderedStream().toList(), properties);
     }
 }

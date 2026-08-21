@@ -10,7 +10,8 @@ import io.github.leylaragg.letool.print.api.RenderOptions;
 import io.github.leylaragg.letool.print.api.TemplateFormat;
 import io.github.leylaragg.letool.print.context.PrintContext;
 import io.github.leylaragg.letool.print.exception.PrintValidationException;
-import io.github.leylaragg.letool.print.pdf.PdfDocumentRenderer;
+import io.github.leylaragg.letool.print.pdf.OpenHtmlPdfRenderer;
+import io.github.leylaragg.letool.print.pdf.PdfFontCatalog;
 import io.github.leylaragg.letool.print.render.DocumentRendererRegistry;
 import io.github.leylaragg.letool.print.template.InMemoryTemplateRepository;
 import io.github.leylaragg.letool.print.template.TemplateDefinition;
@@ -82,9 +83,9 @@ class XmlPrintPipelineTest {
                 .hasMessageContaining("模板格式");
     }
 
-    /** 7D 尚未映射页眉时，默认 PDF 必须明确拒绝对应文档特性。 */
+    /** 默认 PDF 已声明页眉能力时，XML 管线可以直接完成真实渲染。 */
     @Test
-    void shouldRejectAdvancedXmlFeaturesUntilPdfSupportsThem() {
+    void shouldRenderSupportedPageHeader() {
         TemplateRepository repository = new InMemoryTemplateRepository();
         PrintTemplate template = publishXml(repository, 1, """
                 <document xmlns="https://leyland.github.io/letool/print/v1"
@@ -96,9 +97,13 @@ class XmlPrintPipelineTest {
                 </document>
                 """);
 
-        assertThatThrownBy(() -> pipeline(repository, 1).render(request(template), output()))
-                .isInstanceOf(PrintValidationException.class)
-                .hasMessageContaining("PAGE_HEADER");
+        ByteArrayOutputStream target = new ByteArrayOutputStream();
+        PrintOutput output = new PrintOutput(target, RenderOptions.DEFAULT_MAX_OUTPUT_BYTES);
+
+        PrintResult result = pipeline(repository, 1).render(request(template), output);
+
+        assertThat(result.outputFormat()).isEqualTo(OutputFormat.PDF);
+        assertThat(target.toByteArray()).startsWith("%PDF".getBytes(StandardCharsets.US_ASCII));
     }
 
     /** 组合 XML 编译、绑定和 PDF 渲染依赖。 */
@@ -109,7 +114,8 @@ class XmlPrintPipelineTest {
         return new XmlPrintPipeline(
                 new XmlTemplateCompilationService(repository, cache),
                 new XmlTemplateBinder(),
-                new DocumentRendererRegistry(List.of(new PdfDocumentRenderer(List.of()))),
+                new DocumentRendererRegistry(List.of(
+                        new OpenHtmlPdfRenderer(PdfFontCatalog.of(List.of())))),
                 profileVersion);
     }
 

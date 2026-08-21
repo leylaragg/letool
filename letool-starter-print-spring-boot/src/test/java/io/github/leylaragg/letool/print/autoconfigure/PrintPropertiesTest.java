@@ -36,6 +36,7 @@ class PrintPropertiesTest {
         assertThat(properties.getTemporaryDirectory()).isEmpty();
         assertThat(properties.getStartup().isRequireActiveTemplate()).isFalse();
         assertThat(properties.getStartup().isValidateFonts()).isFalse();
+        assertThat(properties.getStartup().getFontProbeText()).isEmpty();
         assertThat(properties.getMetrics().isEnabled()).isTrue();
         assertThat(properties.getHealth().isEnabled()).isTrue();
         assertThat(properties.getSpel().isEnabled()).isFalse();

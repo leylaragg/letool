@@ -45,7 +45,8 @@ class PdfChapterMergeTest {
                         0, 0, "reviewer", "check")));
 
         byte[] content = RenderedPdf.render(
-                new PdfDocumentRenderer(List.of()), document, RenderOptions.defaults()).content();
+                new OpenHtmlPdfRenderer(PdfFontCatalog.of(List.of())),
+                document, RenderOptions.defaults()).content();
 
         try (PDDocument pdf = Loader.loadPDF(content)) {
             assertThat(pdf.getNumberOfPages()).isEqualTo(2);

@@ -1,7 +1,7 @@
 package io.github.leylaragg.letool.print.observability;
 
 import io.github.leylaragg.letool.print.autoconfigure.PrintProperties;
-import io.github.leylaragg.letool.print.template.TemplateRepository;
+import io.github.leylaragg.letool.print.template.TemplateSource;
 import io.github.leylaragg.letool.print.template.TemplateSet;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
@@ -10,24 +10,24 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * 检查模板仓库调用和当前激活集合。
+ * 检查模板来源调用和当前激活集合。
  *
  * @author leyland
  */
 public final class PrintTemplateHealthIndicator implements HealthIndicator {
 
-    /** 待读取的模板仓库。 */
-    private final TemplateRepository repository;
+    /** 待读取的模板来源。 */
+    private final TemplateSource source;
 
     /** 决定空仓库是否属于故障的启动配置。 */
     private final PrintProperties properties;
 
     /**
-     * @param repository 模板仓库
+     * @param source 模板只读来源
      * @param properties 打印配置
      */
-    public PrintTemplateHealthIndicator(TemplateRepository repository, PrintProperties properties) {
-        this.repository = Objects.requireNonNull(repository, "repository 不能为空");
+    public PrintTemplateHealthIndicator(TemplateSource source, PrintProperties properties) {
+        this.source = Objects.requireNonNull(source, "source 不能为空");
         this.properties = Objects.requireNonNull(properties, "properties 不能为空");
     }
 
@@ -36,7 +36,7 @@ public final class PrintTemplateHealthIndicator implements HealthIndicator {
     public Health health() {
         Optional<TemplateSet> current;
         try {
-            current = repository.current();
+            current = source.current();
         } catch (RuntimeException exception) {
             return Health.down().withDetail("repository", "unavailable").build();
         }

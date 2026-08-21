@@ -23,6 +23,7 @@ letool:
     startup:
       require-active-template: false
       validate-fonts: false
+      font-probe-text: ""
     metrics:
       enabled: true
     health:
@@ -45,15 +46,15 @@ letool:
 4. 用不带版本的 `PrintService.renderTo` 处理新请求；
 5. 重打历史文档时显式传入历史版本。
 
-`publishAndActivate` 适合发布与启用必须一次完成的场景。单次打印开始时会锁定一个不可变模板集合，切换当前版本不会让进行中的文档混入新模板。默认内存仓库只适合单实例、启动期固定模板和测试；多实例生产环境应实现 `TemplateRepository`，并自行提供事务、CAS 或其他一致性保证。
+`publishAndActivate` 适合发布与启用必须一次完成的场景。单次打印开始时会锁定一个不可变模板集合，切换当前版本不会让进行中的文档混入新模板。外部系统已经负责版本管理时可只实现 `TemplateSource`；需要由框架发布和激活时实现 `TemplateRepository`，并在多实例环境自行提供事务、CAS 或其他一致性保证。
 
 框架没有内置数据库表、模板管理 API、审批流或配置中心监听器。宿主可以热切换已发布版本，但外部配置的监听、权限和回滚编排不属于打印 Starter。
 
 ## 字体与许可证
 
-中文、自由文本框批注和特定品牌字形应配置 `PdfFont` Bean。供应器每次调用都要打开新的输入流，字体文件应来自宿主掌控的 classpath、制品目录或受控存储，不允许模板提供路径。
+中文、自由文本框批注和特定品牌字形应配置 `PdfFont` Bean。同一字体族可按 `FontWeight` 注册多个字体面，供应器每次调用都要打开新的输入流。字体文件应来自宿主掌控的 classpath、制品目录或受控存储，不允许模板提供路径。
 
-上线前确认字体许可证允许服务器端嵌入和生成文档。字体变更后提升 `renderer-profile-version`，并用代表性中文、数字、符号和批注样例回归。开启 `startup.validate-fonts` 后，Starter 会在启动阶段读取每个字体流的少量头部；空流或读取失败会阻止启动，错误不会回显字体路径。
+上线前确认字体许可证允许服务器端嵌入和生成文档。字体变更后提升 `renderer-profile-version`，并用代表性中文、数字、符号和批注样例回归。开启 `startup.validate-fonts` 后，Starter 会用 FontBox 真实解析每个字体；再配置 `startup.font-probe-text` 时，还会逐个 Unicode 码点检查字体回退链覆盖。严格检查失败会阻止启动，但不会回显字体路径或底层解析消息。
 
 ## 临时目录
 
@@ -96,6 +97,8 @@ XML 使用模板集合与单模板两层本地有界缓存。容量分别由 `te
 
 健康检查开启不等于启动失败。需要启动时强制具备活动模板集合，可设置 `startup.require-active-template=true`；需要启动时验证字体及已配置临时目录，可设置 `startup.validate-fonts=true`。严格检查适合模板和字体在应用启动前已经就绪的部署方式；由外部系统稍后发布模板时，不要开启活动模板强制检查。
 
+健康检查只做轻量可用性探测，严格启动才执行真实字体解析和可选字符覆盖检查；两者用途不同，不能用健康状态替代发布前字体回归。
+
 健康端点的访问控制、详情展示级别和探针分组仍由 Spring Boot Actuator 配置。即使框架详情不含业务数据，也不应把完整健康端点直接暴露到公网。
 
 ## 容量验收
@@ -126,6 +129,8 @@ mvn --% -P print-capacity -pl letool-starter-print-spring-boot -am -Dtest=PrintC
 ## 能力边界
 
 当前生产主线是受控 XML 到 PDF 的同步输出。以下能力由宿主或独立扩展承担：
+
+默认 `OpenHtmlPdfRenderer` 支持多页面序列、独立页面布局、页眉页脚、逻辑页码、命名样式和表格跨页。若宿主声明自定义 `PdfRenderer`，Starter 不再创建默认实现；自定义链路失败时也不会自动回退。
 
 - 模板数据库结构、管理接口、审批与配置中心热切换；
 - 业务查询、权限、字典和复杂计算；

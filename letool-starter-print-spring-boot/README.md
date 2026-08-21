@@ -43,6 +43,7 @@ letool:
     startup:
       require-active-template: false
       validate-fonts: false
+      font-probe-text: ""
     metrics:
       enabled: true
     health:
@@ -59,7 +60,7 @@ letool:
 
 项目同时引入 Micrometer 时，Starter 会记录渲染耗时、失败分类、产物页数与字节数，以及两层 XML 编译缓存统计；没有 `MeterRegistry` 时不会创建指标组件。项目引入 Actuator 后还会检查当前模板集合、字体流和临时目录。两组能力都可分别关闭。
 
-`startup.require-active-template` 用于要求应用启动时已经存在活动模板，`startup.validate-fonts` 会实际打开字体流并检查已配置临时目录。默认保持宽松启动，适合模板在应用就绪后由外部系统发布的部署方式。
+`startup.require-active-template` 用于要求应用启动时已经存在活动模板。`startup.validate-fonts` 会真实解析每个已配置字体并检查临时目录；`font-probe-text` 非空时，还会验证整条字体回退链是否覆盖这段代表性字符。默认保持宽松启动，不会提前访问字体或模板资源。
 
 指标名、健康详情、告警建议和严格启动边界见[生产运维指南](../docs/dynamic-print-production-guide.md)。
 
@@ -96,7 +97,7 @@ public class InvoicePrintConfiguration {
 @Bean
 PdfFont printFallbackFont(ResourceLoader resources) {
     Resource font = resources.getResource("classpath:fonts/NotoSansSC-Regular.ttf");
-    return new PdfFont("Noto Sans SC", () -> {
+    return new PdfFont("Noto Sans SC", FontWeight.NORMAL, () -> {
         try {
             return font.getInputStream();
         } catch (IOException exception) {
@@ -139,7 +140,7 @@ templateSetPublisher.publishAndActivate(
         List.of(new TemplateDefinition(TemplateType.DOCUMENT, template)));
 ```
 
-生产项目可以从数据库、配置中心或受控文件读取模板，再交给 `TemplateSetPublisher`。持久化仓库可通过实现并声明 `TemplateRepository` Bean 替换默认内存仓库。
+生产项目可以从数据库、配置中心或受控文件读取模板，再交给 `TemplateSetPublisher`。只需要读取既有版本时声明 `TemplateSource` Bean；需要通过框架发布和激活版本时声明 `TemplateRepository` Bean。Starter 只在存在可写仓库时创建 `TemplateSetPublisher`。
 
 ## 生成 PDF
 
@@ -162,7 +163,8 @@ byte[] pdf = smallDocument.content();
 
 - 自定义 `PrintValueFormatter`、`PrintConditionExpression`、`PrintTagHandler`、`DocumentRenderer` 或 `PrintPipeline` 可以声明为 Spring Bean，Starter 会按 Spring 顺序收集后冻结注册表。
 - 自定义扩展编码或输出格式重复时，应用在启动阶段失败，不采用“最后一个覆盖前一个”的不确定语义。
-- 宿主可以替换仓库、注册表、编译器、渲染器、管线、引擎或 `PrintService`；默认 Bean 会退让。
+- 宿主可以替换模板来源、仓库、注册表、编译器、管线、引擎或 `PrintService`；默认 Bean 会退让。
+- PDF 的公开替换入口只有 `PdfRenderer`。声明自定义实现后默认 `OpenHtmlPdfRenderer` 不再创建，自定义实现失败也不会触发默认回退。
 - `PrintService` 当前固定输出 PDF。其他输出格式通过核心 `PrintEngine` 和相应渲染器/管线扩展，不把业务判断写进通用框架。
 - JasperReports 不是内置依赖。需要接入时应实现独立 `PrintPipeline` 适配模块，通过 `TemplateFormat` 扩展，不修改 XML 主链路。
 

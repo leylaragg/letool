@@ -15,8 +15,8 @@ import io.github.leylaragg.letool.print.document.node.TableCell;
 import io.github.leylaragg.letool.print.document.node.TableNode;
 import io.github.leylaragg.letool.print.document.node.TableRow;
 import io.github.leylaragg.letool.print.document.node.TextNode;
+import io.github.leylaragg.letool.print.document.style.FontWeight;
 import io.github.leylaragg.letool.print.document.style.StyleSheet;
-import io.github.leylaragg.letool.print.exception.PrintValidationException;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -32,19 +32,18 @@ import java.util.List;
 import java.util.Objects;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * 通用文档模型到真实 PDF 产物的闭环测试。
  *
  * @author leyland
  */
-class PdfDocumentRendererTest {
+class OpenHtmlPdfRendererTest {
 
     /** 渲染结果可由 PDFBox 重新打开，并保留分页、文本、字体和导航语义。 */
     @Test
     void shouldRenderReadablePdfWithMetadataAndInternalLink() throws Exception {
-        PdfDocumentRenderer renderer = renderer();
+        OpenHtmlPdfRenderer renderer = renderer();
         DocumentModel document = DocumentModel.singleSequence(
                 new DocumentMetadata("阶段报告", "leyland", "zh-CN"),
                 PageLayout.a4Portrait(),
@@ -127,9 +126,9 @@ class PdfDocumentRendererTest {
         }
     }
 
-    /** PDF 尚未实现页面序列时应明确拒绝，不能把第二个序列悄悄丢掉。 */
+    /** 多个页面序列会按原顺序进入同一份 PDF。 */
     @Test
-    void shouldRejectUnsupportedPageSequences() {
+    void shouldRenderAllPageSequences() throws Exception {
         DocumentModel document = new DocumentModel(
                 DocumentMetadata.empty(),
                 StyleSheet.empty(),
@@ -137,15 +136,19 @@ class PdfDocumentRendererTest {
                         PageSequence.body(PageLayout.a4Portrait(), List.of(paragraph("第一段"))),
                         PageSequence.body(PageLayout.a4Portrait(), List.of(paragraph("第二段")))));
 
-        assertThatThrownBy(() -> RenderedPdf.render(renderer(), document, RenderOptions.defaults()))
-                .isInstanceOf(PrintValidationException.class)
-                .hasMessageContaining("MULTIPLE_PAGE_SEQUENCES");
+        RenderedPdf rendered = RenderedPdf.render(renderer(), document, RenderOptions.defaults());
+
+        try (PDDocument pdf = Loader.loadPDF(rendered.content())) {
+            assertThat(pdf.getNumberOfPages()).isEqualTo(2);
+            assertThat(new PDFTextStripper().getText(pdf)).contains("第一段", "第二段");
+        }
     }
 
     /** 创建使用测试专用 Apache 2.0 字体的渲染器。 */
-    private PdfDocumentRenderer renderer() {
-        PdfFont font = new PdfFont("Droid Sans Fallback", this::openTestFont, true);
-        return new PdfDocumentRenderer(List.of(font));
+    private OpenHtmlPdfRenderer renderer() {
+        PdfFont font = new PdfFont(
+                "Droid Sans Fallback", FontWeight.NORMAL, this::openTestFont, true);
+        return new OpenHtmlPdfRenderer(PdfFontCatalog.of(List.of(font)));
     }
 
     /** 每次渲染都从类路径重新打开字体流。 */

@@ -17,6 +17,8 @@ import io.github.leylaragg.letool.print.exception.PrintValidationException;
 import io.github.leylaragg.letool.print.template.InMemoryTemplateRepository;
 import io.github.leylaragg.letool.print.template.TemplateDefinition;
 import io.github.leylaragg.letool.print.template.TemplateRepository;
+import io.github.leylaragg.letool.print.template.TemplateSource;
+import io.github.leylaragg.letool.print.template.TemplateSet;
 import io.github.leylaragg.letool.print.template.TemplateSetPublisher;
 import io.github.leylaragg.letool.print.template.TemplateType;
 import org.junit.jupiter.api.Test;
@@ -27,6 +29,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -54,6 +57,18 @@ class PrintServiceTest {
         service.render(1, "invoice", 43L);
         assertThat(engine.request.get().template().templateSetVersion()).isEqualTo(1);
         assertThat(engine.request.get().context().root().path("id").longValue()).isEqualTo(43);
+    }
+
+    /** 业务门面只读取模板快照，只读来源也能完成当前版本打印。 */
+    @Test
+    void shouldRenderWithReadOnlyTemplateSource() {
+        TemplateRepository repository = repositoryWithVersions();
+        CapturingEngine engine = new CapturingEngine();
+        PrintService service = service(readOnly(repository), engine, request -> context(1, request));
+
+        service.render("invoice", 42L);
+
+        assertThat(engine.request.get().template().templateSetVersion()).isEqualTo(2);
     }
 
     /** 当前和指定版本的流式入口都把内容写给调用方，并锁定正确模板。 */
@@ -136,7 +151,7 @@ class PrintServiceTest {
 
     /** 组装只依赖公开契约的业务门面。 */
     private PrintService service(
-            TemplateRepository repository,
+            TemplateSource source,
             PrintEngine engine,
             PrintDataAdapter<Long> adapter) {
         PrintDefinition<Long> definition = PrintDefinition.of(
@@ -144,10 +159,25 @@ class PrintServiceTest {
         PrintRuntimeSettings settings = new PrintRuntimeSettings(
                 1, Locale.CHINA, ZoneId.of("Asia/Shanghai"), RenderOptions.defaults());
         return new PrintService(
-                repository,
+                source,
                 new PrintDefinitionRegistry(List.of(definition)),
                 engine,
                 settings);
+    }
+
+    /** 把准备数据的仓库收窄为运行时真正需要的读取接口。 */
+    private TemplateSource readOnly(TemplateRepository repository) {
+        return new TemplateSource() {
+            @Override
+            public Optional<TemplateSet> find(long version) {
+                return repository.find(version);
+            }
+
+            @Override
+            public Optional<TemplateSet> current() {
+                return repository.current();
+            }
+        };
     }
 
     /** 发布两个版本并把版本 2 设为当前集合。 */

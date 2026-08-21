@@ -1,7 +1,5 @@
 package io.github.leylaragg.letool.print.template;
 
-import java.util.Optional;
-
 /**
  * 按版本保存和切换模板集合的仓库契约。
  *
@@ -9,18 +7,7 @@ import java.util.Optional;
  *
  * @author leyland
  */
-public interface TemplateRepository {
-
-    /**
-     * 查找已发布版本。
-     *
-     * @param version 集合版本
-     * @return 已发布集合，不存在时为空
-     */
-    Optional<TemplateSet> find(long version);
-
-    /** @return 当前激活集合，尚未激活时为空 */
-    Optional<TemplateSet> current();
+public interface TemplateRepository extends TemplateSource {
 
     /**
      * 发布新版本，不切换当前集合。

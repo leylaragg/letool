@@ -46,10 +46,13 @@ class PdfNavigationWriterTest {
                 new ParagraphNode("", List.of(firstLink, new TextNode(" / "), secondLink))));
 
         PdfRenderIds ids = PdfRenderIds.create(document);
+        PdfDocumentPlan plan = PdfDocumentPlan.create(document);
 
         assertThat(ids.sourceId(firstLink)).isNotEqualTo(ids.sourceId(secondLink));
-        String xhtml = new PdfXhtmlRenderer(List.of())
-                .render(PdfRenderView.complete(document), ids, true);
+        String xhtml = new PdfXhtmlRenderer(PdfFontCatalog.of(List.of()))
+                .render(plan, plan.sequences().get(0),
+                        document.pageSequences().get(0).body(),
+                        new PdfPaginationPlanner(5).initial(plan), ids, true);
         assertThat(xhtml).contains("class=\"internal-link\"")
                 .contains("id=\"" + ids.sourceId(firstLink) + "\"")
                 .doesNotContain("href=\"#target\"")

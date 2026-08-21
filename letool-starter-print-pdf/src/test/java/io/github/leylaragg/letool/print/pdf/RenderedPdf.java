@@ -36,7 +36,7 @@ final class RenderedPdf {
      * @return 可分别断言结果和 PDF 内容的测试对象
      */
     static RenderedPdf render(
-            PdfDocumentRenderer renderer,
+            OpenHtmlPdfRenderer renderer,
             DocumentModel document,
             RenderOptions options) {
         ByteArrayOutputStream target = new ByteArrayOutputStream();

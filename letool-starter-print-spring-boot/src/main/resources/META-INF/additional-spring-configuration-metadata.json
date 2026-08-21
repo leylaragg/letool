@@ -76,7 +76,13 @@
       "name": "letool.print.startup.validate-fonts",
       "type": "java.lang.Boolean",
       "defaultValue": false,
-      "description": "启动时是否检查字体流和已配置临时目录。"
+      "description": "启动时是否真实解析字体、检查可选字符覆盖并验证已配置临时目录。"
+    },
+    {
+      "name": "letool.print.startup.font-probe-text",
+      "type": "java.lang.String",
+      "defaultValue": "",
+      "description": "严格字体校验时要求字体回退链覆盖的文本，最多 4096 个非控制字符。"
     },
     {
       "name": "letool.print.metrics.enabled",

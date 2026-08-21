@@ -31,7 +31,7 @@ final class PdfTableOfContentsComposer {
 
     /** 目录只收录声明之后、层级范围内的标题。 */
     List<PdfTocEntry> collect(DocumentModel document, PdfRenderIds ids) {
-        TableOfContentsNode contents = document.pageSequences().get(0).body().stream()
+        TableOfContentsNode contents = DocumentTraversal.depthFirst(document).stream()
                 .filter(TableOfContentsNode.class::isInstance)
                 .map(TableOfContentsNode.class::cast)
                 .findFirst().orElseThrow();
@@ -53,26 +53,25 @@ final class PdfTableOfContentsComposer {
         return List.copyOf(entries);
     }
 
-    /** 为物理分段管线建立只包含目录内容的独立排版视图。 */
-    PdfRenderView composeContents(
-            DocumentModel document,
+    /** 把目录声明展开为可以嵌回原页面序列的普通块节点。 */
+    List<BlockNode> composeBlocks(
             TableOfContentsNode contents,
             List<PdfTocEntry> entries,
-            Map<HeadingNode, Integer> pageNumbers) {
+            Map<String, Integer> targetPages) {
         List<BlockNode> blocks = new ArrayList<>();
         if (contents.title() != null) {
             blocks.add(new ParagraphNode(
                     "", "", List.of(new TextNode(contents.title(), ""))));
         }
-        blocks.add(table(entries, pageNumbers));
-        return PdfRenderView.segment(document, blocks);
+        blocks.add(table(entries, targetPages));
+        return List.copyOf(blocks);
     }
 
     /** 两列表格让标题、点引导和页码保持稳定顺序。 */
-    private TableNode table(List<PdfTocEntry> entries, Map<HeadingNode, Integer> pageNumbers) {
+    private TableNode table(List<PdfTocEntry> entries, Map<String, Integer> targetPages) {
         List<TableRow> rows = new ArrayList<>();
         for (PdfTocEntry entry : entries) {
-            int pageNumber = pageNumbers.getOrDefault(entry.heading(), 1);
+            int pageNumber = targetPages.getOrDefault(entry.targetId(), 1);
             String indent = "  ".repeat(Math.max(0, entry.heading().level() - 1));
             ParagraphNode label = new ParagraphNode("", "", List.of(new InternalLinkNode(
                     entry.targetId(),

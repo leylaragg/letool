@@ -21,10 +21,11 @@
 ```java
 PdfFont font = new PdfFont(
         "Noto Sans CJK SC",
+        FontWeight.NORMAL,
         () -> ReportApplication.class.getResourceAsStream("/fonts/NotoSansCJKsc-Regular.otf"),
         true);
 
-PdfDocumentRenderer renderer = new PdfDocumentRenderer(List.of(font));
+PdfRenderer renderer = new OpenHtmlPdfRenderer(PdfFontCatalog.of(List.of(font)));
 RenderOptions options = RenderOptions.defaults();
 try (OutputStream target = Files.newOutputStream(pdfPath)) {
     PrintOutput output = new PrintOutput(target, options.maxOutputBytes());
@@ -36,17 +37,20 @@ try (OutputStream target = Files.newOutputStream(pdfPath)) {
 `${java.io.tmpdir}/letool/print-pdf`，也可以在 Java 配置中显式指定：
 
 ```java
-PdfDocumentRenderer renderer = new PdfDocumentRenderer(
-        List.of(font), Path.of("/trusted/runtime/letool/print-pdf"));
+PdfRenderer renderer = new OpenHtmlPdfRenderer(
+        PdfFontCatalog.of(List.of(font)), Path.of("/trusted/runtime/letool/print-pdf"));
 ```
 
 模板和业务数据不能指定临时路径。请求成功或失败后都会清理本次子目录；清理失败不会覆盖原始渲染异常。
 
-字体供应器必须在每次调用时打开新的输入流。`PdfFont` 会拒绝不安全的字体族名称和空流；底层字体解析错误只保留在异常原因链中，不会把字体路径或第三方消息写入用户可见异常。
+同一字体族可以按 `FontWeight` 注册多个字体面，族名和字重组合不能重复，最终回退族也只能有一个。字体供应器必须在每次调用时打开新的输入流；底层字体解析错误只保留在异常原因链中，不会把字体路径或第三方消息写入用户可见异常。
 
 ## 当前支持的文档语义
 
 - A4、Letter 或自定义物理页面尺寸，横向或纵向，以及四边毫米级边距；
+- 多页面序列、每个序列独立的页面尺寸与页边距，以及可重复页眉页脚；
+- 连续、重启或排除的逻辑页码，正文、页眉和页脚中的当前页及总页数；
+- 文本、段落、表格和单元格命名样式，以及受控换行、空白和长词折行；
 - 章节、一至六级标题、段落和显式分页；
 - 根级全局目录、标题层级过滤、自动标题目标和最多五轮页码收敛；
 - 严格网格表格、跨行跨列和跨页重复表头；
@@ -56,7 +60,7 @@ PdfDocumentRenderer renderer = new PdfDocumentRenderer(
 - 宿主字体注册、字体嵌入及最终回退字体；
 - 最大页数、最大输出字节数、最大临时空间和安全渲染异常。
 
-`PdfDocumentRenderer` 只保存不可变字体和临时根目录配置。每次 `render` 都创建独立的 XHTML、请求工作区和第三方排版器，因此同一实例可以并发处理不可变文档。
+`OpenHtmlPdfRenderer` 只保存不可变字体目录和临时根目录配置。每次 `render` 都创建独立的 XHTML、请求工作区和第三方排版器，因此同一实例可以并发处理不可变文档。宿主若需要完全替换 PDF 链路，实现 `PdfRenderer` 即可；自定义实现失败时不会回退到默认实现，以免同一请求得到语义不同的产物。
 
 ## 全局目录
 
@@ -106,7 +110,6 @@ PDF 会先写入本次请求独占的受控工作区，重新打开检查结构�
 本模块当前限制如下：
 
 - `ImageNode` 和其他资源显示尚未开放；
-- 多页面序列、页眉页脚、逻辑页码、命名样式和新增文字流控制尚未进入 PDF 映射；包含这些语义的模型会在渲染前明确失败；
 - 不提供模板侧 HTML、CSS、脚本或任意 URI 扩展入口。
 
 测试目录中的 `DroidSansFallback.ttf` 仅用于验证中文字体嵌入，不会进入模块主产物；其 Apache-2.0 NOTICE 与字体文件一同保留。

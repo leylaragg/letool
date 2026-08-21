@@ -7,6 +7,7 @@ import io.github.leylaragg.letool.print.autoconfigure.PrintHealthAutoConfigurati
 import io.github.leylaragg.letool.print.autoconfigure.PrintProperties;
 import io.github.leylaragg.letool.print.autoconfigure.PrintSpelAutoConfiguration;
 import io.github.leylaragg.letool.print.pdf.PdfFont;
+import io.github.leylaragg.letool.print.document.style.FontWeight;
 import io.github.leylaragg.letool.print.service.PrintService;
 import io.github.leylaragg.letool.print.template.InMemoryTemplateRepository;
 import io.github.leylaragg.letool.print.template.TemplateDefinition;
@@ -98,7 +99,7 @@ class PrintHealthAutoConfigurationTest {
     /** 字体供应器异常不会进入健康详情。 */
     @Test
     void shouldHideFontFailureDetails() {
-        PdfFont font = new PdfFont("Broken Font", () -> {
+        PdfFont font = new PdfFont("Broken Font", FontWeight.NORMAL, () -> {
             throw new IllegalStateException("secret-font-location");
         }, false);
 

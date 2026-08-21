@@ -46,7 +46,10 @@ public enum PrintErrorCode implements ErrorCode {
     ADAPTER_EXECUTION_FAILED("PRINT_012", "打印数据适配失败：{0}"),
 
     /** 调用方提供的输出目标写入或刷新失败。 */
-    OUTPUT_WRITE_FAILED("PRINT_013", "打印产物写出失败");
+    OUTPUT_WRITE_FAILED("PRINT_013", "打印产物写出失败"),
+
+    /** 字体等受控打印资源缺失、损坏或不满足使用条件。 */
+    RESOURCE_UNAVAILABLE("PRINT_014", "打印资源不可用：{0}");
 
     /** 稳定错误码。 */
     private final String code;

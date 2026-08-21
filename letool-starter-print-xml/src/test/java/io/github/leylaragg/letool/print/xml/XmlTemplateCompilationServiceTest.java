@@ -7,6 +7,7 @@ import io.github.leylaragg.letool.print.exception.PrintValidationException;
 import io.github.leylaragg.letool.print.template.InMemoryTemplateRepository;
 import io.github.leylaragg.letool.print.template.TemplateDefinition;
 import io.github.leylaragg.letool.print.template.TemplateRepository;
+import io.github.leylaragg.letool.print.template.TemplateSource;
 import io.github.leylaragg.letool.print.template.TemplateSet;
 import io.github.leylaragg.letool.print.template.TemplateSetPublisher;
 import io.github.leylaragg.letool.print.template.TemplateType;
@@ -49,7 +50,7 @@ class XmlTemplateCompilationServiceTest {
     @Test
     void shouldResolveCurrentVersionWithSingleRepositoryLookup() {
         CountingTemplateRepository repository = repositoryWithActiveSet();
-        XmlTemplateCompilationService service = service(repository);
+        XmlTemplateCompilationService service = service(readOnly(repository));
 
         ResolvedXmlTemplate resolved = service.resolveCurrent("main", 4, HTML);
 
@@ -57,6 +58,18 @@ class XmlTemplateCompilationServiceTest {
         assertThat(repository.findCalls).isZero();
         assertThat(resolved.key().templateSetVersion()).isEqualTo(7);
         assertThat(resolved.key().outputFormat()).isEqualTo(HTML);
+    }
+
+    /** 编译查询只需要读取模板快照，不应要求调用方暴露发布能力。 */
+    @Test
+    void shouldResolveFromReadOnlyTemplateSource() {
+        CountingTemplateRepository repository = repositoryWithActiveSet();
+        XmlTemplateCompilationService service = service(readOnly(repository));
+
+        ResolvedXmlTemplate resolved = service.resolve(7, "main", 3, OutputFormat.PDF);
+
+        assertThat(resolved.key().templateSetVersion()).isEqualTo(7);
+        assertThat(repository.findCalls).isEqualTo(1);
     }
 
     /** 请求已经锁定模板时，服务仍需回到同版本仓库核对完整快照。 */
@@ -147,9 +160,24 @@ class XmlTemplateCompilationServiceTest {
     }
 
     /** 组装测试服务。 */
-    private XmlTemplateCompilationService service(TemplateRepository repository) {
-        return new XmlTemplateCompilationService(repository,
+    private XmlTemplateCompilationService service(TemplateSource source) {
+        return new XmlTemplateCompilationService(source,
                 new XmlTemplateCompilationCache(new XmlTemplateSetCompiler()));
+    }
+
+    /** 只转交查询能力，避免测试把可写仓库误当成编译服务契约。 */
+    private TemplateSource readOnly(TemplateRepository repository) {
+        return new TemplateSource() {
+            @Override
+            public Optional<TemplateSet> find(long version) {
+                return repository.find(version);
+            }
+
+            @Override
+            public Optional<TemplateSet> current() {
+                return repository.current();
+            }
+        };
     }
 
     /** 创建已经激活版本 7 的计数仓库。 */

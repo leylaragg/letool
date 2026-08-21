@@ -1,8 +1,10 @@
 package io.github.leylaragg.letool.print.autoconfigure;
 
 import io.github.leylaragg.letool.print.api.PrintEngine;
-import io.github.leylaragg.letool.print.pdf.PdfDocumentRenderer;
+import io.github.leylaragg.letool.print.pdf.OpenHtmlPdfRenderer;
 import io.github.leylaragg.letool.print.pdf.PdfFont;
+import io.github.leylaragg.letool.print.pdf.PdfFontCatalog;
+import io.github.leylaragg.letool.print.pdf.PdfRenderer;
 import io.github.leylaragg.letool.print.pipeline.DefaultPrintEngine;
 import io.github.leylaragg.letool.print.pipeline.PrintPipeline;
 import io.github.leylaragg.letool.print.pipeline.PrintPipelineRegistry;
@@ -15,6 +17,7 @@ import io.github.leylaragg.letool.print.service.PrintService;
 import io.github.leylaragg.letool.print.service.PrintTelemetry;
 import io.github.leylaragg.letool.print.template.InMemoryTemplateRepository;
 import io.github.leylaragg.letool.print.template.TemplateRepository;
+import io.github.leylaragg.letool.print.template.TemplateSource;
 import io.github.leylaragg.letool.print.template.TemplateSetPublisher;
 import io.github.leylaragg.letool.print.template.TemplateSetValidator;
 import io.github.leylaragg.letool.print.xml.XmlPrintPipeline;
@@ -34,6 +37,7 @@ import io.github.leylaragg.letool.print.xml.tag.PrintTagRegistry;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -52,7 +56,7 @@ import java.util.Optional;
  * @author leyland
  */
 @AutoConfiguration(after = PrintSpelAutoConfiguration.class)
-@ConditionalOnClass({PrintEngine.class, XmlPrintPipeline.class, PdfDocumentRenderer.class})
+@ConditionalOnClass({PrintEngine.class, XmlPrintPipeline.class, PdfRenderer.class})
 @ConditionalOnProperty(
         prefix = "letool.print",
         name = "enabled",
@@ -73,7 +77,7 @@ public class PrintAutoConfiguration {
 
     /** @return 未声明持久化仓库时使用的线程安全内存仓库 */
     @Bean
-    @ConditionalOnMissingBean(TemplateRepository.class)
+    @ConditionalOnMissingBean(TemplateSource.class)
     public TemplateRepository templateRepository() {
         return new InMemoryTemplateRepository();
     }
@@ -175,6 +179,7 @@ public class PrintAutoConfiguration {
      * @return 可直接用于发布模板集合的编排器
      */
     @Bean
+    @ConditionalOnBean(TemplateRepository.class)
     @ConditionalOnMissingBean(TemplateSetPublisher.class)
     public TemplateSetPublisher templateSetPublisher(
             TemplateRepository repository,
@@ -184,15 +189,15 @@ public class PrintAutoConfiguration {
     }
 
     /**
-     * @param repository 模板仓库
+     * @param source 模板只读来源
      * @param cache XML 编译缓存
      * @return 按仓库版本解析 XML 编译快照的服务
      */
     @Bean
     @ConditionalOnMissingBean(XmlTemplateCompilationService.class)
     public XmlTemplateCompilationService xmlTemplateCompilationService(
-            TemplateRepository repository, XmlTemplateCompilationCache cache) {
-        return new XmlTemplateCompilationService(repository, cache);
+            TemplateSource source, XmlTemplateCompilationCache cache) {
+        return new XmlTemplateCompilationService(source, cache);
     }
 
     /** @return 无共享请求状态的 XML 数据绑定器 */
@@ -208,27 +213,30 @@ public class PrintAutoConfiguration {
      * @return 默认 PDF 文档渲染器
      */
     @Bean
-    @ConditionalOnMissingBean(PdfDocumentRenderer.class)
-    public PdfDocumentRenderer pdfDocumentRenderer(
+    @ConditionalOnMissingBean(PdfRenderer.class)
+    public PdfRenderer pdfRenderer(
             ObjectProvider<PdfFont> fonts, PrintProperties properties) {
         List<PdfFont> configuredFonts = fonts.orderedStream().toList();
+        PdfFontCatalog catalog = PdfFontCatalog.of(configuredFonts);
         Optional<Path> temporaryRoot = properties.temporaryRoot();
         return temporaryRoot
-                .map(path -> new PdfDocumentRenderer(configuredFonts, path))
-                .orElseGet(() -> new PdfDocumentRenderer(configuredFonts));
+                .<PdfRenderer>map(path -> new OpenHtmlPdfRenderer(catalog, path))
+                .orElseGet(() -> new OpenHtmlPdfRenderer(catalog));
     }
 
     /**
-     * @param repository 模板仓库
+     * @param source 模板只读来源
      * @param fonts 宿主配置的字体
      * @param properties 严格启动开关与临时目录配置
      * @return 默认宽松、可按需启用的启动校验器
      */
     @Bean
     @ConditionalOnMissingBean(PrintStartupValidator.class)
-    public PrintStartupValidator printStartupValidator(TemplateRepository repository, ObjectProvider<PdfFont> fonts,
-                                                        PrintProperties properties) {
-        return new PrintStartupValidator(repository, fonts.orderedStream().toList(), properties);
+    public PrintStartupValidator printStartupValidator(
+            TemplateSource source,
+            ObjectProvider<PdfFont> fonts,
+            PrintProperties properties) {
+        return new PrintStartupValidator(source, fonts.orderedStream().toList(), properties);
     }
 
     /**
@@ -296,7 +304,7 @@ public class PrintAutoConfiguration {
     }
 
     /**
-     * @param repository 模板仓库
+     * @param source 模板只读来源
      * @param definitionRegistry 业务打印定义注册表
      * @param engine 通用打印引擎
      * @param settings 不可变运行时配置
@@ -305,10 +313,13 @@ public class PrintAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean(PrintService.class)
-    public PrintService printService(TemplateRepository repository, PrintDefinitionRegistry definitionRegistry,
-                                     PrintEngine engine, PrintRuntimeSettings settings,
-                                     ObjectProvider<PrintTelemetry> telemetryProvider) {
+    public PrintService printService(
+            TemplateSource source,
+            PrintDefinitionRegistry definitionRegistry,
+            PrintEngine engine,
+            PrintRuntimeSettings settings,
+            ObjectProvider<PrintTelemetry> telemetryProvider) {
         PrintTelemetry telemetry = telemetryProvider.getIfAvailable(() -> PrintTelemetry.NO_OP);
-        return new PrintService(repository, definitionRegistry, engine, settings, telemetry);
+        return new PrintService(source, definitionRegistry, engine, settings, telemetry);
     }
 }

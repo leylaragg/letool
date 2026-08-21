@@ -10,6 +10,7 @@ import io.github.leylaragg.letool.print.document.node.AnnotationType;
 import io.github.leylaragg.letool.print.document.node.ParagraphNode;
 import io.github.leylaragg.letool.print.document.node.SectionNode;
 import io.github.leylaragg.letool.print.document.node.TextNode;
+import io.github.leylaragg.letool.print.document.style.FontWeight;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -49,7 +50,7 @@ class PdfAnnotationWriterTest {
         DocumentModel document = DocumentModel.singleSequence(
                 DocumentMetadata.empty(), PageLayout.a4Portrait(), blocks);
 
-        assertThat(new PdfAnnotationWriter(List.of()).collect(document))
+        assertThat(new PdfAnnotationWriter(PdfFontCatalog.of(List.of())).collect(document))
                 .hasSize(PdfAnnotationWriter.MAX_ANNOTATIONS);
     }
 
@@ -169,9 +170,10 @@ class PdfAnnotationWriterTest {
     }
 
     /** 创建使用测试专用字体的 PDF 渲染器。 */
-    private PdfDocumentRenderer renderer() {
-        return new PdfDocumentRenderer(List.of(
-                new PdfFont("Droid Sans Fallback", this::openTestFont, true)));
+    private OpenHtmlPdfRenderer renderer() {
+        PdfFont font = new PdfFont(
+                "Droid Sans Fallback", FontWeight.NORMAL, this::openTestFont, true);
+        return new OpenHtmlPdfRenderer(PdfFontCatalog.of(List.of(font)));
     }
 
     /** 每次渲染重新打开测试字体。 */

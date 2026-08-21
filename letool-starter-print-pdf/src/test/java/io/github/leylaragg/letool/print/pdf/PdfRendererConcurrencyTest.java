@@ -13,6 +13,7 @@ import io.github.leylaragg.letool.print.document.node.PageBreakNode;
 import io.github.leylaragg.letool.print.document.node.ParagraphNode;
 import io.github.leylaragg.letool.print.document.node.TableOfContentsNode;
 import io.github.leylaragg.letool.print.document.node.TextNode;
+import io.github.leylaragg.letool.print.document.style.FontWeight;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
@@ -45,7 +46,7 @@ class PdfRendererConcurrencyTest {
         Path temporaryRoot = Files.createDirectories(Path.of(
                 "target", "concurrency-workspace", UUID.randomUUID().toString())
                 .toAbsolutePath().normalize());
-        PdfDocumentRenderer renderer = renderer(temporaryRoot);
+        OpenHtmlPdfRenderer renderer = renderer(temporaryRoot);
         DocumentModel document = DocumentModel.singleSequence(
                 DocumentMetadata.empty(),
                 PageLayout.a4Portrait(),
@@ -95,9 +96,10 @@ class PdfRendererConcurrencyTest {
     }
 
     /** 创建每次调用都能打开独立字体流的渲染器。 */
-    private PdfDocumentRenderer renderer(Path temporaryRoot) {
-        PdfFont font = new PdfFont("Droid Sans Fallback", this::openTestFont, true);
-        return new PdfDocumentRenderer(List.of(font), temporaryRoot);
+    private OpenHtmlPdfRenderer renderer(Path temporaryRoot) {
+        PdfFont font = new PdfFont(
+                "Droid Sans Fallback", FontWeight.NORMAL, this::openTestFont, true);
+        return new OpenHtmlPdfRenderer(PdfFontCatalog.of(List.of(font)), temporaryRoot);
     }
 
     /** 每次调用重新打开测试字体。 */

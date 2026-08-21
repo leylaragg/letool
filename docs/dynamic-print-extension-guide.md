@@ -13,6 +13,7 @@ Letool 把模板语法、通用文档模型、输出实现和模板存储分成�
 | 增加条件表达式语言 | `PrintConditionExpression` |
 | 把 `DocumentModel` 导出为共享语义格式 | `DocumentRenderer` |
 | 接入独立模板和报表模型 | `PrintPipeline` |
+| 只读取当前和历史模板集合 | `TemplateSource` |
 | 持久化模板集合并切换版本 | `TemplateRepository` |
 
 如果新格式无法稳定表达 `DocumentModel` 的章节、段落、表格和导航语义，应实现独立 `PrintPipeline`。JasperReports 适配属于这一层，不应修改 Letool XML 或 PDF 主链路。
@@ -169,6 +170,8 @@ public final class PlainTextRenderer implements DocumentRenderer {
 
 能力集合必须列出实际支持的具体节点类型和 `DocumentFeature`。第二个集合为空表示渲染器不接受多页面序列、页眉页脚、逻辑页码、命名样式等高级语义；框架会在调用前再次检查，渲染器不能静默忽略未知节点或文档能力。示例为了简洁先构造小文本；大产物应分批写入 `PrintOutput`，需要临时文件时还要在实际写入处治理工作区总量。
 
+PDF 是更窄的替换边界：实现 `PdfRenderer` 并声明为 Spring Bean，即可让默认 `OpenHtmlPdfRenderer` 退让。框架不会在自定义渲染失败后改用默认实现，因为回退会让调用方在同一配置下收到语义不一致的 PDF。
+
 ## 自定义顶层管线
 
 具有独立模板语义的格式实现 `PrintPipeline`。下面的最小示例把受控纯文本模板原样输出，展示模板格式、输出格式和容量契约：
@@ -202,7 +205,7 @@ public final class PlainTemplatePipeline implements PrintPipeline {
 
 ## 自定义模板仓库
 
-默认 `InMemoryTemplateRepository` 适合启动期固定模板和测试。业务需要数据库、对象存储或配置中心时，可以实现 `TemplateRepository`。下面的委托实现列出完整契约，替换委托部分即可接入持久化：
+运行期组件只依赖只读 `TemplateSource`。外部系统已经管理发布和激活时，只需实现它的 `find/current`；希望继续使用 `TemplateSetPublisher` 及框架版本切换时，才实现可写的 `TemplateRepository`。默认 `InMemoryTemplateRepository` 适合启动期固定模板和测试。下面的委托实现列出完整写入契约：
 
 ```java
 public final class DelegatingTemplateRepository implements TemplateRepository {

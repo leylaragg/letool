@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.leylaragg.letool.print.api.PrintTemplate;
 import io.github.leylaragg.letool.print.api.TemplateFormat;
 import io.github.leylaragg.letool.print.context.PrintContext;
+import io.github.leylaragg.letool.print.document.style.FontWeight;
 import io.github.leylaragg.letool.print.document.node.ParagraphNode;
 import io.github.leylaragg.letool.print.document.node.TextNode;
 import io.github.leylaragg.letool.print.exception.PrintRenderingException;
@@ -396,7 +397,7 @@ class PrintSecurityRegressionTest {
         /** @return 打开时失败的测试字体 */
         @Bean
         PdfFont brokenFont() {
-            return new PdfFont("Broken Font", () -> {
+            return new PdfFont("Broken Font", FontWeight.NORMAL, () -> {
                 throw new IllegalStateException("secret-font-path");
             }, true);
         }

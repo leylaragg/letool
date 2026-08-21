@@ -357,6 +357,9 @@ public class PrintProperties {
         /** 是否打开字体流并检查配置的临时目录。 */
         private boolean validateFonts;
 
+        /** 严格校验时要求字体回退链覆盖的可选文本。 */
+        private String fontProbeText = "";
+
         /** @return 是否要求活动模板集合 */
         public boolean isRequireActiveTemplate() {
             return requireActiveTemplate;
@@ -375,6 +378,16 @@ public class PrintProperties {
         /** @param validateFonts 是否检查字体和临时目录 */
         public void setValidateFonts(boolean validateFonts) {
             this.validateFonts = validateFonts;
+        }
+
+        /** @return 字体回退链探测文本 */
+        public String getFontProbeText() {
+            return fontProbeText;
+        }
+
+        /** @param fontProbeText 需要由已配置字体完整覆盖的文本 */
+        public void setFontProbeText(String fontProbeText) {
+            this.fontProbeText = fontProbeText;
         }
     }
 

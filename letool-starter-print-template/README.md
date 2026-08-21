@@ -26,7 +26,9 @@ TemplateDefinition definition = new TemplateDefinition(
 
 发布时会检查模板代码、集合版本、数量和正文总字节数，并按模板代码生成稳定的 SHA-256 摘要。摘要使用 JDK 能力实现，避免为了单个散列功能引入较重的工具依赖链。
 
-## 发布与激活
+## 读取、发布与激活
+
+运行期编译和打印只需要 `TemplateSource`，它只提供指定版本与当前版本的不可变快照读取。需要发布或切换版本时再使用 `TemplateRepository`；后者继承只读契约，并增加写入能力。只读宿主实现不必伪造发布方法，Spring Boot Starter 也不会为它创建 `TemplateSetPublisher`。
 
 ```java
 TemplateRepository repository = new InMemoryTemplateRepository();
@@ -81,4 +83,4 @@ TemplateCompilationKey key = new TemplateCompilationKey(
 
 ## 内存仓库边界
 
-`InMemoryTemplateRepository` 是线程安全的参考实现，使用不可变状态和 CAS 保证发布、激活与读取的一致性。它不提供删除、容量淘汰、自动清理或持久化；生产系统可按 `TemplateRepository` 契约实现数据库或远程仓库。
+`InMemoryTemplateRepository` 是线程安全的参考实现，使用不可变状态和 CAS 保证发布、激活与读取的一致性。它不提供删除、容量淘汰、自动清理或持久化；只读外部来源实现 `TemplateSource`，需要由框架发布和切换版本的数据库或远程仓库实现 `TemplateRepository`。

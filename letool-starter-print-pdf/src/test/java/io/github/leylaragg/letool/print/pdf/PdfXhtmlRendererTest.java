@@ -19,6 +19,13 @@ import io.github.leylaragg.letool.print.document.node.TableCell;
 import io.github.leylaragg.letool.print.document.node.TableNode;
 import io.github.leylaragg.letool.print.document.node.TableRow;
 import io.github.leylaragg.letool.print.document.node.TextNode;
+import io.github.leylaragg.letool.print.document.style.FontWeight;
+import io.github.leylaragg.letool.print.document.style.DocumentLength;
+import io.github.leylaragg.letool.print.document.style.ParagraphStyle;
+import io.github.leylaragg.letool.print.document.style.StyleSheet;
+import io.github.leylaragg.letool.print.document.style.TableLayoutMode;
+import io.github.leylaragg.letool.print.document.style.TableStyle;
+import io.github.leylaragg.letool.print.document.style.TextStyle;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
@@ -131,17 +138,60 @@ class PdfXhtmlRendererTest {
                 .doesNotContain("secret-annotation-content");
     }
 
+    /** 命名样式使用框架类名，固定列宽通过受控 colgroup 输出。 */
+    @Test
+    void shouldRenderNamedStylesWithoutExposingTemplateNames() {
+        StyleSheet styles = StyleSheet.builder()
+                .text("business-text", TextStyle.builder()
+                        .fontFamily("Noto Sans").build())
+                .paragraph("business-paragraph", ParagraphStyle.builder()
+                        .textStyleName("business-text").build())
+                .table("business-table", TableStyle.builder()
+                        .layoutMode(TableLayoutMode.FIXED)
+                        .columnWidths(List.of(DocumentLength.percent(40),
+                                DocumentLength.percent(60)))
+                        .build())
+                .build();
+        TextNode text = new TextNode("styled", "business-text");
+        ParagraphNode paragraph = new ParagraphNode(
+                "", "business-paragraph", List.of(text));
+        TableNode table = new TableNode("", "business-table", 0, List.of(
+                new TableRow(List.of(
+                        new TableCell(List.of(paragraph), 1, 1),
+                        new TableCell(List.of(paragraph), 1, 1)))));
+        DocumentModel document = new DocumentModel(DocumentMetadata.empty(), styles,
+                List.of(io.github.leylaragg.letool.print.document.PageSequence.body(
+                        PageLayout.a4Portrait(), List.of(table))));
+
+        String xhtml = renderer().render(document);
+
+        assertThat(xhtml)
+                .contains(".lt-text-0{")
+                .contains(".lt-paragraph-0{")
+                .contains(".lt-table-0{")
+                .contains("<table class=\"lt-table-0\">")
+                .contains("<colgroup><col style=\"width:40%;\"/>"
+                        + "<col style=\"width:60%;\"/></colgroup>")
+                .contains("<p class=\"lt-paragraph-0\">"
+                        + "<span class=\"lt-text-0\">styled</span></p>")
+                .doesNotContain("business-text")
+                .doesNotContain("business-paragraph")
+                .doesNotContain("business-table");
+    }
+
     /** 创建带主字体和最终回退字体的映射器。 */
     private PdfXhtmlRenderer renderer() {
         PdfFont primary = new PdfFont(
                 "Noto Sans",
+                FontWeight.NORMAL,
                 () -> new ByteArrayInputStream(new byte[]{1}),
                 false);
         PdfFont fallback = new PdfFont(
                 "Fallback Sans",
+                FontWeight.NORMAL,
                 () -> new ByteArrayInputStream(new byte[]{2}),
                 true);
-        return new PdfXhtmlRenderer(List.of(fallback, primary));
+        return new PdfXhtmlRenderer(PdfFontCatalog.of(List.of(fallback, primary)));
     }
 
     /** 创建只含一个段落的表格单元格。 */

@@ -1,5 +1,7 @@
 package io.github.leylaragg.letool.print.pdf;
 
+import io.github.leylaragg.letool.print.document.style.FontWeight;
+
 import java.io.InputStream;
 import java.util.Objects;
 import java.util.function.Supplier;
@@ -21,26 +23,32 @@ public final class PdfFont {
     /** 规范化后的字体族名称。 */
     private final String familyName;
 
+    /** 当前字体文件对应的字重。 */
+    private final FontWeight weight;
+
     /** 每次渲染打开字体流的供应器。 */
     private final Supplier<InputStream> streamSupplier;
 
-    /** 是否作为字体列表中的最终回退项。 */
-    private final boolean fallback;
+    /** 当前字体族是否承担默认回退。 */
+    private final boolean fallbackFamily;
 
     /**
      * 创建字体定义。
      *
      * @param familyName 字体族名称
+     * @param weight 当前字体面对应的字重
      * @param streamSupplier 每次调用返回新字体流的供应器
-     * @param fallback 是否作为最终回退字体
+     * @param fallbackFamily 是否把当前字体族作为默认回退族
      */
     public PdfFont(
             String familyName,
+            FontWeight weight,
             Supplier<InputStream> streamSupplier,
-            boolean fallback) {
+            boolean fallbackFamily) {
         this.familyName = normalizeFamilyName(familyName);
+        this.weight = Objects.requireNonNull(weight, "weight 不能为空");
         this.streamSupplier = Objects.requireNonNull(streamSupplier, "streamSupplier 不能为空");
-        this.fallback = fallback;
+        this.fallbackFamily = fallbackFamily;
     }
 
     /** @return 规范化后的字体族名称 */
@@ -48,9 +56,14 @@ public final class PdfFont {
         return familyName;
     }
 
-    /** @return 是否作为最终回退字体 */
-    public boolean fallback() {
-        return fallback;
+    /** @return 当前字体面的字重 */
+    public FontWeight weight() {
+        return weight;
+    }
+
+    /** @return 当前字体族是否承担默认回退 */
+    public boolean fallbackFamily() {
+        return fallbackFamily;
     }
 
     /**

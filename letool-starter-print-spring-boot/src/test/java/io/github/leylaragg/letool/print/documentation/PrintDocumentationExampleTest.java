@@ -3,12 +3,13 @@ package io.github.leylaragg.letool.print.documentation;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.leylaragg.letool.print.api.OutputFormat;
+import io.github.leylaragg.letool.print.api.PrintArtifact;
 import io.github.leylaragg.letool.print.api.PrintTemplate;
 import io.github.leylaragg.letool.print.api.TemplateFormat;
 import io.github.leylaragg.letool.print.autoconfigure.PrintAutoConfiguration;
 import io.github.leylaragg.letool.print.autoconfigure.PrintSpelAutoConfiguration;
 import io.github.leylaragg.letool.print.context.PrintContext;
-import io.github.leylaragg.letool.print.exception.PrintValidationException;
 import io.github.leylaragg.letool.print.service.PrintDefinition;
 import io.github.leylaragg.letool.print.service.PrintService;
 import io.github.leylaragg.letool.print.template.TemplateDefinition;
@@ -31,7 +32,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * 让模板作者指南里的完整示例持续经过真实发布与绑定链路。
@@ -43,7 +43,7 @@ class PrintDocumentationExampleTest {
     /** Markdown 中 XML 代码块的稳定提取规则。 */
     private static final Pattern XML_BLOCK = Pattern.compile("```xml\\R(.*?)\\R```", Pattern.DOTALL);
 
-    /** 文档改动后，示例应能原样发布，并准确暴露当前 PDF 的能力边界。 */
+    /** 文档改动后，完整示例应能原样发布并生成结构完整的 PDF。 */
     @Test
     void shouldValidateTemplateAuthorGuideExample() throws IOException {
         List<String> examples = xmlExamples();
@@ -59,10 +59,14 @@ class PrintDocumentationExampleTest {
                     definition("document-template", TemplateType.DOCUMENT, examples.get(0)),
                     definition("document-items", TemplateType.FRAGMENT, examples.get(1))));
 
-            assertThatThrownBy(() -> context.getBean(PrintService.class)
-                    .render("document-guide", 1L))
-                    .isInstanceOf(PrintValidationException.class)
-                    .hasMessageContaining("输出实现不支持");
+            PrintArtifact artifact = context.getBean(PrintService.class)
+                    .render("document-guide", 1L);
+
+            assertThat(artifact.outputFormat()).isEqualTo(OutputFormat.PDF);
+            assertThat(artifact.content()).startsWith(
+                    "%PDF".getBytes(StandardCharsets.US_ASCII));
+            assertThat(Integer.parseInt(artifact.metadata().get("pageCount")))
+                    .isGreaterThanOrEqualTo(2);
         });
     }
 

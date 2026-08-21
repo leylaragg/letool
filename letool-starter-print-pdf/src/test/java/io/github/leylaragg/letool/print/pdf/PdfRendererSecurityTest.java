@@ -15,6 +15,7 @@ import io.github.leylaragg.letool.print.document.node.PageBreakNode;
 import io.github.leylaragg.letool.print.document.node.ParagraphNode;
 import io.github.leylaragg.letool.print.document.node.TableOfContentsNode;
 import io.github.leylaragg.letool.print.document.node.TextNode;
+import io.github.leylaragg.letool.print.document.style.FontWeight;
 import io.github.leylaragg.letool.print.exception.PrintRenderingException;
 import io.github.leylaragg.letool.print.exception.PrintValidationException;
 import org.apache.pdfbox.Loader;
@@ -80,13 +81,15 @@ class PdfRendererSecurityTest {
                 new TableOfContentsNode(null, 1, 1),
                 new HeadingNode("heading", 1, List.of(new TextNode("Heading"))),
                 paragraph(largeRandomText(1_600_000))));
-        PdfFont font = new PdfFont("Droid Sans Fallback", this::openTestFont, true);
+        PdfFont font = new PdfFont(
+                "Droid Sans Fallback", FontWeight.NORMAL, this::openTestFont, true);
         RenderOptions options = new RenderOptions(
                 20_000, 2L * 1024 * 1024, 2L * 1024 * 1024, true);
         ByteArrayOutputStream target = new ByteArrayOutputStream();
         PrintOutput output = new PrintOutput(target, options.maxOutputBytes());
 
-        assertThatThrownBy(() -> new PdfDocumentRenderer(List.of(font), temporaryRoot).render(
+        assertThatThrownBy(() -> new OpenHtmlPdfRenderer(
+                PdfFontCatalog.of(List.of(font)), temporaryRoot).render(
                 document, options, output))
                 .isInstanceOf(PrintRenderingException.class)
                 .hasMessageContaining("PRINT_007")
@@ -101,10 +104,11 @@ class PdfRendererSecurityTest {
     /** 字体供应器的路径或实现消息不会进入用户可见异常。 */
     @Test
     void shouldHideFontSupplierFailure() {
-        PdfFont brokenFont = new PdfFont("Broken Font", () -> {
+        PdfFont brokenFont = new PdfFont("Broken Font", FontWeight.NORMAL, () -> {
             throw new IllegalStateException("secret-font-path");
         }, true);
-        PdfDocumentRenderer renderer = new PdfDocumentRenderer(List.of(brokenFont));
+        OpenHtmlPdfRenderer renderer = new OpenHtmlPdfRenderer(
+                PdfFontCatalog.of(List.of(brokenFont)));
 
         assertThatThrownBy(() -> RenderedPdf.render(
                 renderer, document(List.of(paragraph("正文"))), RenderOptions.defaults()))
@@ -185,7 +189,8 @@ class PdfRendererSecurityTest {
                         0, 0, "secret-free-text")));
 
         assertThatThrownBy(() -> RenderedPdf.render(
-                new PdfDocumentRenderer(List.of()), document, RenderOptions.defaults()))
+                new OpenHtmlPdfRenderer(PdfFontCatalog.of(List.of())),
+                document, RenderOptions.defaults()))
                 .isInstanceOf(PrintValidationException.class)
                 .hasMessageContaining("宿主字体")
                 .hasMessageNotContaining("secret-free-text");
@@ -223,9 +228,10 @@ class PdfRendererSecurityTest {
     }
 
     /** 创建使用测试专用字体的渲染器。 */
-    private PdfDocumentRenderer renderer() {
-        PdfFont font = new PdfFont("Droid Sans Fallback", this::openTestFont, true);
-        return new PdfDocumentRenderer(List.of(font));
+    private OpenHtmlPdfRenderer renderer() {
+        PdfFont font = new PdfFont(
+                "Droid Sans Fallback", FontWeight.NORMAL, this::openTestFont, true);
+        return new OpenHtmlPdfRenderer(PdfFontCatalog.of(List.of(font)));
     }
 
     /** 每次调用重新打开测试字体。 */

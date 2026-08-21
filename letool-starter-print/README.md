@@ -105,6 +105,7 @@ PrintEngine
 ```
 
 - 能稳定消费 `DocumentModel` 的新格式实现 `DocumentRenderer`。
+- PDF 实现统一通过 `PdfRenderer` 扩展；默认实现是 `OpenHtmlPdfRenderer`，宿主替换后若渲染失败，框架不会退回默认实现再次输出。
 - 具有独立报表模型的格式实现顶层 `PrintPipeline`，例如后续 JasperReports 包装或与流式文档语义不同的表格型导出。
 - `OutputFormat` 是开放值对象，核心预置 PDF，但不会把外部扩展永久限制为这一种格式。
 - JasperReports 借鉴其模板编译、数据填充、导出、缓存、虚拟化和 Governor 思想，但不会反向塑形 Letool XML 与 `DocumentModel`。
@@ -114,7 +115,8 @@ PrintEngine
 
 - `PrintTemplate`、`PrintContext`、内存 `PrintArtifact` 和文档树在输入输出边界进行防御性复制。
 - `PrintContext` 版本必须与模板声明的上下文版本一致。
-- `DefaultPrintEngine` 在管线执行前检查输出能力，写入时限制产物大小，完成后核对结果确实来自当前输出。
+- XML 管线会先用编译 inspection 检查目标输出能力，再读取业务数据；绑定完成后还会对动态生成的文档执行一次真实能力检查。
+- `DefaultPrintEngine` 写入时限制产物大小，完成后核对结果确实来自当前输出。
 - `PrintOutput` 持续计算 64 位内容长度和 SHA-256，不保存完整正文；失败或完成后不能继续写入。
 - 内存入口复用同一条流式主链路，仅适合明确可放入堆内的小文档。
 

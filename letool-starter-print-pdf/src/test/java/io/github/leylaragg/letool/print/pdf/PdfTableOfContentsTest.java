@@ -41,7 +41,8 @@ class PdfTableOfContentsTest {
                         new ParagraphNode("", List.of(new TextNode("Body")))));
 
         RenderedPdf rendered = RenderedPdf.render(
-                new PdfDocumentRenderer(List.of()), document, RenderOptions.defaults());
+                new OpenHtmlPdfRenderer(PdfFontCatalog.of(List.of())),
+                document, RenderOptions.defaults());
 
         try (PDDocument pdf = Loader.loadPDF(rendered.content())) {
             String text = new PDFTextStripper().getText(pdf);

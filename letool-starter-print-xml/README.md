@@ -40,7 +40,8 @@ XML 可以声明多个页面序列、页眉页脚、逻辑页码和强类型命�
 ```java
 XmlTemplateSetCompiler setCompiler = new XmlTemplateSetCompiler(xmlTemplateCompiler);
 XmlTemplateCompilationCache cache = new XmlTemplateCompilationCache(setCompiler);
-XmlTemplateCompilationService service = new XmlTemplateCompilationService(repository, cache);
+TemplateSource source = repository;
+XmlTemplateCompilationService service = new XmlTemplateCompilationService(source, cache);
 
 ResolvedXmlTemplate resolved = service.resolve(
         templateSetVersion,
@@ -137,7 +138,7 @@ CompiledXmlTemplate compiled = compiledSet.require("document-main");
 </document>
 ```
 
-这份示例覆盖完整的 XML 编译与绑定语义。当前内置 PDF 对页眉页脚、命名样式和多页面序列仍会明确报告能力不足；这些高级映射在 7D 完成前不会被静默忽略。
+这份示例覆盖完整的 XML 编译与绑定语义。当前内置 PDF 已映射多页面序列、页眉页脚、逻辑页码、命名样式和文字流控制；图片等尚未开放的语义仍会明确报告能力不足。
 
 当前支持：
 
@@ -334,6 +335,8 @@ XmlTemplateCompiler compiler = new XmlTemplateCompiler(
 - 输出白名单、格式化器、表达式语言和自定义标签名称。
 
 inspection 不包含 XML 正文、表达式正文、比较值、业务数据或解析器对象。`outputs` 未声明时表示模板不限制格式；声明后，`XmlTemplateCompilationService` 会在绑定前拒绝白名单外的输出。
+
+`XmlPrintPipeline` 会在业务绑定前用 inspection 对照目标渲染器能力，因此静态可知的不支持节点或文档特性不会触碰 `PrintContext`。绑定后还会用同一份能力快照检查真实 `DocumentModel`，覆盖自定义标签等动态结果。
 
 ## 安全边界
 

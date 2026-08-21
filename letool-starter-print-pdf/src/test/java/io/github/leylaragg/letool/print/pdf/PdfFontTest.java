@@ -1,5 +1,6 @@
 package io.github.leylaragg.letool.print.pdf;
 
+import io.github.leylaragg.letool.print.document.style.FontWeight;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
@@ -19,11 +20,13 @@ class PdfFontTest {
     void shouldKeepFontMetadataAndOpenIndependentStreams() throws Exception {
         PdfFont font = new PdfFont(
                 "Noto Sans CJK",
+                FontWeight.BOLD,
                 () -> new ByteArrayInputStream(new byte[]{1, 2, 3}),
                 true);
 
         assertThat(font.familyName()).isEqualTo("Noto Sans CJK");
-        assertThat(font.fallback()).isTrue();
+        assertThat(font.weight()).isEqualTo(FontWeight.BOLD);
+        assertThat(font.fallbackFamily()).isTrue();
         try (var first = font.openStream(); var second = font.openStream()) {
             assertThat(first).isNotSameAs(second);
             assertThat(first.readAllBytes()).containsExactly(1, 2, 3);
@@ -36,6 +39,7 @@ class PdfFontTest {
     void shouldRejectUnsafeFontFamily() {
         assertThatThrownBy(() -> new PdfFont(
                 "Broken'; } body { color: red",
+                FontWeight.NORMAL,
                 () -> new ByteArrayInputStream(new byte[]{1}),
                 false))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -45,7 +49,7 @@ class PdfFontTest {
     /** 字体供应器不能用空值掩盖配置错误。 */
     @Test
     void shouldRejectMissingFontStream() {
-        PdfFont font = new PdfFont("Noto Sans", () -> null, false);
+        PdfFont font = new PdfFont("Noto Sans", FontWeight.NORMAL, () -> null, false);
 
         assertThatThrownBy(font::openStream)
                 .isInstanceOf(IllegalStateException.class)

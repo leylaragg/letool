@@ -1,6 +1,7 @@
 package io.github.leylaragg.letool.print.autoconfigure;
 
 import io.github.leylaragg.letool.print.pdf.PdfFont;
+import io.github.leylaragg.letool.print.document.style.FontWeight;
 import io.github.leylaragg.letool.print.template.InMemoryTemplateRepository;
 import io.github.leylaragg.letool.print.template.TemplateRepository;
 import org.junit.jupiter.api.Test;
@@ -47,24 +48,23 @@ class PrintStartupValidatorTest {
                 .hasMessageContaining("require-active-template");
     }
 
-    /** 开启字体校验后，每个字体流都会被打开并由校验器关闭。 */
+    /** 没有配置字体时，严格模式仍会验证临时目录。 */
     @Test
-    void shouldValidateConfiguredFontsAndTemporaryDirectory() {
-        TrackingInputStream fontStream = new TrackingInputStream(new byte[]{1, 2, 3});
-        PdfFont font = new PdfFont("Test Font", () -> fontStream, false);
+    void shouldValidateTemporaryDirectoryWithoutConfiguredFonts() {
         PrintProperties properties = strictInfrastructureProperties(temporaryDirectory);
 
-        PrintStartupValidator validator = validator(new InMemoryTemplateRepository(), List.of(font), properties);
+        PrintStartupValidator validator = validator(
+                new InMemoryTemplateRepository(), List.of(), properties);
 
         assertThatCode(validator::afterSingletonsInstantiated).doesNotThrowAnyException();
-        assertThat(fontStream.closed).isTrue();
     }
 
     /** 空字体流无法证明字体资源可用，应按安全配置错误拒绝。 */
     @Test
     void shouldRejectEmptyFontStream() {
         PdfFont font = new PdfFont(
-                "Empty Font", () -> new ByteArrayInputStream(new byte[0]), false);
+                "Empty Font", FontWeight.NORMAL,
+                () -> new ByteArrayInputStream(new byte[0]), false);
         PrintProperties properties = strictInfrastructureProperties(temporaryDirectory);
 
         PrintStartupValidator validator = validator(new InMemoryTemplateRepository(), List.of(font), properties);
@@ -77,7 +77,7 @@ class PrintStartupValidatorTest {
     /** 字体供应器的异常原文不能进入启动失败信息。 */
     @Test
     void shouldHideFontProviderFailureDetails() {
-        PdfFont font = new PdfFont("Broken Font", () -> {
+        PdfFont font = new PdfFont("Broken Font", FontWeight.NORMAL, () -> {
             throw new IllegalStateException("secret-font-path");
         }, false);
         PrintProperties properties = strictInfrastructureProperties(temporaryDirectory);
@@ -93,7 +93,8 @@ class PrintStartupValidatorTest {
     /** 字体供应器返回空值时也按资源不可用处理。 */
     @Test
     void shouldRejectNullFontStream() {
-        PdfFont font = new PdfFont("Null Font", () -> null, false);
+        PdfFont font = new PdfFont(
+                "Null Font", FontWeight.NORMAL, () -> null, false);
         PrintProperties properties = strictInfrastructureProperties(temporaryDirectory);
         PrintStartupValidator validator = validator(new InMemoryTemplateRepository(), List.of(font), properties);
 
@@ -116,6 +117,20 @@ class PrintStartupValidatorTest {
                 .hasMessageNotContaining(blocker.toString());
     }
 
+    /** 非空探测文本必须由已配置字体覆盖，空字体目录不能假装通过。 */
+    @Test
+    void shouldRejectUncoveredFontProbeText() {
+        PrintProperties properties = strictInfrastructureProperties(temporaryDirectory);
+        properties.getStartup().setFontProbeText("合同");
+        PrintStartupValidator validator = validator(
+                new InMemoryTemplateRepository(), List.of(), properties);
+
+        assertThatThrownBy(validator::afterSingletonsInstantiated)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("validate-fonts")
+                .hasMessageNotContaining("合同");
+    }
+
     /** 创建开启基础设施检查的测试配置。 */
     private PrintProperties strictInfrastructureProperties(Path temporaryRoot) {
         PrintProperties properties = new PrintProperties();
@@ -130,20 +145,4 @@ class PrintStartupValidatorTest {
         return new PrintStartupValidator(repository, fonts, properties);
     }
 
-    /** 记录字体流是否由启动检查正确关闭。 */
-    private static final class TrackingInputStream extends ByteArrayInputStream {
-
-        /** 流关闭后置为 {@code true}。 */
-        private boolean closed;
-
-        /** 创建包含少量字体头部数据的测试流。 */
-        private TrackingInputStream(byte[] bytes) {
-            super(bytes);
-        }
-
-        @Override
-        public void close() {
-            closed = true;
-        }
-    }
 }

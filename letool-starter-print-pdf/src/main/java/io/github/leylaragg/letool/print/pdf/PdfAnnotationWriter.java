@@ -5,6 +5,7 @@ import io.github.leylaragg.letool.print.document.DocumentTraversal;
 import io.github.leylaragg.letool.print.document.node.AnnotationNode;
 import io.github.leylaragg.letool.print.document.node.AnnotationPlacement;
 import io.github.leylaragg.letool.print.document.node.AnnotationType;
+import io.github.leylaragg.letool.print.document.style.FontWeight;
 import io.github.leylaragg.letool.print.exception.PrintValidationException;
 import com.openhtmltopdf.css.style.CalculatedStyle;
 import com.openhtmltopdf.layout.LayoutContext;
@@ -61,16 +62,16 @@ final class PdfAnnotationWriter {
     private static final PDColor ANNOTATION_COLOR = new PDColor(
             new float[]{1F, 0.88F, 0.28F}, PDDeviceRGB.INSTANCE);
 
-    /** 宿主字体定义的不可变快照。 */
-    private final List<PdfFont> fonts;
+    /** 宿主字体面目录。 */
+    private final PdfFontCatalog fontCatalog;
 
     /**
      * 创建无共享渲染状态的批注写入器。
      *
-     * @param fonts PDF 渲染器已冻结的宿主字体
+     * @param fontCatalog PDF 渲染器已冻结的宿主字体目录
      */
-    PdfAnnotationWriter(List<PdfFont> fonts) {
-        this.fonts = List.copyOf(Objects.requireNonNull(fonts, "fonts 不能为空"));
+    PdfAnnotationWriter(PdfFontCatalog fontCatalog) {
+        this.fontCatalog = Objects.requireNonNull(fontCatalog, "fontCatalog 不能为空");
     }
 
     /**
@@ -200,8 +201,9 @@ final class PdfAnnotationWriter {
                 target.getAbsY(),
                 target.getEffectiveWidth(),
                 target.getHeight());
-        Rectangle visible = targetBounds.intersection(
-                page.getDocumentCoordinatesContentBounds(context));
+        Rectangle pageBounds = page.getDocumentCoordinatesContentBounds(context);
+        pageBounds.translate(0, page.getTop());
+        Rectangle visible = targetBounds.intersection(pageBounds);
         if (visible.isEmpty()) {
             throw PrintValidationException.invalidDocument(
                     "PDF 批注目标没有可见区域：" + targetId);
@@ -401,10 +403,9 @@ final class PdfAnnotationWriter {
 
     /** 从最终回退字体或首个宿主字体加载可嵌入外观字体。 */
     private PDFont loadAppearanceFont(PDDocument pdf) throws IOException {
-        PdfFont selected = fonts.stream()
-                .filter(PdfFont::fallback)
-                .findFirst()
-                .orElseGet(() -> fonts.isEmpty() ? null : fonts.get(0));
+        PdfFont selected = fontCatalog.defaultFace(FontWeight.NORMAL)
+                .orElseGet(() -> fontCatalog.fonts().isEmpty()
+                        ? null : fontCatalog.fonts().get(0));
         if (selected == null) {
             throw PrintValidationException.invalidDocument("自由文本框批注需要宿主字体");
         }
