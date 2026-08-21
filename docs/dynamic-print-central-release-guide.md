@@ -99,7 +99,7 @@ D:\Program Files\apache-maven-3.9.13\conf\settings.xml
 </settings>
 ```
 
-`id`、`username` 和 `password` 必须在同一个 `<server>` 中。不要把 Token 写入项目 POM、Git 仓库、发布脚本或聊天记录。
+`id`、`username` 和 `password` 必须在同一个 `<server>` 中。不要把 Token 写入项目 POM、Git 仓库、发布脚本或聊天记录。Token 一旦出现在终端输出、截图或聊天记录中，应立即在 Central Portal 撤销并重新生成；删除本地记录或归档任务不能恢复凭证安全。
 
 执行下面的命令，确认 Maven 能读取配置：
 
@@ -210,16 +210,16 @@ git status --short --branch
 根 `pom.xml` 至少要同步检查：
 
 ```xml
-<version>2.0.0-beta.2</version>
-<letool.version>2.0.0-beta.2</letool.version>
+<version>2.1.0</version>
+<letool.version>2.1.0</letool.version>
 ```
 
 所有子模块的 `<parent><version>` 也应与根版本一致。不要继续使用已经发布过的版本。
 
-可以先访问对应 POM 判断版本是否已经公开。下面以 `2.0.0-beta.2` 为例：
+可以先访问对应 POM 判断版本是否已经公开。下面以 `2.1.0` 为例：
 
 ```powershell
-$releaseVersion = '2.0.0-beta.2'
+$releaseVersion = '2.1.0'
 $pomUrl = "https://repo1.maven.org/maven2/io/github/leylaragg/letool-starter-print-spring-boot/$releaseVersion/letool-starter-print-spring-boot-$releaseVersion.pom"
 curl.exe -I $pomUrl
 ```
@@ -284,7 +284,7 @@ PowerShell 中的 `--%` 表示后续参数原样交给 Maven。CMD、Git Bash �
 可以抽查一个签名：
 
 ```powershell
-gpg --verify letool-starter-print-spring-boot\target\letool-starter-print-spring-boot-2.0.0-beta.2.jar.asc letool-starter-print-spring-boot\target\letool-starter-print-spring-boot-2.0.0-beta.2.jar
+gpg --verify letool-starter-print-spring-boot\target\letool-starter-print-spring-boot-2.1.0.jar.asc letool-starter-print-spring-boot\target\letool-starter-print-spring-boot-2.1.0.jar
 ```
 
 看到 `Good signature` 才表示签名验证成功。命令中的版本号要换成当次发布版本。
@@ -397,10 +397,10 @@ IDEA Maven 工具窗口中的 Profiles 也可以勾选 `release`，但 Run Confi
 
 ### 10.1 检查 Maven Central 文件
 
-以 `2.0.0-beta.2` 为例：
+以 `2.1.0` 为例：
 
 ```powershell
-$releaseVersion = '2.0.0-beta.2'
+$releaseVersion = '2.1.0'
 $pomUrl = "https://repo1.maven.org/maven2/io/github/leylaragg/letool-starter-print-spring-boot/$releaseVersion/letool-starter-print-spring-boot-$releaseVersion.pom"
 curl.exe -I $pomUrl
 ```
@@ -410,7 +410,7 @@ curl.exe -I $pomUrl
 ### 10.2 使用干净的 Maven 解析验证
 
 ```powershell
-mvn -U dependency:get -Dartifact=io.github.leylaragg:letool-starter-print-spring-boot:2.0.0-beta.2
+mvn -U dependency:get -Dartifact=io.github.leylaragg:letool-starter-print-spring-boot:2.1.0
 ```
 
 若要排除本地仓库缓存影响，可以在临时目录中创建一个最小 Spring Boot 消费项目，再声明：
@@ -419,7 +419,7 @@ mvn -U dependency:get -Dartifact=io.github.leylaragg:letool-starter-print-spring
 <dependency>
     <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-print-spring-boot</artifactId>
-    <version>2.0.0-beta.2</version>
+    <version>2.1.0</version>
 </dependency>
 ```
 
