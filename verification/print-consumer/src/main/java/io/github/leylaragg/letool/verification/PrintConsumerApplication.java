@@ -25,15 +25,15 @@ public class PrintConsumerApplication {
     }
 
     /**
-     * 宿主只声明业务编码和数据适配，模板解析与 PDF 渲染仍由 Starter 完成。
+     * 消费者只声明调用编码和数据适配，模板解析与 PDF 渲染仍由 Starter 完成。
      *
-     * @return 订单打印定义
+     * @return 通用文档打印定义
      */
     @Bean
     PrintDefinition<Long> consumerPrintDefinition() {
         return PrintDefinition.of("consumer", "consumer-template", Long.class,
-                orderId -> PrintContext.of(1, JsonNodeFactory.instance.objectNode()
-                        .put("name", "order-" + orderId)
+                documentId -> PrintContext.of(1, JsonNodeFactory.instance.objectNode()
+                        .put("name", "document-" + documentId)
                         .put("approved", true)));
     }
 }

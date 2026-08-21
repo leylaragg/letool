@@ -32,6 +32,8 @@
 | [Dynamic Print Extension Guide](docs/dynamic-print-extension-guide.md) | 标签、格式化器、表达式、渲染器、管线与仓库扩展 |
 | [Dynamic Print Production Guide](docs/dynamic-print-production-guide.md) | 版本、字体、缓存、指标、健康检查与生产排障 |
 | [Dynamic Print Capacity Baseline](docs/dynamic-print-capacity-baseline.md) | 固定 PDF 场景的环境、结果与复测方式 |
+| [Dynamic Print Verification Guide](docs/dynamic-print-verification-guide.md) | 日常验证、阶段验收、IDEA 操作与独立 Maven 消费者 |
+| [Dynamic Print Central Release Guide](docs/dynamic-print-central-release-guide.md) | GPG 签名、Central 上传、人工 Publish 与发布后验证 |
 
 ## 模块总览
 

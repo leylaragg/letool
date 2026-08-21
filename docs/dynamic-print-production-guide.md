@@ -2,6 +2,25 @@
 
 本指南面向把 Letool 动态打印接入生产环境的应用开发与运维人员。框架负责同步模板发布、版本锁定、编译缓存、PDF 输出和安全观测；模板来源、业务数据、鉴权、持久化和产物交付仍由宿主应用负责。
 
+## 生产调用链
+
+```mermaid
+sequenceDiagram
+    participant Host as 宿主应用
+    participant Repo as TemplateSource/Repository
+    participant Print as PrintService
+    participant Cache as 编译缓存
+    participant PDF as PDF 渲染器
+    Host->>Repo: 发布并激活完整模板集合
+    Host->>Print: 传入文档代码、版本和标准 JSON
+    Print->>Repo: 锁定当前或指定版本快照
+    Print->>Cache: 获取或编译模板集合
+    Print->>PDF: 流式渲染受控文档模型
+    PDF-->>Host: 写入调用方输出流
+```
+
+一次请求锁定一个模板集合版本，缓存只复用编译结果，不保存业务数据或 PDF。宿主拥有业务编排和输出流，框架负责模板到产物的确定性主链路。
+
 ## 生产配置
 
 下面给出全部 Starter 配置及默认值。页数、字节数、缓存容量和临时目录应根据容量基线、实例内存与并发量重新评估。

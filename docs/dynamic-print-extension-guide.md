@@ -4,6 +4,21 @@ Letool 把模板语法、通用文档模型、输出实现和模板存储分成�
 
 在 Spring Boot 项目中，把扩展实现声明为 Bean 即可。Starter 会按 Spring 顺序收集实现，再创建不可变注册表；相同标签、格式化器、表达式语言、模板格式或输出格式重复时会阻止启动。
 
+```mermaid
+flowchart TD
+    A[出现新需求] --> B{它是否仍属于通用文档语义}
+    B -->|是，增加 XML 语义| C[PrintTagHandler]
+    B -->|是，只改变字段显示| D[PrintValueFormatter]
+    B -->|是，增加受控条件语言| E[PrintConditionExpression]
+    B -->|是，增加同一文档模型的输出| F[DocumentRenderer]
+    B -->|否，有独立模板与报表模型| G[PrintPipeline]
+    A --> H{只是模板版本来源不同}
+    H -->|只读| I[TemplateSource]
+    H -->|发布与激活| J[TemplateRepository]
+```
+
+先判断语义归属，再选择接口。扩展点用来补充框架能力，不承担某个宿主的查询、审批、权限或状态翻译。
+
 ## 选择扩展点
 
 | 需求 | 接口 |

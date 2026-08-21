@@ -174,3 +174,5 @@ byte[] pdf = smallDocument.content();
 - [扩展开发指南](../docs/dynamic-print-extension-guide.md)
 - [生产运维指南](../docs/dynamic-print-production-guide.md)
 - [容量基线](../docs/dynamic-print-capacity-baseline.md)
+- [验证与验收指南](../docs/dynamic-print-verification-guide.md)
+- [Maven Central 手动发布教程](../docs/dynamic-print-central-release-guide.md)

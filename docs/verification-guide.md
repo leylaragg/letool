@@ -148,6 +148,8 @@ git status --short
 
 ## 9. 动态打印专项验证
 
+动态打印在通用的定向、模块和全仓验证之外，还有安全、容量与独立 Maven 消费者三层专项验收。完整的执行顺序、IDEA 操作、结果位置和失败分流见[动态打印验证与验收指南](dynamic-print-verification-guide.md)。
+
 打印安全回归从 Starter 公开入口覆盖 XML、include、受限 SpEL、扩展数据视图、外部资源标识、PDF 页数与临时目录清理：
 
 ```powershell
@@ -167,3 +169,5 @@ mvn --% -P print-capacity -pl letool-starter-print-spring-boot -am -Dtest=PrintC
 ```
 
 容量报告保存在 `letool-starter-print-spring-boot/target/print-capacity/capacity-baseline.md`，不提交到 Git。报告中的机器耗时用于同环境前后比较，不作为跨机器的固定通过阈值。
+
+打印依赖闭包通过后，还要把当前制品安装到 Maven 本地仓库，再独立运行 `verification/print-consumer`。它不属于根 Reactor，用来证明普通 Spring Boot 项目只通过公开 Maven 坐标也能完成自动配置、模板版本锁定、流式 PDF 和可选 SpEL 验收。Central 签名与上传属于后续发布阶段，不能混入日常验证。

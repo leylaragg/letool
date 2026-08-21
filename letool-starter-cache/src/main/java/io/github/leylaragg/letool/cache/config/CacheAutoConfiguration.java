@@ -31,6 +31,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -75,17 +76,6 @@ public class CacheAutoConfiguration {
             @org.springframework.beans.factory.annotation.Autowired(required = false)
             CacheInvalidationEventStore eventStore) {
         return new SpringCacheMutationCoordinator(transactionManager, fenceStore, eventStore);
-    }
-
-    /** 使用业务 JdbcTemplate 注册默认 Outbox 仓储。 */
-    @Bean
-    @ConditionalOnClass(JdbcTemplate.class)
-    @Conditional({ExactSingleJdbcTemplateCondition.class, DurableCacheConfiguredCondition.class})
-    @ConditionalOnMissingBean(CacheInvalidationEventStore.class)
-    public CacheInvalidationEventStore cacheInvalidationEventStore(
-            JdbcTemplate jdbcTemplate, CacheProperties properties) {
-        return new JdbcCacheInvalidationEventStore(
-                jdbcTemplate, properties.getConsistency().getOutboxTable());
     }
 
     /** 注册 Redis 单 Key 写入围栏。 */
@@ -331,5 +321,29 @@ public class CacheAutoConfiguration {
                     ic.getName(), ic.getL1MaxSize(), ic.getL1Ttl(), ic.getL2Ttl(), ic.isNullValueCache());
         }
         return new Object();
+    }
+
+    /**
+     * 隔离 JDBC Outbox 的可选装配，未引入 spring-jdbc 的项目只会加载 L1 缓存配置。
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = "org.springframework.jdbc.core.JdbcTemplate")
+    static class JdbcOutboxConfiguration {
+
+        /**
+         * 使用业务项目中唯一的 JdbcTemplate 注册默认 Outbox 仓储。
+         *
+         * @param jdbcTemplateProvider 业务 JDBC 操作入口候选
+         * @param properties 缓存配置
+         * @return 缓存失效事件仓储
+         */
+        @Bean
+        @Conditional({ExactSingleJdbcTemplateCondition.class, DurableCacheConfiguredCondition.class})
+        @ConditionalOnMissingBean(CacheInvalidationEventStore.class)
+        CacheInvalidationEventStore cacheInvalidationEventStore(ObjectProvider<JdbcTemplate> jdbcTemplateProvider, CacheProperties properties) {
+            // 条件已经确认候选唯一，只在创建 Outbox 仓储时取出实际实例。
+            JdbcTemplate jdbcTemplate = jdbcTemplateProvider.getObject();
+            return new JdbcCacheInvalidationEventStore(jdbcTemplate, properties.getConsistency().getOutboxTable());
+        }
     }
 }

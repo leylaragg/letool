@@ -8,6 +8,7 @@ import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
 import io.github.leylaragg.letool.cache.serializer.JacksonCacheSerializer;
 import io.github.leylaragg.letool.cache.support.CacheMonitor;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -23,6 +24,8 @@ import io.github.leylaragg.letool.cache.consistency.CacheMutationCoordinator;
 import io.github.leylaragg.letool.tool.redis.RedisUtil;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.Arrays;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -93,6 +96,20 @@ class CacheAutoConfigurationTest {
                     assertThat(context).hasSingleBean(CacheManager.class);
                     assertThat(context).doesNotHaveBean(io.github.leylaragg.letool.cache.consistency.CacheInvalidationEventStore.class);
                 });
+    }
+
+    /**
+     * JDBC 是 DURABLE 的可选能力，工厂方法不能把 JdbcTemplate 当成无条件依赖。
+     */
+    @Test
+    void jdbcOutboxFactoryShouldResolveJdbcTemplateLazily() {
+        Method factoryMethod = Arrays.stream(CacheAutoConfiguration.JdbcOutboxConfiguration.class.getDeclaredMethods())
+                .filter(method -> method.getName().equals("cacheInvalidationEventStore"))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(factoryMethod.getParameterTypes()).contains(ObjectProvider.class);
+        assertThat(factoryMethod.getParameterTypes()).doesNotContain(JdbcTemplate.class);
     }
 
     /**

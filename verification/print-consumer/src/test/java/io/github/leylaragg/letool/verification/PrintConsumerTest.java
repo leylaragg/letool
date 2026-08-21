@@ -1,6 +1,6 @@
 package io.github.leylaragg.letool.verification;
 
-import io.github.leylaragg.letool.print.api.PrintArtifact;
+import io.github.leylaragg.letool.print.api.PrintResult;
 import io.github.leylaragg.letool.print.api.PrintTemplate;
 import io.github.leylaragg.letool.print.api.TemplateFormat;
 import io.github.leylaragg.letool.print.exception.PrintValidationException;
@@ -17,6 +17,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.core.env.Environment;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -38,6 +39,12 @@ class PrintConsumerTest {
     /** 可选表达式模板使用独立版本。 */
     private static final long SPEL_VERSION = 102L;
 
+    /** 版本快照测试保留的历史集合。 */
+    private static final long HISTORICAL_VERSION = 103L;
+
+    /** 版本快照测试最终激活的集合。 */
+    private static final long CURRENT_VERSION = 104L;
+
     /** Spring Starter 提供的模板发布入口。 */
     @Autowired
     private TemplateSetPublisher publisher;
@@ -50,19 +57,37 @@ class PrintConsumerTest {
     @Autowired
     private Environment environment;
 
-    /** 独立消费者能够发布模板，并把业务数据渲染成可重新读取的 PDF。 */
+    /** 独立消费者能够通过流式入口生成可重新读取的 PDF。 */
     @Test
     void shouldRenderReadablePdfFromMavenDependency() throws IOException {
-        publisher.publish(PLAIN_VERSION, List.of(template(PLAIN_VERSION,
+        publisher.publishAndActivate(PLAIN_VERSION, List.of(template(PLAIN_VERSION,
                 "<paragraph>Consumer <field path=\"name\"/></paragraph>")));
 
-        PrintArtifact artifact = printService.render(PLAIN_VERSION, "consumer", 7L);
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        PrintResult result = printService.renderTo("consumer", 7L, output);
+        byte[] content = output.toByteArray();
 
-        assertThat(artifact.content()).startsWith("%PDF".getBytes(StandardCharsets.US_ASCII));
-        try (PDDocument document = Loader.loadPDF(artifact.content())) {
+        assertThat(result.contentLength()).isEqualTo(content.length);
+        assertThat(content).startsWith("%PDF".getBytes(StandardCharsets.US_ASCII));
+        try (PDDocument document = Loader.loadPDF(content)) {
             assertThat(document.getNumberOfPages()).isEqualTo(1);
-            assertThat(new PDFTextStripper().getText(document)).contains("Consumer order-7");
+            assertThat(new PDFTextStripper().getText(document)).contains("Consumer document-7");
         }
+    }
+
+    /** 活动集合切换后，当前调用与历史重打仍各自使用明确快照。 */
+    @Test
+    void shouldKeepCurrentAndHistoricalTemplateSnapshots() throws IOException {
+        publisher.publishAndActivate(HISTORICAL_VERSION, List.of(template(HISTORICAL_VERSION,
+                "<paragraph>Historical <field path=\"name\"/></paragraph>")));
+        publisher.publishAndActivate(CURRENT_VERSION, List.of(template(CURRENT_VERSION,
+                "<paragraph>Current <field path=\"name\"/></paragraph>")));
+
+        String currentText = renderText(null, 9L);
+        String historicalText = renderText(HISTORICAL_VERSION, 9L);
+
+        assertThat(currentText).contains("Current document-9").doesNotContain("Historical");
+        assertThat(historicalText).contains("Historical document-9").doesNotContain("Current");
     }
 
     /** 默认拒绝 SpEL；profile 同时增加模块和开关后才进入真实渲染链路。 */
@@ -79,10 +104,25 @@ class PrintConsumerTest {
 
         assertThat(spelModuleAvailable()).isTrue();
         publisher.publish(SPEL_VERSION, List.of(spelTemplate()));
-        PrintArtifact artifact = printService.render(SPEL_VERSION, "consumer", 8L);
+        assertThat(renderText(SPEL_VERSION, 8L)).contains("Approved document-8");
+    }
 
-        try (PDDocument document = Loader.loadPDF(artifact.content())) {
-            assertThat(new PDFTextStripper().getText(document)).contains("Approved order-8");
+    /**
+     * 通过同一流式入口读取当前或历史版本的 PDF 文本。
+     *
+     * @param version 模板集合版本，传入 {@code null} 时读取活动集合
+     * @param request 文档请求标识
+     * @return PDFBox 提取的正文
+     */
+    private String renderText(Long version, long request) throws IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        if (version == null) {
+            printService.renderTo("consumer", request, output);
+        } else {
+            printService.renderTo(version, "consumer", request, output);
+        }
+        try (PDDocument document = Loader.loadPDF(output.toByteArray())) {
+            return new PDFTextStripper().getText(document);
         }
     }
 
@@ -95,7 +135,8 @@ class PrintConsumerTest {
      */
     private TemplateDefinition template(long version, String body) {
         String xml = "<document xmlns=\"" + XmlDsl.NAMESPACE_V1
-                + "\" context-version=\"1\"><page>" + body + "</page></document>";
+                + "\" context-version=\"1\"><page><page-body>"
+                + body + "</page-body></page></document>";
         PrintTemplate source = new PrintTemplate(
                 "consumer-template", TemplateFormat.LETOOL_XML, XmlDsl.VERSION,
                 version, 1, xml.getBytes(StandardCharsets.UTF_8));
@@ -106,7 +147,7 @@ class PrintConsumerTest {
     private TemplateDefinition spelTemplate() {
         return template(SPEL_VERSION,
                 "<if expression-language=\"spel\" test=\"approved == true\">"
-                        + "<paragraph>Approved <field path=\"name\"/></paragraph></if>");
+                        + "<then><paragraph>Approved <field path=\"name\"/></paragraph></then></if>");
     }
 
     /** @return 当前消费者运行时是否真正包含 SpEL 实现类 */

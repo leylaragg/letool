@@ -16,25 +16,25 @@ version: 由根 pom.xml 统一管理
 
 一次完整发布分成下面几个环节：
 
-```text
-修改版本号
-    ↓
-本地 clean verify：编译、测试、生成源码包和 Javadoc、执行 GPG 签名
-    ↓
-本地检查制品
-    ↓
-clean deploy：重新构建并上传 Central Deployment
-    ↓
-Central 自动校验，状态变为 VALIDATED
-    ↓
-人工检查后点击 Publish
-    ↓
-状态变为 PUBLISHED
-    ↓
-从 Maven Central 下载验证
+```mermaid
+flowchart TD
+    A[7E 验证与验收全部通过] --> B[冻结正式版本]
+    B --> C[release Profile clean verify]
+    C --> D[检查 POM、Sources、Javadocs 与 GPG 签名]
+    D --> E[clean deploy 上传 Central Deployment]
+    E --> F{Central 校验结果}
+    F -->|FAILED| G[修复后使用新版本重新构建]
+    F -->|VALIDATED| H[发布人核对坐标与制品]
+    H --> I{是否公开}
+    I -->|否| J[撤销 Deployment]
+    I -->|是| K[Portal 点击 Publish]
+    K --> L[PUBLISHED]
+    L --> M[从 Central 干净下载验证]
 ```
 
 本项目配置了 `autoPublish=false`，所以 `mvn deploy` 只负责上传并等待校验通过，不会自动公开制品。真正不可撤销的动作是 Central Portal 中的 `Publish`。
+
+这份教程对应独立的 7F 发布阶段。进入本页前，应先按[动态打印验证与验收指南](dynamic-print-verification-guide.md)完成 7E；测试阶段不得顺手执行 `deploy`。
 
 ## 2. 当前打印框架会发布哪些模块
 
