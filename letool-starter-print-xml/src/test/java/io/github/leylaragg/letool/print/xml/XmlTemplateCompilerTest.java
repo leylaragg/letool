@@ -31,9 +31,9 @@ class XmlTemplateCompilerTest {
         PrintTemplate template = template("""
                 <document xmlns="https://leyland.github.io/letool/print/v1"
                           context-version="1">
-                    <page>
+                    <page><page-body>
                         <paragraph>合同正文</paragraph>
-                    </page>
+                    </page-body></page>
                 </document>
                 """);
 
@@ -55,7 +55,7 @@ class XmlTemplateCompilerTest {
                 <document xmlns="https://leyland.github.io/letool/print/v1"
                           xmlns:xi="http://www.w3.org/2001/XInclude"
                           context-version="1">
-                    <page><xi:include href="file:///forbidden"/></page>
+                    <page><page-body><xi:include href="file:///forbidden"/></page-body></page>
                 </document>
                 """,
                 """
@@ -63,13 +63,13 @@ class XmlTemplateCompilerTest {
                           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                           xsi:schemaLocation="https://leyland.github.io/letool/print/v1 file:///forbidden"
                           context-version="1">
-                    <page><paragraph>正文</paragraph></page>
+                    <page><page-body><paragraph>正文</paragraph></page-body></page>
                 </document>
                 """,
                 """
                 <?unsafe execute?>
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page><paragraph>正文</paragraph></page>
+                    <page><page-body><paragraph>正文</paragraph></page-body></page>
                 </document>
                 """);
 
@@ -106,7 +106,7 @@ class XmlTemplateCompilerTest {
                 """
                 <!-- schemaLocation="只是注释" -->
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page><paragraph>正文</paragraph></page>
+                    <page><page-body><paragraph>正文</paragraph></page-body></page>
                 </document>
                 """);
 
@@ -126,7 +126,7 @@ class XmlTemplateCompilerTest {
                 """
                 <document xmlns="https://leyland.github.io/letool/print/v1"
                           context-version="1" title="$&#123;bean.value}">
-                    <page><paragraph>正文</paragraph></page>
+                    <page><page-body><paragraph>正文</paragraph></page-body></page>
                 </document>
                 """);
 
@@ -159,22 +159,22 @@ class XmlTemplateCompilerTest {
         List<String> invalidSources = List.of(
                 """
                 <document xmlns="urn:other" context-version="1">
-                    <page><paragraph>正文</paragraph></page>
+                    <page><page-body><paragraph>正文</paragraph></page-body></page>
                 </document>
                 """,
                 """
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page><script>正文</script></page>
+                    <page><page-body><script>正文</script></page-body></page>
                 </document>
                 """,
                 """
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1" onclick="run()">
-                    <page><paragraph>正文</paragraph></page>
+                    <page><page-body><paragraph>正文</paragraph></page-body></page>
                 </document>
                 """,
                 """
                 <Document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page><paragraph>正文</paragraph></page>
+                    <page><page-body><paragraph>正文</paragraph></page-body></page>
                 </Document>
                 """);
 
@@ -203,7 +203,7 @@ class XmlTemplateCompilerTest {
                 """,
                 """
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page><page-break>不允许的正文</page-break></page>
+                    <page><page-body><page-break>不允许的正文</page-break></page-body></page>
                 </document>
                 """);
 
@@ -221,7 +221,7 @@ class XmlTemplateCompilerTest {
     void shouldRequireMatchingDeclaredContextVersion() {
         String source = """
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="2">
-                    <page><paragraph>正文</paragraph></page>
+                    <page><page-body><paragraph>正文</paragraph></page-body></page>
                 </document>
                 """;
 
@@ -238,12 +238,12 @@ class XmlTemplateCompilerTest {
                 + "</section>".repeat(XmlDsl.MAX_NODE_DEPTH);
         String tooDeep = """
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page>%s</page>
+                    <page><page-body>%s</page-body></page>
                 </document>
                 """.formatted(deep);
         String tooMany = """
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page>%s</page>
+                    <page><page-body>%s</page-body></page>
                 </document>
                 """.formatted("<page-break/>".repeat(XmlDsl.MAX_NODE_COUNT));
 
@@ -272,22 +272,22 @@ class XmlTemplateCompilerTest {
     @Test
     void shouldValidateStaticAttributesDuringCompilation() {
         List<String> invalidSources = List.of(
-                document("<page size=\"LEGAL\"><paragraph>正文</paragraph></page>"),
-                document("<page orientation=\"diagonal\"><paragraph>正文</paragraph></page>"),
-                document("<page margin=\"-1mm\"><paragraph>正文</paragraph></page>"),
-                document("<page margin=\"9999mm\"><paragraph>正文</paragraph></page>"),
-                document("<page><heading level=\"7\">正文</heading></page>"),
-                document("<page><paragraph id=\"../bad\">正文</paragraph></page>"),
+                document("<page size=\"LEGAL\"><page-body><paragraph>正文</paragraph></page-body></page>"),
+                document("<page orientation=\"diagonal\"><page-body><paragraph>正文</paragraph></page-body></page>"),
+                document("<page margin=\"-1mm\"><page-body><paragraph>正文</paragraph></page-body></page>"),
+                document("<page margin=\"9999mm\"><page-body><paragraph>正文</paragraph></page-body></page>"),
+                document("<page><page-body><heading level=\"7\">正文</heading></page-body></page>"),
+                document("<page><page-body><paragraph id=\"../bad\">正文</paragraph></page-body></page>"),
                 """
                 <document xmlns="https://leyland.github.io/letool/print/v1"
                           context-version="1" title=" ">
-                    <page><paragraph>正文</paragraph></page>
+                    <page><page-body><paragraph>正文</paragraph></page-body></page>
                 </document>
                 """,
                 """
                 <document xmlns="https://leyland.github.io/letool/print/v1"
                           context-version="1" language="%s">
-                    <page><paragraph>正文</paragraph></page>
+                    <page><page-body><paragraph>正文</paragraph></page-body></page>
                 </document>
                 """.formatted("x".repeat(36)));
 
@@ -306,13 +306,13 @@ class XmlTemplateCompilerTest {
         List<String> invalidSources = List.of(
                 """
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page><paragraph>未闭合</page>
+                    <page><page-body><paragraph>未闭合</page-body></page>
                 </document>
                 """,
-                document("<page><section/></page>"),
-                document("<page><heading level=\"1\"/></page>"),
-                document("<page><heading>   </heading></page>"),
-                document("<page><heading><text> \n </text></heading></page>"));
+                document("<page><page-body><section/></page-body></page>"),
+                document("<page><page-body><heading level=\"1\"/></page-body></page>"),
+                document("<page><page-body><heading>   </heading></page-body></page>"),
+                document("<page><page-body><heading><text> \n </text></heading></page-body></page>"));
 
         for (String source : invalidSources) {
             assertThatThrownBy(() -> new XmlTemplateCompiler().compile(template(source)))
@@ -336,7 +336,7 @@ class XmlTemplateCompilerTest {
     private String minimal(String text) {
         return """
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page><paragraph>%s</paragraph></page>
+                    <page><page-body><paragraph>%s</paragraph></page-body></page>
                 </document>
                 """.formatted(text);
     }

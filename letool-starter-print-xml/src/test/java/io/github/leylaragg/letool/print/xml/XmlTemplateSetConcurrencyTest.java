@@ -61,8 +61,8 @@ class XmlTemplateSetConcurrencyTest {
     /** 准备一个包含字段片段、可被并发复用的模板集合。 */
     private TemplateSet source() {
         String document = "<document xmlns=\"" + XmlDsl.NAMESPACE_V1
-                + "\" context-version=\"1\"><page><include template=\"field\"/>"
-                + "</page></document>";
+                + "\" context-version=\"1\"><page><page-body><include template=\"field\"/>"
+                + "</page-body></page></document>";
         String fragment = "<fragment xmlns=\"" + XmlDsl.NAMESPACE_V1
                 + "\"><paragraph><field path=\"name\"/></paragraph></fragment>";
         return new TemplateSetPublisher(new InMemoryTemplateRepository(), List.of())

@@ -82,6 +82,25 @@ class XmlPrintPipelineTest {
                 .hasMessageContaining("模板格式");
     }
 
+    /** 7D 尚未映射页眉时，默认 PDF 必须明确拒绝对应文档特性。 */
+    @Test
+    void shouldRejectAdvancedXmlFeaturesUntilPdfSupportsThem() {
+        TemplateRepository repository = new InMemoryTemplateRepository();
+        PrintTemplate template = publishXml(repository, 1, """
+                <document xmlns="https://leyland.github.io/letool/print/v1"
+                          context-version="1" outputs="pdf">
+                    <page>
+                        <page-header><paragraph>页眉</paragraph></page-header>
+                        <page-body><paragraph>正文</paragraph></page-body>
+                    </page>
+                </document>
+                """);
+
+        assertThatThrownBy(() -> pipeline(repository, 1).render(request(template), output()))
+                .isInstanceOf(PrintValidationException.class)
+                .hasMessageContaining("PAGE_HEADER");
+    }
+
     /** 组合 XML 编译、绑定和 PDF 渲染依赖。 */
     private XmlPrintPipeline pipeline(TemplateRepository repository, long profileVersion) {
         XmlTemplateCompiler compiler = new XmlTemplateCompiler();
@@ -96,8 +115,15 @@ class XmlPrintPipelineTest {
 
     /** 发布并激活单文档模板。 */
     private PrintTemplate publish(TemplateRepository repository, long version, String text) {
+        return publishXml(repository, version, new String(xml(text), StandardCharsets.UTF_8));
+    }
+
+    /** 发布调用方给出的完整 XML 文档。 */
+    private PrintTemplate publishXml(
+            TemplateRepository repository, long version, String source) {
         PrintTemplate template = new PrintTemplate(
-                "main", TemplateFormat.LETOOL_XML, XmlDsl.VERSION, version, 1, xml(text));
+                "main", TemplateFormat.LETOOL_XML, XmlDsl.VERSION, version, 1,
+                source.getBytes(StandardCharsets.UTF_8));
         new TemplateSetPublisher(repository, List.of()).publishAndActivate(
                 version, List.of(new TemplateDefinition(TemplateType.DOCUMENT, template)));
         return template;
@@ -122,8 +148,8 @@ class XmlPrintPipelineTest {
     /** 将测试正文包进最小可打印 XML。 */
     private byte[] xml(String text) {
         String source = "<document xmlns=\"" + XmlDsl.NAMESPACE_V1
-                + "\" context-version=\"1\"><page><paragraph>" + text
-                + "</paragraph></page></document>";
+                + "\" context-version=\"1\"><page><page-body><paragraph>" + text
+                + "</paragraph></page-body></page></document>";
         return source.getBytes(StandardCharsets.UTF_8);
     }
 }

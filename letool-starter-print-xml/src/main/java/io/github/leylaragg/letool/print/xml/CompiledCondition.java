@@ -16,7 +16,8 @@ final class CompiledCondition {
 
     /** 条件操作符。 */
     enum Operator {
-        EXISTS, NOT_EXISTS, TRUTHY, FALSY, EQ, NE, GT, GTE, LT, LTE
+        EXISTS, NOT_EXISTS, IS_NULL, NOT_NULL, EMPTY, NOT_EMPTY,
+        TRUTHY, FALSY, EQ, NE, GT, GTE, LT, LTE
     }
 
     /** 比较值类型。 */
@@ -65,7 +66,9 @@ final class CompiledCondition {
         }
         String value = attributes.get("value");
         String type = attributes.get("value-type");
-        if (Set.of(Operator.EXISTS, Operator.NOT_EXISTS, Operator.TRUTHY, Operator.FALSY).contains(operator)) {
+        if (Set.of(Operator.EXISTS, Operator.NOT_EXISTS, Operator.IS_NULL,
+                Operator.NOT_NULL, Operator.EMPTY, Operator.NOT_EMPTY,
+                Operator.TRUTHY, Operator.FALSY).contains(operator)) {
             if (value != null || type != null) {
                 throw invalid(templateCode, tagPath, line, column, "该条件操作符不允许比较值");
             }
@@ -131,6 +134,23 @@ final class CompiledCondition {
             throw bindingError(node, templateCode, "条件数据路径不存在：" + path.displayPath());
         }
         JsonNode actual = resolved.value();
+        if (operator == Operator.IS_NULL || operator == Operator.NOT_NULL) {
+            return operator == Operator.IS_NULL ? actual.isNull() : !actual.isNull();
+        }
+        if (operator == Operator.EMPTY || operator == Operator.NOT_EMPTY) {
+            boolean empty;
+            if (actual.isNull()) {
+                empty = true;
+            } else if (actual.isTextual()) {
+                empty = actual.textValue().isEmpty();
+            } else if (actual.isArray() || actual.isObject()) {
+                empty = actual.size() == 0;
+            } else {
+                throw bindingError(node, templateCode,
+                        "empty 条件只支持字符串、数组、对象或空值");
+            }
+            return operator == Operator.EMPTY ? empty : !empty;
+        }
         if (operator == Operator.TRUTHY || operator == Operator.FALSY) {
             if (!actual.isBoolean() && !actual.isNull()) {
                 throw bindingError(node, templateCode, "条件值类型必须为布尔或空值");

@@ -69,8 +69,8 @@ class PrintSecurityRegressionTest {
                 "<document xmlns=\"" + XmlDsl.NAMESPACE_V1 + "\" "
                         + "xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" "
                         + "xsi:schemaLocation=\"" + XmlDsl.NAMESPACE_V1
-                        + " file:///business-secret\" context-version=\"1\"><page>"
-                        + "<paragraph>正文</paragraph></page></document>",
+                        + " file:///business-secret\" context-version=\"1\"><page><page-body>"
+                        + "<paragraph>正文</paragraph></page-body></page></document>",
                 documentBody("<paragraph style=\"background:url(https://example.invalid/secret.css)\">"
                         + "正文</paragraph>"));
 
@@ -306,7 +306,7 @@ class PrintSecurityRegressionTest {
     /** 把页内节点包装为完整文档。 */
     private static String documentBody(String body) {
         return "<document xmlns=\"" + XmlDsl.NAMESPACE_V1
-                + "\" context-version=\"1\"><page>" + body + "</page></document>";
+                + "\" context-version=\"1\"><page><page-body>" + body + "</page-body></page></document>";
     }
 
     /** 把块级节点包装为可 include 的片段。 */
@@ -375,15 +375,17 @@ class PrintSecurityRegressionTest {
         /** @return 会触发扩展只读数据视图检查的数据探针 */
         @Bean
         PrintTagHandler dataProbe() {
-            return handler("data-probe", compile -> binding -> new ParagraphNode(
-                    "", List.of(new TextNode(binding.data().root().toString()))));
+            return handler("data-probe", compile -> PrintTagPlan.of(
+                    ParagraphNode.class, binding -> new ParagraphNode(
+                            "", List.of(new TextNode(binding.data().root().toString())))));
         }
 
         /** @return 用于证明扩展结果仍受中央文本上限约束的标签 */
         @Bean
         PrintTagHandler oversized() {
-            return handler("oversized", compile -> binding -> new ParagraphNode("", List.of(
-                    new TextNode("x".repeat(XmlDsl.MAX_GENERATED_TEXT_CHARACTERS + 1)))));
+            return handler("oversized", compile -> PrintTagPlan.of(
+                    ParagraphNode.class, binding -> new ParagraphNode("", List.of(
+                            new TextNode("x".repeat(XmlDsl.MAX_GENERATED_TEXT_CHARACTERS + 1))))));
         }
     }
 

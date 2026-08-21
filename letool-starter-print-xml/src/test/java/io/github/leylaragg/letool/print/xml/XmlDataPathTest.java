@@ -21,7 +21,7 @@ class XmlDataPathTest {
     @Test
     void shouldCompileRootFieldPath() {
         CompiledXmlTemplate compiled = compile(
-                "<page><paragraph>姓名：<field path=\"policy.holder.name\"/></paragraph></page>");
+                "<page><page-body><paragraph>姓名：<field path=\"policy.holder.name\"/></paragraph></page-body></page>");
 
         assertThat(compiled.templateCode()).isEqualTo("contract");
     }
@@ -35,7 +35,7 @@ class XmlDataPathTest {
 
         for (String path : paths) {
             assertThatThrownBy(() -> compile(
-                    "<page><paragraph><field path=\"" + path + "\"/></paragraph></page>"))
+                    "<page><page-body><paragraph><field path=\"" + path + "\"/></paragraph></page-body></page>"))
                     .isInstanceOf(PrintCompilationException.class)
                     .hasMessageContaining("contract")
                     .hasMessageContaining("行")
@@ -52,13 +52,13 @@ class XmlDataPathTest {
         String atLengthLimit = "a".repeat(256);
         String overLength = "a".repeat(257);
 
-        assertThat(compile("<page><paragraph><field path=\"" + atSegmentLimit
-                + "\"/></paragraph></page>").templateCode()).isEqualTo("contract");
-        assertThat(compile("<page><paragraph><field path=\"" + atLengthLimit
-                + "\"/></paragraph></page>").templateCode()).isEqualTo("contract");
+        assertThat(compile("<page><page-body><paragraph><field path=\"" + atSegmentLimit
+                + "\"/></paragraph></page-body></page>").templateCode()).isEqualTo("contract");
+        assertThat(compile("<page><page-body><paragraph><field path=\"" + atLengthLimit
+                + "\"/></paragraph></page-body></page>").templateCode()).isEqualTo("contract");
         for (String path : List.of(overSegmentLimit, overLength)) {
             assertThatThrownBy(() -> compile(
-                    "<page><paragraph><field path=\"" + path + "\"/></paragraph></page>"))
+                    "<page><page-body><paragraph><field path=\"" + path + "\"/></paragraph></page-body></page>"))
                     .isInstanceOf(PrintCompilationException.class);
         }
     }
@@ -67,9 +67,9 @@ class XmlDataPathTest {
     @Test
     void shouldRejectTrailingVariablePathSeparator() {
         assertThatThrownBy(() -> compile("""
-                <page><for-each items="items" var="item">
+                <page><page-body><for-each items="items" var="item">
                     <paragraph><field path="$item."/></paragraph>
-                </for-each></page>
+                </for-each></page-body></page>
                 """))
                 .isInstanceOf(PrintCompilationException.class)
                 .hasMessageContaining("contract");

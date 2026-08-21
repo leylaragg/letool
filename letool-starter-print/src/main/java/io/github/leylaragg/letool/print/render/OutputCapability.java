@@ -67,6 +67,27 @@ public final class OutputCapability {
     }
 
     /**
+     * 判断是否支持一个节点具体类型。
+     *
+     * @param nodeType 文档节点具体类型
+     * @return 该类型已声明时返回 {@code true}
+     */
+    public boolean supports(Class<? extends DocumentNode> nodeType) {
+        return nodeType != null && supportedNodeTypes.contains(nodeType);
+    }
+
+    /**
+     * 判断是否覆盖一组静态可知的节点类型。
+     *
+     * @param nodeTypes 待检查的节点类型
+     * @return 所有类型都已声明时返回 {@code true}
+     */
+    public boolean supportsNodeTypes(
+            Set<? extends Class<? extends DocumentNode>> nodeTypes) {
+        return nodeTypes != null && supportedNodeTypes.containsAll(nodeTypes);
+    }
+
+    /**
      * 判断是否支持一个公共文档特性。
      *
      * @param feature 文档特性
@@ -74,6 +95,16 @@ public final class OutputCapability {
      */
     public boolean supports(DocumentFeature feature) {
         return feature != null && supportedFeatures.contains(feature);
+    }
+
+    /**
+     * 判断是否覆盖一组静态可知的文档特性。
+     *
+     * @param features 待检查的公共文档特性
+     * @return 所有特性都已声明时返回 {@code true}
+     */
+    public boolean supportsFeatures(Set<DocumentFeature> features) {
+        return features != null && supportedFeatures.containsAll(features);
     }
 
     /**

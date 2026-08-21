@@ -166,7 +166,7 @@ class PrintCapacityBaselineTest {
     /** 把场景正文包装成同一 DSL 和上下文版本的文档。 */
     private static String documentBody(String body) {
         return "<document xmlns=\"" + XmlDsl.NAMESPACE_V1
-                + "\" context-version=\"1\"><page>" + body + "</page></document>";
+                + "\" context-version=\"1\"><page><page-body>" + body + "</page-body></page></document>";
     }
 
     /** 根据当前 JDK 和机器信息生成可追溯但不参与断言的 Markdown 报告。 */

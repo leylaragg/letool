@@ -3,6 +3,7 @@ package io.github.leylaragg.letool.print.xml;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.github.leylaragg.letool.print.xml.extension.PrintDataView;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -41,7 +42,7 @@ final class BindingScope {
             JsonNode root, Map<String, JsonNode> variables, BindingScope parent,
             String boundName, JsonNode boundValue) {
         this.root = root;
-        this.variables = Map.copyOf(variables);
+        this.variables = Collections.unmodifiableMap(new LinkedHashMap<>(variables));
         this.parent = parent;
         this.boundName = boundName;
         this.boundValue = boundValue;
@@ -71,6 +72,20 @@ final class BindingScope {
             return this;
         }
         return new BindingScope(root, Map.of(), null, null, null);
+    }
+
+    /**
+     * 从根上下文建立只包含显式片段参数的作用域。
+     *
+     * @param parameters 已在调用方解析完成的有序参数
+     * @return 不捕获调用方循环变量的片段作用域
+     */
+    BindingScope fragment(Map<String, JsonNode> parameters) {
+        BindingScope scope = rootOnly();
+        for (Map.Entry<String, JsonNode> entry : parameters.entrySet()) {
+            scope = scope.child(entry.getKey(), entry.getValue());
+        }
+        return scope;
     }
 
     /**

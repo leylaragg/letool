@@ -69,7 +69,7 @@ class XmlTemplateCompilationConcurrencyTest {
     /** 创建并发布并发测试使用的单文档集合。 */
     private TemplateSet templateSet() {
         String source = "<document xmlns=\"" + XmlDsl.NAMESPACE_V1
-                + "\" context-version=\"1\"><page><paragraph>并发</paragraph></page></document>";
+                + "\" context-version=\"1\"><page><page-body><paragraph>并发</paragraph></page-body></page></document>";
         PrintTemplate template = new PrintTemplate("main", TemplateFormat.LETOOL_XML, 1, 7, 1,
                 source.getBytes(StandardCharsets.UTF_8));
         return new TemplateSetPublisher(new InMemoryTemplateRepository(), List.of())

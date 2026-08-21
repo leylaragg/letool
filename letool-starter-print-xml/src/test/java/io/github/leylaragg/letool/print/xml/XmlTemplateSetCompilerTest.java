@@ -111,7 +111,7 @@ class XmlTemplateSetCompilerTest {
     /** 把块级 XML 放入最小完整文档。 */
     private String document(String blocks) {
         return "<document xmlns=\"" + XmlDsl.NAMESPACE_V1
-                + "\" context-version=\"1\"><page>" + blocks + "</page></document>";
+                + "\" context-version=\"1\"><page><page-body>" + blocks + "</page-body></page></document>";
     }
 
     /** 把块级 XML 放入共享片段。 */

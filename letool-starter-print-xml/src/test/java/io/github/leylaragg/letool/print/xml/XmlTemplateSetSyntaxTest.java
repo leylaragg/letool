@@ -47,9 +47,9 @@ class XmlTemplateSetSyntaxTest {
         assertThatThrownBy(() -> compile(
                 document("""
                         <table><body>
-                            <if path="enabled" operator="truthy">
+                            <if path="enabled" operator="truthy"><then>
                                 <include template="part"/>
-                            </if>
+                            </then></if>
                         </body></table>
                         """),
                 fragment("part", "<paragraph>x</paragraph>")))
@@ -100,8 +100,8 @@ class XmlTemplateSetSyntaxTest {
     private TemplateDefinition document(String blocks) {
         return definition(TemplateType.DOCUMENT, "main", TemplateFormat.LETOOL_XML,
                 1, 1, "<document xmlns=\"" + XmlDsl.NAMESPACE_V1
-                        + "\" context-version=\"1\"><page>" + blocks
-                        + "</page></document>");
+                        + "\" context-version=\"1\"><page><page-body>" + blocks
+                        + "</page-body></page></document>");
     }
 
     /** 把块级 XML 包装成指定代码的片段定义。 */

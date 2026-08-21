@@ -55,6 +55,9 @@ final class CompiledXmlNode {
     /** include 节点指向的已编译片段。 */
     private final CompiledXmlFragment includedFragment;
 
+    /** include 调用方已经编译的显式参数。 */
+    private final List<CompiledIncludeArgument> includeArguments;
+
     /** 保存最基础的 XML 节点信息。 */
     CompiledXmlNode(String name, Map<String, String> attributes,
                     List<CompiledXmlNode> children, String text, int line, int column) {
@@ -101,7 +104,7 @@ final class CompiledXmlNode {
                     String variableName, PrintFormatPlan formatPlan,
                     PrintExpressionPlan expressionPlan, CompiledTagPlan tagPlan) {
         this(name, attributes, children, text, line, column, tagPath, dataPath,
-                condition, variableName, formatPlan, expressionPlan, tagPlan, null);
+                condition, variableName, formatPlan, expressionPlan, tagPlan, null, List.of());
     }
 
     /**
@@ -128,6 +131,19 @@ final class CompiledXmlNode {
                     String variableName, PrintFormatPlan formatPlan,
                     PrintExpressionPlan expressionPlan, CompiledTagPlan tagPlan,
                     CompiledXmlFragment includedFragment) {
+        this(name, attributes, children, text, line, column, tagPath, dataPath,
+                condition, variableName, formatPlan, expressionPlan, tagPlan,
+                includedFragment, List.of());
+    }
+
+    /** 保存节点的完整编译信息和可选 include 参数。 */
+    private CompiledXmlNode(String name, Map<String, String> attributes,
+                    List<CompiledXmlNode> children, String text, int line, int column,
+                    String tagPath, CompiledDataPath dataPath, CompiledCondition condition,
+                    String variableName, PrintFormatPlan formatPlan,
+                    PrintExpressionPlan expressionPlan, CompiledTagPlan tagPlan,
+                    CompiledXmlFragment includedFragment,
+                    List<CompiledIncludeArgument> includeArguments) {
         this.name = name;
         this.attributes = Map.copyOf(attributes);
         this.children = List.copyOf(children);
@@ -142,6 +158,7 @@ final class CompiledXmlNode {
         this.expressionPlan = expressionPlan;
         this.tagPlan = tagPlan;
         this.includedFragment = includedFragment;
+        this.includeArguments = List.copyOf(includeArguments);
     }
 
     /** @return DSL 标签名 */
@@ -214,6 +231,11 @@ final class CompiledXmlNode {
         return includedFragment;
     }
 
+    /** @return include 调用方已经编译的显式参数 */
+    List<CompiledIncludeArgument> includeArguments() {
+        return includeArguments;
+    }
+
     /**
      * 保留当前节点信息，只替换解析后的子节点和片段引用。
      *
@@ -225,6 +247,13 @@ final class CompiledXmlNode {
                                             CompiledXmlFragment fragment) {
         return new CompiledXmlNode(name, attributes, resolvedChildren, text, line, column,
                 tagPath, dataPath, condition, variableName, formatPlan,
-                expressionPlan, tagPlan, fragment);
+                expressionPlan, tagPlan, fragment, includeArguments);
+    }
+
+    /** 为已经解析目标片段的 include 保存调用方参数。 */
+    CompiledXmlNode withIncludeArguments(List<CompiledIncludeArgument> arguments) {
+        return new CompiledXmlNode(name, attributes, children, text, line, column,
+                tagPath, dataPath, condition, variableName, formatPlan,
+                expressionPlan, tagPlan, includedFragment, arguments);
     }
 }

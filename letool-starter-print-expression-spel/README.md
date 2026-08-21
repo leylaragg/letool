@@ -35,10 +35,12 @@ XmlTemplateCompiler compiler = new XmlTemplateCompiler(
 ```xml
 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
     <page>
-        <if expression-language="spel"
-            test="policy.status == 'ACTIVE' &amp;&amp; policy.amount &gt;= 100">
-            <paragraph>保单已生效</paragraph>
-        </if>
+        <page-body>
+            <if expression-language="spel"
+                test="agreement.status == 'ACTIVE' &amp;&amp; agreement.amount &gt;= 100">
+                <then><paragraph>条件成立</paragraph></then>
+            </if>
+        </page-body>
     </page>
 </document>
 ```
@@ -49,7 +51,7 @@ XmlTemplateCompiler compiler = new XmlTemplateCompiler(
 
 第一版只支持：
 
-- 根 JSON 属性读取，例如 `policy.status`；
+- 根 JSON 属性读取，例如 `document.status`；
 - 当前循环变量读取，例如 `item.enabled`；
 - JSON 数组非负整数字面量下标，例如 `items[0].status`；
 - 字符串、整数、小数、布尔和 `null` 字面量；
@@ -58,6 +60,10 @@ XmlTemplateCompiler compiler = new XmlTemplateCompiler(
 - `==`、`!=`、`<`、`<=`、`>`、`>=`。
 
 当前循环变量与根属性同名时，循环变量优先。嵌套循环继续遵循 XML 编译器既有契约，不允许声明与外层重名的循环变量。最终结果必须是真实 `Boolean`；字符串、数字、对象、数组和 `null` 不会转换成真值。
+
+SpEL 中的循环变量直接写成 `item.enabled`。`$item.enabled` 是 XML 数据路径的写法，在 SpEL 中会被拒绝，不能混用两套语法。
+
+编译计划会从通过白名单校验的 AST 中提取实际属性读取链，交给 `TemplateInspection` 供宿主预检。循环变量和片段参数会规范为 `$item.path` 形式，与 XML 字段路径保持一致；根路径仍保持 `document.path`。检查结果保留数组下标和首次出现顺序，但不保存表达式正文、字面量或 AST。
 
 显式 JSON `null` 可以参与 `== null` 判断。属性缺失、对标量继续取属性、对象使用数组下标或数组越界均安全失败，不会降级为 `null`。
 

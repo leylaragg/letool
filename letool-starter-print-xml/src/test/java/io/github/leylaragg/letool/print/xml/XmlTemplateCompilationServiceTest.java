@@ -73,6 +73,19 @@ class XmlTemplateCompilationServiceTest {
         assertThat(resolved.key().rendererProfileVersion()).isEqualTo(5);
     }
 
+    /** 文档声明输出白名单时，解析服务应在绑定前拒绝未授权格式。 */
+    @Test
+    void shouldEnforceDeclaredOutputWhitelist() {
+        CountingTemplateRepository repository = repositoryWithActiveSet(" outputs=\"pdf\"");
+        XmlTemplateCompilationService service = service(repository);
+
+        assertThat(service.resolveCurrent("main", 1, OutputFormat.PDF)).isNotNull();
+        assertThatThrownBy(() -> service.resolveCurrent("main", 1, HTML))
+                .isInstanceOf(PrintValidationException.class)
+                .hasMessageContaining("输出格式")
+                .hasMessageContaining("html");
+    }
+
     /** 相同版本和代码不能掩盖正文或编译元数据被调用方替换。 */
     @Test
     void shouldRejectRequestSnapshotDifferentFromRepository() {
@@ -141,9 +154,15 @@ class XmlTemplateCompilationServiceTest {
 
     /** 创建已经激活版本 7 的计数仓库。 */
     private CountingTemplateRepository repositoryWithActiveSet() {
+        return repositoryWithActiveSet("");
+    }
+
+    /** 创建带可选 document 属性的已激活测试仓库。 */
+    private CountingTemplateRepository repositoryWithActiveSet(String documentAttributes) {
         CountingTemplateRepository repository = new CountingTemplateRepository();
         String source = "<document xmlns=\"" + XmlDsl.NAMESPACE_V1
-                + "\" context-version=\"1\"><page><paragraph>正文</paragraph></page></document>";
+                + "\" context-version=\"1\"" + documentAttributes
+                + "><page><page-body><paragraph>正文</paragraph></page-body></page></document>";
         PrintTemplate template = new PrintTemplate("main", TemplateFormat.LETOOL_XML, 1, 7, 1,
                 source.getBytes(StandardCharsets.UTF_8));
         new TemplateSetPublisher(repository, List.of()).publishAndActivate(7,

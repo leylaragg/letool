@@ -35,10 +35,10 @@ class XmlFormattedFieldTest {
     void shouldBindFieldWithCompiledNumberPlan() {
         CompiledXmlTemplate template = compile(new XmlTemplateCompiler(), """
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page><paragraph><field path="amount" formatter="number">
+                    <page><page-body><paragraph><field path="amount" formatter="number">
                         <format-option name="pattern" value="#,##0.00"/>
                         <format-option name="locale" value="en-US"/>
-                    </field></paragraph></page>
+                    </field></paragraph></page-body></page>
                 </document>
                 """);
 
@@ -61,7 +61,7 @@ class XmlFormattedFieldTest {
         CompiledXmlTemplate template = compile(
                 new XmlTemplateCompiler(new PrintFormatterRegistry(List.of(formatter))), """
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page><paragraph><field path="value" formatter="custom"/></paragraph></page>
+                    <page><page-body><paragraph><field path="value" formatter="custom"/></paragraph></page-body></page>
                 </document>
                 """);
 
@@ -95,9 +95,9 @@ class XmlFormattedFieldTest {
         CompiledXmlTemplate template = compile(
                 new XmlTemplateCompiler(new PrintFormatterRegistry(List.of(formatter))), """
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page><paragraph><field path="value" formatter="custom">
+                    <page><page-body><paragraph><field path="value" formatter="custom">
                         <format-option name="prefix" value="ID-"/>
-                    </field></paragraph></page>
+                    </field></paragraph></page-body></page>
                 </document>
                 """);
 
@@ -158,7 +158,8 @@ class XmlFormattedFieldTest {
                 fieldXml("<field path=\"value\" formatter=\"custom\"/>")))
                 .isInstanceOf(PrintCompilationException.class)
                 .hasMessageContaining("格式化器配置无效")
-                .hasMessageNotContaining("secret-implementation-detail");
+                .hasMessageNotContaining("secret-implementation-detail")
+                .hasCauseInstanceOf(IllegalArgumentException.class);
     }
 
     /** 验证自定义计划抛出的打印异常同样会被转换为安全绑定错误。 */
@@ -175,7 +176,9 @@ class XmlFormattedFieldTest {
         assertThatThrownBy(() -> new XmlTemplateBinder().bind(template, context("visible")))
                 .isInstanceOf(io.github.leylaragg.letool.print.exception.PrintValidationException.class)
                 .hasMessageContaining("字段值无法按已编译格式输出")
-                .hasMessageNotContaining("secret-business-value");
+                .hasMessageNotContaining("secret-business-value")
+                .hasCauseInstanceOf(
+                        io.github.leylaragg.letool.print.exception.PrintValidationException.class);
     }
 
     /** 验证同一内置格式计划可由多个线程并发绑定不同上下文。 */
@@ -183,9 +186,9 @@ class XmlFormattedFieldTest {
     void shouldReuseBuiltInFormatPlanConcurrently() {
         CompiledXmlTemplate template = compile(new XmlTemplateCompiler(), """
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page><paragraph><field path="value" formatter="number">
+                    <page><page-body><paragraph><field path="value" formatter="number">
                         <format-option name="pattern" value="0000"/>
-                    </field></paragraph></page>
+                    </field></paragraph></page-body></page>
                 </document>
                 """);
 
@@ -230,7 +233,7 @@ class XmlFormattedFieldTest {
     private static String fieldXml(String field) {
         return """
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page><paragraph>%s</paragraph></page>
+                    <page><page-body><paragraph>%s</paragraph></page-body></page>
                 </document>
                 """.formatted(field);
     }

@@ -76,14 +76,14 @@ class PrintStarterVerticalSliceTest {
 
     /** 创建通过受限 SpEL 判断业务上下文字段的模板。 */
     private TemplateDefinition spelDocument(long version) {
-        return definition(version, "<if expression-language=\"spel\" test=\"approved == true\">"
-                + "<paragraph>Approved <field path=\"id\"/></paragraph></if>");
+        return definition(version, "<if expression-language=\"spel\" test=\"approved == true\"><then>"
+                + "<paragraph>Approved <field path=\"id\"/></paragraph></then></if>");
     }
 
     /** 把页面正文封装成可发布的文档定义。 */
     private TemplateDefinition definition(long version, String body) {
         String xml = "<document xmlns=\"" + XmlDsl.NAMESPACE_V1
-                + "\" context-version=\"1\"><page>" + body + "</page></document>";
+                + "\" context-version=\"1\"><page><page-body>" + body + "</page-body></page></document>";
         PrintTemplate template = new PrintTemplate(
                 "invoice-template", TemplateFormat.LETOOL_XML, XmlDsl.VERSION,
                 version, 1, xml.getBytes(StandardCharsets.UTF_8));

@@ -119,7 +119,7 @@ class XmlAnnotationBindingTest {
     private static String page(String content) {
         return """
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page>%s</page>
+                    <page><page-body>%s</page-body></page>
                 </document>
                 """.formatted(content);
     }

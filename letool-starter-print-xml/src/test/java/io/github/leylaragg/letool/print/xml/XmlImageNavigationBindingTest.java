@@ -32,12 +32,12 @@ class XmlImageNavigationBindingTest {
     void shouldBindStaticAndDynamicImageDescriptors() {
         CompiledXmlTemplate template = compile("""
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page>
+                    <page><page-body>
                         <image id="logo" resource-id="brand.logo" alt="公司标识"
                                width="30mm" height="12.5mm"/>
                         <image resource-path="signature.resourceId" alt="签名"
                                width="40mm" height="20mm"/>
-                    </page>
+                    </page-body></page>
                 </document>
                 """);
         ObjectNode root = JsonNodeFactory.instance.objectNode();
@@ -57,7 +57,7 @@ class XmlImageNavigationBindingTest {
     void shouldBindBookmarkAndInternalLink() {
         CompiledXmlTemplate template = compile("""
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page><paragraph><bookmark id="summary" label="汇总"/><link target="summary">返回 <field path="caption"/></link></paragraph></page>
+                    <page><page-body><paragraph><bookmark id="summary" label="汇总"/><link target="summary">返回 <field path="caption"/></link></paragraph></page-body></page>
                 </document>
                 """);
         ObjectNode root = JsonNodeFactory.instance.objectNode().put("caption", "首页");
@@ -171,7 +171,7 @@ class XmlImageNavigationBindingTest {
     private static String page(String content) {
         return """
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page>%s</page>
+                    <page><page-body>%s</page-body></page>
                 </document>
                 """.formatted(content);
     }

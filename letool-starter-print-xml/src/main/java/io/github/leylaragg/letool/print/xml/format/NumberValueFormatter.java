@@ -2,6 +2,7 @@ package io.github.leylaragg.letool.print.xml.format;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
+import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
@@ -89,10 +90,11 @@ final class NumberValueFormatter implements PrintValueFormatter {
         if (value == null || !value.isNumber()) {
             throw new IllegalArgumentException("number 格式化器只接受数字节点");
         }
+        BigDecimal number = BoundedDecimalText.normalize(value.decimalValue());
         if (pattern == null) {
-            return value.decimalValue().stripTrailingZeros().toPlainString();
+            return number.toPlainString();
         }
-        return createDecimalFormat(pattern, locale, roundingMode).format(value.decimalValue());
+        return createDecimalFormat(pattern, locale, roundingMode).format(number);
     }
 
     /** 每次调用创建局部 DecimalFormat，避免共享可变状态。 */

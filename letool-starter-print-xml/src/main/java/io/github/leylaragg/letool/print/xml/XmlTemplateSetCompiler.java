@@ -188,11 +188,11 @@ public final class XmlTemplateSetCompiler {
      * @param node 当前编译节点
      * @param references 用于去重的引用集合
      */
-    private void collectReferences(CompiledXmlNode node, Set<String> references) {
+    private void collectReferences(ParsedXmlNode node, Set<String> references) {
         if ("include".equals(node.name())) {
             references.add(node.attributes().get("template"));
         }
-        for (CompiledXmlNode child : node.children()) {
+        for (ParsedXmlNode child : node.children()) {
             collectReferences(child, references);
         }
     }
@@ -291,21 +291,24 @@ public final class XmlTemplateSetCompiler {
      * @return 解析引用后的不可变节点
      */
     private CompiledXmlNode resolveIncludes(
-            CompiledXmlNode node,
+            ParsedXmlNode node,
             Map<String, CompiledXmlFragment> fragments) {
+        List<CompiledXmlNode> children = new ArrayList<>(node.children().size());
+        for (ParsedXmlNode child : node.children()) {
+            children.add(resolveIncludes(child, fragments));
+        }
         if ("include".equals(node.name())) {
             String target = node.attributes().get("template");
             CompiledXmlFragment fragment = fragments.get(target);
             if (fragment == null) {
                 throw PrintCompilationException.invalid("include 目标尚未完成编译：" + target);
             }
-            return node.withChildrenAndFragment(List.of(), fragment);
+            return new CompiledXmlNode(node.name(), node.attributes(), children, node.text(),
+                    node.line(), node.column(), "", null, null, null, null,
+                    null, null, fragment);
         }
-        List<CompiledXmlNode> children = new ArrayList<>(node.children().size());
-        for (CompiledXmlNode child : node.children()) {
-            children.add(resolveIncludes(child, fragments));
-        }
-        return node.withChildrenAndFragment(children, node.includedFragment());
+        return new CompiledXmlNode(node.name(), node.attributes(), children,
+                node.text(), node.line(), node.column());
     }
 
     /** 图节点的访问状态。 */

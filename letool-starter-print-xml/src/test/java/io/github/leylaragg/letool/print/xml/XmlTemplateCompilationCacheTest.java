@@ -217,8 +217,8 @@ class XmlTemplateCompilationCacheTest {
         String source = format.equals(TemplateFormat.LETOOL_XML)
                 ? "<" + (type == TemplateType.DOCUMENT ? "document" : "fragment")
                 + " xmlns=\"" + XmlDsl.NAMESPACE_V1 + "\""
-                + (type == TemplateType.DOCUMENT ? " context-version=\"1\"><page>" : ">")
-                + blocks + (type == TemplateType.DOCUMENT ? "</page></document>" : "</fragment>")
+                + (type == TemplateType.DOCUMENT ? " context-version=\"1\"><page><page-body>" : ">")
+                + blocks + (type == TemplateType.DOCUMENT ? "</page-body></page></document>" : "</fragment>")
                 : blocks;
         PrintTemplate template = new PrintTemplate(
                 code, format, 1, version, 1, source.getBytes(StandardCharsets.UTF_8));

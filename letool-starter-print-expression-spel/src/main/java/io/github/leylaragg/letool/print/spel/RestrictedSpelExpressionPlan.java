@@ -3,6 +3,7 @@ package io.github.leylaragg.letool.print.spel;
 import io.github.leylaragg.letool.print.exception.PrintValidationException;
 import io.github.leylaragg.letool.print.xml.expression.ExpressionEvaluationContext;
 import io.github.leylaragg.letool.print.xml.expression.PrintExpressionPlan;
+import io.github.leylaragg.letool.print.template.inspection.TemplateInspectionContribution;
 import org.springframework.expression.spel.standard.SpelExpression;
 import org.springframework.expression.spel.support.SimpleEvaluationContext;
 
@@ -24,19 +25,32 @@ final class RestrictedSpelExpressionPlan implements PrintExpressionPlan {
     /** 为每次绑定创建隔离预算的不可变工厂引用。 */
     private final Supplier<RestrictedSpelBudget> budgetFactory;
 
+    /** 编译期从白名单 AST 提取的静态读取路径。 */
+    private final TemplateInspectionContribution inspectionContribution;
+
     /**
      * 创建受限表达式计划。
      *
      * @param expression 已解析的只读表达式
      * @param budgetFactory 单次求值预算工厂
-     * @throws NullPointerException 表达式或预算工厂为空时抛出
+     * @param inspectionContribution 不含表达式正文的静态读取声明
+     * @throws NullPointerException 参数为空时抛出
      */
     RestrictedSpelExpressionPlan(
             SpelExpression expression,
-            Supplier<RestrictedSpelBudget> budgetFactory) {
+            Supplier<RestrictedSpelBudget> budgetFactory,
+            TemplateInspectionContribution inspectionContribution) {
         this.expression = Objects.requireNonNull(expression, "expression 不能为空");
         this.budgetFactory = Objects.requireNonNull(
                 budgetFactory, "budgetFactory 不能为空");
+        this.inspectionContribution = Objects.requireNonNull(
+                inspectionContribution, "inspectionContribution 不能为空");
+    }
+
+    /** @return 受限 AST 中实际读取的静态路径 */
+    @Override
+    public TemplateInspectionContribution inspectionContribution() {
+        return inspectionContribution;
     }
 
     /**

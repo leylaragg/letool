@@ -112,7 +112,7 @@ class XmlTemplateSetValidatorTest {
     /** 把块级 XML 包装成主文档定义。 */
     private TemplateDefinition document(String blocks) {
         String source = "<document xmlns=\"" + XmlDsl.NAMESPACE_V1
-                + "\" context-version=\"1\"><page>" + blocks + "</page></document>";
+                + "\" context-version=\"1\"><page><page-body>" + blocks + "</page-body></page></document>";
         return definition(TemplateType.DOCUMENT, "main", source);
     }
 

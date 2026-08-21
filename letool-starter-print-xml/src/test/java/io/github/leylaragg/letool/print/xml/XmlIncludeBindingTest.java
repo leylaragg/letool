@@ -72,6 +72,91 @@ class XmlIncludeBindingTest {
                 .hasMessageContaining("未声明变量");
     }
 
+    /** 调用方可以显式传入循环变量，片段只读取声明后的参数名。 */
+    @Test
+    void shouldPassCallerLoopValueAsFragmentParameter() throws Exception {
+        CompiledXmlTemplate template = compile(
+                definition(TemplateType.DOCUMENT, "main", document("""
+                        <for-each items="items" var="item">
+                            <include template="row">
+                                <with name="row" path="$item"/>
+                            </include>
+                        </for-each>
+                        """)),
+                definition(TemplateType.FRAGMENT, "row", fragment(
+                        "row", "<paragraph><field path=\"$row.name\"/></paragraph>")));
+
+        DocumentModel model = new XmlTemplateBinder().bind(template, PrintContext.of(
+                1, JSON.readTree("{\"items\":[{\"name\":\"A\"},{\"name\":\"B\"}]}")));
+
+        assertThat(XmlTestDocuments.body(model)).containsExactly(
+                new ParagraphNode("", List.of(new TextNode("A"))),
+                new ParagraphNode("", List.of(new TextNode("B"))));
+    }
+
+    /** 显式 null 仍是存在的参数，片段字段按统一规则输出空文本。 */
+    @Test
+    void shouldPassExplicitNullAsFragmentParameter() throws Exception {
+        CompiledXmlTemplate template = compile(
+                definition(TemplateType.DOCUMENT, "main", document("""
+                        <include template="value">
+                            <with name="value" path="nullable"/>
+                        </include>
+                        """)),
+                definition(TemplateType.FRAGMENT, "value", fragment(
+                        "value", "<paragraph><field path=\"$value\"/></paragraph>")));
+
+        DocumentModel model = new XmlTemplateBinder().bind(template, PrintContext.of(
+                1, JSON.readTree("{\"nullable\":null}")));
+
+        assertThat(XmlTestDocuments.body(model)).containsExactly(
+                new ParagraphNode("", List.of(new TextNode(""))));
+    }
+
+    /** 缺失参数路径在调用点安全失败，错误中不携带其他业务值。 */
+    @Test
+    void shouldRejectMissingFragmentParameterPath() throws Exception {
+        CompiledXmlTemplate template = compile(
+                definition(TemplateType.DOCUMENT, "main", document("""
+                        <include template="value">
+                            <with name="value" path="missing"/>
+                        </include>
+                        """)),
+                definition(TemplateType.FRAGMENT, "value", fragment(
+                        "value", "<paragraph><field path=\"$value\"/></paragraph>")));
+
+        assertThatThrownBy(() -> new XmlTemplateBinder().bind(template, PrintContext.of(
+                1, JSON.readTree("{\"secret\":\"business-value\"}"))))
+                .isInstanceOf(PrintValidationException.class)
+                .hasMessageContaining("include 参数路径不存在")
+                .hasMessageContaining("missing")
+                .hasMessageNotContaining("business-value");
+    }
+
+    /** 参数必须完整且唯一，调用点不能传入片段未声明的名称。 */
+    @Test
+    void shouldRejectIncompleteOrUnknownIncludeArguments() {
+        TemplateDefinition fragment = definition(TemplateType.FRAGMENT, "row",
+                fragment("row", "<paragraph><field path=\"$row.name\"/></paragraph>"));
+        assertThatThrownBy(() -> compile(
+                definition(TemplateType.DOCUMENT, "main", document(
+                        "<include template=\"row\"/>")), fragment))
+                .isInstanceOf(PrintCompilationException.class);
+        assertThatThrownBy(() -> compile(
+                definition(TemplateType.DOCUMENT, "main", document("""
+                        <include template="row"><with name="other" path="item"/></include>
+                        """)), fragment))
+                .isInstanceOf(PrintCompilationException.class);
+        assertThatThrownBy(() -> compile(
+                definition(TemplateType.DOCUMENT, "main", document("""
+                        <include template="row">
+                            <with name="row" path="item"/>
+                            <with name="row" path="item"/>
+                        </include>
+                        """)), fragment))
+                .isInstanceOf(PrintCompilationException.class);
+    }
+
     /** 片段不会改写 ID，多次引用仍由文档模型执行全局唯一性校验。 */
     @Test
     void shouldRejectDuplicateIdsFromRepeatedFragment() {
@@ -109,12 +194,20 @@ class XmlIncludeBindingTest {
     /** 把块级 XML 放入最小完整文档。 */
     private String document(String blocks) {
         return "<document xmlns=\"" + XmlDsl.NAMESPACE_V1
-                + "\" context-version=\"1\"><page>" + blocks + "</page></document>";
+                + "\" context-version=\"1\"><page><page-body>"
+                + blocks + "</page-body></page></document>";
     }
 
     /** 把块级 XML 放入共享片段。 */
     private String fragment(String blocks) {
         return "<fragment xmlns=\"" + XmlDsl.NAMESPACE_V1 + "\">"
+                + blocks + "</fragment>";
+    }
+
+    /** 把显式参数和块节点放入共享片段。 */
+    private String fragment(String parameters, String blocks) {
+        return "<fragment xmlns=\"" + XmlDsl.NAMESPACE_V1
+                + "\" parameters=\"" + parameters + "\">"
                 + blocks + "</fragment>";
     }
 }

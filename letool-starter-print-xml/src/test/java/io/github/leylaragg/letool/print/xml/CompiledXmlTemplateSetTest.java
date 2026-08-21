@@ -52,7 +52,7 @@ class CompiledXmlTemplateSetTest {
     /** 按给定代码和版本编译一份最小文档。 */
     private CompiledXmlTemplate compiled(String code, long version) {
         String xml = "<document xmlns=\"" + XmlDsl.NAMESPACE_V1
-                + "\" context-version=\"1\"><page><paragraph>ok</paragraph></page></document>";
+                + "\" context-version=\"1\"><page><page-body><paragraph>ok</paragraph></page-body></page></document>";
         PrintTemplate template = new PrintTemplate(code, TemplateFormat.LETOOL_XML,
                 1, version, 1, xml.getBytes(StandardCharsets.UTF_8));
         return new XmlTemplateCompiler().compile(template);

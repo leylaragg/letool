@@ -96,7 +96,8 @@ class PrintTagRegistryTest {
 
             @Override
             public PrintTagPlan compile(TagCompileContext context) {
-                return binding -> new ParagraphNode("", List.of());
+                return PrintTagPlan.of(
+                        ParagraphNode.class, binding -> new ParagraphNode("", List.of()));
             }
         };
     }

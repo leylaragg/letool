@@ -22,6 +22,8 @@ import org.springframework.expression.spel.ast.PropertyOrFieldReference;
 import org.springframework.expression.spel.ast.RealLiteral;
 import org.springframework.expression.spel.ast.StringLiteral;
 
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
 
@@ -94,8 +96,64 @@ final class RestrictedSpelAstValidator {
      * @throws IllegalArgumentException 表达式包含白名单外节点或非法节点结构时抛出
      */
     void validate(SpelNode root) {
+        validateAndCollectPaths(root);
+    }
+
+    /**
+     * 校验表达式并按首次出现顺序提取真实数据读取链。
+     *
+     * @param root 表达式根节点
+     * @return 不包含比较值和表达式正文的有序路径集合
+     */
+    Set<String> validateAndCollectPaths(SpelNode root) {
         ValidationState state = new ValidationState();
-        validateNode(Objects.requireNonNull(root, "root 不能为空"), 1, state);
+        SpelNode checkedRoot = Objects.requireNonNull(root, "root 不能为空");
+        validateNode(checkedRoot, 1, state);
+        LinkedHashSet<String> paths = new LinkedHashSet<>();
+        collectPaths(checkedRoot, paths);
+        return Collections.unmodifiableSet(paths);
+    }
+
+    /** 已校验 AST 只包含有限节点类型，这里只需区分完整读取链和运算分支。 */
+    private void collectPaths(SpelNode node, Set<String> paths) {
+        if (node.getClass() == PropertyOrFieldReference.class) {
+            paths.add(((PropertyOrFieldReference) node).getName());
+            return;
+        }
+        if (node.getClass() == Indexer.class) {
+            paths.add(indexText((Indexer) node));
+            return;
+        }
+        if (node.getClass() == CompoundExpression.class) {
+            paths.add(compoundPath(node));
+            return;
+        }
+        for (int index = 0; index < node.getChildCount(); index++) {
+            collectPaths(node.getChild(index), paths);
+        }
+    }
+
+    /** 将连续属性和下标读取还原为 inspection 使用的规范路径。 */
+    private String compoundPath(SpelNode compound) {
+        StringBuilder path = new StringBuilder();
+        for (int index = 0; index < compound.getChildCount(); index++) {
+            SpelNode child = compound.getChild(index);
+            if (child.getClass() == PropertyOrFieldReference.class) {
+                if (!path.isEmpty()) {
+                    path.append('.');
+                }
+                path.append(((PropertyOrFieldReference) child).getName());
+            } else {
+                path.append(indexText((Indexer) child));
+            }
+        }
+        return path.toString();
+    }
+
+    /** 下标已由白名单限制为非负整数，规范文本不会携带模板正文。 */
+    private String indexText(Indexer indexer) {
+        Object value = ((IntLiteral) indexer.getChild(0)).getLiteralValue().getValue();
+        return "[" + value + "]";
     }
 
     /**
@@ -149,7 +207,7 @@ final class RestrictedSpelAstValidator {
      */
     private void validateProperty(PropertyOrFieldReference property) {
         requireChildCount(property, 0);
-        if (property.isNullSafe()
+        if (property.isNullSafe() || property.getName().startsWith("$")
                 || JAVA_METADATA_PROPERTIES.contains(property.getName())) {
             throw unsupportedSyntax();
         }

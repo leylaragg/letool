@@ -39,13 +39,13 @@ class XmlTemplateBinderTest {
                           title="保险合同"
                           author="Letool"
                           language="zh-CN">
-                    <page size="LETTER" orientation="landscape" margin="18mm">
+                    <page size="LETTER" orientation="landscape" margin="18mm"><page-body>
                         <section id="summary">
                             <heading id="title" level="2">合同摘要</heading>
                             <paragraph id="intro">投保人：<text>张三</text></paragraph>
                             <page-break/>
                         </section>
-                    </page>
+                    </page-body></page>
                 </document>
                 """);
 
@@ -76,7 +76,7 @@ class XmlTemplateBinderTest {
     void shouldReuseCompiledTemplateAcrossMatchingContexts() {
         CompiledXmlTemplate compiled = compile("""
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page><paragraph>固定正文</paragraph></page>
+                    <page><page-body><paragraph>固定正文</paragraph></page-body></page>
                 </document>
                 """);
 
@@ -92,7 +92,7 @@ class XmlTemplateBinderTest {
     void shouldRejectMismatchedContextVersion() {
         CompiledXmlTemplate compiled = compile("""
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page><paragraph>固定正文</paragraph></page>
+                    <page><page-body><paragraph>固定正文</paragraph></page-body></page>
                 </document>
                 """);
 

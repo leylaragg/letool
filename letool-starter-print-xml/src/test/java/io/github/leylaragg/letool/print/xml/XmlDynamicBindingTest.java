@@ -37,7 +37,7 @@ class XmlDynamicBindingTest {
     @Test
     void shouldBindScalarAndNullFields() throws Exception {
         DocumentModel model = bind("""
-                <page><paragraph>姓名：<field path="policy.name"/>，金额：<field path="policy.amount"/>，有效：<field path="policy.active"/>，备注：<field path="policy.note"/></paragraph></page>
+                <page><page-body><paragraph>姓名：<field path="policy.name"/>，金额：<field path="policy.amount"/>，有效：<field path="policy.active"/>，备注：<field path="policy.note"/></paragraph></page-body></page>
                 """, """
                 {"policy":{"name":"张三","amount":12.50,"active":true,"note":null}}
                 """);
@@ -53,7 +53,7 @@ class XmlDynamicBindingTest {
     @Test
     void shouldBindFieldOnlyHeading() throws Exception {
         DocumentModel model = bind(
-                "<page><heading><field path=\"title\"/></heading></page>",
+                "<page><page-body><heading><field path=\"title\"/></heading></page-body></page>",
                 "{\"title\":\"动态标题\"}");
 
         assertThat(XmlTestDocuments.body(model)).containsExactly(
@@ -70,7 +70,7 @@ class XmlDynamicBindingTest {
                 "policy.missing", "policy.none.value", "policy.name.value",
                 "policy.object", "policy.array")) {
             CompiledXmlTemplate template = compile(
-                    "<page><paragraph><field path=\"" + path + "\"/></paragraph></page>");
+                    "<page><page-body><paragraph><field path=\"" + path + "\"/></paragraph></page-body></page>");
 
             assertThatThrownBy(() -> new XmlTemplateBinder().bind(
                     template, PrintContext.of(1, context)))
@@ -87,14 +87,14 @@ class XmlDynamicBindingTest {
     @Test
     void shouldBindStructuredConditions() throws Exception {
         DocumentModel model = bind("""
-                <page>
-                    <if path="policy.status" operator="eq" value="ACTIVE"><paragraph>状态</paragraph></if>
-                    <if path="policy.amount" operator="gte" value="12.50" value-type="number"><paragraph>金额</paragraph></if>
-                    <if path="policy.active" operator="truthy"><paragraph>有效</paragraph></if>
-                    <if path="policy.note" operator="eq" value-type="null"><paragraph>空值</paragraph></if>
-                    <if path="policy.missing" operator="not-exists"><paragraph>缺失</paragraph></if>
-                    <if path="policy.status" operator="ne" value="ACTIVE"><paragraph>不应出现</paragraph></if>
-                </page>
+                <page><page-body>
+                    <if path="policy.status" operator="eq" value="ACTIVE"><then><paragraph>状态</paragraph></then></if>
+                    <if path="policy.amount" operator="gte" value="12.50" value-type="number"><then><paragraph>金额</paragraph></then></if>
+                    <if path="policy.active" operator="truthy"><then><paragraph>有效</paragraph></then></if>
+                    <if path="policy.note" operator="eq" value-type="null"><then><paragraph>空值</paragraph></then></if>
+                    <if path="policy.missing" operator="not-exists"><then><paragraph>缺失</paragraph></then></if>
+                    <if path="policy.status" operator="ne" value="ACTIVE"><then><paragraph>不应出现</paragraph></then></if>
+                </page-body></page>
                 """, """
                 {"policy":{"status":"ACTIVE","amount":12.5,"active":true,"note":null}}
                 """);
@@ -108,18 +108,18 @@ class XmlDynamicBindingTest {
     @Test
     void shouldSupportAllStructuredConditionOperators() throws Exception {
         DocumentModel model = bind("""
-                <page>
-                    <if path="present" operator="exists"><paragraph>exists</paragraph></if>
-                    <if path="missing" operator="not-exists"><paragraph>not-exists</paragraph></if>
-                    <if path="yes" operator="truthy"><paragraph>truthy</paragraph></if>
-                    <if path="no" operator="falsy"><paragraph>falsy</paragraph></if>
-                    <if path="yes" operator="eq" value="true" value-type="boolean"><paragraph>eq</paragraph></if>
-                    <if path="yes" operator="ne" value="false" value-type="boolean"><paragraph>ne</paragraph></if>
-                    <if path="amount" operator="gt" value="9" value-type="number"><paragraph>gt</paragraph></if>
-                    <if path="amount" operator="gte" value="10" value-type="number"><paragraph>gte</paragraph></if>
-                    <if path="amount" operator="lt" value="11" value-type="number"><paragraph>lt</paragraph></if>
-                    <if path="amount" operator="lte" value="10" value-type="number"><paragraph>lte</paragraph></if>
-                </page>
+                <page><page-body>
+                    <if path="present" operator="exists"><then><paragraph>exists</paragraph></then></if>
+                    <if path="missing" operator="not-exists"><then><paragraph>not-exists</paragraph></then></if>
+                    <if path="yes" operator="truthy"><then><paragraph>truthy</paragraph></then></if>
+                    <if path="no" operator="falsy"><then><paragraph>falsy</paragraph></then></if>
+                    <if path="yes" operator="eq" value="true" value-type="boolean"><then><paragraph>eq</paragraph></then></if>
+                    <if path="yes" operator="ne" value="false" value-type="boolean"><then><paragraph>ne</paragraph></then></if>
+                    <if path="amount" operator="gt" value="9" value-type="number"><then><paragraph>gt</paragraph></then></if>
+                    <if path="amount" operator="gte" value="10" value-type="number"><then><paragraph>gte</paragraph></then></if>
+                    <if path="amount" operator="lt" value="11" value-type="number"><then><paragraph>lt</paragraph></then></if>
+                    <if path="amount" operator="lte" value="10" value-type="number"><then><paragraph>lte</paragraph></then></if>
+                </page-body></page>
                 """, "{\"present\":null,\"yes\":true,\"no\":false,\"amount\":10}");
 
         assertThat(XmlTestDocuments.body(model)).extracting(Object::toString)
@@ -131,7 +131,7 @@ class XmlDynamicBindingTest {
     @Test
     void shouldRejectBrokenPathForExistenceCondition() throws Exception {
         CompiledXmlTemplate template = compile("""
-                <page><if path="policy.name.value" operator="not-exists"><paragraph>正文</paragraph></if></page>
+                <page><page-body><if path="policy.name.value" operator="not-exists"><then><paragraph>正文</paragraph></then></if></page-body></page>
                 """);
 
         assertThatThrownBy(() -> new XmlTemplateBinder().bind(
@@ -147,12 +147,12 @@ class XmlDynamicBindingTest {
     @Test
     void shouldPruneSectionsEmptiedByDynamicBinding() throws Exception {
         DocumentModel model = bind("""
-                <page>
-                    <section><if path="active" operator="truthy"><paragraph>不应生成</paragraph></if></section>
+                <page><page-body>
+                    <section><if path="active" operator="truthy"><then><paragraph>不应生成</paragraph></then></if></section>
                     <section><for-each items="empty" var="item"><paragraph>不应生成</paragraph></for-each></section>
                     <section><for-each items="none" var="item"><paragraph>不应生成</paragraph></for-each></section>
                     <paragraph>保留</paragraph>
-                </page>
+                </page-body></page>
                 """, "{\"active\":false,\"empty\":[],\"none\":null}");
 
         assertThat(XmlTestDocuments.body(model)).containsExactly(paragraph("保留"));
@@ -163,8 +163,8 @@ class XmlDynamicBindingTest {
     void shouldReportBrokenFieldAndLoopPaths() throws Exception {
         JsonNode context = JSON.readTree("{\"policy\":{\"name\":\"敏感值\"}}");
         List<String> pages = List.of(
-                "<page><paragraph><field path=\"policy.name.value\"/></paragraph></page>",
-                "<page><for-each items=\"policy.name.value\" var=\"item\"><paragraph>正文</paragraph></for-each></page>");
+                "<page><page-body><paragraph><field path=\"policy.name.value\"/></paragraph></page-body></page>",
+                "<page><page-body><for-each items=\"policy.name.value\" var=\"item\"><paragraph>正文</paragraph></for-each></page-body></page>");
 
         for (String page : pages) {
             assertThatThrownBy(() -> new XmlTemplateBinder().bind(
@@ -188,7 +188,7 @@ class XmlDynamicBindingTest {
 
         for (String declaration : declarations) {
             assertThatThrownBy(() -> compile(
-                    "<page><if " + declaration + "><paragraph>正文</paragraph></if></page>"))
+                    "<page><page-body><if " + declaration + "><then><paragraph>正文</paragraph></then></if></page-body></page>"))
                     .isInstanceOf(PrintCompilationException.class)
                     .hasMessageContaining("contract")
                     .hasMessageContaining("行")
@@ -200,7 +200,7 @@ class XmlDynamicBindingTest {
     @Test
     void shouldRejectConditionTypeMismatch() throws Exception {
         CompiledXmlTemplate template = compile("""
-                <page><if path="policy.amount" operator="eq" value="12.5"><paragraph>正文</paragraph></if></page>
+                <page><page-body><if path="policy.amount" operator="eq" value="12.5"><then><paragraph>正文</paragraph></then></if></page-body></page>
                 """);
 
         assertThatThrownBy(() -> new XmlTemplateBinder().bind(
@@ -214,7 +214,7 @@ class XmlDynamicBindingTest {
     @Test
     void shouldBindObjectAndScalarLoops() throws Exception {
         DocumentModel model = bind("""
-                <page>
+                <page><page-body>
                     <for-each items="policy.names" var="name">
                         <paragraph><field path="$name"/></paragraph>
                     </for-each>
@@ -224,7 +224,7 @@ class XmlDynamicBindingTest {
                     <for-each items="policy.none" var="unused">
                         <paragraph>不应出现</paragraph>
                     </for-each>
-                </page>
+                </page-body></page>
                 """, """
                 {"policy":{"names":["甲","乙"],"coverages":[{"name":"寿险"},{"name":"医疗险"}],"none":null}}
                 """);
@@ -237,13 +237,13 @@ class XmlDynamicBindingTest {
     @Test
     void shouldBindNestedLexicalScopes() throws Exception {
         DocumentModel model = bind("""
-                <page>
+                <page><page-body>
                     <for-each items="groups" var="group">
                         <for-each items="$group.items" var="item">
                             <paragraph><field path="$group.name"/>：<field path="$item"/></paragraph>
                         </for-each>
                     </for-each>
-                </page>
+                </page-body></page>
                 """, """
                 {"groups":[{"name":"A","items":[1,2]},{"name":"B","items":[3]}]}
                 """);
@@ -260,7 +260,7 @@ class XmlDynamicBindingTest {
         JsonNode context = JSON.readTree("{\"policy\":{\"name\":\"秘密值\"}}");
         for (String path : List.of("policy.missing", "policy.name")) {
             CompiledXmlTemplate template = compile("""
-                    <page><for-each items="%s" var="item"><paragraph>正文</paragraph></for-each></page>
+                    <page><page-body><for-each items="%s" var="item"><paragraph>正文</paragraph></for-each></page-body></page>
                     """.formatted(path));
 
             assertThatThrownBy(() -> new XmlTemplateBinder().bind(template, PrintContext.of(1, context)))
@@ -275,9 +275,9 @@ class XmlDynamicBindingTest {
     @Test
     void shouldRejectInvalidLoopScopesAndIds() {
         List<String> pages = List.of(
-                "<page><for-each items=\"groups\" var=\"item\"><for-each items=\"$item.children\" var=\"item\"><paragraph>正文</paragraph></for-each></for-each></page>",
-                "<page><paragraph><field path=\"$item.name\"/></paragraph></page>",
-                "<page><for-each items=\"groups\" var=\"item\"><paragraph id=\"dynamic\">正文</paragraph></for-each></page>");
+                "<page><page-body><for-each items=\"groups\" var=\"item\"><for-each items=\"$item.children\" var=\"item\"><paragraph>正文</paragraph></for-each></for-each></page-body></page>",
+                "<page><page-body><paragraph><field path=\"$item.name\"/></paragraph></page-body></page>",
+                "<page><page-body><for-each items=\"groups\" var=\"item\"><paragraph id=\"dynamic\">正文</paragraph></for-each></page-body></page>");
 
         for (String page : pages) {
             assertThatThrownBy(() -> compile(page))
@@ -292,7 +292,7 @@ class XmlDynamicBindingTest {
     @Test
     void shouldReuseCompiledTemplateConcurrently() throws Exception {
         CompiledXmlTemplate template = compile(
-                "<page><paragraph><field path=\"name\"/></paragraph></page>");
+                "<page><page-body><paragraph><field path=\"name\"/></paragraph></page-body></page>");
         var executor = Executors.newFixedThreadPool(4);
         try {
             List<Callable<String>> tasks = java.util.stream.IntStream.range(0, 20)

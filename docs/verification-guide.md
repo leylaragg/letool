@@ -154,7 +154,7 @@ git status --short
 mvn --% -pl letool-starter-print-spring-boot -am -Dtest=PrintSecurityRegressionTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-模板作者指南中的 XML 会由 `PrintDocumentationExampleTest` 原样发布并生成 PDF。修改指南示例、DSL 或发布链路后应执行：
+模板作者指南中的 XML 会由 `PrintDocumentationExampleTest` 原样发布、绑定，并核对当前 PDF 能力边界。修改指南示例、DSL 或发布链路后应执行：
 
 ```powershell
 mvn --% -pl letool-starter-print-spring-boot -am -Dtest=PrintDocumentationExampleTest -Dsurefire.failIfNoSpecifiedTests=false test

@@ -17,6 +17,7 @@ import io.github.leylaragg.letool.print.xml.XmlTemplateCompiler;
 import io.github.leylaragg.letool.print.xml.expression.PrintExpressionRegistry;
 import io.github.leylaragg.letool.print.xml.format.BuiltInPrintFormatters;
 import io.github.leylaragg.letool.print.xml.tag.PrintTagRegistry;
+import io.github.leylaragg.letool.print.template.inspection.TemplatePathUsageKind;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -44,9 +45,9 @@ class RestrictedSpelXmlIntegrationTest {
     @Test
     void shouldRequireExplicitProviderRegistration() {
         String page = """
-                <page><if expression-language="spel" test="enabled == true">
+                <page><page-body><if expression-language="spel" test="enabled == true"><then>
                     <paragraph>显示</paragraph>
-                </if></page>
+                </then></if></page-body></page>
                 """;
 
         assertThatThrownBy(() -> compile(new XmlTemplateCompiler(), page))
@@ -62,15 +63,15 @@ class RestrictedSpelXmlIntegrationTest {
     @Test
     void shouldBindRootArrayBooleanAndNullConditions() throws Exception {
         CompiledXmlTemplate template = compile(spelCompiler(), """
-                <page>
+                <page><page-body>
                     <if expression-language="spel"
-                        test="status == 'ACTIVE' &amp;&amp; items[0].enabled == true">
+                        test="status == 'ACTIVE' &amp;&amp; items[0].enabled == true"><then>
                         <paragraph>启用</paragraph>
-                    </if>
-                    <if expression-language="spel" test="remark == null">
+                    </then></if>
+                    <if expression-language="spel" test="remark == null"><then>
                         <paragraph>无备注</paragraph>
-                    </if>
-                </page>
+                    </then></if>
+                </page-body></page>
                 """);
 
         DocumentModel model = bind(template, """
@@ -87,11 +88,11 @@ class RestrictedSpelXmlIntegrationTest {
     @Test
     void shouldReadLoopVariableWithLexicalShadowing() throws Exception {
         CompiledXmlTemplate template = compile(spelCompiler(), """
-                <page><for-each items="items" var="item">
-                    <if expression-language="spel" test="item.visible == true">
+                <page><page-body><for-each items="items" var="item">
+                    <if expression-language="spel" test="item.visible == true"><then>
                         <paragraph><field path="$item.name"/></paragraph>
-                    </if>
-                </for-each></page>
+                    </then></if>
+                </for-each></page-body></page>
                 """);
 
         DocumentModel model = bind(template, """
@@ -107,35 +108,70 @@ class RestrictedSpelXmlIntegrationTest {
         assertThat(body(model)).containsExactly(paragraph("A"));
     }
 
+    /** SpEL 使用属性名表示循环变量，不能混入 XML 路径专用的美元前缀。 */
+    @Test
+    void shouldRejectDollarPrefixedSpelVariableSyntax() {
+        assertThatThrownBy(() -> compile(spelCompiler(), """
+                <page><page-body><for-each items="items" var="item">
+                    <if expression-language="spel" test="$item.visible == true"><then>
+                        <paragraph>非法</paragraph>
+                    </then></if>
+                </for-each></page-body></page>
+                """))
+                .isInstanceOf(PrintCompilationException.class)
+                .hasMessageContaining("表达式提供方编译失败")
+                .hasMessageNotContaining("$item.visible");
+    }
+
+    /** inspection 只公开受限 AST 实际读取的路径，不保存表达式正文。 */
+    @Test
+    void shouldExposeSpelPathsThroughTemplateInspection() {
+        CompiledXmlTemplate template = compile(spelCompiler(), """
+                <page><page-body><for-each items="items" var="item">
+                    <if expression-language="spel"
+                        test="item.visible == true &amp;&amp; flags[0].enabled == true">
+                        <then><paragraph>显示</paragraph></then>
+                    </if>
+                </for-each></page-body></page>
+                """);
+
+        assertThat(template.inspection().pathUsages())
+                .filteredOn(usage -> usage.kind() == TemplatePathUsageKind.EXPRESSION)
+                .extracting(usage -> usage.dataPath() + ":" + usage.visibleVariables())
+                .containsExactly(
+                        "$item.visible:[item]", "flags[0].enabled:[item]");
+        assertThat(template.inspection().expressionLanguages()).containsExactly("spel");
+    }
+
     /**
      * 验证结构化条件继续可用，且不能与 SpEL 条件属性混用。
      */
     @Test
     void shouldPreserveStructuredConditionsAndRejectMixedDeclaration() throws Exception {
         CompiledXmlTemplate structured = compile(new XmlTemplateCompiler(), """
-                <page><if path="enabled" operator="truthy">
+                <page><page-body><if path="enabled" operator="truthy"><then>
                     <paragraph>结构化</paragraph>
-                </if></page>
+                </then></if></page-body></page>
                 """);
 
         assertThat(body(bind(structured, "{\"enabled\":true}")))
                 .containsExactly(paragraph("结构化"));
         assertThatThrownBy(() -> compile(spelCompiler(), """
-                <page><if expression-language="spel" test="enabled == true"
-                    path="enabled" operator="truthy">
+                <page><page-body><if expression-language="spel" test="enabled == true"
+                    path="enabled" operator="truthy"><then>
                     <paragraph>非法</paragraph>
-                </if></page>
+                </then></if></page-body></page>
                 """))
                 .isInstanceOf(PrintCompilationException.class)
                 .hasMessageContaining("不能与结构化条件属性混用");
         assertThatThrownBy(() -> compile(spelCompiler(), """
-                <page><for-each items="groups" var="item">
+                <page><page-body><for-each items="groups" var="item">
                     <for-each items="$item.children" var="item">
-                        <if expression-language="spel" test="item.enabled == true">
+                        <if expression-language="spel" test="item.enabled == true"><then>
                             <paragraph>非法</paragraph>
-                        </if>
+                        </then></if>
                     </for-each>
-                </for-each></page>
+                </for-each></page-body></page>
                 """))
                 .isInstanceOf(PrintCompilationException.class)
                 .hasMessageContaining("循环变量不能与外层变量重名");
@@ -147,9 +183,9 @@ class RestrictedSpelXmlIntegrationTest {
     @Test
     void shouldReuseCompiledTemplateAcrossDifferentContexts() throws Exception {
         CompiledXmlTemplate template = compile(spelCompiler(), """
-                <page><if expression-language="spel" test="enabled == true">
+                <page><page-body><if expression-language="spel" test="enabled == true"><then>
                     <paragraph>显示</paragraph>
-                </if></page>
+                </then></if></page-body></page>
                 """);
 
         assertThat(body(bind(template, "{\"enabled\":true}"))).hasSize(1);
@@ -162,9 +198,9 @@ class RestrictedSpelXmlIntegrationTest {
     @Test
     void shouldReuseCompiledTemplateConcurrently() throws Exception {
         CompiledXmlTemplate template = compile(spelCompiler(), """
-                <page><if expression-language="spel" test="enabled == true">
+                <page><page-body><if expression-language="spel" test="enabled == true"><then>
                     <paragraph>显示</paragraph>
-                </if></page>
+                </then></if></page-body></page>
                 """);
         ExecutorService executor = Executors.newFixedThreadPool(4);
         try {
@@ -200,20 +236,20 @@ class RestrictedSpelXmlIntegrationTest {
     void shouldSanitizeCompilationAndEvaluationFailures() throws Exception {
         String secret = "secret-business-value";
         assertThatThrownBy(() -> compile(spelCompiler(), """
-                <page><if expression-language="spel"
-                    test="T(java.lang.Runtime).getRuntime().exec('%s') != null">
+                <page><page-body><if expression-language="spel"
+                    test="T(java.lang.Runtime).getRuntime().exec('%s') != null"><then>
                     <paragraph>非法</paragraph>
-                </if></page>
+                </then></if></page-body></page>
                 """.formatted(secret)))
                 .isInstanceOf(PrintCompilationException.class)
                 .hasMessageNotContaining(secret)
                 .hasMessageNotContaining("java.lang.Runtime");
 
         CompiledXmlTemplate template = compile(spelCompiler(), """
-                <page><if expression-language="spel"
-                    test="missing == '%s'">
+                <page><page-body><if expression-language="spel"
+                    test="missing == '%s'"><then>
                     <paragraph>非法</paragraph>
-                </if></page>
+                </then></if></page-body></page>
                 """.formatted(secret));
         assertThatThrownBy(() -> bind(template, "{\"value\":\"" + secret + "\"}"))
                 .isInstanceOf(PrintValidationException.class)

@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * 输出节点能力检查的契约测试。
@@ -59,6 +60,25 @@ class OutputCapabilityTest {
 
         new OutputCapability(nodes, Set.of(DocumentFeature.MULTIPLE_PAGE_SEQUENCES))
                 .requireSupports(document);
+    }
+
+    /** 静态检查阶段需要直接按节点类型和特性集合判断，无需先构造文档节点。 */
+    @Test
+    void shouldQueryDeclaredTypesAndFeatureSets() {
+        OutputCapability capability = new OutputCapability(
+                Set.of(ParagraphNode.class, TextNode.class),
+                Set.of(DocumentFeature.NAMED_STYLES));
+
+        assertThat(capability.supports(ParagraphNode.class)).isTrue();
+        assertThat(capability.supports(HeadingNode.class)).isFalse();
+        assertThat(capability.supportsNodeTypes(
+                Set.of(ParagraphNode.class, TextNode.class))).isTrue();
+        assertThat(capability.supportsNodeTypes(
+                Set.of(ParagraphNode.class, HeadingNode.class))).isFalse();
+        assertThat(capability.supportsFeatures(Set.of(DocumentFeature.NAMED_STYLES))).isTrue();
+        assertThat(capability.supportsFeatures(Set.of(
+                DocumentFeature.NAMED_STYLES,
+                DocumentFeature.PAGE_HEADER))).isFalse();
     }
 
     /** 创建不带样式的普通段落。 */

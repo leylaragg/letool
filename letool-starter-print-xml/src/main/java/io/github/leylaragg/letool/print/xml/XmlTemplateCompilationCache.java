@@ -11,6 +11,7 @@ import io.github.leylaragg.letool.print.template.TemplateSet;
 import io.github.leylaragg.letool.print.template.TemplateType;
 
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * 按集合快照和完整编译条件复用 XML 编译结果。
@@ -131,6 +132,12 @@ public final class XmlTemplateCompilationCache {
                 || template.dslVersion() != source.dslVersion()
                 || template.contextVersion() != source.contextVersion()) {
             throw PrintValidationException.invalidRequest("XML 模板编译结果与来源元数据不一致");
+        }
+        Set<String> declaredOutputs = template.inspection().declaredOutputs();
+        if (!declaredOutputs.isEmpty()
+                && !declaredOutputs.contains(compilationKey.outputFormat().value())) {
+            throw PrintValidationException.invalidRequest(
+                    "模板不允许输出格式：" + compilationKey.outputFormat().value());
         }
         return new ResolvedXmlTemplate(compilationKey, template);
     }

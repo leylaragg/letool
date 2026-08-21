@@ -117,9 +117,11 @@ String xml = """
         <document xmlns="https://leyland.github.io/letool/print/v1"
                   context-version="1">
             <page>
-                <heading>发票</heading>
-                <paragraph>编号：<field path="invoiceNo"/></paragraph>
-                <paragraph>客户：<field path="customerName"/></paragraph>
+                <page-body>
+                    <heading>清单</heading>
+                    <paragraph>编号：<field path="documentNo"/></paragraph>
+                    <paragraph>名称：<field path="displayName"/></paragraph>
+                </page-body>
             </page>
         </document>
         """;

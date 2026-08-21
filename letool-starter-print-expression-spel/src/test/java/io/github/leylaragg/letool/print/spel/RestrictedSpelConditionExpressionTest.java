@@ -92,6 +92,8 @@ class RestrictedSpelConditionExpressionTest {
         assertThat(evaluate(plan, """
                 {"items":[{"enabled":true},{"name":"备用"}]}
                 """)).isTrue();
+        assertThat(plan.inspectionContribution().dataPaths())
+                .containsExactly("items[0].enabled", "items[1].name");
     }
 
     /**

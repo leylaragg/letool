@@ -8,7 +8,9 @@ import io.github.leylaragg.letool.print.document.DocumentModel;
 import io.github.leylaragg.letool.print.document.node.ParagraphNode;
 import io.github.leylaragg.letool.print.document.node.TextNode;
 import io.github.leylaragg.letool.print.exception.PrintValidationException;
+import io.github.leylaragg.letool.print.template.inspection.TemplateInspectionContribution;
 import io.github.leylaragg.letool.print.xml.expression.ExpressionCompileContext;
+import io.github.leylaragg.letool.print.xml.expression.ExpressionEvaluationContext;
 import io.github.leylaragg.letool.print.xml.expression.PrintConditionExpression;
 import io.github.leylaragg.letool.print.xml.expression.PrintExpressionPlan;
 import io.github.leylaragg.letool.print.xml.expression.PrintExpressionRegistry;
@@ -20,6 +22,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Predicate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -34,15 +38,16 @@ class XmlExpressionExtensionTest {
     /** 验证显式注册的表达式计划能够读取根数据并控制块展开。 */
     @Test
     void shouldCompileAndEvaluateRegisteredExpression() {
-        PrintConditionExpression expression = expression("demo", context -> evaluation ->
-                evaluation.data().root().path(context.expression()).asBoolean());
+        PrintConditionExpression expression = expression("demo", context -> plan(
+                context.expression(), evaluation -> evaluation.data().root()
+                        .path(context.expression()).asBoolean()));
         XmlTemplateCompiler compiler = compiler(expression);
         CompiledXmlTemplate template = compile(compiler, """
-                <page>
-                    <if expression-language="demo" test="enabled">
+                <page><page-body>
+                    <if expression-language="demo" test="enabled"><then>
                         <paragraph>显示</paragraph>
-                    </if>
-                </page>
+                    </then></if>
+                </page-body></page>
                 """);
 
         DocumentModel shown = new XmlTemplateBinder().bind(template, PrintContext.of(
@@ -58,15 +63,15 @@ class XmlExpressionExtensionTest {
     /** 验证循环变量通过只读数据视图提供给表达式计划。 */
     @Test
     void shouldExposeLoopVariablesThroughReadOnlyView() throws Exception {
-        PrintConditionExpression expression = expression("demo", context -> evaluation ->
-                evaluation.data().variable("item").orElseThrow()
-                        .path(context.expression()).asBoolean());
+        PrintConditionExpression expression = expression("demo", context -> plan(
+                "$item." + context.expression(), evaluation -> evaluation.data()
+                        .variable("item").orElseThrow().path(context.expression()).asBoolean()));
         CompiledXmlTemplate template = compile(compiler(expression), """
-                <page><for-each items="items" var="item">
-                    <if expression-language="demo" test="visible">
+                <page><page-body><for-each items="items" var="item">
+                    <if expression-language="demo" test="visible"><then>
                         <paragraph><field path="$item.name"/></paragraph>
-                    </if>
-                </for-each></page>
+                    </then></if>
+                </for-each></page-body></page>
                 """);
 
         DocumentModel model = new XmlTemplateBinder().bind(template, PrintContext.of(1,
@@ -85,18 +90,18 @@ class XmlExpressionExtensionTest {
                 BuiltInPrintFormatters.registry(),
                 new PrintExpressionRegistry(List.of()), new PrintTagRegistry(List.of()));
         List<String> pages = List.of(
-                "<page><if expression-language=\"missing\" test=\"enabled\"><paragraph>x</paragraph></if></page>",
-                "<page><if expression-language=\"demo\"><paragraph>x</paragraph></if></page>",
-                "<page><if test=\"enabled\"><paragraph>x</paragraph></if></page>",
-                "<page><if expression-language=\"demo\" test=\"enabled\" path=\"enabled\"><paragraph>x</paragraph></if></page>",
-                "<page><if expression-language=\"demo\" test=\"\"><paragraph>x</paragraph></if></page>",
-                "<page><if expression-language=\"demo\" test=\""
+                "<page><page-body><if expression-language=\"missing\" test=\"enabled\"><then><paragraph>x</paragraph></then></if></page-body></page>",
+                "<page><page-body><if expression-language=\"demo\"><then><paragraph>x</paragraph></then></if></page-body></page>",
+                "<page><page-body><if test=\"enabled\"><then><paragraph>x</paragraph></then></if></page-body></page>",
+                "<page><page-body><if expression-language=\"demo\" test=\"enabled\" path=\"enabled\"><then><paragraph>x</paragraph></then></if></page-body></page>",
+                "<page><page-body><if expression-language=\"demo\" test=\"\"><then><paragraph>x</paragraph></then></if></page-body></page>",
+                "<page><page-body><if expression-language=\"demo\" test=\""
                         + "x".repeat(XmlDsl.MAX_EXPRESSION_CHARACTERS + 1)
-                        + "\"><paragraph>x</paragraph></if></page>");
+                        + "\"><then><paragraph>x</paragraph></then></if></page-body></page>");
 
         for (String page : pages) {
             XmlTemplateCompiler compiler = page.contains("missing") ? empty : compiler(
-                    expression("demo", context -> evaluation -> true));
+                    expression("demo", context -> plan(evaluation -> true)));
             assertThatThrownBy(() -> compile(compiler, page))
                     .isInstanceOf(PrintCompilationException.class)
                     .hasMessageContaining("contract")
@@ -113,27 +118,29 @@ class XmlExpressionExtensionTest {
         });
 
         assertThatThrownBy(() -> compile(compiler(expression), """
-                <page><if expression-language="demo" test="private-rule">
+                <page><page-body><if expression-language="demo" test="private-rule"><then>
                     <paragraph>x</paragraph>
-                </if></page>
+                </then></if></page-body></page>
                 """))
                 .isInstanceOf(PrintCompilationException.class)
                 .hasMessageContaining("表达式提供方编译失败")
                 .hasMessageNotContaining("private-rule")
-                .hasMessageNotContaining("secret-expression");
+                .hasMessageNotContaining("secret-expression")
+                .hasCauseInstanceOf(IllegalArgumentException.class);
     }
 
     /** 验证提供方求值异常不会回显业务值和底层消息。 */
     @Test
     void shouldSanitizeExpressionEvaluationFailure() {
-        PrintConditionExpression expression = expression("demo", context -> evaluation -> {
-            throw new IllegalStateException(
-                    "secret-business:" + evaluation.data().root().path("value").asText());
-        });
+        PrintConditionExpression expression = expression("demo", context -> plan(
+                "value", evaluation -> {
+                    throw new IllegalStateException(
+                            "secret-business:" + evaluation.data().root().path("value").asText());
+                }));
         CompiledXmlTemplate template = compile(compiler(expression), """
-                <page><if expression-language="demo" test="rule">
+                <page><page-body><if expression-language="demo" test="rule"><then>
                     <paragraph>x</paragraph>
-                </if></page>
+                </then></if></page-body></page>
                 """);
 
         assertThatThrownBy(() -> new XmlTemplateBinder().bind(template, PrintContext.of(
@@ -141,18 +148,19 @@ class XmlExpressionExtensionTest {
                 .isInstanceOf(PrintValidationException.class)
                 .hasMessageContaining("表达式求值失败")
                 .hasMessageNotContaining("private-value")
-                .hasMessageNotContaining("secret-business");
+                .hasMessageNotContaining("secret-business")
+                .hasCauseInstanceOf(IllegalStateException.class);
     }
 
     /** 验证同一表达式编译快照能够并发绑定且上下文不会串扰。 */
     @Test
     void shouldReuseExpressionPlanConcurrently() throws Exception {
-        PrintConditionExpression expression = expression("demo", context -> evaluation ->
-                evaluation.data().root().path("value").asInt() % 2 == 0);
+        PrintConditionExpression expression = expression("demo", context -> plan(
+                "value", evaluation -> evaluation.data().root().path("value").asInt() % 2 == 0));
         CompiledXmlTemplate template = compile(compiler(expression), """
-                <page><if expression-language="demo" test="even">
+                <page><page-body><if expression-language="demo" test="even"><then>
                     <paragraph>偶数</paragraph>
-                </if></page>
+                </then></if></page-body></page>
                 """);
         var executor = Executors.newFixedThreadPool(4);
         try {
@@ -180,6 +188,44 @@ class XmlExpressionExtensionTest {
         }
     }
 
+    /** 编译结果只采用首次校验过的表达式贡献，不再回调有状态扩展。 */
+    @Test
+    void shouldFreezeExpressionInspectionContribution() {
+        AtomicInteger contributionReads = new AtomicInteger();
+        TemplateInspectionContribution contribution = TemplateInspectionContribution.builder()
+                .dataPath("enabled").build();
+        PrintConditionExpression expression = expression("demo", context ->
+                new PrintExpressionPlan() {
+                    @Override
+                    public boolean evaluate(ExpressionEvaluationContext evaluation) {
+                        return evaluation.data().root().path("enabled").asBoolean();
+                    }
+
+                    @Override
+                    public TemplateInspectionContribution inspectionContribution() {
+                        if (contributionReads.incrementAndGet() > 1) {
+                            throw new IllegalStateException("贡献不能被重复读取");
+                        }
+                        return contribution;
+                    }
+                });
+        CompiledXmlTemplate template = compile(compiler(expression), """
+                <page><page-body><if expression-language="demo" test="rule"><then>
+                    <paragraph>显示</paragraph>
+                </then></if></page-body></page>
+                """);
+
+        DocumentModel model = new XmlTemplateBinder().bind(template, PrintContext.of(
+                1, JsonNodeFactory.instance.objectNode().put("enabled", true)));
+
+        assertThat(template.inspection().pathUsages())
+                .extracting(usage -> usage.dataPath())
+                .contains("enabled");
+        assertThat(XmlTestDocuments.body(model)).containsExactly(
+                new ParagraphNode("", List.of(new TextNode("显示"))));
+        assertThat(contributionReads).hasValue(1);
+    }
+
     /** 创建带一个测试表达式提供方的编译器。 */
     private static XmlTemplateCompiler compiler(PrintConditionExpression expression) {
         return new XmlTemplateCompiler(
@@ -202,6 +248,29 @@ class XmlExpressionExtensionTest {
                 return compile.apply(context);
             }
         };
+    }
+
+    /**
+     * 创建明确声明“不读取数据”的测试表达式计划。
+     *
+     * @param evaluator 测试求值函数
+     * @return 可复用测试计划
+     */
+    private static PrintExpressionPlan plan(Predicate<ExpressionEvaluationContext> evaluator) {
+        return PrintExpressionPlan.of(TemplateInspectionContribution.empty(), evaluator);
+    }
+
+    /**
+     * 创建声明单条数据读取路径的测试表达式计划。
+     *
+     * @param dataPath 求值函数读取的数据路径
+     * @param evaluator 测试求值函数
+     * @return 可复用测试计划
+     */
+    private static PrintExpressionPlan plan(
+            String dataPath, Predicate<ExpressionEvaluationContext> evaluator) {
+        return PrintExpressionPlan.of(TemplateInspectionContribution.builder()
+                .dataPath(dataPath).build(), evaluator);
     }
 
     /** 编译指定页面内容。 */

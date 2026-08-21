@@ -12,7 +12,7 @@
 ```java
 long version = 2026081401L;
 PrintTemplate main = new PrintTemplate(
-        "patient-report",
+        "document-main",
         TemplateFormat.LETOOL_XML,
         1,
         version,
@@ -32,7 +32,7 @@ TemplateDefinition definition = new TemplateDefinition(
 TemplateRepository repository = new InMemoryTemplateRepository();
 TemplateSetPublisher publisher = new TemplateSetPublisher(
         repository,
-        List.of(candidate -> validateBusinessContract(candidate)));
+        List.of(candidate -> validateTemplateContract(candidate)));
 
 TemplateSet published = publisher.publishAndActivate(
         version,

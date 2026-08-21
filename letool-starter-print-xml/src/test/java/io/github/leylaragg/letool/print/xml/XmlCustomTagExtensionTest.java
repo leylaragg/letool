@@ -7,6 +7,7 @@ import io.github.leylaragg.letool.print.context.PrintContext;
 import io.github.leylaragg.letool.print.document.DocumentModel;
 import io.github.leylaragg.letool.print.document.node.BlockNode;
 import io.github.leylaragg.letool.print.document.node.BookmarkNode;
+import io.github.leylaragg.letool.print.document.node.DocumentNode;
 import io.github.leylaragg.letool.print.document.node.InternalLinkNode;
 import io.github.leylaragg.letool.print.document.node.ParagraphNode;
 import io.github.leylaragg.letool.print.document.node.SectionNode;
@@ -22,13 +23,16 @@ import io.github.leylaragg.letool.print.xml.tag.PrintTagPlan;
 import io.github.leylaragg.letool.print.xml.tag.PrintTagRegistry;
 import io.github.leylaragg.letool.print.xml.tag.TagCompileContext;
 import io.github.leylaragg.letool.print.xml.tag.TagContentModel;
+import io.github.leylaragg.letool.print.xml.tag.TagBindingContext;
 import io.github.leylaragg.letool.print.xml.tag.TagPlacement;
+import io.github.leylaragg.letool.print.template.inspection.TemplateInspectionContribution;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -45,12 +49,13 @@ class XmlCustomTagExtensionTest {
     void shouldBindBlockTagWithControlledChildrenAndData() {
         PrintTagHandler notice = handler(
                 "notice", TagPlacement.BLOCK, TagContentModel.BLOCKS, Set.of("id-prefix"),
+                SectionNode.class,
                 compile -> binding -> new SectionNode(
                         compile.attribute("id-prefix").orElseThrow()
                                 + binding.data().root().path("suffix").asText(),
                         binding.blockChildren()));
         CompiledXmlTemplate template = compile(compiler(notice), """
-                <page><notice id-prefix="notice-"><paragraph>正文</paragraph></notice></page>
+                <page><page-body><notice id-prefix="notice-"><paragraph>正文</paragraph></notice></page-body></page>
                 """);
 
         DocumentModel model = new XmlTemplateBinder().bind(template, PrintContext.of(
@@ -65,6 +70,7 @@ class XmlCustomTagExtensionTest {
     void shouldBindInlineTagWithControlledChildren() {
         PrintTagHandler badge = handler(
                 "badge", TagPlacement.INLINE, TagContentModel.INLINE, Set.of("prefix"),
+                TextNode.class,
                 compile -> binding -> new TextNode(
                         compile.attribute("prefix").orElse("")
                                 + binding.inlineChildren().stream()
@@ -72,7 +78,7 @@ class XmlCustomTagExtensionTest {
                                 .map(TextNode::text)
                                 .reduce("", String::concat)));
         CompiledXmlTemplate template = compile(compiler(badge), """
-                <page><paragraph><badge prefix="[">名称：<field path="name"/></badge></paragraph></page>
+                <page><page-body><paragraph><badge prefix="[">名称：<field path="name"/></badge></paragraph></page-body></page>
                 """);
 
         DocumentModel model = new XmlTemplateBinder().bind(template, PrintContext.of(
@@ -82,17 +88,74 @@ class XmlCustomTagExtensionTest {
                 "", List.of(new TextNode("[名称：张三"))));
     }
 
+    /** 标签贡献在编译时读取一次，inspection 和绑定都复用同一份快照。 */
+    @Test
+    void shouldFreezeTagInspectionContribution() {
+        AtomicInteger contributionReads = new AtomicInteger();
+        TemplateInspectionContribution contribution = TemplateInspectionContribution.builder()
+                .nodeType(ParagraphNode.class).build();
+        PrintTagHandler stable = new PrintTagHandler() {
+            @Override
+            public String tagName() {
+                return "stable-contribution";
+            }
+
+            @Override
+            public TagPlacement placement() {
+                return TagPlacement.BLOCK;
+            }
+
+            @Override
+            public TagContentModel contentModel() {
+                return TagContentModel.EMPTY;
+            }
+
+            @Override
+            public Set<String> allowedAttributes() {
+                return Set.of();
+            }
+
+            @Override
+            public PrintTagPlan compile(TagCompileContext context) {
+                return new PrintTagPlan() {
+                    @Override
+                    public DocumentNode bind(TagBindingContext binding) {
+                        return new ParagraphNode("", List.of(new TextNode("稳定")));
+                    }
+
+                    @Override
+                    public TemplateInspectionContribution inspectionContribution() {
+                        if (contributionReads.incrementAndGet() > 1) {
+                            throw new IllegalStateException("贡献不能被重复读取");
+                        }
+                        return contribution;
+                    }
+                };
+            }
+        };
+        CompiledXmlTemplate template = compile(compiler(stable),
+                "<page><page-body><stable-contribution/></page-body></page>");
+
+        DocumentModel model = new XmlTemplateBinder().bind(template, emptyContext());
+
+        assertThat(template.inspection().nodeTypes()).contains(ParagraphNode.class);
+        assertThat(XmlTestDocuments.body(model)).containsExactly(
+                new ParagraphNode("", List.of(new TextNode("稳定"))));
+        assertThat(contributionReads).hasValue(1);
+    }
+
     /** 验证循环变量对自定义标签可见且循环后代不能生成稳定 ID。 */
     @Test
     void shouldExposeLoopVariableAndRejectLoopGeneratedId() throws Exception {
         PrintTagHandler itemName = handler(
                 "item-name", TagPlacement.INLINE, TagContentModel.EMPTY, Set.of(),
+                TextNode.class,
                 compile -> binding -> new TextNode(binding.data().variable("item")
                         .orElseThrow().path("name").asText()));
         CompiledXmlTemplate visible = compile(compiler(itemName), """
-                <page><for-each items="items" var="item">
+                <page><page-body><for-each items="items" var="item">
                     <paragraph><item-name/></paragraph>
-                </for-each></page>
+                </for-each></page-body></page>
                 """);
         DocumentModel model = new XmlTemplateBinder().bind(visible, PrintContext.of(1,
                 new com.fasterxml.jackson.databind.ObjectMapper().readTree(
@@ -103,9 +166,10 @@ class XmlCustomTagExtensionTest {
 
         PrintTagHandler generatedId = handler(
                 "generated-id", TagPlacement.BLOCK, TagContentModel.EMPTY, Set.of(),
+                ParagraphNode.class,
                 compile -> binding -> new ParagraphNode("dynamic", List.of()));
         CompiledXmlTemplate rejected = compile(compiler(generatedId), """
-                <page><for-each items="items" var="item"><generated-id/></for-each></page>
+                <page><page-body><for-each items="items" var="item"><generated-id/></for-each></page-body></page>
                 """);
         assertThatThrownBy(() -> new XmlTemplateBinder().bind(rejected, PrintContext.of(1,
                 new com.fasterxml.jackson.databind.ObjectMapper().readTree("{\"items\":[{}]}"))))
@@ -119,18 +183,20 @@ class XmlCustomTagExtensionTest {
     void shouldRejectUnsafeTagStructure() {
         PrintTagHandler block = handler(
                 "notice", TagPlacement.BLOCK, TagContentModel.EMPTY, Set.of(),
+                ParagraphNode.class,
                 compile -> binding -> new ParagraphNode("", List.of()));
         PrintTagHandler inline = handler(
                 "badge", TagPlacement.INLINE, TagContentModel.EMPTY, Set.of(),
+                TextNode.class,
                 compile -> binding -> new TextNode("badge"));
         XmlTemplateCompiler compiler = compiler(block, inline);
         List<String> pages = List.of(
-                "<page><notice secret=\"x\"/></page>",
-                "<page><paragraph><notice/></paragraph></page>",
-                "<page><badge/></page>",
-                "<page><paragraph><link target=\"target\"><badge/></link></paragraph></page>",
-                "<page><table><body><notice/></body></table></page>",
-                "<page><notice><paragraph>x</paragraph></notice></page>");
+                "<page><page-body><notice secret=\"x\"/></page-body></page>",
+                "<page><page-body><paragraph><notice/></paragraph></page-body></page>",
+                "<page><page-body><badge/></page-body></page>",
+                "<page><page-body><paragraph><link target=\"target\"><badge/></link></paragraph></page-body></page>",
+                "<page><page-body><table><body><notice/></body></table></page-body></page>",
+                "<page><page-body><notice><paragraph>x</paragraph></notice></page-body></page>");
 
         for (String page : pages) {
             assertThatThrownBy(() -> compile(compiler, page))
@@ -146,30 +212,34 @@ class XmlCustomTagExtensionTest {
     void shouldSanitizeTagFailures() {
         PrintTagHandler compileFailure = handler(
                 "compile-failure", TagPlacement.BLOCK, TagContentModel.EMPTY, Set.of("secret"),
+                ParagraphNode.class,
                 context -> {
                     throw new IllegalArgumentException("private:" + context.attribute("secret"));
                 });
         assertThatThrownBy(() -> compile(compiler(compileFailure),
-                "<page><compile-failure secret=\"attribute-value\"/></page>"))
+                "<page><page-body><compile-failure secret=\"attribute-value\"/></page-body></page>"))
                 .isInstanceOf(PrintCompilationException.class)
                 .hasMessageContaining("自定义标签编译失败")
                 .hasMessageNotContaining("attribute-value")
-                .hasMessageNotContaining("private");
+                .hasMessageNotContaining("private")
+                .hasCauseInstanceOf(IllegalArgumentException.class);
 
         PrintTagHandler bindFailure = handler(
                 "bind-failure", TagPlacement.BLOCK, TagContentModel.EMPTY, Set.of(),
+                ParagraphNode.class,
                 context -> binding -> {
                     throw new IllegalStateException(
                             "private:" + binding.data().root().path("secret").asText());
                 });
         CompiledXmlTemplate template = compile(
-                compiler(bindFailure), "<page><bind-failure/></page>");
+                compiler(bindFailure), "<page><page-body><bind-failure/></page-body></page>");
         assertThatThrownBy(() -> new XmlTemplateBinder().bind(template, PrintContext.of(
                 1, JsonNodeFactory.instance.objectNode().put("secret", "business-value"))))
                 .isInstanceOf(PrintValidationException.class)
                 .hasMessageContaining("自定义标签绑定失败")
                 .hasMessageNotContaining("business-value")
-                .hasMessageNotContaining("private");
+                .hasMessageNotContaining("private")
+                .hasCauseInstanceOf(IllegalStateException.class);
     }
 
     /** 验证空返回和声明位置不符的返回节点会被中央校验拒绝。 */
@@ -177,14 +247,16 @@ class XmlCustomTagExtensionTest {
     void shouldRejectInvalidTagResults() {
         PrintTagHandler nullResult = handler(
                 "null-result", TagPlacement.BLOCK, TagContentModel.EMPTY, Set.of(),
+                ParagraphNode.class,
                 context -> binding -> null);
         PrintTagHandler wrongType = handler(
                 "wrong-type", TagPlacement.BLOCK, TagContentModel.EMPTY, Set.of(),
+                TextNode.class,
                 context -> binding -> new TextNode("wrong"));
 
         for (PrintTagHandler handler : List.of(nullResult, wrongType)) {
             CompiledXmlTemplate template = compile(
-                    compiler(handler), "<page><" + handler.tagName() + "/></page>");
+                    compiler(handler), "<page><page-body><" + handler.tagName() + "/></page-body></page>");
             assertThatThrownBy(() -> new XmlTemplateBinder().bind(template, PrintContext.of(
                     1, JsonNodeFactory.instance.objectNode())))
                     .isInstanceOf(PrintValidationException.class)
@@ -197,10 +269,11 @@ class XmlCustomTagExtensionTest {
     void shouldGovernExtensionResultTree() {
         PrintTagHandler oversized = handler(
                 "oversized", TagPlacement.BLOCK, TagContentModel.EMPTY, Set.of(),
+                ParagraphNode.class,
                 context -> binding -> new ParagraphNode("", List.of(
                         new TextNode("x".repeat(XmlDsl.MAX_GENERATED_TEXT_CHARACTERS + 1)))));
         CompiledXmlTemplate oversizedTemplate = compile(
-                compiler(oversized), "<page><oversized/></page>");
+                compiler(oversized), "<page><page-body><oversized/></page-body></page>");
         assertThatThrownBy(() -> new XmlTemplateBinder().bind(
                 oversizedTemplate, emptyContext()))
                 .isInstanceOf(PrintValidationException.class)
@@ -208,9 +281,10 @@ class XmlCustomTagExtensionTest {
 
         PrintTagHandler duplicate = handler(
                 "duplicate", TagPlacement.BLOCK, TagContentModel.EMPTY, Set.of(),
+                ParagraphNode.class,
                 context -> binding -> new ParagraphNode("same", List.of()));
         CompiledXmlTemplate duplicateTemplate = compile(compiler(duplicate),
-                "<page><duplicate/><duplicate/></page>");
+                "<page><page-body><duplicate/><duplicate/></page-body></page>");
         assertThatThrownBy(() -> new XmlTemplateBinder().bind(
                 duplicateTemplate, emptyContext()))
                 .isInstanceOf(PrintValidationException.class)
@@ -219,10 +293,11 @@ class XmlCustomTagExtensionTest {
 
         PrintTagHandler missingLink = handler(
                 "missing-link", TagPlacement.INLINE, TagContentModel.EMPTY, Set.of(),
+                InternalLinkNode.class,
                 context -> binding -> new InternalLinkNode(
                         "missing", List.of(new TextNode("跳转"))));
         CompiledXmlTemplate linkTemplate = compile(compiler(missingLink),
-                "<page><paragraph><missing-link/></paragraph></page>");
+                "<page><page-body><paragraph><missing-link/></paragraph></page-body></page>");
         assertThatThrownBy(() -> new XmlTemplateBinder().bind(linkTemplate, emptyContext()))
                 .isInstanceOf(PrintValidationException.class)
                 .hasMessageContaining("自定义标签返回的文档模型校验失败")
@@ -234,11 +309,13 @@ class XmlCustomTagExtensionTest {
     void shouldCountTableStructureAndRecoverAfterCapacityFailure() {
         PrintTagHandler tableResult = handler(
                 "table-result", TagPlacement.BLOCK, TagContentModel.EMPTY, Set.of(),
+                TemplateInspectionContribution.builder()
+                        .nodeType(TableNode.class).nodeType(ParagraphNode.class).build(),
                 context -> binding -> binding.data().root().path("large").asBoolean()
                         ? oversizedTable()
                         : new ParagraphNode("", List.of(new TextNode("ok"))));
         CompiledXmlTemplate template = compile(
-                compiler(tableResult), "<page><table-result/></page>");
+                compiler(tableResult), "<page><page-body><table-result/></page-body></page>");
 
         assertThatThrownBy(() -> new XmlTemplateBinder().bind(template, PrintContext.of(
                 1, JsonNodeFactory.instance.objectNode().put("large", true))))
@@ -256,14 +333,16 @@ class XmlCustomTagExtensionTest {
     void shouldRecountRepeatedPreboundSubtreesForNestedTags() {
         PrintTagHandler inner = handler(
                 "large-child", TagPlacement.BLOCK, TagContentModel.EMPTY, Set.of(),
+                ParagraphNode.class,
                 context -> binding -> new ParagraphNode("", Collections.nCopies(
                         34_000, new TextNode(""))));
         PrintTagHandler outer = handler(
                 "repeat-children", TagPlacement.BLOCK, TagContentModel.BLOCKS, Set.of(),
+                SectionNode.class,
                 context -> binding -> new SectionNode("", Collections.nCopies(
                         3, binding.blockChildren().get(0))));
         CompiledXmlTemplate template = compile(compiler(inner, outer),
-                "<page><repeat-children><large-child/></repeat-children></page>");
+                "<page><page-body><repeat-children><large-child/></repeat-children></page-body></page>");
 
         assertThatThrownBy(() -> new XmlTemplateBinder().bind(template, emptyContext()))
                 .isInstanceOf(PrintValidationException.class)
@@ -275,23 +354,51 @@ class XmlCustomTagExtensionTest {
     void shouldSanitizeFinalValidationForCustomResults() {
         PrintTagHandler dataId = handler(
                 "data-id", TagPlacement.BLOCK, TagContentModel.EMPTY, Set.of(),
+                ParagraphNode.class,
                 compile -> binding -> new ParagraphNode(
                         binding.data().root().path("secretId").asText(), List.of()));
         CompiledXmlTemplate template = compile(
-                compiler(dataId), "<page><data-id/><data-id/></page>");
+                compiler(dataId), "<page><page-body><data-id/><data-id/></page-body></page>");
 
         assertThatThrownBy(() -> new XmlTemplateBinder().bind(template, PrintContext.of(
                 1, JsonNodeFactory.instance.objectNode().put("secretId", "business-secret-id"))))
                 .isInstanceOf(PrintValidationException.class)
                 .hasMessageContaining("自定义标签返回的文档模型校验失败")
-                .hasMessageNotContaining("business-secret-id");
+                .hasMessageNotContaining("business-secret-id")
+                .hasCauseInstanceOf(PrintValidationException.class);
+    }
+
+    /** 扩展返回的节点必须与静态声明一致，不能在绑定时悄悄替换类型。 */
+    @Test
+    void shouldRejectCustomResultOutsideDeclaredTypes() {
+        PrintTagHandler mismatchedType = handler(
+                "mismatched-type", TagPlacement.BLOCK, TagContentModel.EMPTY, Set.of(),
+                SectionNode.class,
+                compile -> binding -> new ParagraphNode("", List.of(new TextNode("正文"))));
+        CompiledXmlTemplate template = compile(
+                compiler(mismatchedType), "<page><page-body><mismatched-type/></page-body></page>");
+
+        assertThatThrownBy(() -> new XmlTemplateBinder().bind(template, emptyContext()))
+                .isInstanceOf(PrintValidationException.class)
+                .hasMessageContaining("未声明的节点类型");
     }
 
     /** 创建自定义标签处理器。 */
     private static PrintTagHandler handler(
             String name, TagPlacement placement, TagContentModel contentModel,
-            Set<String> attributes,
-            java.util.function.Function<TagCompileContext, PrintTagPlan> compile) {
+            Set<String> attributes, Class<? extends DocumentNode> nodeType,
+            java.util.function.Function<TagCompileContext,
+                    java.util.function.Function<TagBindingContext, ? extends DocumentNode>> compile) {
+        return handler(name, placement, contentModel, attributes,
+                TemplateInspectionContribution.builder().nodeType(nodeType).build(), compile);
+    }
+
+    /** 创建可声明多个节点类型或附加能力的自定义标签处理器。 */
+    private static PrintTagHandler handler(
+            String name, TagPlacement placement, TagContentModel contentModel,
+            Set<String> attributes, TemplateInspectionContribution contribution,
+            java.util.function.Function<TagCompileContext,
+                    java.util.function.Function<TagBindingContext, ? extends DocumentNode>> compile) {
         return new PrintTagHandler() {
             @Override
             public String tagName() {
@@ -315,7 +422,7 @@ class XmlCustomTagExtensionTest {
 
             @Override
             public PrintTagPlan compile(TagCompileContext context) {
-                return compile.apply(context);
+                return PrintTagPlan.of(contribution, compile.apply(context));
             }
         };
     }

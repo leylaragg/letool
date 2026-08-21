@@ -15,14 +15,19 @@ final class CompiledXmlFragment {
     /** 片段提供的不可变块节点。 */
     private final List<CompiledXmlNode> blocks;
 
+    /** 片段允许调用方传入的有序参数名。 */
+    private final List<String> parameters;
+
     /**
      * 保存一个片段的编译结果。
      *
      * @param templateCode 片段模板代码
      * @param blocks 片段提供的块节点
      */
-    CompiledXmlFragment(String templateCode, List<CompiledXmlNode> blocks) {
+    CompiledXmlFragment(
+            String templateCode, List<String> parameters, List<CompiledXmlNode> blocks) {
         this.templateCode = templateCode;
+        this.parameters = List.copyOf(parameters);
         this.blocks = List.copyOf(blocks);
     }
 
@@ -34,5 +39,10 @@ final class CompiledXmlFragment {
     /** @return 不可变块节点 */
     List<CompiledXmlNode> blocks() {
         return blocks;
+    }
+
+    /** @return 片段声明的有序参数名 */
+    List<String> parameters() {
+        return parameters;
     }
 }

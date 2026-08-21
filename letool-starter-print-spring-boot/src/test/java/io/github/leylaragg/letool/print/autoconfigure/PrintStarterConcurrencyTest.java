@@ -82,8 +82,8 @@ class PrintStarterConcurrencyTest {
     /** 创建正文可区分的模板版本。 */
     private TemplateDefinition document(long version, String label) {
         String xml = "<document xmlns=\"" + XmlDsl.NAMESPACE_V1
-                + "\" context-version=\"1\"><page><paragraph>" + label
-                + " <field path=\"id\"/></paragraph></page></document>";
+                + "\" context-version=\"1\"><page><page-body><paragraph>" + label
+                + " <field path=\"id\"/></paragraph></page-body></page></document>";
         PrintTemplate template = new PrintTemplate(
                 "concurrent-template", TemplateFormat.LETOOL_XML, XmlDsl.VERSION,
                 version, 1, xml.getBytes(StandardCharsets.UTF_8));

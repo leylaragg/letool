@@ -68,7 +68,7 @@ class XmlTableOfContentsTest {
     void shouldRejectNestedTableOfContents() {
         for (String nested : new String[]{
                 "<section><table-of-contents/><heading>第一章</heading></section>",
-                "<if path=\"enabled\"><table-of-contents/><heading>第一章</heading></if>",
+                "<if path=\"enabled\"><then><table-of-contents/><heading>第一章</heading></then></if>",
                 "<for-each items=\"items\" var=\"item\"><table-of-contents/><heading>第一章</heading></for-each>"}) {
             assertThatThrownBy(() -> compile(page(nested)))
                     .isInstanceOf(PrintCompilationException.class)
@@ -110,7 +110,7 @@ class XmlTableOfContentsTest {
     private static String page(String content) {
         return """
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page>%s</page>
+                    <page><page-body>%s</page-body></page>
                 </document>
                 """.formatted(content);
     }

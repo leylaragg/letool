@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.Locale;
 import java.util.Map;
 import java.util.TimeZone;
@@ -23,7 +24,7 @@ class BuiltInPrintFormatterTest {
     void shouldExposeImmutableBuiltInFormatterList() {
         assertThat(BuiltInPrintFormatters.formatters())
                 .extracting(PrintValueFormatter::name)
-                .containsExactly("number", "date", "datetime");
+                .containsExactly("number", "date", "datetime", "boolean", "join");
         assertThatThrownBy(() -> BuiltInPrintFormatters.formatters().clear())
                 .isInstanceOf(UnsupportedOperationException.class);
     }
@@ -47,6 +48,17 @@ class BuiltInPrintFormatterTest {
 
         assertThat(plan.format(JsonNodeFactory.instance.numberNode(new BigDecimal("1230.00"))))
                 .isEqualTo("1230");
+    }
+
+    /** 默认数字格式同样要在普通文本展开前拒绝极端指数。 */
+    @Test
+    void shouldRejectExpandedDefaultNumberBeforeCreatingPlainText() {
+        PrintFormatPlan plan = compile("number", Map.of());
+
+        assertThatThrownBy(() -> plan.format(
+                JsonNodeFactory.instance.numberNode(new GuardedBigDecimal())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("字符数量超过限制");
     }
 
     /** 验证日期支持 ISO 输入和静态输出模式。 */
@@ -144,6 +156,77 @@ class BuiltInPrintFormatterTest {
                 JsonNodeFactory.instance.numberNode(new BigDecimal("1.5"))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageNotContaining("1.5");
+    }
+
+    /** 布尔格式化器只接受真实 JSON 布尔值，并支持静态显示文本。 */
+    @Test
+    void shouldFormatBooleanWithoutTypeCoercion() {
+        PrintFormatPlan defaults = compile("boolean", Map.of());
+        PrintFormatPlan localized = compile("boolean", Map.of(
+                "true-text", "是", "false-text", "否"));
+
+        assertThat(defaults.format(JsonNodeFactory.instance.booleanNode(true))).isEqualTo("true");
+        assertThat(defaults.format(JsonNodeFactory.instance.booleanNode(false))).isEqualTo("false");
+        assertThat(localized.format(JsonNodeFactory.instance.booleanNode(true))).isEqualTo("是");
+        assertThatThrownBy(() -> localized.format(
+                JsonNodeFactory.instance.textNode("secret-true")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageNotContaining("secret-true");
+    }
+
+    /** join 保持数组顺序、跳过 null，并拒绝对象和嵌套数组。 */
+    @Test
+    void shouldJoinScalarArrayWithBoundedSeparator() {
+        PrintFormatPlan defaults = compile("join", Map.of());
+        PrintFormatPlan custom = compile("join", Map.of("separator", " | "));
+        var values = JsonNodeFactory.instance.arrayNode()
+                .add("A").addNull().add(2).add(true);
+        var objects = JsonNodeFactory.instance.arrayNode();
+        objects.addObject().put("secret", "value");
+        var nested = JsonNodeFactory.instance.arrayNode();
+        nested.addArray().add("secret");
+
+        assertThat(defaults.format(values)).isEqualTo("A, 2, true");
+        assertThat(custom.format(values)).isEqualTo("A | 2 | true");
+        assertThatThrownBy(() -> defaults.format(objects))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageNotContaining("secret");
+        assertThatThrownBy(() -> defaults.format(nested))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageNotContaining("secret");
+    }
+
+    /** join 在展开极端指数数字前先按字符上限拒绝，避免构造失控文本。 */
+    @Test
+    void shouldRejectExpandedNumberBeforeCreatingPlainText() {
+        PrintFormatPlan plan = compile("join", Map.of());
+        var values = JsonNodeFactory.instance.arrayNode().add(
+                JsonNodeFactory.instance.numberNode(new GuardedBigDecimal()));
+
+        assertThatThrownBy(() -> plan.format(values))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("字符数量超过限制");
+    }
+
+    /** 用极端负 scale 模拟会展开为超长普通文本的 JSON 数字。 */
+    private static final class GuardedBigDecimal extends BigDecimal {
+
+        /** 创建无需分配长字符串的极端测试数字。 */
+        private GuardedBigDecimal() {
+            super(BigInteger.ONE, Integer.MIN_VALUE);
+        }
+
+        /** 保留极端 scale，供格式化器先执行长度判断。 */
+        @Override
+        public BigDecimal stripTrailingZeros() {
+            return this;
+        }
+
+        /** 若生产代码提前展开字符串，测试应立即指出顺序错误。 */
+        @Override
+        public String toPlainString() {
+            throw new AssertionError("长度检查前不应展开普通十进制文本");
+        }
     }
 
     /** 编译一个内置格式化计划。 */

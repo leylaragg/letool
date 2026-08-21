@@ -72,13 +72,13 @@ class XmlBindingGovernorTest {
             root.withArray("inner").add(index);
         }
         CompiledXmlTemplate template = compile("""
-                <page>
+                <page><page-body>
                     <for-each items="outer" var="outerItem">
                         <for-each items="inner" var="innerItem">
-                            <if path="active" operator="truthy"><paragraph>不应生成</paragraph></if>
+                            <if path="active" operator="truthy"><then><paragraph>不应生成</paragraph></then></if>
                         </for-each>
                     </for-each>
-                </page>
+                </page-body></page>
                 """);
 
         assertThatThrownBy(() -> new XmlTemplateBinder().bind(template, PrintContext.of(1, root)))
@@ -92,11 +92,11 @@ class XmlBindingGovernorTest {
     void shouldLimitGeneratedNodesThroughBinder() {
         ObjectNode root = squareLoopContext(184);
         CompiledXmlTemplate template = compile("""
-                <page><for-each items="outer" var="outerItem">
+                <page><page-body><for-each items="outer" var="outerItem">
                     <for-each items="inner" var="innerItem">
                         <paragraph>序号：<field path="$innerItem"/></paragraph>
                     </for-each>
-                </for-each></page>
+                </for-each></page-body></page>
                 """);
 
         assertThatThrownBy(() -> new XmlTemplateBinder().bind(template, PrintContext.of(1, root)))
@@ -111,9 +111,9 @@ class XmlBindingGovernorTest {
         ObjectNode root = squareLoopContext(201);
         String text = "文本".repeat(25);
         CompiledXmlTemplate template = compile("""
-                <page><for-each items="outer" var="outerItem">
+                <page><page-body><for-each items="outer" var="outerItem">
                     <for-each items="inner" var="innerItem"><paragraph>%s</paragraph></for-each>
-                </for-each></page>
+                </for-each></page-body></page>
                 """.formatted(text));
 
         assertThatThrownBy(() -> new XmlTemplateBinder().bind(template, PrintContext.of(1, root)))
@@ -127,13 +127,13 @@ class XmlBindingGovernorTest {
     void shouldCountGeneratedTableStructure() {
         ObjectNode root = squareLoopContext(160);
         CompiledXmlTemplate template = compile("""
-                <page><table><body>
+                <page><page-body><table><body>
                     <for-each items="outer" var="outerItem">
                         <for-each items="inner" var="innerItem">
                             <row><cell><paragraph>内容</paragraph></cell></row>
                         </for-each>
                     </for-each>
-                </body></table></page>
+                </body></table></page-body></page>
                 """);
 
         assertThatThrownBy(() -> new XmlTemplateBinder().bind(template, PrintContext.of(1, root)))
@@ -151,9 +151,9 @@ class XmlBindingGovernorTest {
         }
         String alt = "替代文本".repeat(63);
         CompiledXmlTemplate template = compile("""
-                <page><for-each items="items" var="item">
+                <page><page-body><for-each items="items" var="item">
                     <image resource-id="shared.image" alt="%s" width="1mm" height="1mm"/>
-                </for-each></page>
+                </for-each></page-body></page>
                 """.formatted(alt));
 
         assertThatThrownBy(() -> new XmlTemplateBinder().bind(template, PrintContext.of(1, root)))
@@ -167,14 +167,14 @@ class XmlBindingGovernorTest {
     void shouldCountLinkAndLabelNodes() {
         ObjectNode root = squareLoopContext(160);
         CompiledXmlTemplate template = compile("""
-                <page>
+                <page><page-body>
                     <heading id="target">目标</heading>
                     <for-each items="outer" var="outerItem">
                         <for-each items="inner" var="innerItem">
                             <paragraph><link target="target">值：<field path="$innerItem"/></link></paragraph>
                         </for-each>
                     </for-each>
-                </page>
+                </page-body></page>
                 """);
 
         assertThatThrownBy(() -> new XmlTemplateBinder().bind(template, PrintContext.of(1, root)))
@@ -199,7 +199,7 @@ class XmlBindingGovernorTest {
             }
         };
         CompiledXmlTemplate template = compile("""
-                <page><paragraph><field path="value" formatter="large"/></paragraph></page>
+                <page><page-body><paragraph><field path="value" formatter="large"/></paragraph></page-body></page>
                 """, new XmlTemplateCompiler(new PrintFormatterRegistry(List.of(formatter))));
         ObjectNode root = JsonNodeFactory.instance.objectNode().put("value", 1);
 
@@ -217,7 +217,7 @@ class XmlBindingGovernorTest {
             root.withArray("items").add(index);
         }
         CompiledXmlTemplate template = compile("""
-                <page><for-each items="items" var="item"><paragraph><field path="$item"/></paragraph></for-each></page>
+                <page><page-body><for-each items="items" var="item"><paragraph><field path="$item"/></paragraph></for-each></page-body></page>
                 """);
 
         assertThatThrownBy(() -> new XmlTemplateBinder().bind(template, PrintContext.of(1, root)))
@@ -231,9 +231,9 @@ class XmlBindingGovernorTest {
     void shouldLimitDynamicDepth() {
         String body = "<paragraph>正文</paragraph>";
         for (int index = 0; index <= XmlDsl.MAX_DYNAMIC_DEPTH; index++) {
-            body = "<if path=\"active\" operator=\"truthy\">" + body + "</if>";
+            body = "<if path=\"active\" operator=\"truthy\"><then>" + body + "</then></if>";
         }
-        CompiledXmlTemplate template = compile("<page>" + body + "</page>");
+        CompiledXmlTemplate template = compile("<page><page-body>" + body + "</page-body></page>");
         ObjectNode root = JsonNodeFactory.instance.objectNode().put("active", true);
 
         assertThatThrownBy(() -> new XmlTemplateBinder().bind(template, PrintContext.of(1, root)))

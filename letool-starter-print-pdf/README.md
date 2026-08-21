@@ -64,9 +64,11 @@ PdfDocumentRenderer renderer = new PdfDocumentRenderer(
 
 ```xml
 <page>
-    <paragraph>封面</paragraph>
-    <table-of-contents title="Contents" min-level="1" max-level="3"/>
-    <heading level="1">第一章</heading>
+    <page-body>
+        <paragraph>封面</paragraph>
+        <table-of-contents title="Contents" min-level="1" max-level="3"/>
+        <heading level="1">第一章</heading>
+    </page-body>
 </page>
 ```
 

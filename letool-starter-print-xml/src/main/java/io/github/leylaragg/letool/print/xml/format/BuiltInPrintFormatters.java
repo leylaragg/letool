@@ -13,7 +13,9 @@ public final class BuiltInPrintFormatters {
     private static final List<PrintValueFormatter> FORMATTERS = List.of(
             new NumberValueFormatter(),
             new TemporalValueFormatter("date", false),
-            new TemporalValueFormatter("datetime", true));
+            new TemporalValueFormatter("datetime", true),
+            new BooleanValueFormatter(),
+            new JoinValueFormatter());
 
     /** 进程内可安全复用的不可变默认注册表。 */
     private static final PrintFormatterRegistry REGISTRY = new PrintFormatterRegistry(FORMATTERS);

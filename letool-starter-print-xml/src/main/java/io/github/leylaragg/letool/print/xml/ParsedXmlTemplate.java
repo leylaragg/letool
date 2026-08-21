@@ -17,7 +17,7 @@ final class ParsedXmlTemplate {
     private final PrintTemplate template;
 
     /** 尚未解析 include 的 XML 根节点。 */
-    private final CompiledXmlNode root;
+    private final ParsedXmlNode root;
 
     /** 当前 XML 源的元素数量。 */
     private final int nodeCount;
@@ -31,7 +31,7 @@ final class ParsedXmlTemplate {
      * @param nodeCount 当前 XML 源的元素数量
      */
     ParsedXmlTemplate(TemplateType type, PrintTemplate template,
-                      CompiledXmlNode root, int nodeCount) {
+                      ParsedXmlNode root, int nodeCount) {
         this.type = type;
         this.template = template;
         this.root = root;
@@ -49,7 +49,7 @@ final class ParsedXmlTemplate {
     }
 
     /** @return XML 根节点 */
-    CompiledXmlNode root() {
+    ParsedXmlNode root() {
         return root;
     }
 

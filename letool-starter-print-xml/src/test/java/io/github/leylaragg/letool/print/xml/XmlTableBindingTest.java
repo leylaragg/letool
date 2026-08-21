@@ -30,7 +30,7 @@ class XmlTableBindingTest {
     void shouldBindHeaderAndDynamicBodyRows() {
         CompiledXmlTemplate template = compile("""
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page><table id="items">
+                    <page><page-body><table id="items">
                         <header><row>
                             <cell><paragraph>名称</paragraph></cell>
                             <cell><paragraph>金额</paragraph></cell>
@@ -39,7 +39,7 @@ class XmlTableBindingTest {
                             <cell><paragraph><field path="$item.name"/></paragraph></cell>
                             <cell><paragraph><field path="$item.amount" formatter="number"/></paragraph></cell>
                         </row></for-each></body>
-                    </table></page>
+                    </table></page-body></page>
                 </document>
                 """);
         ObjectNode root = JsonNodeFactory.instance.objectNode();
@@ -62,9 +62,9 @@ class XmlTableBindingTest {
     void shouldPruneTableWhenNoRowsAreGenerated() {
         CompiledXmlTemplate template = compile("""
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page><table><body><for-each items="items" var="item">
+                    <page><page-body><table><body><for-each items="items" var="item">
                         <row><cell/></row>
-                    </for-each></body></table></page>
+                    </for-each></body></table></page-body></page>
                 </document>
                 """);
         ObjectNode root = JsonNodeFactory.instance.objectNode();
@@ -79,12 +79,12 @@ class XmlTableBindingTest {
     void shouldKeepHeaderOnlyTableAfterBinding() {
         CompiledXmlTemplate template = compile("""
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page><table>
+                    <page><page-body><table>
                         <header><row><cell/></row></header>
-                        <body><if path="visible" operator="eq" value="true" value-type="boolean">
+                        <body><if path="visible" operator="eq" value="true" value-type="boolean"><then>
                             <row><cell/></row>
-                        </if></body>
-                    </table></page>
+                        </then></if></body>
+                    </table></page-body></page>
                 </document>
                 """);
         ObjectNode root = JsonNodeFactory.instance.objectNode().put("visible", false);
@@ -109,14 +109,14 @@ class XmlTableBindingTest {
                 .isInstanceOf(PrintCompilationException.class)
                 .hasMessageContaining("顺序");
         assertThatThrownBy(() -> compile(page("""
-                <table><body><if path="visible" operator="exists">
+                <table><body><if path="visible" operator="exists"><then>
                     <paragraph>非法块</paragraph>
-                </if></body></table>
+                </then></if></body></table>
                 """)))
                 .isInstanceOf(PrintCompilationException.class)
                 .hasMessageContaining("row");
         assertThatThrownBy(() -> compile(page("""
-                <if path="visible" operator="exists"><row><cell/></row></if>
+                <if path="visible" operator="exists"><then><row><cell/></row></then></if>
                 """)))
                 .isInstanceOf(PrintCompilationException.class)
                 .hasMessageContaining("row 只能");
@@ -127,12 +127,12 @@ class XmlTableBindingTest {
     void shouldRejectInvalidGridAfterDynamicBinding() {
         CompiledXmlTemplate template = compile("""
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page><table><body>
+                    <page><page-body><table><body>
                         <row><cell row-span="2"/><cell/></row>
-                        <if path="visible" operator="eq" value="true" value-type="boolean">
+                        <if path="visible" operator="eq" value="true" value-type="boolean"><then>
                             <row><cell col-span="2"/></row>
-                        </if>
-                    </body></table></page>
+                        </then></if>
+                    </body></table></page-body></page>
                 </document>
                 """);
         ObjectNode root = JsonNodeFactory.instance.objectNode().put("visible", true);
@@ -146,7 +146,7 @@ class XmlTableBindingTest {
     private static String page(String content) {
         return """
                 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
-                    <page>%s</page>
+                    <page><page-body>%s</page-body></page>
                 </document>
                 """.formatted(content);
     }

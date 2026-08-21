@@ -2,12 +2,9 @@ package io.github.leylaragg.letool.print.xml;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.github.leylaragg.letool.print.context.PrintContext;
-import io.github.leylaragg.letool.print.document.DocumentMetadata;
 import io.github.leylaragg.letool.print.document.DocumentModel;
-import io.github.leylaragg.letool.print.document.Margins;
-import io.github.leylaragg.letool.print.document.PageLayout;
-import io.github.leylaragg.letool.print.document.PageOrientation;
-import io.github.leylaragg.letool.print.document.PageSize;
+import io.github.leylaragg.letool.print.document.PageRegion;
+import io.github.leylaragg.letool.print.document.PageSequence;
 import io.github.leylaragg.letool.print.document.node.BlockNode;
 import io.github.leylaragg.letool.print.document.node.AnnotationNode;
 import io.github.leylaragg.letool.print.document.node.AnnotationPlacement;
@@ -18,7 +15,10 @@ import io.github.leylaragg.letool.print.document.node.HeadingNode;
 import io.github.leylaragg.letool.print.document.node.ImageNode;
 import io.github.leylaragg.letool.print.document.node.InlineNode;
 import io.github.leylaragg.letool.print.document.node.InternalLinkNode;
+import io.github.leylaragg.letool.print.document.node.LineBreakNode;
+import io.github.leylaragg.letool.print.document.node.PageCountNode;
 import io.github.leylaragg.letool.print.document.node.PageBreakNode;
+import io.github.leylaragg.letool.print.document.node.PageNumberNode;
 import io.github.leylaragg.letool.print.document.node.ParagraphNode;
 import io.github.leylaragg.letool.print.document.node.SectionNode;
 import io.github.leylaragg.letool.print.document.node.TableCell;
@@ -33,8 +33,11 @@ import io.github.leylaragg.letool.print.xml.tag.TagContentModel;
 import io.github.leylaragg.letool.print.xml.tag.TagPlacement;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * 将安全 XML 编译快照与只读上下文绑定为通用文档模型。
@@ -59,49 +62,31 @@ public final class XmlTemplateBinder {
         if (template.contextVersion() != context.version()) {
             throw PrintValidationException.invalidRequest("编译模板与上下文版本不一致");
         }
-        CompiledXmlNode document = template.root();
-        CompiledXmlNode page = document.children().get(0);
+        CompiledDocumentPlan document = template.documentPlan();
         BindingGovernor governor = new BindingGovernor(template.templateCode());
-        List<BlockNode> blocks = bindBlocks(
-                page.children(), new BindingScope(context.root()), template.templateCode(), governor);
+        BindingScope scope = new BindingScope(context.root());
+        List<PageSequence> sequences = new ArrayList<>(document.pages().size());
+        for (CompiledPagePlan page : document.pages()) {
+            List<BlockNode> header = bindBlocks(
+                    page.header(), scope, template.templateCode(), governor);
+            List<BlockNode> body = bindBlocks(
+                    page.body(), scope, template.templateCode(), governor);
+            List<BlockNode> footer = bindBlocks(
+                    page.footer(), scope, template.templateCode(), governor);
+            sequences.add(new PageSequence(
+                    page.pageLayout(), new PageRegion(header), new PageRegion(footer),
+                    page.pageNumbering(), body));
+        }
         try {
-            return DocumentModel.singleSequence(metadata(document), pageLayout(page), blocks);
+            return new DocumentModel(document.metadata(), document.styleSheet(), sequences);
         } catch (PrintValidationException exception) {
             if (governor.customTagUsed()) {
                 throw PrintValidationException.invalidDocument(
-                        template.templateCode() + "：自定义标签返回的文档模型校验失败");
+                        template.templateCode() + "：自定义标签返回的文档模型校验失败",
+                        exception);
             }
             throw exception;
         }
-    }
-
-    /** 绑定可选文档元数据。 */
-    private DocumentMetadata metadata(CompiledXmlNode document) {
-        return new DocumentMetadata(
-                document.attributes().get("title"),
-                document.attributes().get("author"),
-                document.attributes().get("language"));
-    }
-
-    /** 绑定物理页面布局。 */
-    private PageLayout pageLayout(CompiledXmlNode page) {
-        String size = page.attributes().getOrDefault("size", "A4").toUpperCase(Locale.ROOT);
-        PageSize pageSize = switch (size) {
-            case "A4" -> PageSize.A4;
-            case "LETTER" -> PageSize.LETTER;
-            default -> throw PrintValidationException.invalidDocument("不支持的页面尺寸：" + size);
-        };
-        String orientationValue = page.attributes()
-                .getOrDefault("orientation", "portrait")
-                .toLowerCase(Locale.ROOT);
-        PageOrientation orientation = switch (orientationValue) {
-            case "portrait" -> PageOrientation.PORTRAIT;
-            case "landscape" -> PageOrientation.LANDSCAPE;
-            default -> throw PrintValidationException.invalidDocument(
-                    "不支持的页面方向：" + orientationValue);
-        };
-        int margin = millimeters(page.attributes().getOrDefault("margin", "20mm"));
-        return new PageLayout(pageSize, orientation, new Margins(margin, margin, margin, margin));
     }
 
     /** 绑定有序块级节点列表。 */
@@ -115,16 +100,18 @@ public final class XmlTemplateBinder {
                 if (fragment == null) {
                     throw bindingError(templateCode, node, "include 尚未解析");
                 }
-                // 共享片段只读取根数据，不能看到 include 所在循环的临时变量。
-                blocks.addAll(bindBlocks(fragment.blocks(), scope.rootOnly(), fragment.templateCode(), governor));
+                Map<String, JsonNode> parameters = includeParameters(
+                        node, scope, templateCode, governor);
+                blocks.addAll(bindBlocks(
+                        fragment.blocks(), scope.fragment(parameters),
+                        fragment.templateCode(), governor));
             } else if ("if".equals(node.name())) {
                 governor.enterDynamic();
                 try {
                     governor.addDynamicOperations(1);
-                    if (matchesCondition(node, scope, templateCode)) {
-                        blocks.addAll(bindBlocks(
-                                node.children(), scope, templateCode, governor));
-                    }
+                    blocks.addAll(bindBlocks(
+                            conditionBranch(node, matchesCondition(node, scope, templateCode)),
+                            scope, templateCode, governor));
                 } finally {
                     governor.exitDynamic();
                 }
@@ -140,6 +127,27 @@ public final class XmlTemplateBinder {
             }
         }
         return List.copyOf(blocks);
+    }
+
+    /** 在调用方作用域解析全部参数，再一次性建立闭合片段作用域。 */
+    private Map<String, JsonNode> includeParameters(
+            CompiledXmlNode include, BindingScope caller, String templateCode,
+            BindingGovernor governor) {
+        governor.addDynamicOperations(include.includeArguments().size());
+        Map<String, JsonNode> parameters = new LinkedHashMap<>();
+        for (CompiledIncludeArgument argument : include.includeArguments()) {
+            BindingScope.ResolvedValue resolved = caller.resolve(argument.dataPath());
+            if (resolved.isInvalid()) {
+                throw bindingError(templateCode, include,
+                        "include 参数路径无法继续遍历：" + argument.dataPath().displayPath());
+            }
+            if (!resolved.isPresent()) {
+                throw bindingError(templateCode, include,
+                        "include 参数路径不存在：" + argument.dataPath().displayPath());
+            }
+            parameters.put(argument.name(), resolved.value());
+        }
+        return Collections.unmodifiableMap(new LinkedHashMap<>(parameters));
     }
 
     /** 按数组顺序展开一个块级循环。 */
@@ -202,9 +210,11 @@ public final class XmlTemplateBinder {
             case "heading" -> new HeadingNode(
                     node.attributes().getOrDefault("id", ""),
                     positiveInteger(node.attributes().getOrDefault("level", "1"), "heading.level"),
+                    node.attributes().getOrDefault("style", ""),
                     bindInline(node.children(), scope, templateCode, governor));
             case "paragraph" -> new ParagraphNode(
                     node.attributes().getOrDefault("id", ""),
+                    node.attributes().getOrDefault("style", ""),
                     bindInline(node.children(), scope, templateCode, governor));
             case "annotation" -> bindAnnotation(node, scope, templateCode, governor);
             case "page-break" -> PageBreakNode.INSTANCE;
@@ -323,7 +333,8 @@ public final class XmlTemplateBinder {
         rows.addAll(headerRows);
         rows.addAll(bodyRows);
         TableNode table = new TableNode(
-                node.attributes().getOrDefault("id", ""), headerRows.size(), rows);
+                node.attributes().getOrDefault("id", ""),
+                node.attributes().getOrDefault("style", ""), headerRows.size(), rows);
         governor.addNodes(1);
         return List.of(table);
     }
@@ -340,10 +351,9 @@ public final class XmlTemplateBinder {
                 governor.enterDynamic();
                 try {
                     governor.addDynamicOperations(1);
-                    if (matchesCondition(node, scope, templateCode)) {
-                        rows.addAll(bindTableRows(
-                                node.children(), scope, templateCode, governor));
-                    }
+                    rows.addAll(bindTableRows(
+                            conditionBranch(node, matchesCondition(node, scope, templateCode)),
+                            scope, templateCode, governor));
                 } finally {
                     governor.exitDynamic();
                 }
@@ -372,7 +382,7 @@ public final class XmlTemplateBinder {
             return node.expressionPlan().evaluate(
                     new ExpressionEvaluationContext(scope.dataView()));
         } catch (RuntimeException exception) {
-            throw bindingError(templateCode, node, "表达式求值失败");
+            throw bindingError(templateCode, node, "表达式求值失败", exception);
         }
     }
 
@@ -415,6 +425,7 @@ public final class XmlTemplateBinder {
         List<TableCell> cells = new ArrayList<>(node.children().size());
         for (CompiledXmlNode cell : node.children()) {
             cells.add(new TableCell(
+                    cell.attributes().getOrDefault("style", ""),
                     bindBlocks(cell.children(), scope, templateCode, governor),
                     positiveInteger(cell.attributes().getOrDefault("row-span", "1"),
                             "cell.row-span"),
@@ -437,12 +448,20 @@ public final class XmlTemplateBinder {
                 continue;
             }
             if ("#text".equals(node.name()) || "text".equals(node.name())) {
-                inline.add(new TextNode(node.text()));
+                inline.add(new TextNode(
+                        node.text(), node.attributes().getOrDefault("style", "")));
                 governor.addText(node.text().length());
             } else if ("field".equals(node.name())) {
                 String text = fieldText(node, scope, templateCode);
-                inline.add(new TextNode(text));
+                inline.add(new TextNode(
+                        text, node.attributes().getOrDefault("style", "")));
                 governor.addText(text.length());
+            } else if ("line-break".equals(node.name())) {
+                inline.add(LineBreakNode.INSTANCE);
+            } else if ("page-number".equals(node.name())) {
+                inline.add(new PageNumberNode(node.attributes().getOrDefault("style", "")));
+            } else if ("page-count".equals(node.name())) {
+                inline.add(new PageCountNode(node.attributes().getOrDefault("style", "")));
             } else if ("bookmark".equals(node.name())) {
                 inline.add(new BookmarkNode(
                         node.attributes().get("id"), node.attributes().get("label")));
@@ -509,10 +528,15 @@ public final class XmlTemplateBinder {
             result = node.tagPlan().plan().bind(new TagBindingContext(
                     scope.dataView(), blockChildren, inlineChildren));
         } catch (RuntimeException exception) {
-            throw bindingError(templateCode, node, "自定义标签绑定失败");
+            throw bindingError(templateCode, node, "自定义标签绑定失败", exception);
         }
         if (result == null) {
             throw bindingError(templateCode, node, "自定义标签不能返回 null");
+        }
+        boolean declaredType = node.tagPlan().inspectionContribution().nodeTypes()
+                .contains(result.getClass());
+        if (!declaredType) {
+            throw bindingError(templateCode, node, "自定义标签返回了未声明的节点类型");
         }
         governor.restoreGeneratedUsage(checkpoint);
         ExtensionNodeGovernor.govern(result, governor, node.tagPlan().idsAllowed());
@@ -533,7 +557,8 @@ public final class XmlTemplateBinder {
             } else {
                 throw bindingError(templateCode, node, "link 标签只能包含文本和 field");
             }
-            label.add(new TextNode(text));
+            label.add(new TextNode(
+                    text, node.attributes().getOrDefault("style", "")));
             governor.addNodes(1);
             governor.addText(text.length());
         }
@@ -563,7 +588,8 @@ public final class XmlTemplateBinder {
                 }
                 return formatted;
             } catch (RuntimeException exception) {
-                throw bindingError(templateCode, node, "字段值无法按已编译格式输出");
+                throw bindingError(
+                        templateCode, node, "字段值无法按已编译格式输出", exception);
             }
         }
         if (value.isTextual()) {
@@ -581,6 +607,15 @@ public final class XmlTemplateBinder {
         return PrintValidationException.invalidDocument(
                 templateCode + "：" + node.tagPath() + "，第 " + node.line()
                         + " 行，第 " + node.column() + " 列：" + detail);
+    }
+
+    /** 创建保留原因链但不公开实现消息的安全绑定异常。 */
+    private PrintValidationException bindingError(
+            String templateCode, CompiledXmlNode node, String detail, Throwable cause) {
+        return PrintValidationException.invalidDocument(
+                templateCode + "：" + node.tagPath() + "，第 " + node.line()
+                        + " 行，第 " + node.column() + " 列：" + detail,
+                cause);
     }
 
     /** 解析严格正整数属性。 */
@@ -619,6 +654,16 @@ public final class XmlTemplateBinder {
             throw PrintValidationException.invalidDocument(name + " 必须大于零");
         }
         return micrometers;
+    }
+
+    /** 选择 then 或 else 的内容，未声明 else 时返回空结果。 */
+    private List<CompiledXmlNode> conditionBranch(
+            CompiledXmlNode condition, boolean matched) {
+        if (matched) {
+            return condition.children().get(0).children();
+        }
+        return condition.children().size() == 2
+                ? condition.children().get(1).children() : List.of();
     }
 
     /** 解析编译阶段已经验证的带方向毫米值。 */

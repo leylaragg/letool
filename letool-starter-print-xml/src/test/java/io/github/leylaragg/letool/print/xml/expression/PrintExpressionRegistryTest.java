@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.POJONode;
 import io.github.leylaragg.letool.print.xml.extension.PrintDataView;
+import io.github.leylaragg.letool.print.template.inspection.TemplateInspectionContribution;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -21,6 +22,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * @author leyland
  */
 class PrintExpressionRegistryTest {
+
+    /** 表达式计划必须主动说明静态读取，不能依靠默认空贡献掩盖路径。 */
+    @Test
+    void shouldRequireExplicitInspectionContribution() throws Exception {
+        assertThat(PrintExpressionPlan.class.isAnnotationPresent(FunctionalInterface.class))
+                .isFalse();
+        assertThat(PrintExpressionPlan.class.getMethod("inspectionContribution").isDefault())
+                .isFalse();
+    }
 
     /** 验证注册表会冻结调用方集合并按语言名查找。 */
     @Test
@@ -115,7 +125,8 @@ class PrintExpressionRegistryTest {
 
             @Override
             public PrintExpressionPlan compile(ExpressionCompileContext context) {
-                return evaluation -> true;
+                return PrintExpressionPlan.of(
+                        TemplateInspectionContribution.empty(), evaluation -> true);
             }
         };
     }

@@ -12,13 +12,13 @@
 </dependency>
 ```
 
-该模块依赖 `letool-starter-print`、模板集合模块 `letool-starter-print-template` 和 Caffeine。Caffeine 只用于模块内部的有界本地编译缓存，不会向公开 API 暴露，也不会启用 Redis、二级缓存或基于时间的过期策略。模块不依赖 Spring、数据库、EDC 业务模型、具体输出库、JasperReports 或表达式引擎。
+该模块依赖 `letool-starter-print`、模板集合模块 `letool-starter-print-template` 和 Caffeine。Caffeine 只用于模块内部的有界本地编译缓存，不会向公开 API 暴露，也不会启用 Redis、二级缓存或基于时间的过期策略。模块不依赖 Spring、数据库、业务模型、具体输出库、JasperReports 或表达式引擎。
 
 ## 基础用法
 
 ```java
 PrintTemplate source = new PrintTemplate(
-        "contract",
+        "document-main",
         TemplateFormat.LETOOL_XML,
         1,
         7,
@@ -31,7 +31,7 @@ DocumentModel document = new XmlTemplateBinder().bind(compiled, printContext);
 
 编译快照可以在上下文版本匹配的前提下重复绑定，不保存 DOM、StAX、业务 POJO 或 Spring 对象。
 
-当前 XML DSL 会生成一个正文页面序列并使用核心默认样式表。核心模型已经支持多页面序列、页眉页脚、逻辑页码和强类型命名样式；这些声明进入 XML 前不会通过隐藏属性或自定义 CSS 临时开放，程序化构建者和其他模板前端可以直接使用核心能力。
+XML 可以声明多个页面序列、页眉页脚、逻辑页码和强类型命名样式。页面、样式和输出白名单在编译期冻结，绑定阶段只展开数据相关内容；模板不能注入 CSS 或渲染器私有参数。
 
 ## 版本解析与编译缓存
 
@@ -44,7 +44,7 @@ XmlTemplateCompilationService service = new XmlTemplateCompilationService(reposi
 
 ResolvedXmlTemplate resolved = service.resolve(
         templateSetVersion,
-        "patient-report",
+        "document-main",
         rendererProfileVersion,
         OutputFormat.PDF);
 ```
@@ -72,11 +72,11 @@ XmlTemplateCompilationService service = new XmlTemplateCompilationService(reposi
 
 ## 模板片段与 include
 
-模板集合可以声明块级 `FRAGMENT`，完整文档和其他片段通过空元素 `include` 引用：
+模板集合可以声明带参数的块级 `FRAGMENT`，完整文档和其他片段通过 `include/with` 显式传值：
 
 ```xml
-<fragment xmlns="https://leyland.github.io/letool/print/v1">
-    <heading><field path="report.title"/></heading>
+<fragment xmlns="https://leyland.github.io/letool/print/v1" parameters="report">
+    <heading><field path="$report.title"/></heading>
     <paragraph>由共享片段生成</paragraph>
 </fragment>
 ```
@@ -84,19 +84,23 @@ XmlTemplateCompilationService service = new XmlTemplateCompilationService(reposi
 ```xml
 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
     <page>
-        <include template="common-header"/>
+        <page-body>
+            <include template="common-header">
+                <with name="report" path="report"/>
+            </include>
+        </page-body>
     </page>
 </document>
 ```
 
-`include` 可放在 `fragment/page/section/cell/if/for-each` 的块级位置，不能放在标题、段落、表格行或 `header/body` 行域。片段只能读取根 `PrintContext` 和自己声明的循环变量，不会隐式捕获引用位置的 `$变量`。
+`include` 可放在 `fragment/page-body/page-header/page-footer/section/cell/then/else/for-each` 的块级位置，不能放在标题、段落、表格行或 `table/header/body` 行域。调用参数在调用方作用域解析；片段只能读取根 `PrintContext`、显式参数和自己的循环变量，不会隐式捕获调用位置的 `$变量`。
 
 集合必须通过 `XmlTemplateSetCompiler` 编译；独立的 `XmlTemplateCompiler.compile()` 遇到 `include` 会明确失败：
 
 ```java
 XmlTemplateSetCompiler compiler = new XmlTemplateSetCompiler(xmlTemplateCompiler);
 CompiledXmlTemplateSet compiledSet = compiler.compile(templateSet);
-CompiledXmlTemplate compiled = compiledSet.require("patient-report");
+CompiledXmlTemplate compiled = compiledSet.require("document-main");
 ```
 
 引用目标必须是同一 `TemplateSet` 中的 `letool-xml` `FRAGMENT`，并保持 DSL、集合和上下文版本一致。编译阶段会检查目标缺失、用途错误、循环引用、引用深度、集合节点总量，以及按引用出现次数计算的展开节点和结构深度。绑定阶段继续沿用同一个 Governor 统计动态操作、最终节点和文本容量。
@@ -106,48 +110,61 @@ CompiledXmlTemplate compiled = compiledSet.require("patient-report");
 ```xml
 <document xmlns="https://leyland.github.io/letool/print/v1"
           context-version="1"
-          title="合同"
+          title="文档清单"
           author="Letool"
-          language="zh-CN">
-    <page size="A4" orientation="portrait" margin="20mm">
-        <section id="summary">
-            <heading id="title" level="1">合同摘要</heading>
-            <paragraph id="intro">投保人：<field path="policy.holder.name"/></paragraph>
-            <if path="policy.active" operator="truthy">
-                <paragraph>保单有效</paragraph>
-            </if>
-            <for-each items="policy.coverages" var="coverage">
-                <paragraph><field path="$coverage.name"/></paragraph>
-            </for-each>
-            <page-break/>
-        </section>
+          language="zh-CN" outputs="pdf">
+    <styles>
+        <paragraph-style name="body" alignment="justify" whitespace="collapse"/>
+    </styles>
+    <page size="A4" orientation="portrait" margin="20mm" numbering="continue">
+        <page-header><paragraph>文档清单</paragraph></page-header>
+        <page-body>
+            <section id="summary">
+                <heading id="title" level="1">清单摘要</heading>
+                <paragraph id="intro" style="body">名称：<field path="document.name"/></paragraph>
+                <if path="document.confirmed" operator="truthy">
+                    <then><paragraph>清单已确认</paragraph></then>
+                    <else><paragraph>清单待确认</paragraph></else>
+                </if>
+                <for-each items="document.items" var="item">
+                    <paragraph><field path="$item.name"/></paragraph>
+                </for-each>
+                <page-break/>
+            </section>
+        </page-body>
+        <page-footer><paragraph>第 <page-number/> 页</paragraph></page-footer>
     </page>
 </document>
 ```
 
+这份示例覆盖完整的 XML 编译与绑定语义。当前内置 PDF 对页眉页脚、命名样式和多页面序列仍会明确报告能力不足；这些高级映射在 7D 完成前不会被静默忽略。
+
 当前支持：
 
-- `document`：上下文版本以及可选标题、作者、语言；
-- `page`：A4/LETTER、portrait/landscape 和统一毫米边距；
+- `document`：上下文版本、可选标题、作者、语言和 `outputs` 输出白名单；
+- `styles`：命名的 `text-style/paragraph-style/table-style/cell-style`；
+- `page`：A4/LETTER、portrait/landscape、四边毫米边距和逻辑页码策略；
+- `page-header/page-body/page-footer`：有序页面区域，其中正文必须且只能出现一次；
 - `section`、`heading`、`paragraph`、`text` 和 `page-break`；
 - 根级 `table-of-contents`，支持可选标题和 1 至 6 级标题过滤；
 - 行内 `field`，只输出字符串、数字、布尔或显式空值；
-- 块级 `if`，支持存在性、布尔、相等和精确数字大小比较；
+- 块级 `if/then/else`，支持存在性、空值、空容器、布尔、相等和精确数字大小比较；
 - 块级 `for-each`，支持嵌套词法作用域和 `$变量` 路径；
 - `table/header/body/row/cell`，支持动态完整行和严格跨行跨列网格；
 - 只保存逻辑资源引用的 `image` 描述；
 - 行内 `bookmark` 和文档内 `link`；
 - 块级 `annotation`，支持便签和自由文本框的目标、方位、毫米尺寸及偏移；
-- 可选 field 格式化计划和内置 `number/date/datetime` 格式化器；
+- 行内 `line-break/page-number/page-count`；
+- 可选 field 格式化计划和内置 `number/date/datetime/boolean/join` 格式化器；
 - 显式注册的条件表达式和可信自定义标签 SPI；
 - 块级 `fragment/include` 引用图和闭合作用域绑定；
 - 标签、属性、父子关系、ID、标题层级、节点数量、深度和文本长度校验。
 
-目录只能作为 `page` 的直接子节点声明一次，不能放进 `section`、`if`、`for-each`、表格或扩展标签。省略 `min-level` 和 `max-level` 时使用 1 至 3；目录只收录其后出现的匹配标题，具体页码和链接由输出渲染器完成。
+目录只能作为 `page-body` 的直接子节点声明一次，不能放进 `section`、条件分支、循环、表格或扩展标签。省略 `min-level` 和 `max-level` 时使用 1 至 3；目录只收录其后出现的匹配标题，具体页码和链接由输出渲染器完成。
 
 ## 数据路径与空值
 
-- 根路径使用 `policy.holder.name`，循环变量路径使用 `$coverage.name`；
+- 根路径使用 `document.owner.name`，循环变量路径使用 `$item.name`；
 - 路径只允许对象字段，不支持下标、通配符、方法、类名或任意表达式；
 - 缺失路径绑定失败，显式 JSON `null` 作为已存在空值；
 - `field` 遇到显式空值输出空文本，对象和数组不能直接输出；
@@ -159,43 +176,46 @@ CompiledXmlTemplate compiled = compiledSet.require("patient-report");
 结构化条件示例：
 
 ```xml
-<if path="policy.amount"
+<if path="document.amount"
     operator="gte"
     value="1000.00"
     value-type="number">
-    <paragraph>达到保额门槛</paragraph>
+    <then><paragraph>达到金额门槛</paragraph></then>
+    <else><paragraph>未达到金额门槛</paragraph></else>
 </if>
 ```
 
-`value-type` 支持 `string/number/boolean/null`，默认 `string`。数字使用十进制精确比较。
+`then` 必须存在，`else` 可省略。`value-type` 支持 `string/number/boolean/null`，默认 `string`；数字使用十进制精确比较。`exists/not-exists` 区分路径缺失，`is-null/not-null` 只判断已存在值，`empty/not-empty` 支持字符串、数组、对象和显式 `null`，纯空格字符串不视为空。
 
 ## 表格、图片与文档内导航
 
 ```xml
 <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
     <page>
-        <image id="logo"
-               resource-id="brand.logo"
-               alt="公司标识"
-               width="30mm"
-               height="12mm"/>
-        <table id="items">
-            <header>
-                <row>
-                    <cell><paragraph>名称</paragraph></cell>
-                    <cell><paragraph>金额</paragraph></cell>
-                </row>
-            </header>
-            <body>
-                <for-each items="order.items" var="item">
+        <page-body>
+            <image id="logo"
+                   resource-id="brand.logo"
+                   alt="公司标识"
+                   width="30mm"
+                   height="12mm"/>
+            <table id="items">
+                <header>
                     <row>
-                        <cell><paragraph><field path="$item.name"/></paragraph></cell>
-                        <cell><paragraph><field path="$item.amount" formatter="number"/></paragraph></cell>
+                        <cell><paragraph>名称</paragraph></cell>
+                        <cell><paragraph>金额</paragraph></cell>
                     </row>
-                </for-each>
-            </body>
-        </table>
-        <paragraph><bookmark id="summary" label="汇总"/><link target="summary">返回汇总</link></paragraph>
+                </header>
+                <body>
+                    <for-each items="document.items" var="item">
+                        <row>
+                            <cell><paragraph><field path="$item.name"/></paragraph></cell>
+                            <cell><paragraph><field path="$item.amount" formatter="number"/></paragraph></cell>
+                        </row>
+                    </for-each>
+                </body>
+            </table>
+            <paragraph><bookmark id="summary" label="汇总"/><link target="summary">返回汇总</link></paragraph>
+        </page-body>
     </page>
 </document>
 ```
@@ -225,7 +245,9 @@ CompiledXmlTemplate compiled = compiledSet.require("patient-report");
 
 - `number`：支持 `pattern/locale/rounding-mode`；
 - `date`：支持 `pattern/input-pattern/locale/zone-id`；
-- `datetime`：支持 `pattern/input-pattern/locale/zone-id`。
+- `datetime`：支持 `pattern/input-pattern/locale/zone-id`；
+- `boolean`：支持 `true-text/false-text`，输入必须是 JSON 布尔值；
+- `join`：支持 `separator`，输入必须是只含标量或 `null` 的 JSON 数组。
 
 未配置 `locale` 时使用 `Locale.ROOT`，未配置 `zone-id` 时使用 UTC。日期字符串缺省使用 ISO 语义，数字时间值按 epoch millis 解释。显式 JSON `null` 输出空文本且不会调用格式化器。
 
@@ -256,7 +278,7 @@ XML 必须显式声明语言和表达式正文：
 
 ```xml
 <if expression-language="my-language" test="policy-active">
-    <paragraph>保单已生效</paragraph>
+    <then><paragraph>条件成立</paragraph></then>
 </if>
 ```
 
@@ -288,7 +310,7 @@ XmlTemplateCompiler compiler = new XmlTemplateCompiler(
 - 稳定的小写标签名和静态属性白名单；
 - `BLOCK/INLINE` 放置位置；
 - `EMPTY/BLOCKS/INLINE` 子节点内容模型；
-- 编译期 `PrintTagPlan`，用于绑定时返回一个核心 `DocumentNode`。
+- 编译期 `PrintTagPlan`，同时声明读取路径、可能返回的节点类型和额外文档特性。
 
 编译上下文只暴露白名单属性与安全位置说明；绑定上下文只暴露只读 `PrintDataView` 和框架已经绑定好的受控子节点。处理器不接触 DOM、StAX、业务 POJO、Spring 容器、内部 `BindingScope` 或 Governor。
 
@@ -300,7 +322,18 @@ XmlTemplateCompiler compiler = new XmlTemplateCompiler(
 - 最终节点 ID 唯一性和内部链接目标校验；
 - 异常信息脱敏。
 
-自定义标签不能覆盖内置标签，不能作为 `link` 标签内容，也不能绕过 `table/header/body/row/cell` 的结构约束。实际资源解析仍属于后续独立扩展。
+标签计划可以用 `PrintTagPlan.of(...)` 同时给出 inspection 贡献和绑定函数。节点声明必须列出可能返回的具体类型，框架会校验声明路径，并在绑定后核对真实返回类型。自定义标签不能覆盖内置标签，不能作为 `link` 标签内容，也不能绕过 `table/header/body/row/cell` 的结构约束。实际资源解析仍属于后续独立扩展。
+
+## 模板 inspection
+
+`CompiledXmlTemplate.inspection()` 和 `ResolvedXmlTemplate.inspection()` 返回同一份不可变静态契约。宿主可以在绑定前读取：
+
+- 所有可能分支引用的数据路径、用途、模板位置和可见作用域；
+- include 引用、参数映射和片段参数声明；
+- 可能生成的核心节点类型与 `DocumentFeature`；
+- 输出白名单、格式化器、表达式语言和自定义标签名称。
+
+inspection 不包含 XML 正文、表达式正文、比较值、业务数据或解析器对象。`outputs` 未声明时表示模板不限制格式；声明后，`XmlTemplateCompilationService` 会在绑定前拒绝白名单外的输出。
 
 ## 安全边界
 
@@ -313,4 +346,4 @@ XmlTemplateCompiler compiler = new XmlTemplateCompiler(
 - 动态绑定限制路径长度、路径段数、循环嵌套、单循环元素、累计动态操作、生成节点和生成文本总量。
 - 模板集合编译限制原始节点总量、引用链深度、展开节点总量和最终结构深度。
 
-宿主应用仍负责权限、数据查询、脱敏、字典翻译和业务计算；本模块不会为了 EDC 或其他首个使用方加入领域定制逻辑。
+宿主应用仍负责权限、数据查询、脱敏、字典翻译和业务计算；本模块不会为了某个使用方加入领域定制逻辑。

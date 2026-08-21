@@ -47,10 +47,11 @@ public final class BadgeTagHandler implements PrintTagHandler {
     @Override
     public PrintTagPlan compile(TagCompileContext context) {
         String prefix = context.attribute("prefix").orElse("");
-        return binding -> new TextNode(prefix + binding.inlineChildren().stream()
-                .map(TextNode.class::cast)
-                .map(TextNode::text)
-                .reduce("", String::concat));
+        return PrintTagPlan.of(TextNode.class,
+                binding -> new TextNode(prefix + binding.inlineChildren().stream()
+                        .map(TextNode.class::cast)
+                        .map(TextNode::text)
+                        .reduce("", String::concat)));
     }
 }
 ```
@@ -61,7 +62,7 @@ public final class BadgeTagHandler implements PrintTagHandler {
 <paragraph><badge prefix="[重点] ">金额：<field path="amount"/></badge></paragraph>
 ```
 
-处理器只能读取白名单属性和 `PrintDataView` 的标准 JSON 副本，不能通过 XML 选择 Java 类或 Bean。返回节点仍会经过位置、循环 ID、导航、节点数和文本量检查；不要把预绑定子树重复插入来绕开容量统计。
+处理器只能读取白名单属性和 `PrintDataView` 的标准 JSON 副本，不能通过 XML 选择 Java 类或 Bean。计划需要声明每一种可能返回的具体节点类型，父接口或抽象类型不能代替这份清单。返回节点仍会经过位置、循环 ID、导航、节点数和文本量检查；不要把预绑定子树重复插入来绕开容量统计。
 
 ## 自定义格式化器
 
@@ -109,14 +110,18 @@ public final class FlagConditionExpression implements PrintConditionExpression {
         if (!field.matches("[a-z][a-zA-Z0-9_]{0,63}")) {
             throw new IllegalArgumentException("flag 表达式必须是安全字段名");
         }
-        return evaluation -> evaluation.data().root().path(field).asBoolean(false);
+        TemplateInspectionContribution inspection = TemplateInspectionContribution.builder()
+                .dataPath(field)
+                .build();
+        return PrintExpressionPlan.of(inspection,
+                evaluation -> evaluation.data().root().path(field).asBoolean(false));
     }
 }
 ```
 
 ```xml
 <if expression-language="flag" test="approved">
-    <paragraph>已批准</paragraph>
+    <then><paragraph>已批准</paragraph></then>
 </if>
 ```
 

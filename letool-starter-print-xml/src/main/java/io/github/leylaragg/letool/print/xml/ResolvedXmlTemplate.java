@@ -1,6 +1,7 @@
 package io.github.leylaragg.letool.print.xml;
 
 import io.github.leylaragg.letool.print.template.TemplateCompilationKey;
+import io.github.leylaragg.letool.print.template.inspection.TemplateInspection;
 
 import java.util.Objects;
 
@@ -38,6 +39,11 @@ public final class ResolvedXmlTemplate {
     /** @return 可复用的 XML 编译结果 */
     public CompiledXmlTemplate template() {
         return template;
+    }
+
+    /** @return 当前编译快照的静态模板契约 */
+    public TemplateInspection inspection() {
+        return template.inspection();
     }
 
     @Override

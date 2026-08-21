@@ -5,10 +5,12 @@ import io.github.leylaragg.letool.print.xml.XmlDsl;
 import io.github.leylaragg.letool.print.xml.expression.ExpressionCompileContext;
 import io.github.leylaragg.letool.print.xml.expression.PrintConditionExpression;
 import io.github.leylaragg.letool.print.xml.expression.PrintExpressionPlan;
+import io.github.leylaragg.letool.print.template.inspection.TemplateInspectionContribution;
 import org.springframework.expression.spel.standard.SpelExpression;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /**
@@ -86,8 +88,12 @@ public final class RestrictedSpelConditionExpression implements PrintConditionEx
             new RestrictedSpelSourceGovernor().validate(source);
             SpelExpression parsed = parser.parseRaw(source);
             // 解析成功不代表表达式安全，必须在生成可执行计划前完成整棵 AST 白名单校验。
-            astValidator.validate(parsed.getAST());
-            return new RestrictedSpelExpressionPlan(parsed, budgetFactory);
+            Set<String> paths = astValidator.validateAndCollectPaths(parsed.getAST());
+            TemplateInspectionContribution.Builder inspection =
+                    TemplateInspectionContribution.builder();
+            paths.forEach(inspection::dataPath);
+            return new RestrictedSpelExpressionPlan(
+                    parsed, budgetFactory, inspection.build());
         } catch (RuntimeException exception) {
             // 解析器、源码治理和 AST 校验异常都可能携带正文或实现细节，统一转换为无原因链的安全异常。
             throw compilationFailure(context.location());
