@@ -10,7 +10,7 @@ public interface CacheMutationCoordinator {
     /**
      * 在指定一致性模式下执行业务修改。
      *
-     * @param mode 一致性模式
+     * @param mutation 本次修改的一致性要求与缓存身份
      * @param businessAction 需要参与事务的业务动作
      * @param afterCommit 数据库提交后执行的缓存动作
      * @param <T> 业务返回类型
@@ -24,6 +24,13 @@ public interface CacheMutationCoordinator {
 
     /**
      * 兼容只传一致性模式的调用；DURABLE 模式必须使用包含缓存身份的重载。
+     *
+     * @param mode 一致性模式
+     * @param businessAction 需要参与事务的业务动作
+     * @param afterCommit 数据库提交后执行的缓存动作
+     * @param <T> 业务返回类型
+     * @return 业务返回值
+     * @throws Throwable 业务动作或提交后动作抛出的原始异常
      */
     default <T> T execute(
             CacheConsistencyMode mode,

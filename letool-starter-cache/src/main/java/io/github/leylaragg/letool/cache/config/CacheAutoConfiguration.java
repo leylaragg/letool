@@ -123,7 +123,6 @@ public class CacheAutoConfiguration {
      * 校验 DURABLE 模式所需基础设施，防止强一致配置被静默降级。
      *
      * @param properties 缓存配置
-     * @param redisUtil Redis 操作入口
      * @param redisProvider Redis 操作入口候选
      * @param coordinatorProvider 已绑定正确事务管理器的缓存修改协调器候选
      * @param eventStoreProvider 持久化事件仓储候选
