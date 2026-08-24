@@ -167,13 +167,14 @@ IDEA 与 PowerShell 使用不同 Maven 或不同 `settings.xml`，是“命令�
 
 ## 4. 项目中已经准备好的发布配置
 
-根 `pom.xml` 已经提供 Maven Central 所需的项目名称、描述、URL、许可证、开发者和 SCM 信息。`release` Profile 负责生成源码包、Javadoc 包、GPG 签名，并通过 Central Maven 插件上传：
+根 `pom.xml` 已经提供 Maven Central 所需的项目名称、描述、URL、许可证、开发者和 SCM 信息。`release` Profile 会先生成可独立解析的消费 POM，再准备源码包、Javadoc 包和 GPG 签名，最后通过 Central Maven 插件上传：
 
 ```xml
 <profile>
     <id>release</id>
     <build>
         <plugins>
+            <!-- flatten-maven-plugin：解析父级元数据和依赖版本 -->
             <!-- maven-source-plugin：生成 sources.jar -->
             <!-- maven-javadoc-plugin：生成 javadoc.jar -->
             <!-- maven-gpg-plugin：为发布文件生成 .asc 签名 -->
@@ -193,7 +194,7 @@ IDEA 与 PowerShell 使用不同 Maven 或不同 `settings.xml`，是“命令�
 </profile>
 ```
 
-日常发布不需要反复修改这段配置。只有插件升级、Central 规则变化或发布范围调整时才需要改 POM。
+JAR 模块发布时使用扁平 POM，不依赖父 POM 已经在 Central 公开；根聚合 POM仍保留 `dependencyManagement`，可以继续承担版本管理职责。日常发布不需要反复修改这段配置，只有插件升级、Central 规则变化或发布范围调整时才需要改 POM。
 
 ## 5. 每次发布前的检查
 
@@ -497,12 +498,13 @@ Central Maven 插件负责打包和上传，但不会替项目自动补齐源码
 打开 Deployment 的 Validation Results，根据具体错误修改项目。常见原因包括：
 
 - POM 缺少名称、描述、URL、许可证、开发者或 SCM 信息。
+- POM 仍依赖尚未公开的父 POM，导致继承元数据和依赖版本无法解析。
 - JAR 缺少 sources 或 Javadoc。
 - `.asc` 无法通过已发布公钥验证。
 - `groupId` 不在已验证 Namespace 下。
 - 某个相同坐标和版本已经发布。
 
-修复后重新执行 `clean verify` 和 `clean deploy`。不要尝试覆盖已经 `PUBLISHED` 的版本。
+如果同一次出现“Project URL is not defined”“License information is missing”“SCM URL is not defined”“Developers information is missing”和多条“Dependency version information is missing”，先检查模块发布 POM是否仍包含 `<parent>`，以及 `release` Profile 是否执行了 `flatten-maven-plugin`。修复后重新执行 `clean verify` 和 `clean deploy`。不要尝试覆盖已经 `PUBLISHED` 的版本。
 
 ### 11.8 构建成功，但 Portal 中出现了不该发布的模块
 
