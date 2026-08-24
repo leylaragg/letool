@@ -40,6 +40,29 @@ class CacheConfigTest {
     }
 
     @Test
+    @DisplayName("缓存配置应提供可选择的 Redis 读取失败策略")
+    void shouldExposeRedisReadFailurePolicyConfiguration() {
+        assertDoesNotThrow(() -> {
+            Class<?> policyType = Class.forName(
+                    "io.github.leylaragg.letool.cache.core.CacheReadFailurePolicy"
+            );
+            Object failClosed = Enum.valueOf(
+                    policyType.asSubclass(Enum.class),
+                    "FAIL_CLOSED"
+            );
+            CacheConfig<String, String> builder =
+                    CacheConfig.<String, String>builder("rule-index");
+            CacheConfig.class
+                    .getMethod("readFailurePolicy", policyType)
+                    .invoke(builder, failClosed);
+            Object configured = CacheConfig.class
+                    .getMethod("getReadFailurePolicy")
+                    .invoke(builder.build());
+            assertEquals(failClosed, configured);
+        });
+    }
+
+    @Test
     @DisplayName("TRANSACTIONAL 模式可以独立选择读取校验和写策略")
     void transactionalModeShouldAllowIndependentReadAndWritePolicies() {
         CacheConfig<String, String> config = CacheConfig.<String, String>builder("critical")
@@ -207,6 +230,30 @@ class CacheConfigTest {
                         .build(),
                 "null-value-ttl"
         );
+    }
+
+    @Test
+    @DisplayName("版本元数据保留期不得短于 L1 与恢复安全窗口")
+    void shouldRejectUnsafeVersionMetadataRetention() {
+        CacheException exception = assertThrows(
+                CacheException.class,
+                () -> CacheConfig.<String, String>builder("metadata")
+                        .l1Ttl(Duration.ofHours(1))
+                        .l2Ttl(Duration.ofHours(2))
+                        .fenceTtl(Duration.ofMinutes(2))
+                        .recoveryInterval(Duration.ofSeconds(5))
+                        .versionMetadataRetention(Duration.ofHours(1))
+                        .build()
+        );
+
+        assertEquals("CACHE_001", exception.getCode());
+        assertTrue(exception.getMessage().contains("version-metadata-retention"));
+        CacheConfig<String, String> valid = CacheConfig.<String, String>builder("metadata")
+                .l1Ttl(Duration.ofHours(1))
+                .l2Ttl(Duration.ofHours(2))
+                .versionMetadataRetention(Duration.ofHours(2))
+                .build();
+        assertEquals(Duration.ofHours(2), valid.getVersionMetadataRetention());
     }
 
     @Test

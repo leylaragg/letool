@@ -6,6 +6,7 @@ import io.github.leylaragg.letool.cache.consistency.CacheWritePolicy;
 import io.github.leylaragg.letool.cache.exception.CacheException;
 
 import java.time.Duration;
+import java.lang.reflect.Type;
 import java.util.function.Function;
 
 /**
@@ -26,16 +27,27 @@ import java.util.function.Function;
  */
 public class CacheConfig<K, V> {
 
+    /** 未经过管理器合并时使用的兼容 Redis Key 前缀。 */
+    public static final String DEFAULT_REDIS_KEY_PREFIX = "letool:cache:";
+
     /** 缓存区域名称，会参与 CacheManager 注册和 Redis key 拼接。 */
     private final String name;
     /** L1 Caffeine 最大条目数。 */
     private int l1MaxSize = 2000;
+    /** 单次 Redis pipeline 包含的最大业务 Key 数。 */
+    private int redisBatchSize = 256;
     /** 是否启用 L1 本地缓存。 */
     private boolean l1Enabled = true;
     /** L1 写入后的过期时间。 */
     private Duration l1Ttl = Duration.ofHours(24);
     /** L2 Redis 写入后的过期时间。 */
     private Duration l2Ttl = Duration.ofDays(3);
+    /** 单 Key 版本元数据的保留时间。 */
+    private Duration versionMetadataRetention = Duration.ofDays(7);
+    /** DURABLE 写围栏最长存活时间，用于计算版本元数据安全窗口。 */
+    private Duration fenceTtl = Duration.ofMinutes(2);
+    /** 一致性恢复扫描间隔，用于计算版本元数据安全窗口。 */
+    private Duration recoveryInterval = Duration.ofSeconds(5);
     /** 是否启用 L2 Redis 缓存。 */
     private boolean l2Enabled = true;
     /** 数据库修改与缓存失效之间的一致性模式。 */
@@ -44,14 +56,18 @@ public class CacheConfig<K, V> {
     private CacheReadValidation readValidation = CacheReadValidation.VERSIONED;
     /** 数据库修改成功后的缓存处理策略。 */
     private CacheWritePolicy writePolicy = CacheWritePolicy.INVALIDATE;
+    /** Redis 权威读取失败时的返回策略。 */
+    private CacheReadFailurePolicy readFailurePolicy = CacheReadFailurePolicy.STALE_IF_AVAILABLE;
     /** 是否缓存 loader 返回的 null，防止不存在的数据频繁穿透到数据库。 */
     private boolean nullValueCache = true;
     /** null 哨兵 TTL，通常应短于正常业务值 TTL。 */
     private Duration nullValueTtl = Duration.ofMinutes(5);
     /** Redis Key 前缀；最终 Redis Key 还会拼接缓存名称和业务 Key。 */
-    private String redisKeyPrefix = "letool:cache:";
+    private String redisKeyPrefix = DEFAULT_REDIS_KEY_PREFIX;
+    /** 调用方是否显式设置过单缓存前缀，用于区别默认展示值和覆盖全局配置的真实意图。 */
+    private boolean redisKeyPrefixExplicitlySet;
     /** L2 读取时用于校验 RedisTemplate 反序列化结果的 value 类型；为 null 时跳过严格类型校验。 */
-    private Class<?> valueType;
+    private Type valueType;
     /** 业务 key 的稳定字符串序列化器，参与 Redis Key、版本、围栏和失效广播。 */
     private Function<K, String> keySerializer = String::valueOf;
 
@@ -178,6 +194,46 @@ public class CacheConfig<K, V> {
         return this;
     }
 
+    /** @param retention 单 Key 版本元数据保留期 @return 当前配置对象 */
+    public CacheConfig<K, V> versionMetadataRetention(Duration retention) {
+        this.versionMetadataRetention = retention;
+        return this;
+    }
+
+    /** @param fenceTtl DURABLE 写围栏最长存活时间 @return 当前配置对象 */
+    public CacheConfig<K, V> fenceTtl(Duration fenceTtl) {
+        this.fenceTtl = fenceTtl;
+        return this;
+    }
+
+    /** @param recoveryInterval 一致性恢复扫描间隔 @return 当前配置对象 */
+    public CacheConfig<K, V> recoveryInterval(Duration recoveryInterval) {
+        this.recoveryInterval = recoveryInterval;
+        return this;
+    }
+
+    /**
+     * 设置批量 Redis 操作的分块大小。
+     *
+     * @param redisBatchSize 单批业务 Key 数，必须大于零
+     * @return 当前配置对象
+     */
+    public CacheConfig<K, V> redisBatchSize(int redisBatchSize) {
+        this.redisBatchSize = redisBatchSize;
+        return this;
+    }
+
+    /**
+     * 设置 Redis 权威读取失败时的返回策略。
+     *
+     * @param readFailurePolicy Redis 读取失败策略
+     * @return 当前配置对象
+     */
+    public CacheConfig<K, V> readFailurePolicy(CacheReadFailurePolicy readFailurePolicy) {
+        this.readFailurePolicy = readFailurePolicy;
+        return this;
+    }
+
     /**
      * 设置是否缓存 null 值。
      *
@@ -208,6 +264,7 @@ public class CacheConfig<K, V> {
      */
     public CacheConfig<K, V> redisKeyPrefix(String redisKeyPrefix) {
         this.redisKeyPrefix = redisKeyPrefix;
+        this.redisKeyPrefixExplicitlySet = true;
         return this;
     }
 
@@ -220,6 +277,17 @@ public class CacheConfig<K, V> {
      * @return 当前配置对象
      */
     public CacheConfig<K, V> valueType(Class<?> valueType) {
+        this.valueType = valueType;
+        return this;
+    }
+
+    /**
+     * 设置包含泛型参数的缓存 value 类型。
+     *
+     * @param valueType 类或参数化类型
+     * @return 当前配置对象
+     */
+    public CacheConfig<K, V> valueType(Type valueType) {
         this.valueType = valueType;
         return this;
     }
@@ -273,6 +341,19 @@ public class CacheConfig<K, V> {
         if (l2Ttl.compareTo(l1Ttl) < 0) {
             throw CacheException.configurationInvalid("l2-ttl");
         }
+        if (versionMetadataRetention == null || versionMetadataRetention.isZero()
+                || versionMetadataRetention.isNegative()
+                || fenceTtl == null || fenceTtl.isNegative()
+                || recoveryInterval == null || recoveryInterval.isNegative()) {
+            throw CacheException.configurationInvalid("version-metadata-retention");
+        }
+        Duration metadataSafetyWindow = l1Ttl
+                .plus(fenceTtl.compareTo(recoveryInterval) >= 0
+                        ? fenceTtl : recoveryInterval)
+                .plus(Duration.ofMinutes(10));
+        if (versionMetadataRetention.compareTo(metadataSafetyWindow) < 0) {
+            throw CacheException.configurationInvalid("version-metadata-retention");
+        }
         if (redisKeyPrefix == null || redisKeyPrefix.trim().isEmpty()) {
             throw CacheException.configurationInvalid("redis-key-prefix");
         }
@@ -287,6 +368,12 @@ public class CacheConfig<K, V> {
         }
         if (writePolicy == null) {
             throw CacheException.configurationInvalid("write-policy");
+        }
+        if (redisBatchSize <= 0) {
+            throw CacheException.configurationInvalid("redis-batch-size");
+        }
+        if (readFailurePolicy == null) {
+            throw CacheException.configurationInvalid("read-failure-policy");
         }
         if (keySerializer == null) {
             throw CacheException.configurationInvalid("key-serializer");
@@ -304,6 +391,9 @@ public class CacheConfig<K, V> {
     /** @return L1 最大条目数 */
     public int getL1MaxSize() { return l1MaxSize; }
 
+    /** @return 单次 Redis pipeline 的最大业务 Key 数 */
+    public int getRedisBatchSize() { return redisBatchSize; }
+
     /** @return 当前缓存区域是否启用 L1 */
     public boolean isL1Enabled() { return l1Enabled; }
 
@@ -312,6 +402,15 @@ public class CacheConfig<K, V> {
 
     /** @return L2 Redis 业务值的过期时间 */
     public Duration getL2Ttl() { return l2Ttl; }
+
+    /** @return 单 Key 版本元数据保留期 */
+    public Duration getVersionMetadataRetention() { return versionMetadataRetention; }
+
+    /** @return DURABLE 写围栏最长存活时间 */
+    public Duration getFenceTtl() { return fenceTtl; }
+
+    /** @return 一致性恢复扫描间隔 */
+    public Duration getRecoveryInterval() { return recoveryInterval; }
 
     /** @return 当前缓存区域是否启用 L2 */
     public boolean isL2Enabled() { return l2Enabled; }
@@ -328,6 +427,9 @@ public class CacheConfig<K, V> {
     /** @return 数据库修改成功后的缓存处理策略 */
     public CacheWritePolicy getWritePolicy() { return writePolicy; }
 
+    /** @return Redis 权威读取失败时的返回策略 */
+    public CacheReadFailurePolicy getReadFailurePolicy() { return readFailurePolicy; }
+
     /** @return 是否缓存 null 哨兵 */
     public boolean isNullValueCache() { return nullValueCache; }
 
@@ -337,6 +439,18 @@ public class CacheConfig<K, V> {
     /** @return Redis key 前缀 */
     public String getRedisKeyPrefix() { return redisKeyPrefix; }
 
+    /**
+     * 判断调用方是否明确覆盖了管理器全局 Redis Key 前缀。
+     *
+     * @return {@code true} 表示单缓存前缀由调用方显式设置
+     */
+    boolean hasExplicitRedisKeyPrefix() { return redisKeyPrefixExplicitlySet; }
+
     /** @return Redis 反序列化结果的预期 value 类型 */
-    public Class<?> getValueType() { return valueType; }
+    public Class<?> getValueType() {
+        return valueType instanceof Class<?> clazz ? clazz : null;
+    }
+
+    /** @return 完整 value 类型描述，包括参数化类型 */
+    public Type getValueTypeDescriptor() { return valueType; }
 }

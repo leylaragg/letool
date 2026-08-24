@@ -49,6 +49,12 @@
       "defaultValue": "INVALIDATE"
     },
     {
+      "name": "letool.cache.consistency.read-failure-policy",
+      "type": "io.github.leylaragg.letool.cache.core.CacheReadFailurePolicy",
+      "description": "Default behavior when a Redis cache read fails.",
+      "defaultValue": "STALE_IF_AVAILABLE"
+    },
+    {
       "name": "letool.cache.consistency.outbox-table",
       "type": "java.lang.String",
       "description": "JDBC Outbox table used by DURABLE mode.",
@@ -85,6 +91,12 @@
       "defaultValue": "1s"
     },
     {
+      "name": "letool.cache.consistency.version-metadata-retention",
+      "type": "java.time.Duration",
+      "description": "Retention for per-key version metadata; must exceed the configured L1 and recovery safety window.",
+      "defaultValue": "7d"
+    },
+    {
       "name": "letool.cache.instances.name",
       "type": "java.lang.String",
       "description": "Cache instance name."
@@ -100,6 +112,12 @@
       "type": "java.lang.Integer",
       "description": "Maximum Caffeine L1 entries.",
       "defaultValue": 2000
+    },
+    {
+      "name": "letool.cache.instances.redis-batch-size",
+      "type": "java.lang.Integer",
+      "description": "Maximum business keys queued in one Redis pipeline batch.",
+      "defaultValue": 256
     },
     {
       "name": "letool.cache.instances.l1-ttl",
@@ -139,6 +157,16 @@
       "name": "letool.cache.instances.write-policy",
       "type": "io.github.leylaragg.letool.cache.consistency.CacheWritePolicy",
       "description": "Optional per-cache post-commit write policy override."
+    },
+    {
+      "name": "letool.cache.instances.read-failure-policy",
+      "type": "io.github.leylaragg.letool.cache.core.CacheReadFailurePolicy",
+      "description": "Optional per-cache Redis read failure policy override."
+    },
+    {
+      "name": "letool.cache.instances.version-metadata-retention",
+      "type": "java.time.Duration",
+      "description": "Optional per-cache version metadata retention override."
     },
     {
       "name": "letool.cache.instances.null-value-cache",

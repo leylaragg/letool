@@ -15,6 +15,11 @@ public class CacheStats {
     private final AtomicLong loadFailureCount = new AtomicLong();
     private final AtomicLong evictionCount = new AtomicLong();
     private final AtomicLong l2DegradedCount = new AtomicLong();
+    private final AtomicLong batchReadCount = new AtomicLong();
+    private final AtomicLong batchWriteCount = new AtomicLong();
+    private final AtomicLong batchRequestedKeyCount = new AtomicLong();
+    private final AtomicLong batchHitKeyCount = new AtomicLong();
+    private final AtomicLong redisBatchCount = new AtomicLong();
 
     public void recordL1Hit() { l1HitCount.incrementAndGet(); }
     public void recordL2Hit() { l2HitCount.incrementAndGet(); }
@@ -24,6 +29,16 @@ public class CacheStats {
     public void recordLoadFailure() { loadFailureCount.incrementAndGet(); }
     public void recordEviction() { evictionCount.incrementAndGet(); }
     public void recordL2Degraded() { l2DegradedCount.incrementAndGet(); }
+    public void recordBatchRead(long keyCount) {
+        batchReadCount.incrementAndGet();
+        batchRequestedKeyCount.addAndGet(keyCount);
+    }
+    public void recordBatchWrite(long keyCount) {
+        batchWriteCount.incrementAndGet();
+        batchRequestedKeyCount.addAndGet(keyCount);
+    }
+    public void recordBatchHits(long keyCount) { batchHitKeyCount.addAndGet(keyCount); }
+    public void recordRedisBatch() { redisBatchCount.incrementAndGet(); }
 
     public long getL1HitCount() { return l1HitCount.get(); }
     public long getL2HitCount() { return l2HitCount.get(); }
@@ -33,6 +48,11 @@ public class CacheStats {
     public long getLoadFailureCount() { return loadFailureCount.get(); }
     public long getEvictionCount() { return evictionCount.get(); }
     public long getL2DegradedCount() { return l2DegradedCount.get(); }
+    public long getBatchReadCount() { return batchReadCount.get(); }
+    public long getBatchWriteCount() { return batchWriteCount.get(); }
+    public long getBatchRequestedKeyCount() { return batchRequestedKeyCount.get(); }
+    public long getBatchHitKeyCount() { return batchHitKeyCount.get(); }
+    public long getRedisBatchCount() { return redisBatchCount.get(); }
 
     public long getTotalRequests() {
         return l1HitCount.get() + l2HitCount.get() + missCount.get();

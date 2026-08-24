@@ -10,11 +10,20 @@ import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
 import io.github.leylaragg.letool.tool.redis.RedisUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.redis.connection.ReturnType;
+import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.serializer.RedisSerializer;
 
 import java.time.Duration;
+import java.nio.charset.StandardCharsets;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -59,13 +68,16 @@ public class MultiLevelCache<K, V> {
     /** 原子写脚本：先推进区域版本，再设置业务值和 TTL。 */
     private static final String ATOMIC_PUT_SCRIPT = """
             local version = redis.call('INCR', KEYS[2])
+            redis.call('PEXPIRE', KEYS[2], ARGV[3])
             redis.call('PSETEX', KEYS[1], ARGV[2], ARGV[1])
             return version
             """;
     /** 原子删脚本：删除业务 key，并推进区域版本，使其它 JVM 的 L1 立即失效。 */
     private static final String ATOMIC_DELETE_SCRIPT = """
             redis.call('DEL', KEYS[1])
-            return redis.call('INCR', KEYS[2])
+            local version = redis.call('INCR', KEYS[2])
+            redis.call('PEXPIRE', KEYS[2], ARGV[1])
+            return version
             """;
 
     /** DURABLE 模式写回时先检查围栏，禁止未提交事务期间的旧数据库快照进入缓存。 */
@@ -75,7 +87,17 @@ public class MultiLevelCache<K, V> {
             if not current then current = '0' end
             if current ~= ARGV[3] then return -1 end
             redis.call('PSETEX', KEYS[1], ARGV[2], ARGV[1])
-            return redis.call('INCR', KEYS[2])
+            local version = redis.call('INCR', KEYS[2])
+            redis.call('PEXPIRE', KEYS[2], ARGV[4])
+            return version
+            """;
+    /** 显式批量写在 DURABLE 模式下只需原子检查围栏，不携带 loader 读取版本。 */
+    private static final String DURABLE_BATCH_PUT_SCRIPT = """
+            if redis.call('EXISTS', KEYS[3]) == 1 then return -1 end
+            local version = redis.call('INCR', KEYS[2])
+            redis.call('PEXPIRE', KEYS[2], ARGV[3])
+            redis.call('PSETEX', KEYS[1], ARGV[2], ARGV[1])
+            return version
             """;
 
     /** 缓存区域名称，用于注册表、日志、Redis key 拼接和失效广播路由。 */
@@ -95,7 +117,7 @@ public class MultiLevelCache<K, V> {
     /** 当前缓存区域的 Redis 键空间，负责键隔离和非阻塞区域清理。 */
     private final RedisCacheKeyspace keyspace;
     /** L2 命中时用于校验 RedisTemplate 反序列化结果的 value 类型；为 null 时跳过严格类型校验。 */
-    private final Class<?> valueType;
+    private final Type valueType;
     /** 当前缓存实例的运行统计。 */
     private final CacheStats stats = new CacheStats();
     /** key 级单飞锁，避免热点 key 在并发未命中时同时回源数据库。 */
@@ -147,7 +169,7 @@ public class MultiLevelCache<K, V> {
         this.serializer = serializer;
         this.config = config;
         this.keyspace = new RedisCacheKeyspace(config.getRedisKeyPrefix(), name);
-        this.valueType = config.getValueType();
+        this.valueType = config.getValueTypeDescriptor();
         this.invalidationPublisher = invalidationPublisher == null ? CacheInvalidationPublisher.noop() : invalidationPublisher;
         this.instanceId = instanceId == null ? "local" : instanceId;
         this.degradationListener = degradationListener == null ? () -> { } : degradationListener;
@@ -285,16 +307,34 @@ public class MultiLevelCache<K, V> {
         if (keys == null || keys.isEmpty()) {
             return Collections.emptyMap();
         }
-        Map<K, V> result = new HashMap<>();
+        List<K> validKeys = keys.stream().filter(java.util.Objects::nonNull).toList();
+        if (validKeys.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        stats.recordBatchRead(validKeys.size());
+        Map<K, V> result = new LinkedHashMap<>();
+        List<K> unresolved = new ArrayList<>(validKeys.size());
         for (K key : keys) {
-            if (key == null || !isDurableReadSafe(key)) {
+            if (key == null) {
                 continue;
             }
-            CacheLookup<V> lookup = getPresentLookup(key);
+            CacheLookup<V> lookup = config.isStrongConsistency() && isL2Configured()
+                    ? CacheLookup.miss()
+                    : getFreshLocal(key);
             if (lookup.hit()) {
+                stats.recordL1Hit();
                 result.put(key, lookup.value());
+            } else {
+                unresolved.add(key);
             }
         }
+        if (!unresolved.isEmpty() && isL2Enabled()) {
+            for (int start = 0; start < unresolved.size(); start += config.getRedisBatchSize()) {
+                int end = Math.min(start + config.getRedisBatchSize(), unresolved.size());
+                readRedisBatch(unresolved.subList(start, end), result);
+            }
+        }
+        stats.recordBatchHits(result.size());
         return result;
     }
 
@@ -326,6 +366,69 @@ public class MultiLevelCache<K, V> {
             return;
         }
         putLoadedValue(key, value, ttl);
+    }
+
+    /**
+     * 使用默认 L2 TTL 批量写入缓存。
+     *
+     * @param entries 待写入条目；空 Map 无操作，null key 忽略
+     */
+    public void putAll(Map<K, V> entries) {
+        putAll(entries, config.getL2Ttl());
+    }
+
+    /**
+     * 使用指定 TTL 批量写入缓存。
+     *
+     * <p>批量写不承诺整批原子性；强一致模式仍由每个业务 Key 的 Lua
+     * 独立保证数据与版本同槽原子更新。</p>
+     *
+     * @param entries 待写入条目；null value 遵循空值缓存配置
+     * @param ttl 正常业务值的 L2 TTL
+     */
+    public void putAll(Map<K, V> entries, Duration ttl) {
+        if (entries == null || entries.isEmpty()) {
+            return;
+        }
+        Duration valueTtl = effectiveTtl(ttl, config.getL2Ttl());
+        List<BatchWrite<K>> writes = new ArrayList<>(entries.size());
+        for (Map.Entry<K, V> entry : entries.entrySet()) {
+            if (entry.getKey() == null) {
+                continue;
+            }
+            if (entry.getValue() == null) {
+                if (config.isNullValueCache()) {
+                    writes.add(new BatchWrite<>(entry.getKey(), REDIS_NULL_SENTINEL,
+                            NullSentinel.INSTANCE, config.getNullValueTtl()));
+                }
+            } else {
+                writes.add(new BatchWrite<>(entry.getKey(), entry.getValue(),
+                        entry.getValue(), valueTtl));
+            }
+        }
+        if (writes.isEmpty()) {
+            return;
+        }
+        stats.recordBatchWrite(writes.size());
+        if (!isL2Enabled()) {
+            for (BatchWrite<K> write : writes) {
+                putToL1(write.key(), write.localValue(),
+                        min(config.getL1Ttl(), write.ttl()), LOCAL_ONLY_VERSION);
+            }
+            return;
+        }
+
+        List<K> publishedKeys = new ArrayList<>(writes.size());
+        for (int start = 0; start < writes.size(); start += config.getRedisBatchSize()) {
+            int end = Math.min(start + config.getRedisBatchSize(), writes.size());
+            List<BatchWrite<K>> chunk = writes.subList(start, end);
+            if (!writeRedisBatch(chunk, publishedKeys)) {
+                break;
+            }
+        }
+        if (!publishedKeys.isEmpty()) {
+            publishInvalidation(Set.copyOf(publishedKeys));
+        }
     }
 
     /**
@@ -598,6 +701,235 @@ public class MultiLevelCache<K, V> {
         }
     }
 
+    /**
+     * 执行一个分块的 Redis 批量读取，并把稳定命中合并到结果。
+     */
+    private void readRedisBatch(List<K> keys, Map<K, V> result) {
+        try {
+            boolean versioned = config.isStrongConsistency();
+            boolean durable = config.getConsistencyMode() == CacheConsistencyMode.DURABLE;
+            List<Object> responses = redisUtil.pipeline(operations -> {
+                if (versioned) {
+                    operations.opsForValue().get(keyspace.regionVersionKey());
+                }
+                for (K key : keys) {
+                    if (durable) {
+                        operations.hasKey(fenceKey(key));
+                    }
+                    if (versioned) {
+                        operations.opsForValue().get(versionKey(key));
+                    }
+                    operations.opsForValue().get(redisKey(key));
+                    operations.getExpire(redisKey(key), TimeUnit.MILLISECONDS);
+                    if (versioned) {
+                        operations.opsForValue().get(versionKey(key));
+                    }
+                }
+                if (versioned) {
+                    operations.opsForValue().get(keyspace.regionVersionKey());
+                }
+            });
+            stats.recordRedisBatch();
+            parseRedisBatch(keys, responses, result, versioned, durable);
+        } catch (Exception exception) {
+            markL2Degraded(exception);
+        }
+    }
+
+    /** 解析 pipeline 响应，版本前后不一致的条目按未命中处理。 */
+    private void parseRedisBatch(List<K> keys,
+                                 List<Object> responses,
+                                 Map<K, V> result,
+                                 boolean versioned,
+                                 boolean durable) {
+        int expected = keys.size() * (2 + (versioned ? 2 : 0) + (durable ? 1 : 0))
+                + (versioned ? 2 : 0);
+        if (responses == null || responses.size() != expected) {
+            throw new IllegalStateException("Redis pipeline 返回数量与请求不一致");
+        }
+        int cursor = 0;
+        Long regionBefore = versioned
+                ? nullableLong(responses.get(cursor++))
+                : Long.valueOf(LOCAL_ONLY_VERSION);
+        List<BatchRead<K>> reads = new ArrayList<>(keys.size());
+        for (K key : keys) {
+            boolean fenced = durable && Boolean.TRUE.equals(responses.get(cursor++));
+            Long versionBefore = versioned ? zeroIfNull(responses.get(cursor++)) : LOCAL_ONLY_VERSION;
+            Object value = responses.get(cursor++);
+            Long ttlMillis = nullableLong(responses.get(cursor++));
+            Long versionAfter = versioned ? zeroIfNull(responses.get(cursor++)) : LOCAL_ONLY_VERSION;
+            reads.add(new BatchRead<>(key, fenced, versionBefore, value, ttlMillis, versionAfter));
+        }
+        Long regionAfter = versioned
+                ? nullableLong(responses.get(cursor))
+                : Long.valueOf(LOCAL_ONLY_VERSION);
+        boolean regionStable = !versioned || java.util.Objects.equals(regionBefore, regionAfter);
+        for (BatchRead<K> read : reads) {
+            if (read.fenced() || !regionStable || read.value() == null
+                    || versioned && !read.versionBefore().equals(read.versionAfter())) {
+                continue;
+            }
+            CacheLookup<V> lookup = lookupFromRaw(read.value(), read.versionAfter());
+            if (!lookup.hit()) {
+                continue;
+            }
+            result.put(read.key(), lookup.value());
+            stats.recordL2Hit();
+            Duration l1Ttl = batchL1Ttl(read.ttlMillis());
+            if (!l1Ttl.isZero()) {
+                putToL1Batch(read.key(), toLocalValue(lookup), l1Ttl,
+                        read.versionAfter(), regionAfter);
+            }
+        }
+    }
+
+    /**
+     * 执行一个分块的 Redis 批量写入。
+     *
+     * @return 整个分块是否获得了可确认的执行结果
+     */
+    private boolean writeRedisBatch(List<BatchWrite<K>> writes, List<K> publishedKeys) {
+        try {
+            if (!config.isStrongConsistency()) {
+                redisUtil.pipeline(operations -> {
+                    for (BatchWrite<K> write : writes) {
+                        operations.opsForValue().set(
+                                redisKey(write.key()), write.redisValue(), write.ttl());
+                    }
+                });
+                stats.recordRedisBatch();
+                for (BatchWrite<K> write : writes) {
+                    putToL1(write.key(), write.localValue(),
+                            min(config.getL1Ttl(), write.ttl()), LOCAL_ONLY_VERSION);
+                    publishedKeys.add(write.key());
+                }
+                return true;
+            }
+            return writeVersionedRedisBatch(writes, publishedKeys);
+        } catch (Exception exception) {
+            markL2Degraded(exception);
+            return false;
+        }
+    }
+
+    /** 强一致批量写仍按业务 Key 执行独立同槽 Lua，只把网络等待合并到 pipeline。 */
+    @SuppressWarnings("unchecked")
+    private boolean writeVersionedRedisBatch(List<BatchWrite<K>> writes, List<K> publishedKeys) {
+        RedisTemplate<String, Object> template = redisUtil.getTemplate();
+        RedisSerializer<String> keySerializer =
+                (RedisSerializer<String>) template.getKeySerializer();
+        if (keySerializer == null) {
+            throw new IllegalStateException("Redis Key serializer 不能为空");
+        }
+        boolean durable = config.getConsistencyMode() == CacheConsistencyMode.DURABLE;
+        String script = durable ? DURABLE_BATCH_PUT_SCRIPT : ATOMIC_PUT_SCRIPT;
+        byte[] scriptBytes = script.getBytes(StandardCharsets.UTF_8);
+        List<Object> responses = template.executePipelined((RedisCallback<Object>) connection -> {
+            for (BatchWrite<K> write : writes) {
+                List<String> scriptKeys = durable
+                        ? List.of(redisKey(write.key()), versionKey(write.key()), fenceKey(write.key()))
+                        : List.of(redisKey(write.key()), versionKey(write.key()));
+                byte[][] keysAndArgs = new byte[scriptKeys.size() + 3][];
+                for (int index = 0; index < scriptKeys.size(); index++) {
+                    keysAndArgs[index] = java.util.Objects.requireNonNull(
+                            keySerializer.serialize(scriptKeys.get(index)),
+                            "Redis Key 序列化结果不能为空"
+                    );
+                }
+                keysAndArgs[scriptKeys.size()] = redisUtil.serializeValue(write.redisValue());
+                keysAndArgs[scriptKeys.size() + 1] = String.valueOf(write.ttl().toMillis())
+                        .getBytes(StandardCharsets.UTF_8);
+                keysAndArgs[scriptKeys.size() + 2] = versionMetadataRetentionMillis()
+                        .getBytes(StandardCharsets.UTF_8);
+                connection.scriptingCommands().eval(
+                        scriptBytes, ReturnType.INTEGER, scriptKeys.size(), keysAndArgs);
+            }
+            return null;
+        });
+        stats.recordRedisBatch();
+        if (responses == null || responses.size() != writes.size()) {
+            throw new IllegalStateException("Redis Lua pipeline 返回数量与请求不一致");
+        }
+        Long regionVersion = readRegionVersion();
+        for (int index = 0; index < writes.size(); index++) {
+            Long version = nullableLong(responses.get(index));
+            if (version == null || version < 0) {
+                continue;
+            }
+            BatchWrite<K> write = writes.get(index);
+            publishedKeys.add(write.key());
+            if (regionVersion != null) {
+                putToL1Batch(write.key(), write.localValue(),
+                        min(config.getL1Ttl(), write.ttl()), version, regionVersion);
+            }
+        }
+        return true;
+    }
+
+    private CacheLookup<V> lookupFromRaw(Object cachedValue, Long version) {
+        if (REDIS_NULL_SENTINEL.equals(cachedValue)) {
+            return CacheLookup.nullHit(version);
+        }
+        Object converted = convertCachedValue(cachedValue);
+        if (converted != null) {
+            @SuppressWarnings("unchecked")
+            V value = (V) converted;
+            return CacheLookup.hit(value, version);
+        }
+        return CacheLookup.miss();
+    }
+
+    /** 按配置的完整 Type 恢复 RedisTemplate 返回的泛型集合元素类型。 */
+    private Object convertCachedValue(Object cachedValue) {
+        if (valueType == null) {
+            return isCollectionOfRawJson(cachedValue) ? null : cachedValue;
+        }
+        if (valueType instanceof Class<?> clazz) {
+            return clazz.isInstance(cachedValue) && !isCollectionOfRawJson(cachedValue)
+                    ? cachedValue : null;
+        }
+        if (valueType instanceof ParameterizedType parameterizedType
+                && parameterizedType.getRawType() instanceof Class<?> rawType
+                && !rawType.isInstance(cachedValue)) {
+            return null;
+        }
+        try {
+            return serializer.deserialize(serializer.serialize(cachedValue), valueType);
+        } catch (Exception exception) {
+            log.warn(
+                    "L2 cache [{}] cannot restore declared generic value type, causeType={}",
+                    name,
+                    exception.getClass().getSimpleName()
+            );
+            log.debug("L2 generic value conversion detail", exception);
+            return null;
+        }
+    }
+
+    private Duration batchL1Ttl(Long ttlMillis) {
+        if (ttlMillis == null || ttlMillis < 0) {
+            return config.getL1Ttl();
+        }
+        if (ttlMillis == 0) {
+            return Duration.ZERO;
+        }
+        return min(config.getL1Ttl(), Duration.ofMillis(ttlMillis));
+    }
+
+    private void putToL1Batch(
+            K key, Object value, Duration ttl, Long version, Long regionVersion) {
+        if (!config.isL1Enabled() || ttl == null || ttl.isZero() || ttl.isNegative()) {
+            return;
+        }
+        l1Cache.policy().expireVariably()
+                .ifPresentOrElse(policy -> policy.put(key, value, ttl),
+                        () -> l1Cache.put(key, value));
+        if (config.isStrongConsistency() && isL2Configured()) {
+            l1Versions.put(key, version);
+            l1RegionVersions.put(key, regionVersion);
+        }
+    }
+
     private Object toLocalValue(CacheLookup<V> lookup) {
         return lookup.nullValue() ? NullSentinel.INSTANCE : lookup.value();
     }
@@ -621,28 +953,7 @@ public class MultiLevelCache<K, V> {
                 return CacheLookup.miss();
             }
             long stableVersion = versionAfter == null ? LOCAL_ONLY_VERSION : versionAfter;
-            if (REDIS_NULL_SENTINEL.equals(cachedValue)) {
-                return CacheLookup.nullHit(stableVersion);
-            }
-            if (isExpectedValueType(cachedValue)) {
-                if (isCollectionOfRawJson(cachedValue)) {
-                    log.warn(
-                            "L2 cache [{}] collection element type was not deserialized safely, fallback to loader",
-                            name
-                    );
-                    return CacheLookup.miss();
-                }
-                @SuppressWarnings("unchecked")
-                V value = (V) cachedValue;
-                return CacheLookup.hit(value, stableVersion);
-            }
-            log.warn(
-                    "L2 cache [{}] type mismatch, ignore cached value: expected={}, actual={}",
-                    name,
-                    valueType.getName(),
-                    cachedValue.getClass().getName()
-            );
-            return CacheLookup.miss();
+            return lookupFromRaw(cachedValue, stableVersion);
         } catch (Exception e) {
             markL2Degraded(e);
             return CacheLookup.miss();
@@ -686,8 +997,10 @@ public class MultiLevelCache<K, V> {
                         : List.of(redisKey(key), versionKey(key));
                 Object[] arguments = config.getConsistencyMode() == CacheConsistencyMode.DURABLE
                         ? new Object[]{rawValue, String.valueOf(ttl.toMillis()),
-                        String.valueOf(expectedVersion == null ? readConsistencyVersion(key) : expectedVersion)}
-                        : new Object[]{rawValue, String.valueOf(ttl.toMillis())};
+                        String.valueOf(expectedVersion == null ? readConsistencyVersion(key) : expectedVersion),
+                        versionMetadataRetentionMillis()}
+                        : new Object[]{rawValue, String.valueOf(ttl.toMillis()),
+                        versionMetadataRetentionMillis()};
                 Long version = toLong(redisUtil.executeScriptRaw(script, keys, arguments));
                 return version != null && version >= 0 ? version : null;
             }
@@ -706,8 +1019,10 @@ public class MultiLevelCache<K, V> {
         try {
             if (config.isStrongConsistency()) {
                 // 删除也要推进版本，否则其它 JVM 可能继续命中旧 L1。
-                return toLong(redisUtil.executeScript(
-                        ATOMIC_DELETE_SCRIPT, List.of(redisKey(key), versionKey(key))));
+                return toLong(redisUtil.executeScriptRaw(
+                        ATOMIC_DELETE_SCRIPT,
+                        List.of(redisKey(key), versionKey(key)),
+                        versionMetadataRetentionMillis()));
             }
             redisUtil.delete(redisKey(key));
             return LOCAL_ONLY_VERSION;
@@ -800,10 +1115,6 @@ public class MultiLevelCache<K, V> {
         return redisUtil != null && config.isL2Enabled();
     }
 
-    private boolean isExpectedValueType(Object value) {
-        return valueType == null || valueType.isInstance(value);
-    }
-
     private boolean isCollectionOfRawJson(Object value) {
         if (!(value instanceof Collection<?> collection)) {
             return false;
@@ -887,6 +1198,28 @@ public class MultiLevelCache<K, V> {
         }
         return Long.parseLong(String.valueOf(value));
     }
+
+    private static Long nullableLong(Object value) {
+        return value == null ? null : toLong(value);
+    }
+
+    private static Long zeroIfNull(Object value) {
+        Long converted = nullableLong(value);
+        return converted == null ? 0L : converted;
+    }
+
+    private String versionMetadataRetentionMillis() {
+        return String.valueOf(config.getVersionMetadataRetention().toMillis());
+    }
+
+    private record BatchWrite<T>(T key, Object redisValue, Object localValue, Duration ttl) { }
+
+    private record BatchRead<T>(T key,
+                                boolean fenced,
+                                Long versionBefore,
+                                Object value,
+                                Long ttlMillis,
+                                Long versionAfter) { }
 
     private record CacheLookup<T>(boolean hit, T value, boolean nullValue, Long version) {
         static <T> CacheLookup<T> miss() {

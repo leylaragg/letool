@@ -44,7 +44,7 @@
 | **letool-starter-tool** | 核心工具 —— 可替换 JsonCodec、HTTP、ID 生成、字符串、集合、树工具；Spring/Redis helper 为可选适配器 | exception |
 | [**letool-starter-sensitive**](letool-starter-sensitive/README.md) | 数据脱敏工具 —— 常用策略、字段注解、可扩展注册表与 Jackson 自动脱敏 | exception, Jackson |
 | **letool-starter-log** | 日志封装 —— 请求链路追踪、审计日志、方法日志；异步 MDC 传播可直接搭配 thread | tool, sensitive |
-| **letool-starter-cache** | 二级缓存 —— KV 与 Redis 原生 List/Hash/Set/ZSet，自动降级与恢复 | tool, exception |
+| [**letool-starter-cache**](letool-starter-cache/README.md) | 二级缓存 —— KV 与 Redis 原生 List/Hash/Set/ZSet，严格故障策略、批量访问与跨节点失效 | tool, exception |
 | [**letool-starter-cipher-suite**](letool-starter-cipher-suite/README.md) | 加密工具 —— AES/SM4-GCM、RSA-OAEP/PSS、SM2/SM3、HMAC 与安全密钥生成 | exception, Bouncy Castle |
 | [**letool-starter-web**](letool-starter-web/README.md) | Web 便利能力 —— 统一异常协议、响应包装、API 主版本路由与受限可重复读请求体 | tool, exception, Spring Boot Web |
 | **letool-starter-security** | 安全认证 —— Resource Server、JWT 签发、角色与权限映射 | tool, exception |

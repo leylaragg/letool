@@ -42,6 +42,9 @@ public class RedisCacheInvalidationListener {
             }
             if (message.isAll()) {
                 cacheManager.evictLocalAll(message.getCacheName());
+            } else if (message.isPrefix()) {
+                cacheManager.evictLocalByPrefix(
+                        message.getCacheName(), message.getPrefix());
             } else {
                 for (String key : message.getKeys()) {
                     cacheManager.evictLocal(message.getCacheName(), key);

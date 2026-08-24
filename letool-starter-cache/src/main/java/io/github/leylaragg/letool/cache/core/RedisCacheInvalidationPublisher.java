@@ -3,6 +3,10 @@ package io.github.leylaragg.letool.cache.core;
 import io.github.leylaragg.letool.tool.redis.RedisUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
+
+import java.util.Objects;
 
 /**
  * 基于 Redis pub/sub 的 L1 失效消息发布器。
@@ -20,8 +24,8 @@ public class RedisCacheInvalidationPublisher implements CacheInvalidationPublish
 
     private static final Logger log = LoggerFactory.getLogger(RedisCacheInvalidationPublisher.class);
 
-    /** Redis 操作入口，内部使用 StringRedisTemplate 的 convertAndSend。 */
-    private final RedisUtil redisUtil;
+    /** 只使用字符串序列化器的发布模板，避免业务对象序列化器改变协议字节。 */
+    private final StringRedisTemplate redisTemplate;
     /** 当前发布器使用的 Redis pub/sub 频道。 */
     private final String channel;
 
@@ -41,7 +45,20 @@ public class RedisCacheInvalidationPublisher implements CacheInvalidationPublish
      * @param channel Redis Pub/Sub 频道
      */
     public RedisCacheInvalidationPublisher(RedisUtil redisUtil, String channel) {
-        this.redisUtil = redisUtil;
+        this(createStringTemplate(redisUtil), channel);
+    }
+
+    /**
+     * 使用专用字符串模板创建失效消息发布器。
+     *
+     * @param redisTemplate 只按 UTF-8 字符串编码频道和消息体的 Redis 模板
+     * @param channel Redis Pub/Sub 频道
+     */
+    public RedisCacheInvalidationPublisher(StringRedisTemplate redisTemplate, String channel) {
+        this.redisTemplate = Objects.requireNonNull(redisTemplate, "Redis 字符串模板不能为空");
+        if (channel == null || channel.isBlank()) {
+            throw new IllegalArgumentException("Redis Pub/Sub 频道不能为空");
+        }
         this.channel = channel;
     }
 
@@ -52,12 +69,12 @@ public class RedisCacheInvalidationPublisher implements CacheInvalidationPublish
      */
     @Override
     public void publish(CacheInvalidationMessage message) {
-        if (redisUtil == null || message == null) {
+        if (message == null) {
             return;
         }
         try {
-            // payload 由 CacheInvalidationMessage 自己负责序列化，发布器只负责投递。
-            redisUtil.getTemplate().convertAndSend(channel, message.toPayload());
+            // 专用字符串模板保证消息体不再经过 Fastjson2、Jackson 等业务值序列化器。
+            redisTemplate.convertAndSend(channel, message.toPayload());
         } catch (Exception e) {
             log.warn(
                     "Failed to publish cache invalidation message for cache [{}], causeType={}",
@@ -71,5 +88,14 @@ public class RedisCacheInvalidationPublisher implements CacheInvalidationPublish
     /** @return 当前 Redis Pub/Sub 频道 */
     public String getChannel() {
         return channel;
+    }
+
+    private static StringRedisTemplate createStringTemplate(RedisUtil redisUtil) {
+        Objects.requireNonNull(redisUtil, "Redis 操作入口不能为空");
+        RedisConnectionFactory connectionFactory = redisUtil.getTemplate().getConnectionFactory();
+        if (connectionFactory == null) {
+            throw new IllegalArgumentException("RedisTemplate 必须配置连接工厂");
+        }
+        return new StringRedisTemplate(connectionFactory);
     }
 }

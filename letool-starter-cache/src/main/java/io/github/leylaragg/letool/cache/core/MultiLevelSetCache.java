@@ -3,6 +3,7 @@ package io.github.leylaragg.letool.cache.core;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import io.github.leylaragg.letool.tool.redis.RedisUtil;
+import io.github.leylaragg.letool.cache.exception.CacheException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,6 +62,8 @@ public class MultiLevelSetCache<K, V> {
     private final boolean l2Enabled;
     /** 是否启用强一致读取。Set 缓存强一致模式下会优先读 Redis。 */
     private final boolean strongConsistency;
+    /** Redis 读取失败后的返回或抛错策略。 */
+    private final CacheReadFailurePolicy readFailurePolicy;
     /** 业务 key 到 Redis key 后缀的转换函数。 */
     private final Function<K, String> keySerializer;
     /** Redis Set 成员读取后的目标类型。 */
@@ -82,9 +85,17 @@ public class MultiLevelSetCache<K, V> {
     private final AtomicLong addCount = new AtomicLong();
     /** 删除成员请求计数。 */
     private final AtomicLong removeCount = new AtomicLong();
+    /** Redis 故障后返回已有 L1 快照的次数。 */
+    private final AtomicLong staleReadCount = new AtomicLong();
+    /** Redis 故障后返回空集合的次数。 */
+    private final AtomicLong failureEmptyCount = new AtomicLong();
+    /** 严格策略因 Redis 故障拒绝返回结果的次数。 */
+    private final AtomicLong failClosedCount = new AtomicLong();
 
     /** Redis 是否处于降级状态，降级后读写不再访问 L2。 */
     private volatile boolean l2Degraded = false;
+    /** 最近一次触发降级的异常，供严格模式保留诊断原因链。 */
+    private volatile Exception lastL2Failure;
 
     /**
      * 创建 Set 二级缓存实例。
@@ -111,6 +122,7 @@ public class MultiLevelSetCache<K, V> {
         this.l1Enabled = config.isL1Enabled();
         this.l2Enabled = redisUtil != null && config.isL2Enabled();
         this.strongConsistency = config.isStrongConsistency();
+        this.readFailurePolicy = config.getReadFailurePolicy();
         this.keySerializer = keySerializer == null ? String::valueOf : keySerializer;
         this.memberType = resolveMemberType(memberType, config.getValueType());
         this.invalidationPublisher = invalidationPublisher == null ? CacheInvalidationPublisher.noop() : invalidationPublisher;
@@ -243,17 +255,32 @@ public class MultiLevelSetCache<K, V> {
      * @return 成员快照；key 无效或不存在时返回空集合
      */
     public Set<V> getMembers(K key) {
+        // 保留 2.1.x 可修改快照契约；带状态 API 自身返回不可变集合。
+        return new HashSet<>(getMembersWithStatus(key).members());
+    }
+
+    /**
+     * 获取成员快照及其可信状态。
+     *
+     * <p>Redis 正常返回的空集合仍是权威结果；只有读取失败时才按配置选择
+     * 陈旧快照、故障空结果或抛出统一异常。</p>
+     *
+     * @param key 业务 key
+     * @return 不可变成员快照及结果状态
+     * @throws CacheException 严格策略下 Redis 读取失败时抛出
+     */
+    public SetCacheReadResult<V> getMembersWithStatus(K key) {
         if (key == null) {
-            return Collections.emptySet();
+            return authoritative(Collections.emptySet());
         }
         Set<V> local = l1Enabled ? l1Cache.getIfPresent(key) : null;
         if (local != null && !strongConsistency) {
             l1HitCount.incrementAndGet();
-            return new HashSet<>(local);
+            return authoritative(local);
         }
         if (l2Enabled && !l2Degraded) {
-            Set<V> l2Members = smembersFromRedis(key);
-            if (!l2Degraded) {
+            try {
+                Set<V> l2Members = readMembersFromRedis(key);
                 // Redis 成功返回的空 Set 同样是权威结果，不能回退到旧 L1。
                 if (l2Members.isEmpty()) {
                     missCount.incrementAndGet();
@@ -263,15 +290,21 @@ public class MultiLevelSetCache<K, V> {
                 if (l1Enabled) {
                     l1Cache.put(key, concurrentSnapshot(l2Members));
                 }
-                return new HashSet<>(l2Members);
+                return authoritative(l2Members);
+            } catch (Exception e) {
+                markL2Degraded(e);
+                return handleReadFailure(local);
             }
+        }
+        if (l2Enabled) {
+            return handleReadFailure(local);
         }
         if (local != null) {
             l1HitCount.incrementAndGet();
-            return new HashSet<>(local);
+            return authoritative(local);
         }
         missCount.incrementAndGet();
-        return Collections.emptySet();
+        return authoritative(Collections.emptySet());
     }
 
     /**
@@ -292,8 +325,8 @@ public class MultiLevelSetCache<K, V> {
             }
         }
         if (l2Enabled && !l2Degraded) {
-            boolean present = sismemberInRedis(key, member);
-            if (!l2Degraded) {
+            try {
+                boolean present = readMembershipFromRedis(key, member);
                 Set<V> local = l1Enabled ? l1Cache.getIfPresent(key) : null;
                 if (local != null) {
                     if (present) {
@@ -303,9 +336,16 @@ public class MultiLevelSetCache<K, V> {
                     }
                 }
                 return present;
+            } catch (Exception e) {
+                markL2Degraded(e);
+                Set<V> local = l1Enabled ? l1Cache.getIfPresent(key) : null;
+                return handleReadFailure(local).members().contains(member);
             }
         }
         Set<V> members = l1Enabled ? l1Cache.getIfPresent(key) : null;
+        if (l2Enabled) {
+            return handleReadFailure(members).members().contains(member);
+        }
         return members != null && members.contains(member);
     }
 
@@ -324,6 +364,37 @@ public class MultiLevelSetCache<K, V> {
             }
         }
         publishInvalidationAll();
+    }
+
+    /**
+     * 按稳定序列化后的业务 key 前缀清理 Set 缓存。
+     *
+     * <p>本机 L1 先清理，Redis 使用 SCAN + UNLINK 限定在当前区域和业务前缀，
+     * 成功后发布一条 PREFIX 消息通知其它 JVM。</p>
+     *
+     * @param serializedBusinessKeyPrefix 业务 key 序列化前缀
+     * @throws CacheException 前缀为空或 Redis 清理失败时抛出
+     */
+    public void evictByPrefix(String serializedBusinessKeyPrefix) {
+        if (serializedBusinessKeyPrefix == null
+                || serializedBusinessKeyPrefix.isBlank()) {
+            throw CacheException.configurationInvalid("serialized-business-key-prefix");
+        }
+        evictLocalSerializedPrefix(serializedBusinessKeyPrefix);
+        if (l2Enabled) {
+            if (l2Degraded) {
+                throw CacheException.l2Unavailable(lastL2Failure);
+            }
+            try {
+                keyspace.scanAndUnlink(
+                        redisUtil.getTemplate(), serializedBusinessKeyPrefix);
+            } catch (Exception exception) {
+                markL2Degraded(exception);
+                throw CacheException.l2Unavailable(exception);
+            }
+        }
+        invalidationPublisher.publish(CacheInvalidationMessage.prefix(
+                name, serializedBusinessKeyPrefix, instanceId));
     }
 
     /**
@@ -379,6 +450,7 @@ public class MultiLevelSetCache<K, V> {
             redisUtil.hasKey(keyspace.healthCheckKey());
             evictLocalAll();
             l2Degraded = false;
+            lastL2Failure = null;
             return true;
         } catch (Exception e) {
             return false;
@@ -393,7 +465,9 @@ public class MultiLevelSetCache<K, V> {
     /** @return 当前 Set 缓存运行统计快照 */
     public Stats stats() {
         return new Stats(name, l1HitCount.get(), l2HitCount.get(), missCount.get(),
-                addCount.get(), removeCount.get(), estimatedSize(), l2Degraded);
+                addCount.get(), removeCount.get(), staleReadCount.get(),
+                failureEmptyCount.get(), failClosedCount.get(), estimatedSize(),
+                l2Degraded);
     }
 
     private Set<V> getOrCreateLocalSet(K key) {
@@ -462,33 +536,36 @@ public class MultiLevelSetCache<K, V> {
         }
     }
 
-    private Set<V> smembersFromRedis(K key) {
-        try {
-            Set<Object> raw = redisUtil.boundSetOps(redisKey(key)).members();
-            if (raw == null || raw.isEmpty()) {
-                return Collections.emptySet();
-            }
-            Set<V> result = ConcurrentHashMap.newKeySet(raw.size());
-            for (Object item : raw) {
-                V member = deserializeMember(item);
-                if (member != null) {
-                    result.add(member);
-                }
-            }
-            return result;
-        } catch (Exception e) {
-            markL2Degraded(e);
+    private Set<V> readMembersFromRedis(K key) {
+        Set<Object> raw = redisUtil.boundSetOps(redisKey(key)).members();
+        if (raw == null || raw.isEmpty()) {
             return Collections.emptySet();
+        }
+        Set<V> result = ConcurrentHashMap.newKeySet(raw.size());
+        for (Object item : raw) {
+            V member = deserializeMember(item);
+            if (member != null) {
+                result.add(member);
+            }
+        }
+        return result;
+    }
+
+    /** 按稳定序列化结果的前缀清理本机 L1 条目。 */
+    void evictLocalSerializedPrefix(String serializedPrefix) {
+        if (!l1Enabled || serializedPrefix == null || serializedPrefix.isBlank()) {
+            return;
+        }
+        for (K candidate : l1Cache.asMap().keySet()) {
+            String serialized = keySerializer.apply(candidate);
+            if (serialized != null && serialized.startsWith(serializedPrefix)) {
+                l1Cache.invalidate(candidate);
+            }
         }
     }
 
-    private boolean sismemberInRedis(K key, V member) {
-        try {
-            return Boolean.TRUE.equals(redisUtil.boundSetOps(redisKey(key)).isMember(member));
-        } catch (Exception e) {
-            markL2Degraded(e);
-            return false;
-        }
+    private boolean readMembershipFromRedis(K key, V member) {
+        return Boolean.TRUE.equals(redisUtil.boundSetOps(redisKey(key)).isMember(member));
     }
 
     private void deleteFromRedis(K key) {
@@ -555,6 +632,7 @@ public class MultiLevelSetCache<K, V> {
     }
 
     private void markL2Degraded(Exception e) {
+        lastL2Failure = e;
         if (!l2Degraded) {
             l2Degraded = true;
             // 首次降级时登记到 CacheManager，后续由恢复调度器统一探测。
@@ -568,6 +646,29 @@ public class MultiLevelSetCache<K, V> {
         }
     }
 
+    private SetCacheReadResult<V> authoritative(Set<V> members) {
+        return new SetCacheReadResult<>(members, SetCacheReadResult.State.AUTHORITATIVE);
+    }
+
+    private SetCacheReadResult<V> handleReadFailure(Set<V> local) {
+        if (readFailurePolicy == CacheReadFailurePolicy.FAIL_CLOSED) {
+            failClosedCount.incrementAndGet();
+            throw CacheException.l2Unavailable(lastL2Failure);
+        }
+        if (readFailurePolicy == CacheReadFailurePolicy.STALE_IF_AVAILABLE
+                && local != null) {
+            staleReadCount.incrementAndGet();
+            l1HitCount.incrementAndGet();
+            return new SetCacheReadResult<>(local, SetCacheReadResult.State.STALE);
+        }
+        failureEmptyCount.incrementAndGet();
+        missCount.incrementAndGet();
+        return new SetCacheReadResult<>(
+                Collections.emptySet(),
+                SetCacheReadResult.State.FAILURE_EMPTY
+        );
+    }
+
     /**
      * Set 缓存运行统计快照。
      *
@@ -577,6 +678,9 @@ public class MultiLevelSetCache<K, V> {
      * @param missCount 未命中次数
      * @param addCount 新增成员计数
      * @param removeCount 删除成员计数
+     * @param staleReadCount Redis 故障后返回 L1 快照的次数
+     * @param failureEmptyCount Redis 故障后返回空集合的次数
+     * @param failClosedCount 严格策略拒绝返回结果的次数
      * @param l1Size L1 业务 key 估算数量
      * @param l2Degraded L2 是否处于降级状态
      */
@@ -586,6 +690,9 @@ public class MultiLevelSetCache<K, V> {
                         long missCount,
                         long addCount,
                         long removeCount,
+                        long staleReadCount,
+                        long failureEmptyCount,
+                        long failClosedCount,
                         long l1Size,
                         boolean l2Degraded) {
         /** @return L1 命中、L2 命中和未命中的总次数 */

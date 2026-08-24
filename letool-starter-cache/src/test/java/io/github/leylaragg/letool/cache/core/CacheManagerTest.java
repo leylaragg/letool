@@ -10,6 +10,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.lang.reflect.Field;
 import java.util.Collection;
 import java.util.Set;
 
@@ -39,6 +40,25 @@ class CacheManagerTest {
         MultiLevelCache<String, String> cache = manager.getOrCreate(config);
         assertNotNull(cache);
         assertEquals("test", cache.getName());
+    }
+
+    @Test
+    @DisplayName("未显式设置前缀时应继承管理器全局前缀")
+    void shouldInheritManagerRedisKeyPrefixWhenCachePrefixIsNotExplicit() {
+        CacheManager prefixedManager = new CacheManager(
+                redisUtil,
+                serializer,
+                true,
+                true,
+                "edc:mlc:",
+                CacheInvalidationPublisher.noop()
+        );
+
+        MultiLevelCache<String, String> cache = prefixedManager.getOrCreate(
+                CacheConfig.<String, String>builder("runtime-rules").build()
+        );
+
+        assertEquals("edc:mlc:", extractConfig(cache).getRedisKeyPrefix());
     }
 
     @Test
@@ -149,5 +169,15 @@ class CacheManagerTest {
         localManager.evictLocal("long-set", "id:7");
 
         assertEquals(Set.of(), cache.getMembers(7L));
+    }
+
+    private CacheConfig<?, ?> extractConfig(MultiLevelCache<?, ?> cache) {
+        try {
+            Field field = MultiLevelCache.class.getDeclaredField("config");
+            field.setAccessible(true);
+            return (CacheConfig<?, ?>) field.get(cache);
+        } catch (ReflectiveOperationException exception) {
+            throw new AssertionError("无法读取缓存最终配置", exception);
+        }
     }
 }

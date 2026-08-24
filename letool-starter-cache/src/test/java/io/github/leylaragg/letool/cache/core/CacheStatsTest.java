@@ -104,6 +104,21 @@ class CacheStatsTest {
             stats.recordL2Degraded();
             assertEquals(1, stats.getL2DegradedCount());
         }
+
+        @Test
+        @DisplayName("批量统计分别记录调用、Key 和 Redis 批次")
+        void testBatchOperations() {
+            stats.recordBatchRead(10);
+            stats.recordBatchWrite(4);
+            stats.recordBatchHits(7);
+            stats.recordRedisBatch();
+
+            assertEquals(1, stats.getBatchReadCount());
+            assertEquals(1, stats.getBatchWriteCount());
+            assertEquals(14, stats.getBatchRequestedKeyCount());
+            assertEquals(7, stats.getBatchHitKeyCount());
+            assertEquals(1, stats.getRedisBatchCount());
+        }
     }
 
     @Nested

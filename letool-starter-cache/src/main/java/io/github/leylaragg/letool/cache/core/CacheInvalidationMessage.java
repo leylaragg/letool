@@ -1,8 +1,5 @@
 package io.github.leylaragg.letool.cache.core;
 
-import io.github.leylaragg.letool.cache.exception.CacheException;
-
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -25,13 +22,18 @@ public final class CacheInvalidationMessage {
     private final List<String> keys;
     /** 是否清空整个缓存区域的 L1。 */
     private final boolean all;
+    /** 是否按业务 key 前缀清理 L1。 */
+    private final boolean prefix;
     /** 消息来源 JVM 的 instanceId，用于接收方忽略自己发出的消息。 */
     private final String sourceInstanceId;
 
-    private CacheInvalidationMessage(String cacheName, List<String> keys, boolean all, String sourceInstanceId) {
+    private CacheInvalidationMessage(
+            String cacheName, List<String> keys, boolean all, boolean prefix,
+            String sourceInstanceId) {
         this.cacheName = cacheName;
         this.keys = keys == null ? Collections.emptyList() : List.copyOf(keys);
         this.all = all;
+        this.prefix = prefix;
         this.sourceInstanceId = sourceInstanceId;
     }
 
@@ -44,7 +46,7 @@ public final class CacheInvalidationMessage {
      * @return 不可变的缓存失效消息
      */
     public static CacheInvalidationMessage keys(String cacheName, List<String> keys, String sourceInstanceId) {
-        return new CacheInvalidationMessage(cacheName, keys, false, sourceInstanceId);
+        return new CacheInvalidationMessage(cacheName, keys, false, false, sourceInstanceId);
     }
 
     /**
@@ -55,7 +57,25 @@ public final class CacheInvalidationMessage {
      * @return 不可变的缓存失效消息
      */
     public static CacheInvalidationMessage all(String cacheName, String sourceInstanceId) {
-        return new CacheInvalidationMessage(cacheName, List.of(ALL_MARKER), true, sourceInstanceId);
+        return new CacheInvalidationMessage(cacheName, List.of(ALL_MARKER), true, false, sourceInstanceId);
+    }
+
+    /**
+     * 创建按序列化业务 key 前缀失效 L1 的消息。
+     *
+     * @param cacheName 缓存区域名称
+     * @param serializedPrefix 稳定序列化后的业务 key 前缀
+     * @param sourceInstanceId 消息来源 JVM 实例标识
+     * @return 前缀失效消息
+     */
+    public static CacheInvalidationMessage prefix(
+            String cacheName, String serializedPrefix, String sourceInstanceId) {
+        if (serializedPrefix == null || serializedPrefix.isBlank()) {
+            throw io.github.leylaragg.letool.cache.exception.CacheException
+                    .invalidationMessageInvalid();
+        }
+        return new CacheInvalidationMessage(
+                cacheName, List.of(serializedPrefix), false, true, sourceInstanceId);
     }
 
     /** @return 缓存区域名称 */
@@ -84,16 +104,7 @@ public final class CacheInvalidationMessage {
      * @return 可安全传输分隔符的字符串载荷
      */
     String toPayload() {
-        // 为了不强依赖 JSON 序列化库，失效消息使用轻量字符串格式：source|cacheName|allFlag|keys。
-        // 先对每个 key 单独转义（保护 key 内部的逗号和分隔符），再用逗号拼接，
-        // 确保反序列化时能正确区分 key 分隔符和 key 内部内容。
-        String keyPart;
-        if (all) {
-            keyPart = ALL_MARKER;
-        } else {
-            keyPart = keys.stream().map(CacheInvalidationMessage::escape).collect(java.util.stream.Collectors.joining(","));
-        }
-        return escape(sourceInstanceId) + "|" + escape(cacheName) + "|" + (all ? "1" : "0") + "|" + keyPart;
+        return CacheInvalidationWireCodec.encode(this);
     }
 
     /**
@@ -104,68 +115,16 @@ public final class CacheInvalidationMessage {
      * @throws CacheException 载荷格式不合法时抛出
      */
     static CacheInvalidationMessage fromPayload(String payload) {
-        if (payload == null || payload.isBlank()) {
-            throw CacheException.invalidationMessageInvalid();
-        }
-        String[] parts = payload.split("\\|", -1);
-        if (parts.length != 4) {
-            throw CacheException.invalidationMessageInvalid();
-        }
-        if (!"0".equals(parts[2]) && !"1".equals(parts[2])) {
-            throw CacheException.invalidationMessageInvalid();
-        }
-        String source = unescape(parts[0]);
-        String cache = unescape(parts[1]);
-        if (source.isBlank() || cache.isBlank()) {
-            throw CacheException.invalidationMessageInvalid();
-        }
-        boolean all = "1".equals(parts[2]);
-        String rawKeys = parts[3];
-        if (all) {
-            if (!ALL_MARKER.equals(rawKeys)) {
-                throw CacheException.invalidationMessageInvalid();
-            }
-            return all(cache, source);
-        }
-        List<String> keys = new ArrayList<>();
-        if (!rawKeys.isBlank()) {
-            // 先按原始分隔符切分，再逐个反转义，避免 key 内的转义逗号被误认为分隔符。
-            for (String k : rawKeys.split(",")) {
-                if (!k.isEmpty()) {
-                    keys.add(unescape(k));
-                }
-            }
-        }
-        return keys(cache, keys, source);
+        return CacheInvalidationWireCodec.decode(payload);
     }
 
-    private static String escape(String value) {
-        // key 或 cacheName 里如果包含分隔符，需要转义，避免解析时被错误切分。
-        return value == null ? "" : value.replace("\\", "\\\\").replace("|", "\\p").replace(",", "\\c");
+    /** @return 是否按业务 key 前缀清理 */
+    public boolean isPrefix() {
+        return prefix;
     }
 
-    private static String unescape(String value) {
-        StringBuilder out = new StringBuilder();
-        for (int i = 0; i < value.length(); i++) {
-            char c = value.charAt(i);
-            if (c != '\\') {
-                out.append(c);
-                continue;
-            }
-            if (++i >= value.length()) {
-                throw CacheException.invalidationMessageInvalid();
-            }
-            char escaped = value.charAt(i);
-            if (escaped == '\\') {
-                out.append('\\');
-            } else if (escaped == 'p') {
-                out.append('|');
-            } else if (escaped == 'c') {
-                out.append(',');
-            } else {
-                throw CacheException.invalidationMessageInvalid();
-            }
-        }
-        return out.toString();
+    /** @return 序列化业务 key 前缀；非 PREFIX 消息返回 {@code null} */
+    public String getPrefix() {
+        return prefix && !keys.isEmpty() ? keys.get(0) : null;
     }
 }

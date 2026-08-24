@@ -19,6 +19,8 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
 
 ### Added
 
+- `letool-starter-cache` 新增 KV 有界 Pipeline 批量读写、Set 安全前缀失效、
+  Redis 读取故障策略、带状态集合读取结果、泛型 `Type` 反序列化及真实 Redis Profile。
 - 新增 `letool-starter-oss-minio`、`letool-starter-oss-aliyun` 和
   `letool-starter-oss-tencent-cos`，分别通过官方 SDK 提供真实对象存储能力，
   并支持业务凭证、客户端配置、官方客户端和 `OssProvider` Bean 退让。
@@ -72,6 +74,7 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
   configuration, lookup, loader, invalidation-message, and cache-type-conflict failures.
 - Cache collection contract tests for complete L1 snapshots, authoritative Redis empty results,
   Redis recovery cleanup, configured member types, and Redis-compatible negative indexes.
+
 - Local MIME construction, transport seam, multi-account, immutable request snapshot,
   builder, async failure, and auto-configuration tests for `letool-starter-mail`.
 - Spring MVC integration tests for `@ApiVersion` routing on identical paths.
@@ -328,6 +331,11 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
 
 ### Fixed
 
+- 修复缓存失效消息受业务 Redis 值序列化器影响、全局 Redis 前缀未被单缓存继承、
+  Set 在 Redis 故障时把错误伪装为空集合，以及强一致批量读取在区域 Epoch 尚未创建时
+  误降级或丢弃有效命中的问题。
+- 为单 Key 版本元数据增加安全保留期和 Lua `PEXPIRE`，避免一次性 Key 的版本元数据
+  无界增长；自动配置基础设施改用稳定 Bean 名并保留用户 Bean 退让。
 - 统一管理 `commons-io` 2.20.0，修复 `commons-compress` 1.28.0 与 EasyExcel/POI
   传递版本不一致导致的 `NoSuchMethodError`。
 - Corrected `JsonUtil` documentation that advertised a fixed date format which

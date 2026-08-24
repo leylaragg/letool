@@ -3,6 +3,7 @@ package io.github.leylaragg.letool.cache.exception;
 import io.github.leylaragg.letool.exception.core.SystemException;
 
 import java.io.Serial;
+import java.lang.reflect.Type;
 
 /**
  * 缓存配置、实例查找和业务回源失败时抛出的统一异常。
@@ -95,6 +96,37 @@ public final class CacheException extends SystemException {
         return new CacheException(
                 CacheErrorCode.CACHE_TYPE_CONFLICT,
                 null,
+                null
+        );
+    }
+
+    /**
+     * 创建 L2 不可用异常。
+     *
+     * @param cause Redis 读取失败的原始异常
+     * @return 不包含业务 key 和底层异常文本的统一异常
+     */
+    public static CacheException l2Unavailable(Throwable cause) {
+        return new CacheException(
+                CacheErrorCode.L2_UNAVAILABLE,
+                null,
+                cause
+        );
+    }
+
+    /**
+     * 创建序列化器不支持参数化类型的异常。
+     *
+     * @param type 调用方声明的目标类型
+     * @return 带安全类型名称的稳定异常
+     */
+    public static CacheException genericTypeUnsupported(Type type) {
+        if (type == null) {
+            throw new IllegalArgumentException("type must not be null");
+        }
+        return new CacheException(
+                CacheErrorCode.GENERIC_TYPE_UNSUPPORTED,
+                new Object[]{type.getTypeName()},
                 null
         );
     }

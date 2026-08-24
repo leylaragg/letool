@@ -96,6 +96,34 @@ class RedisCacheKeyspaceTest {
         verify(cursor).close();
     }
 
+    /** 业务前缀中的 glob 字符必须按字面量匹配，不能扩大扫描范围。 */
+    @Test
+    void shouldEscapeBusinessPrefixForScan() {
+        RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
+        RedisConnection connection = mock(RedisConnection.class);
+        RedisKeyCommands keyCommands = mock(RedisKeyCommands.class);
+        StringRedisSerializer keySerializer = StringRedisSerializer.UTF_8;
+        @SuppressWarnings("unchecked")
+        Cursor<byte[]> cursor = mock(Cursor.class);
+        doReturn(keySerializer).when(redisTemplate).getKeySerializer();
+        executeUsing(redisTemplate, connection);
+        when(connection.keyCommands()).thenReturn(keyCommands);
+        when(keyCommands.scan(any(ScanOptions.class))).thenReturn(cursor);
+        when(cursor.hasNext()).thenReturn(false);
+        RedisCacheKeyspace keyspace = new RedisCacheKeyspace("app:cache:", "ruleIndex");
+
+        keyspace.scanAndUnlink(redisTemplate, "项目:*?[草稿]");
+
+        ArgumentCaptor<ScanOptions> optionsCaptor = ArgumentCaptor.forClass(ScanOptions.class);
+        verify(keyCommands).scan(optionsCaptor.capture());
+        assertTrue(matches(
+                optionsCaptor.getValue(),
+                keySerializer,
+                "app:cache:ruleIndex:项目:\\*\\?\\[草稿\\]*"
+        ));
+        verify(redisTemplate, never()).keys(any());
+    }
+
     /**
      * 验证 Redis Cluster 模式会扫描全部可用主节点，并跳过副本节点。
      */

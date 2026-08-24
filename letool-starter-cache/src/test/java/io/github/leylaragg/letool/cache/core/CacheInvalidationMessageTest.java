@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 /**
  * 缓存失效消息编解码测试。
@@ -40,6 +41,62 @@ class CacheInvalidationMessageTest {
         assertEquals(List.of("a,b", "c|d", "e\\f"), decoded.getKeys());
         assertEquals("node|1", decoded.getSourceInstanceId());
         assertFalse(decoded.isAll());
+    }
+
+    @Test
+    @DisplayName("失效消息应使用带版本的 UTF-8 协议")
+    void shouldEncodeVersionedWirePayload() {
+        CacheInvalidationMessage message = CacheInvalidationMessage.keys(
+                "规则|缓存",
+                List.of("项目,版本", "路径\\节点"),
+                "节点|一"
+        );
+
+        String payload = message.toPayload();
+
+        assertTrue(payload.startsWith("v1|"));
+        CacheInvalidationMessage decoded = CacheInvalidationMessage.fromPayload(payload);
+        assertEquals("规则|缓存", decoded.getCacheName());
+        assertEquals(List.of("项目,版本", "路径\\节点"), decoded.getKeys());
+        assertEquals("节点|一", decoded.getSourceInstanceId());
+    }
+
+    @Test
+    @DisplayName("PREFIX 消息支持中文和 Redis glob 特殊字符")
+    void shouldRoundTripPrefixMessage() {
+        CacheInvalidationMessage source = CacheInvalidationMessage.prefix(
+                "规则|索引",
+                "项目:*?[草稿]\\节点",
+                "节点|一"
+        );
+
+        CacheInvalidationMessage decoded =
+                CacheInvalidationMessage.fromPayload(source.toPayload());
+
+        assertTrue(decoded.isPrefix());
+        assertFalse(decoded.isAll());
+        assertEquals("项目:*?[草稿]\\节点", decoded.getPrefix());
+    }
+
+    @Test
+    @DisplayName("PREFIX 消息拒绝空前缀")
+    void shouldRejectBlankPrefix() {
+        assertThrows(CacheException.class, () ->
+                CacheInvalidationMessage.prefix("rules", " ", "node-a"));
+    }
+
+    @Test
+    @DisplayName("监听器把 PREFIX 消息路由为本地前缀清理")
+    void listenerShouldRoutePrefixInvalidation() {
+        CacheManager cacheManager = mock(CacheManager.class);
+        org.mockito.Mockito.when(cacheManager.instanceId()).thenReturn("node-b");
+        RedisCacheInvalidationListener listener =
+                new RedisCacheInvalidationListener(cacheManager);
+
+        listener.onMessage(CacheInvalidationMessage.prefix(
+                "rule:index", "project:42:", "node-a").toPayload());
+
+        verify(cacheManager).evictLocalByPrefix("rule:index", "project:42:");
     }
 
     @Test

@@ -28,6 +28,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
@@ -35,6 +36,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 
@@ -186,17 +188,39 @@ public class CacheAutoConfiguration {
     }
 
     /**
+     * 注册缓存失效广播专用的字符串 Redis 模板。
+     *
+     * <p>该模板只使用字符串序列化器，确保失效协议不会被业务对象模板的 Fastjson2、Jackson
+     * 或 JDK 序列化器再次包装。</p>
+     *
+     * @param connectionFactory Redis 连接工厂
+     * @return 失效广播专用字符串模板
+     */
+    @Bean("letoolCacheInvalidationStringRedisTemplate")
+    @ConditionalOnBean(RedisConnectionFactory.class)
+    @ConditionalOnMissingBean(name = "letoolCacheInvalidationStringRedisTemplate")
+    @ConditionalOnProperty(prefix = "letool.cache.invalidation", name = "enabled", havingValue = "true", matchIfMissing = true)
+    public StringRedisTemplate letoolCacheInvalidationStringRedisTemplate(
+            RedisConnectionFactory connectionFactory) {
+        return new StringRedisTemplate(connectionFactory);
+    }
+
+    /**
      * 注册 Redis 版的本地缓存失效消息发布器。
      *
      * <p>当某个 JVM 执行 put/evict/clear 时，需要通知其他 JVM 清理自己的 L1 本地缓存。
      * 这里通过 Redis Pub/Sub 广播失效消息，从而避免多实例部署时读到旧的本地数据。</p>
      */
-    @Bean
-    @ConditionalOnBean(RedisUtil.class)
-    @ConditionalOnMissingBean(CacheInvalidationPublisher.class)
+    @Bean("letoolCacheInvalidationPublisher")
+    @ConditionalOnBean(name = "letoolCacheInvalidationStringRedisTemplate")
+    @ConditionalOnMissingBean(
+            value = CacheInvalidationPublisher.class,
+            name = "letoolCacheInvalidationPublisher")
     @ConditionalOnProperty(prefix = "letool.cache.invalidation", name = "enabled", havingValue = "true", matchIfMissing = true)
-    public CacheInvalidationPublisher cacheInvalidationPublisher(RedisUtil redisUtil, CacheProperties properties) {
-        return new RedisCacheInvalidationPublisher(redisUtil, properties.getInvalidation().getChannel());
+    public CacheInvalidationPublisher letoolCacheInvalidationPublisher(
+            @Qualifier("letoolCacheInvalidationStringRedisTemplate") StringRedisTemplate redisTemplate,
+            CacheProperties properties) {
+        return new RedisCacheInvalidationPublisher(redisTemplate, properties.getInvalidation().getChannel());
     }
 
     /**
@@ -205,11 +229,13 @@ public class CacheAutoConfiguration {
      * <p>监听器只负责解析消息并调用 {@link CacheManager} 清理本机 L1。
      * 真正的 Redis 订阅动作由 {@link RedisMessageListenerContainer} 完成。</p>
      */
-    @Bean
+    @Bean("letoolCacheInvalidationListener")
     @ConditionalOnBean(CacheManager.class)
-    @ConditionalOnMissingBean(RedisCacheInvalidationListener.class)
+    @ConditionalOnMissingBean(
+            value = RedisCacheInvalidationListener.class,
+            name = "letoolCacheInvalidationListener")
     @ConditionalOnProperty(prefix = "letool.cache.invalidation", name = "enabled", havingValue = "true", matchIfMissing = true)
-    public RedisCacheInvalidationListener redisCacheInvalidationListener(CacheManager cacheManager) {
+    public RedisCacheInvalidationListener letoolCacheInvalidationListener(CacheManager cacheManager) {
         return new RedisCacheInvalidationListener(cacheManager);
     }
 
@@ -220,13 +246,16 @@ public class CacheAutoConfiguration {
      * 字符串交给 {@link RedisCacheInvalidationListener}。这里没有强依赖 Redis 连接工厂，
      * 只有在业务项目已经配置 Redis 时才会创建该容器。</p>
      */
-    @Bean
+    @Bean("letoolCacheInvalidationListenerContainer")
     @ConditionalOnClass(RedisMessageListenerContainer.class)
     @ConditionalOnBean({RedisCacheInvalidationListener.class, RedisConnectionFactory.class})
-    @ConditionalOnMissingBean(name = "cacheInvalidationListenerContainer")
-    public RedisMessageListenerContainer cacheInvalidationListenerContainer(RedisConnectionFactory connectionFactory,
-                                                                            RedisCacheInvalidationListener listener,
-                                                                            CacheProperties properties) {
+    @ConditionalOnMissingBean(
+            value = RedisMessageListenerContainer.class,
+            name = "letoolCacheInvalidationListenerContainer")
+    public RedisMessageListenerContainer letoolCacheInvalidationListenerContainer(
+            RedisConnectionFactory connectionFactory,
+            RedisCacheInvalidationListener listener,
+            CacheProperties properties) {
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
         container.setConnectionFactory(connectionFactory);
         container.addMessageListener((message, pattern) ->
@@ -298,8 +327,14 @@ public class CacheAutoConfiguration {
             CacheConfig<Object, Object> config = CacheConfig.builder(ic.getName())
                     .l1Enabled(ic.isL1Enabled())
                     .l1MaxSize(ic.getL1MaxSize())
+                    .redisBatchSize(ic.getRedisBatchSize())
                     .l1Ttl(ic.getL1Ttl())
                     .l2Ttl(ic.getL2Ttl())
+                    .versionMetadataRetention(ic.getVersionMetadataRetention() == null
+                            ? properties.getConsistency().getVersionMetadataRetention()
+                            : ic.getVersionMetadataRetention())
+                    .fenceTtl(properties.getConsistency().getFenceTtl())
+                    .recoveryInterval(properties.getConsistency().getRecoveryInterval())
                     .l2Enabled(ic.isL2Enabled())
                     .consistencyMode(ic.getConsistencyMode() == null
                             ? properties.getConsistency().getMode()
@@ -312,6 +347,9 @@ public class CacheAutoConfiguration {
                     .writePolicy(ic.getWritePolicy() == null
                             ? properties.getConsistency().getWritePolicy()
                             : ic.getWritePolicy())
+                    .readFailurePolicy(ic.getReadFailurePolicy() == null
+                            ? properties.getConsistency().getReadFailurePolicy()
+                            : ic.getReadFailurePolicy())
                     .nullValueCache(ic.isNullValueCache())
                     .nullValueTtl(ic.getNullValueTtl())
                     .redisKeyPrefix(properties.getRedisPrefix());

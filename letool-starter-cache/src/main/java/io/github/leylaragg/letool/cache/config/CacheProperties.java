@@ -3,6 +3,7 @@ package io.github.leylaragg.letool.cache.config;
 import io.github.leylaragg.letool.cache.consistency.CacheConsistencyMode;
 import io.github.leylaragg.letool.cache.consistency.CacheReadValidation;
 import io.github.leylaragg.letool.cache.consistency.CacheWritePolicy;
+import io.github.leylaragg.letool.cache.core.CacheReadFailurePolicy;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
@@ -80,6 +81,9 @@ public class CacheProperties {
         private CacheReadValidation readValidation = CacheReadValidation.VERSIONED;
         /** 数据库修改成功后的缓存处理策略。 */
         private CacheWritePolicy writePolicy = CacheWritePolicy.INVALIDATE;
+        /** Redis 读取失败后的默认处理策略。 */
+        private CacheReadFailurePolicy readFailurePolicy =
+                CacheReadFailurePolicy.STALE_IF_AVAILABLE;
         /** DURABLE Redis 围栏最大存活时间。 */
         private Duration fenceTtl = Duration.ofMinutes(2);
         /** Outbox 恢复扫描间隔。 */
@@ -90,6 +94,8 @@ public class CacheProperties {
         private Duration recoveryLease = Duration.ofSeconds(30);
         /** Outbox 失败后的基础重试延迟。 */
         private Duration retryBaseDelay = Duration.ofSeconds(1);
+        /** 单 Key 版本元数据保留期。 */
+        private Duration versionMetadataRetention = Duration.ofDays(7);
         /** JDBC Outbox 表名。 */
         private String outboxTable = "letool_cache_outbox";
         /** 已完成 Outbox 事件保留时间。 */
@@ -105,6 +111,8 @@ public class CacheProperties {
         public void setReadValidation(CacheReadValidation readValidation) { this.readValidation = readValidation; }
         public CacheWritePolicy getWritePolicy() { return writePolicy; }
         public void setWritePolicy(CacheWritePolicy writePolicy) { this.writePolicy = writePolicy; }
+        public CacheReadFailurePolicy getReadFailurePolicy() { return readFailurePolicy; }
+        public void setReadFailurePolicy(CacheReadFailurePolicy readFailurePolicy) { this.readFailurePolicy = readFailurePolicy; }
         public Duration getFenceTtl() { return fenceTtl; }
         public void setFenceTtl(Duration fenceTtl) { this.fenceTtl = fenceTtl; }
         public Duration getRecoveryInterval() { return recoveryInterval; }
@@ -115,6 +123,8 @@ public class CacheProperties {
         public void setRecoveryLease(Duration recoveryLease) { this.recoveryLease = recoveryLease; }
         public Duration getRetryBaseDelay() { return retryBaseDelay; }
         public void setRetryBaseDelay(Duration retryBaseDelay) { this.retryBaseDelay = retryBaseDelay; }
+        public Duration getVersionMetadataRetention() { return versionMetadataRetention; }
+        public void setVersionMetadataRetention(Duration versionMetadataRetention) { this.versionMetadataRetention = versionMetadataRetention; }
         public String getOutboxTable() { return outboxTable; }
         public void setOutboxTable(String outboxTable) { this.outboxTable = outboxTable; }
         public Duration getCompletedRetention() { return completedRetention; }
@@ -133,6 +143,8 @@ public class CacheProperties {
         private String name;
         /** L1 最大条目数。 */
         private int l1MaxSize = 2000;
+        /** 单次 Redis pipeline 的最大业务 Key 数。 */
+        private int redisBatchSize = 256;
         /** L1 TTL。 */
         private Duration l1Ttl = Duration.ofHours(24);
         /** L2 TTL。 */
@@ -149,6 +161,10 @@ public class CacheProperties {
         private CacheReadValidation readValidation;
         /** 当前缓存区域的写策略；为空时继承全局配置。 */
         private CacheWritePolicy writePolicy;
+        /** Redis 读取失败策略；为空时继承全局配置。 */
+        private CacheReadFailurePolicy readFailurePolicy;
+        /** 单 Key 版本元数据保留期；为空时继承全局配置。 */
+        private Duration versionMetadataRetention;
         /** 是否缓存 null 结果。 */
         private boolean nullValueCache = true;
         /** null 哨兵 TTL。 */
@@ -158,6 +174,8 @@ public class CacheProperties {
         public void setName(String name) { this.name = name; }
         public int getL1MaxSize() { return l1MaxSize; }
         public void setL1MaxSize(int l1MaxSize) { this.l1MaxSize = l1MaxSize; }
+        public int getRedisBatchSize() { return redisBatchSize; }
+        public void setRedisBatchSize(int redisBatchSize) { this.redisBatchSize = redisBatchSize; }
         public Duration getL1Ttl() { return l1Ttl; }
         public void setL1Ttl(Duration l1Ttl) { this.l1Ttl = l1Ttl; }
         public Duration getL2Ttl() { return l2Ttl; }
@@ -174,6 +192,10 @@ public class CacheProperties {
         public void setReadValidation(CacheReadValidation readValidation) { this.readValidation = readValidation; }
         public CacheWritePolicy getWritePolicy() { return writePolicy; }
         public void setWritePolicy(CacheWritePolicy writePolicy) { this.writePolicy = writePolicy; }
+        public CacheReadFailurePolicy getReadFailurePolicy() { return readFailurePolicy; }
+        public void setReadFailurePolicy(CacheReadFailurePolicy readFailurePolicy) { this.readFailurePolicy = readFailurePolicy; }
+        public Duration getVersionMetadataRetention() { return versionMetadataRetention; }
+        public void setVersionMetadataRetention(Duration versionMetadataRetention) { this.versionMetadataRetention = versionMetadataRetention; }
         public boolean isNullValueCache() { return nullValueCache; }
         public void setNullValueCache(boolean nullValueCache) { this.nullValueCache = nullValueCache; }
         public Duration getNullValueTtl() { return nullValueTtl; }

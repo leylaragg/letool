@@ -3,6 +3,7 @@ package io.github.leylaragg.letool.cache.config;
 import io.github.leylaragg.letool.cache.consistency.CacheConsistencyMode;
 import io.github.leylaragg.letool.cache.consistency.CacheReadValidation;
 import io.github.leylaragg.letool.cache.consistency.CacheWritePolicy;
+import io.github.leylaragg.letool.cache.core.CacheReadFailurePolicy;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -48,9 +49,13 @@ class CachePropertiesTest {
         assertEquals(CacheConsistencyMode.TRANSACTIONAL, properties.getConsistency().getMode());
         assertEquals(CacheReadValidation.VERSIONED, properties.getConsistency().getReadValidation());
         assertEquals(CacheWritePolicy.INVALIDATE, properties.getConsistency().getWritePolicy());
+        assertEquals(CacheReadFailurePolicy.STALE_IF_AVAILABLE,
+                properties.getConsistency().getReadFailurePolicy());
         assertEquals(Duration.ofDays(7), properties.getConsistency().getCompletedRetention());
         assertEquals(Duration.ofHours(1), properties.getConsistency().getCleanupInterval());
         assertEquals(1000, properties.getConsistency().getCleanupBatchSize());
+        assertEquals(Duration.ofDays(7),
+                properties.getConsistency().getVersionMetadataRetention());
     }
 
     @Test
@@ -125,6 +130,7 @@ class CachePropertiesTest {
     void testInstanceConfigDefaults() {
         CacheProperties.InstanceConfig config = new CacheProperties.InstanceConfig();
         assertEquals(2000, config.getL1MaxSize());
+        assertEquals(256, config.getRedisBatchSize());
         assertEquals(Duration.ofHours(24), config.getL1Ttl());
         assertEquals(Duration.ofDays(3), config.getL2Ttl());
         assertTrue(config.isNullValueCache());
@@ -132,6 +138,8 @@ class CachePropertiesTest {
         assertNull(config.getConsistencyMode());
         assertNull(config.getReadValidation());
         assertNull(config.getWritePolicy());
+        assertNull(config.getReadFailurePolicy());
+        assertNull(config.getVersionMetadataRetention());
         assertNull(config.getName());
     }
 
@@ -141,6 +149,7 @@ class CachePropertiesTest {
         CacheProperties.InstanceConfig config = new CacheProperties.InstanceConfig();
         config.setName("myCache");
         config.setL1MaxSize(500);
+        config.setRedisBatchSize(128);
         config.setL1Ttl(Duration.ofHours(1));
         config.setL2Ttl(Duration.ofDays(7));
         config.setNullValueCache(false);
@@ -148,9 +157,12 @@ class CachePropertiesTest {
         config.setConsistencyMode(CacheConsistencyMode.DURABLE);
         config.setReadValidation(CacheReadValidation.NONE);
         config.setWritePolicy(CacheWritePolicy.UPDATE);
+        config.setReadFailurePolicy(CacheReadFailurePolicy.FAIL_CLOSED);
+        config.setVersionMetadataRetention(Duration.ofDays(10));
 
         assertEquals("myCache", config.getName());
         assertEquals(500, config.getL1MaxSize());
+        assertEquals(128, config.getRedisBatchSize());
         assertEquals(Duration.ofHours(1), config.getL1Ttl());
         assertEquals(Duration.ofDays(7), config.getL2Ttl());
         assertFalse(config.isNullValueCache());
@@ -158,5 +170,7 @@ class CachePropertiesTest {
         assertEquals(CacheConsistencyMode.DURABLE, config.getConsistencyMode());
         assertEquals(CacheReadValidation.NONE, config.getReadValidation());
         assertEquals(CacheWritePolicy.UPDATE, config.getWritePolicy());
+        assertEquals(CacheReadFailurePolicy.FAIL_CLOSED, config.getReadFailurePolicy());
+        assertEquals(Duration.ofDays(10), config.getVersionMetadataRetention());
     }
 }

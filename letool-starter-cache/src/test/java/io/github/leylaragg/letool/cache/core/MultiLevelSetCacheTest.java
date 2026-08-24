@@ -1,6 +1,7 @@
 package io.github.leylaragg.letool.cache.core;
 
 import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
+import io.github.leylaragg.letool.cache.exception.CacheException;
 import io.github.leylaragg.letool.tool.redis.RedisUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -115,6 +116,128 @@ class MultiLevelSetCacheTest {
 
         assertTrue(cache.stats().l2Degraded());
         assertEquals(1, manager.degradedCacheCount());
+    }
+
+    @Test
+    @DisplayName("FAIL_CLOSED 在 Redis 读取失败时抛出稳定缓存异常")
+    void failClosedShouldThrowWhenRedisReadFails() {
+        CacheConfig<String, String> strictConfig = strictReadConfig();
+        when(redisUtil.boundSetOps("test:cache:rule%3Aindex:project:strict"))
+                .thenReturn(boundSetOperations);
+        when(boundSetOperations.members())
+                .thenThrow(new RuntimeException("redis down"));
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateSetCache(strictConfig, Function.identity(), String.class);
+
+        CacheException exception = assertThrows(
+                CacheException.class,
+                () -> cache.getMembers("project:strict")
+        );
+
+        assertEquals("CACHE_006", exception.getCode());
+        assertEquals(1, cache.stats().failClosedCount());
+    }
+
+    @Test
+    @DisplayName("FAIL_CLOSED 不得把已有 L1 快照伪装成权威结果")
+    void failClosedShouldNotReturnStaleLocalSnapshot() {
+        CacheConfig<String, String> strictConfig = strictReadConfig();
+        when(redisUtil.boundSetOps("test:cache:rule%3Aindex:project:stale"))
+                .thenReturn(boundSetOperations);
+        when(boundSetOperations.members())
+                .thenReturn(Set.of("rule-a"))
+                .thenThrow(new RuntimeException("redis down"));
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateSetCache(strictConfig, Function.identity(), String.class);
+        assertEquals(Set.of("rule-a"), cache.getMembers("project:stale"));
+
+        CacheException exception = assertThrows(
+                CacheException.class,
+                () -> cache.getMembers("project:stale")
+        );
+
+        assertEquals("CACHE_006", exception.getCode());
+    }
+
+    @Test
+    @DisplayName("FAIL_CLOSED 同样约束 contains 的 Redis 读取失败")
+    void failClosedContainsShouldThrowWhenRedisReadFails() {
+        CacheConfig<String, String> strictConfig = strictReadConfig();
+        when(redisUtil.boundSetOps("test:cache:rule%3Aindex:project:contains"))
+                .thenReturn(boundSetOperations);
+        when(boundSetOperations.isMember("rule-a"))
+                .thenThrow(new RuntimeException("redis down"));
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateSetCache(strictConfig, Function.identity(), String.class);
+
+        CacheException exception = assertThrows(
+                CacheException.class,
+                () -> cache.contains("project:contains", "rule-a")
+        );
+
+        assertEquals("CACHE_006", exception.getCode());
+    }
+
+    @Test
+    @DisplayName("Redis 空集合是带 AUTHORITATIVE 状态的权威结果")
+    void emptyRedisSetShouldBeAuthoritative() {
+        CacheConfig<String, String> strongConfig = strongReadConfig(
+                CacheReadFailurePolicy.STALE_IF_AVAILABLE
+        );
+        when(redisUtil.boundSetOps("test:cache:rule%3Aindex:project:empty"))
+                .thenReturn(boundSetOperations);
+        when(boundSetOperations.members()).thenReturn(Set.of());
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateSetCache(strongConfig, Function.identity(), String.class);
+
+        SetCacheReadResult<String> result = cache.getMembersWithStatus("project:empty");
+
+        assertTrue(result.members().isEmpty());
+        assertEquals(SetCacheReadResult.State.AUTHORITATIVE, result.state());
+    }
+
+    @Test
+    @DisplayName("STALE_IF_AVAILABLE 明确标记 Redis 故障后的 L1 快照")
+    void stalePolicyShouldMarkLocalFallback() {
+        CacheConfig<String, String> strongConfig = strongReadConfig(
+                CacheReadFailurePolicy.STALE_IF_AVAILABLE
+        );
+        when(redisUtil.boundSetOps("test:cache:rule%3Aindex:project:fallback"))
+                .thenReturn(boundSetOperations);
+        when(boundSetOperations.members())
+                .thenReturn(Set.of("rule-a"))
+                .thenThrow(new RuntimeException("redis down"));
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateSetCache(strongConfig, Function.identity(), String.class);
+        cache.getMembers("project:fallback");
+
+        SetCacheReadResult<String> result = cache.getMembersWithStatus("project:fallback");
+
+        assertEquals(Set.of("rule-a"), result.members());
+        assertEquals(SetCacheReadResult.State.STALE, result.state());
+        assertEquals(1, cache.stats().staleReadCount());
+    }
+
+    @Test
+    @DisplayName("EMPTY_ON_FAILURE 忽略已有快照并标记故障空结果")
+    void emptyPolicyShouldIgnoreLocalSnapshot() {
+        CacheConfig<String, String> emptyConfig = strongReadConfig(
+                CacheReadFailurePolicy.EMPTY_ON_FAILURE
+        );
+        when(redisUtil.boundSetOps("test:cache:rule%3Aindex:project:empty-fallback"))
+                .thenReturn(boundSetOperations);
+        when(boundSetOperations.members())
+                .thenReturn(Set.of("rule-a"))
+                .thenThrow(new RuntimeException("redis down"));
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateSetCache(emptyConfig, Function.identity(), String.class);
+        cache.getMembers("project:empty-fallback");
+
+        SetCacheReadResult<String> result = cache.getMembersWithStatus("project:empty-fallback");
+
+        assertTrue(result.members().isEmpty());
+        assertEquals(SetCacheReadResult.State.FAILURE_EMPTY, result.state());
+        assertEquals(1, cache.stats().failureEmptyCount());
     }
 
     @Test
@@ -252,5 +375,57 @@ class MultiLevelSetCacheTest {
         assertTrue(cache.getMembers("project:9").isEmpty());
         verify(publisher).publish(argThat(message ->
                 message.isAll() && "rule:index".equals(message.getCacheName())));
+    }
+
+    @Test
+    @DisplayName("evictByPrefix 只清理匹配业务 Key 并广播 PREFIX")
+    void evictByPrefixShouldClearOnlyMatchingKeys() {
+        CacheInvalidationPublisher publisher = mock(CacheInvalidationPublisher.class);
+        MultiLevelSetCache<String, String> cache = new CacheManager(
+                null,
+                serializer,
+                true,
+                false,
+                "test:cache:",
+                publisher
+        ).getOrCreateSetCache(config, Function.identity(), String.class);
+        cache.add("project:1", "rule-a");
+        cache.add("project:2", "rule-b");
+        cache.add("tenant:1", "rule-c");
+        clearInvocations(publisher);
+
+        cache.evictByPrefix("project:");
+
+        assertTrue(cache.getMembers("project:1").isEmpty());
+        assertTrue(cache.getMembers("project:2").isEmpty());
+        assertEquals(Set.of("rule-c"), cache.getMembers("tenant:1"));
+        verify(publisher).publish(argThat(message ->
+                message.isPrefix() && "project:".equals(message.getPrefix())));
+    }
+
+    /**
+     * 创建必须以 Redis 读取结果为准的严格配置。
+     *
+     * @return 严格读取配置
+     */
+    private CacheConfig<String, String> strictReadConfig() {
+        return strongReadConfig(CacheReadFailurePolicy.FAIL_CLOSED);
+    }
+
+    /**
+     * 创建指定 Redis 读取失败策略的强一致配置。
+     *
+     * @param policy Redis 读取失败策略
+     * @return 强一致读取配置
+     */
+    private CacheConfig<String, String> strongReadConfig(
+            CacheReadFailurePolicy policy) {
+        return CacheConfig.<String, String>builder("rule:index")
+                .l1Ttl(Duration.ofMinutes(10))
+                .l2Ttl(Duration.ofHours(1))
+                .redisKeyPrefix("test:cache:")
+                .strongConsistency(true)
+                .readFailurePolicy(policy)
+                .build();
     }
 }

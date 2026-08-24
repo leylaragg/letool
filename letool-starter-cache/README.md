@@ -53,6 +53,8 @@ letool:
       mode: TRANSACTIONAL
       read-validation: VERSIONED
       write-policy: INVALIDATE
+      # Redis 读取失败时默认返回完整的旧 L1 快照；规则索引等关键缓存应改为 FAIL_CLOSED
+      read-failure-policy: STALE_IF_AVAILABLE
       # DURABLE 模式使用；表需要由业务项目按下文 SQL 预先创建
       outbox-table: letool_cache_outbox
       fence-ttl: 2m
@@ -60,6 +62,8 @@ letool:
       recovery-batch-size: 100
       recovery-lease: 30s
       retry-base-delay: 1s
+      # 必须不小于 l1-ttl + max(fence-ttl, recovery-interval) + 10m
+      version-metadata-retention: 7d
       completed-retention: 7d
       cleanup-interval: 1h
       cleanup-batch-size: 1000
@@ -68,9 +72,11 @@ letool:
         l1-max-size: 2000
         l1-ttl: 30m
         l2-ttl: 2h
+        redis-batch-size: 256
         # 可按缓存实例覆盖全局策略；未配置时继承全局值
         read-validation: VERSIONED
         write-policy: INVALIDATE
+        read-failure-policy: FAIL_CLOSED
         null-value-cache: true
         null-value-ttl: 3m
     invalidation:
@@ -84,6 +90,9 @@ letool:
     monitoring:
       enabled: true
 ```
+
+单缓存未显式设置 Redis 前缀时继承 `letool.cache.redis-prefix`；Java 配置显式调用
+`redisKeyPrefix(...)` 时优先使用该值。
 
 ### 2. 使用注解读取缓存
 
@@ -411,6 +420,8 @@ Flyway/Liquibase 变更。框架持续重试而不自动丢弃永久失败事件
 
 - 多实例部署并且缓存数据会被多个实例写入时，建议保持 `read-validation=VERSIONED`。
 - Pub/Sub 是瞬时消息，实例离线期间可能错过失效广播；关键缓存不要只依赖广播，应开启强一致版本校验。
+- 失效消息使用框架私有的版本化 UTF-8 Wire Protocol，与业务 `RedisTemplate` 的值序列化器隔离；
+  Fastjson2 或自定义对象序列化器不会改变消息字节。未知协议版本会被拒绝，旧格式只保留读取兼容。
 - 对性能敏感且短时间旧值可以接受的缓存，可以把单个实例的 `read-validation` 设置为 `NONE`。
 - 旧 `strong-consistency` 配置只作为读取校验兼容项保留，不会开启 `DURABLE`。
 
@@ -464,6 +475,37 @@ DURABLE 下主要 Redis key 形态如下，其中 Hash Tag 经过框架转义并
 
 - 降级期间命中率可能下降，要关注 `l2DegradedCount` 和业务回源压力。
 - 如果缓存回源会打到数据库，请确保数据库侧有保护措施，例如限流、超时和熔断。
+
+### Set 读取故障策略
+
+`MultiLevelSetCache` 使用 `CacheReadFailurePolicy` 区分 Redis 权威空集合和故障结果：
+
+| 策略 | 行为 |
+| --- | --- |
+| `STALE_IF_AVAILABLE` | 默认值；存在完整 L1 快照时返回旧快照，否则返回带失败状态的空结果 |
+| `FAIL_CLOSED` | 抛出 `CACHE_006`，适用于规则索引、权限等不能把故障当空集合的场景 |
+| `EMPTY_ON_FAILURE` | 明确接受故障时返回空结果，只用于允许假阴性的非关键场景 |
+
+需要判断结果来源时调用 `getMembersWithStatus`；`getMembers` 保持旧 API，并返回可修改的成员快照。
+
+## KV 批量访问与泛型值
+
+`MultiLevelCache#getAllPresent`、`putAll(Map)` 和 `putAll(Map, Duration)` 使用有界 Redis
+Pipeline，默认每 256 个业务 Key 一个批次。空 Map 无操作，null Key 被忽略，null Value 继续遵循
+空值哨兵配置。强一致批量写仍按业务 Key 执行独立同槽 Lua，因此单 Key 原子，但不保证整批跨 Key 原子。
+
+泛型值使用 `java.lang.reflect.Type` 描述；Jackson 序列化器可在应用重启后恢复集合元素类型：
+
+```java
+Type ruleListType = new TypeReference<List<RuleDto>>() { }.getType();
+CacheConfig<String, List<RuleDto>> config = CacheConfig
+        .<String, List<RuleDto>>builder("rules")
+        .valueType(ruleListType)
+        .build();
+```
+
+框架不新增 Java `ServiceLoader` SPI。现有 `CacheSerializer` 继续作为序列化扩展点，并增加
+`deserialize(String, Type)`；失效协议、前缀扫描、版本治理和读取故障策略保持框架内部实现。
 
 ## Redis 原生集合缓存
 
@@ -531,6 +573,15 @@ ruleIndex.evictAll();
 ranking.evictAll();
 ```
 
+Set 还支持按稳定业务 Key 序列化前缀清理：
+
+```java
+ruleIndex.evictByPrefix("project:");
+```
+
+该操作先清理本机匹配的 L1，再用转义后的 `SCAN + UNLINK` 删除 Redis Key，最后广播一条
+PREFIX 消息清理其它节点的 L1。空前缀会快速失败；清理整个区域应使用 `evictAll()`。
+
 区域清理使用 `SCAN + UNLINK` 分批处理，只扫描当前缓存名称对应的键空间，不调用会阻塞 Redis
 主线程的 `KEYS`。Redis Cluster 模式会逐个扫描当前拓扑中的可用主节点，不会只清理当前连接
 节点。该能力要求 Redis 4.0 或更高版本，并要求缓存使用的 RedisTemplate 将
@@ -576,6 +627,8 @@ ranking.evictAll();
 | `CACHE_003` | 缓存未命中后的 loader 回源失败 |
 | `CACHE_004` | 跨 JVM 缓存失效消息格式不合法 |
 | `CACHE_005` | 同一缓存名称被注册为不同的数据结构 |
+| `CACHE_006` | 严格读取策略下 Redis L2 状态不可确认 |
+| `CACHE_007` | 当前序列化器不支持配置的泛型 `Type` |
 
 同一个 `CacheManager` 内，缓存名称在 KV/List/Hash/Set/ZSet 之间全局唯一；同名缓存可以重复获取，但不能改变数据结构类型。异常消息和警告日志不会拼接业务 key、缓存值、失效消息原始载荷或底层异常文本；底层原因仍保留在异常链或 DEBUG 日志中。`CacheException` 不再提供任意文本构造器，调用方应按错误码判断失败类型。
 
@@ -612,12 +665,14 @@ CacheInvalidationBacklog backlog = cacheMonitor.outboxBacklog(Instant.now());
 | `letool.cache.consistency.mode` | `TRANSACTIONAL` | 数据库一致性模式：`TRANSACTIONAL`/`DURABLE` |
 | `letool.cache.consistency.read-validation` | `VERSIONED` | L1 读取校验策略：`VERSIONED`/`NONE` |
 | `letool.cache.consistency.write-policy` | `INVALIDATE` | 提交后失效或显式更新：`INVALIDATE`/`UPDATE` |
+| `letool.cache.consistency.read-failure-policy` | `STALE_IF_AVAILABLE` | Redis 读取失败策略 |
 | `letool.cache.consistency.outbox-table` | `letool_cache_outbox` | DURABLE JDBC Outbox 表名 |
 | `letool.cache.consistency.fence-ttl` | `2m` | Redis 写围栏最大存活时间 |
 | `letool.cache.consistency.recovery-interval` | `5s` | Outbox 恢复扫描间隔 |
 | `letool.cache.consistency.recovery-batch-size` | `100` | Outbox 单批最大领取数量 |
 | `letool.cache.consistency.recovery-lease` | `30s` | 单个恢复实例的处理租约 |
 | `letool.cache.consistency.retry-base-delay` | `1s` | 失败指数退避的基础延迟 |
+| `letool.cache.consistency.version-metadata-retention` | `7d` | 单 Key 版本元数据安全保留期 |
 | `letool.cache.consistency.completed-retention` | `7d` | 已完成 Outbox 事件保留时间 |
 | `letool.cache.consistency.cleanup-interval` | `1h` | 已完成 Outbox 事件清理间隔 |
 | `letool.cache.consistency.cleanup-batch-size` | `1000` | 已完成 Outbox 单次最大清理数量 |
@@ -625,6 +680,7 @@ CacheInvalidationBacklog backlog = cacheMonitor.outboxBacklog(Instant.now());
 | `letool.cache.instances[].name` | 无 | 缓存实例名称 |
 | `letool.cache.instances[].l1-enabled` | `true` | 当前实例 L1 开关 |
 | `letool.cache.instances[].l1-max-size` | `2000` | 当前实例 L1 最大条目数 |
+| `letool.cache.instances[].redis-batch-size` | `256` | 单个 Redis Pipeline 的最大业务 Key 数 |
 | `letool.cache.instances[].l1-ttl` | `24h` | 当前实例 L1 TTL |
 | `letool.cache.instances[].l2-enabled` | `true` | 当前实例 L2 开关 |
 | `letool.cache.instances[].l2-ttl` | `3d` | 当前实例 L2 TTL |
@@ -632,6 +688,8 @@ CacheInvalidationBacklog backlog = cacheMonitor.outboxBacklog(Instant.now());
 | `letool.cache.instances[].consistency-mode` | 继承全局 | 当前实例数据库一致性模式 |
 | `letool.cache.instances[].read-validation` | 继承全局 | 当前实例读取校验策略 |
 | `letool.cache.instances[].write-policy` | 继承全局 | 当前实例提交后写策略 |
+| `letool.cache.instances[].read-failure-policy` | 继承全局 | 当前实例 Redis 读取失败策略 |
+| `letool.cache.instances[].version-metadata-retention` | 继承全局 | 当前实例版本元数据保留期 |
 | `letool.cache.instances[].null-value-cache` | `true` | 是否缓存 null 结果 |
 | `letool.cache.instances[].null-value-ttl` | `5m` | null 哨兵 TTL |
 | `letool.cache.invalidation.enabled` | `true` | 是否启用跨 JVM L1 失效广播 |
@@ -664,6 +722,7 @@ CacheInvalidationBacklog backlog = cacheMonitor.outboxBacklog(Instant.now());
 - Redis 异常时 loader 回源不会压垮数据库。
 - null 缓存 TTL 不要过长，避免不存在的数据创建后仍然短期不可见。
 - Redis key 前缀按应用隔离，例如 `edc:cache:`、`crm:cache:`。
+- Redis 连接凭据只通过环境变量或密钥管理系统提供；生产启用 ACL 最小权限、TLS 和网络白名单。
 - 生产日志或监控中关注命中率、加载失败、降级次数和回源量。
 - DURABLE 监控 `pendingCount + processingCount`（也可调用 `outstandingCount()`）和最老积压年龄，持续增长时优先排查 Redis、数据库和恢复线程。
 - 多数据源项目显式绑定业务事务管理器与同库 Outbox，不依赖 `@Primary` 的偶然选择。
@@ -673,4 +732,7 @@ CacheInvalidationBacklog backlog = cacheMonitor.outboxBacklog(Instant.now());
 - Redis Cluster 上执行区域清理前，应确认应用账号能够读取集群拓扑并访问全部主节点。
 - 自定义 RedisTemplate 时必须使用 `StringRedisSerializer` 序列化 Key，否则区域清理会进入既有 L2 降级流程，避免错误扫描其它键空间。
 - 非 String key 的精确失效需要扫描当前缓存区域的本地 key 并比较序列化结果；超大 L1 区域且高频失效时，优先使用 String key 或评估业务侧反向索引。
-- 当前自动化测试以 Mock Redis 为主，生产发布前仍应在目标 Redis 版本和序列化配置下执行集成测试。
+- 普通回归运行 `mvn -pl letool-starter-cache -am test`；真实 Redis 门禁运行
+  `mvn -pl letool-starter-cache -am -Predis-integration verify`。后者默认使用 Testcontainers Redis 7.2，
+  也可通过 `LETOOL_TEST_REDIS_HOST`、`LETOOL_TEST_REDIS_PORT` 和密码环境变量复核指定实例；
+  Profile 启用后连接失败会使构建失败，不会静默跳过。

@@ -4,12 +4,14 @@ import io.github.leylaragg.letool.cache.aspect.CacheAspect;
 import io.github.leylaragg.letool.cache.core.CacheConfig;
 import io.github.leylaragg.letool.cache.core.CacheManager;
 import io.github.leylaragg.letool.cache.core.MultiLevelCache;
+import io.github.leylaragg.letool.cache.core.CacheReadFailurePolicy;
 import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
 import io.github.leylaragg.letool.cache.serializer.JacksonCacheSerializer;
 import io.github.leylaragg.letool.cache.support.CacheMonitor;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
@@ -26,6 +28,7 @@ import io.github.leylaragg.letool.tool.redis.RedisUtil;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -199,6 +202,38 @@ class CacheAutoConfigurationTest {
                 });
     }
 
+    /** 实例级读取失败策略应覆盖全局默认值并写入实际缓存配置。 */
+    @Test
+    void shouldApplyInstanceReadFailurePolicy() {
+        contextRunner
+                .withPropertyValues(
+                        "letool.cache.consistency.read-failure-policy=EMPTY_ON_FAILURE",
+                        "letool.cache.instances[0].name=strict-set-cache",
+                        "letool.cache.instances[0].read-failure-policy=FAIL_CLOSED")
+                .run(context -> {
+                    CacheManager cacheManager = context.getBean(CacheManager.class);
+                    MultiLevelCache<Object, Object> cache = cacheManager.get("strict-set-cache");
+                    CacheConfig<?, ?> config = extractConfig(cache);
+
+                    assertThat(config.getReadFailurePolicy())
+                            .isEqualTo(CacheReadFailurePolicy.FAIL_CLOSED);
+                });
+    }
+
+    /** 失效基础设施必须同时声明稳定 Bean 名和类型退让条件。 */
+    @Test
+    void invalidationInfrastructureShouldUseStableNamesAndTypedBackoff() {
+        assertNamedTypedBackoff(
+                "letoolCacheInvalidationPublisher",
+                io.github.leylaragg.letool.cache.core.CacheInvalidationPublisher.class);
+        assertNamedTypedBackoff(
+                "letoolCacheInvalidationListener",
+                io.github.leylaragg.letool.cache.core.RedisCacheInvalidationListener.class);
+        assertNamedTypedBackoff(
+                "letoolCacheInvalidationListenerContainer",
+                org.springframework.data.redis.listener.RedisMessageListenerContainer.class);
+    }
+
     /**
      * DURABLE 模式缺少事务管理器、Redis 和事件仓储时必须启动失败，不能静默降级。
      */
@@ -288,6 +323,25 @@ class CacheAutoConfigurationTest {
             return (CacheConfig<?, ?>) field.get(cache);
         } catch (ReflectiveOperationException e) {
             throw new AssertionError("Failed to inspect cache config", e);
+        }
+    }
+
+    private void assertNamedTypedBackoff(String methodName, Class<?> beanType) {
+        try {
+            Method method = Arrays.stream(CacheAutoConfiguration.class.getDeclaredMethods())
+                    .filter(candidate -> candidate.getName().equals(methodName))
+                    .findFirst()
+                    .orElseThrow();
+            org.springframework.context.annotation.Bean bean =
+                    method.getAnnotation(org.springframework.context.annotation.Bean.class);
+            ConditionalOnMissingBean condition =
+                    method.getAnnotation(ConditionalOnMissingBean.class);
+
+            assertThat(Set.of(bean.value())).contains(methodName);
+            assertThat(Set.of(condition.name())).contains(methodName);
+            assertThat(Set.of(condition.value())).contains(beanType);
+        } catch (RuntimeException exception) {
+            throw exception;
         }
     }
 

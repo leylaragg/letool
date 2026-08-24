@@ -420,21 +420,26 @@ public class CacheManager {
      * 其它参数仍由单缓存配置决定，方便不同业务缓存设置不同容量和 TTL。</p>
      */
     private <K, V> CacheConfig<K, V> effectiveConfig(CacheConfig<K, V> config) {
-        String prefix = config.getRedisKeyPrefix() == null || config.getRedisKeyPrefix().isBlank()
-                ? globalKeyPrefix
-                : config.getRedisKeyPrefix();
+        String prefix = config.hasExplicitRedisKeyPrefix()
+                ? config.getRedisKeyPrefix()
+                : globalKeyPrefix;
         return CacheConfig.<K, V>builder(config.getName())
                 .l1Enabled(l1Enabled && config.isL1Enabled())
                 .l1MaxSize(config.getL1MaxSize())
+                .redisBatchSize(config.getRedisBatchSize())
                 .l1Ttl(config.getL1Ttl())
                 .l2Ttl(config.getL2Ttl())
+                .versionMetadataRetention(config.getVersionMetadataRetention())
+                .fenceTtl(config.getFenceTtl())
+                .recoveryInterval(config.getRecoveryInterval())
                 .l2Enabled(l2Enabled && config.isL2Enabled())
                 .consistencyMode(config.getConsistencyMode())
                 .readValidation(config.getReadValidation())
                 .writePolicy(config.getWritePolicy())
+                .readFailurePolicy(config.getReadFailurePolicy())
                 .nullValueCache(config.isNullValueCache())
                 .nullValueTtl(config.getNullValueTtl())
-                .valueType(config.getValueType())
+                .valueType(config.getValueTypeDescriptor())
                 .keySerializer(config::serializeKey)
                 .redisKeyPrefix(prefix)
                 .build();
@@ -529,6 +534,19 @@ public class CacheManager {
         MultiLevelZSetCache<?, ?> zSetCache = zSetCaches.get(cacheName);
         if (zSetCache != null) {
             zSetCache.evictLocalSerializedKey(key);
+        }
+    }
+
+    /**
+     * 按序列化业务 key 前缀清理当前 JVM 的 Set L1 快照。
+     *
+     * @param cacheName Set 缓存区域名称
+     * @param serializedPrefix 稳定序列化后的业务 key 前缀
+     */
+    public void evictLocalByPrefix(String cacheName, String serializedPrefix) {
+        MultiLevelSetCache<?, ?> setCache = setCaches.get(cacheName);
+        if (setCache != null) {
+            setCache.evictLocalSerializedPrefix(serializedPrefix);
         }
     }
 

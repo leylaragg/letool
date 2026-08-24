@@ -134,10 +134,36 @@ final class RedisCacheKeyspace {
      * @return 提交给 UNLINK 的 Key 数量
      */
     long scanAndUnlink(RedisOperations<String, Object> redisOperations) {
+        return scanAndUnlinkPattern(redisOperations, scanPattern);
+    }
+
+    /**
+     * 按序列化业务 key 前缀扫描并异步删除当前区域的数据。
+     *
+     * @param redisOperations Redis 原生操作入口
+     * @param serializedBusinessKeyPrefix 序列化业务 key 前缀
+     * @return 提交给 UNLINK 的 Key 数量
+     */
+    long scanAndUnlink(
+            RedisOperations<String, Object> redisOperations,
+            String serializedBusinessKeyPrefix) {
+        if (serializedBusinessKeyPrefix == null
+                || serializedBusinessKeyPrefix.isBlank()) {
+            throw new IllegalArgumentException("业务 Key 前缀不能为空");
+        }
+        return scanAndUnlinkPattern(
+                redisOperations,
+                escapeGlob(regionPrefix + serializedBusinessKeyPrefix) + "*"
+        );
+    }
+
+    private long scanAndUnlinkPattern(
+            RedisOperations<String, Object> redisOperations,
+            String pattern) {
         Objects.requireNonNull(redisOperations, "Redis 操作入口不能为空");
         StringRedisSerializer keySerializer = requireStringKeySerializer(redisOperations);
         ScanOptions options = ScanOptions.scanOptions()
-                .match(Objects.requireNonNull(keySerializer.serialize(scanPattern), "Redis 扫描模式序列化结果不能为空"))
+                .match(Objects.requireNonNull(keySerializer.serialize(pattern), "Redis 扫描模式序列化结果不能为空"))
                 .count(SCAN_BATCH_SIZE)
                 .build();
         RedisCallback<Long> callback = connection -> scanAndUnlink(connection, options);

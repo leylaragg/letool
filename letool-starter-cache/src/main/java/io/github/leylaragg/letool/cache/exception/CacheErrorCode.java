@@ -20,7 +20,13 @@ public enum CacheErrorCode implements ErrorCode {
     INVALIDATION_MESSAGE_INVALID("CACHE_004", "缓存失效消息不合法"),
 
     /** 同一缓存名称被注册为不同的数据结构。 */
-    CACHE_TYPE_CONFLICT("CACHE_005", "缓存名称已被其他数据结构占用");
+    CACHE_TYPE_CONFLICT("CACHE_005", "缓存名称已被其他数据结构占用"),
+
+    /** 需要权威 L2 结果时 Redis 当前不可用。 */
+    L2_UNAVAILABLE("CACHE_006", "缓存 L2 当前不可用"),
+
+    /** 自定义序列化器没有实现参数化类型反序列化。 */
+    GENERIC_TYPE_UNSUPPORTED("CACHE_007", "缓存序列化器不支持泛型类型：{0}");
 
     /** 供程序判断和响应映射使用的稳定错误码。 */
     private final String code;
