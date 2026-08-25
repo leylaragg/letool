@@ -337,6 +337,8 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
   无冲突覆盖，并通过应用客户端逐个 PING 主节点；区域清理失败时不再广播全区域失效。
 - 缓存失效监听容器不再因业务已有其它 `RedisMessageListenerContainer` 而缺席；仅同名
   `letoolCacheInvalidationListenerContainer` 表示业务方接管 Letool 订阅。
+- 修复 Tool 与 Cache 在 Spring Boot Redis 连接工厂之前判断 Bean 条件，导致标准应用静默缺少
+  `RedisUtil`、L2 和失效广播的问题；对象模板所有权与既有 Fastjson2 兼容协议保持不变。
 - 版本元数据安全窗口只在启用 L2 且读取校验为 `VERSIONED` 时约束配置；L1-only 或
   `NONE` 读取不再被无关的保留期关系阻止启动。
 - 参数化 `Type` 遇到不支持泛型反序列化的自定义 `CacheSerializer` 时，`CACHE_007`

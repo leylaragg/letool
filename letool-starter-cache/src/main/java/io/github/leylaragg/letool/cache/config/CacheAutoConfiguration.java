@@ -19,11 +19,13 @@ import io.github.leylaragg.letool.cache.core.RedisCacheInvalidationPublisher;
 import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
 import io.github.leylaragg.letool.cache.serializer.JacksonCacheSerializer;
 import io.github.leylaragg.letool.cache.support.CacheMonitor;
+import io.github.leylaragg.letool.tool.config.LetoolToolAutoConfiguration;
 import io.github.leylaragg.letool.tool.redis.RedisUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -56,7 +58,7 @@ import java.util.UUID;
  * 如果业务系统没有引入 Redis，框架会自动退化为本地 L1 缓存；如果存在
  * {@link RedisUtil}，则会同时启用 Redis L2 缓存。</p>
  */
-@AutoConfiguration
+@AutoConfiguration(after = {RedisAutoConfiguration.class, LetoolToolAutoConfiguration.class})
 @EnableConfigurationProperties(CacheProperties.class)
 @ConditionalOnProperty(prefix = "letool.cache", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class CacheAutoConfiguration {
@@ -193,18 +195,18 @@ public class CacheAutoConfiguration {
      * 注册缓存失效广播专用的字符串 Redis 模板。
      *
      * <p>该模板只使用字符串序列化器，确保失效协议不会被业务对象模板的 Fastjson2、Jackson
-     * 或 JDK 序列化器再次包装。</p>
+     * 或 JDK 序列化器再次包装。它是框架内部 Bean，不参与业务按类型注入。</p>
      *
-     * @param connectionFactory Redis 连接工厂
+     * @param connectionFactoryProvider Redis 连接工厂提供器；方法只在存在唯一候选时注册
      * @return 失效广播专用字符串模板
      */
-    @Bean("letoolCacheInvalidationStringRedisTemplate")
-    @ConditionalOnBean(RedisConnectionFactory.class)
+    @Bean(value = "letoolCacheInvalidationStringRedisTemplate", defaultCandidate = false)
+    @ConditionalOnSingleCandidate(RedisConnectionFactory.class)
     @ConditionalOnMissingBean(name = "letoolCacheInvalidationStringRedisTemplate")
     @ConditionalOnProperty(prefix = "letool.cache.invalidation", name = "enabled", havingValue = "true", matchIfMissing = true)
     public StringRedisTemplate letoolCacheInvalidationStringRedisTemplate(
-            RedisConnectionFactory connectionFactory) {
-        return new StringRedisTemplate(connectionFactory);
+            ObjectProvider<RedisConnectionFactory> connectionFactoryProvider) {
+        return new StringRedisTemplate(connectionFactoryProvider.getObject());
     }
 
     /**
@@ -251,19 +253,23 @@ public class CacheAutoConfiguration {
      * <p>业务没有提供监听容器时，框架创建名为
      * {@code letoolCacheInvalidationListenerContainer} 的默认容器；存在唯一业务容器时，
      * 由额外的注册 Bean 把 Letool 失效订阅加入该容器，避免增加同类型候选。</p>
+     *
+     * @param connectionFactoryProvider Redis 连接工厂提供器；方法只在存在唯一候选时注册
+     * @param listener Letool 失效消息监听器
+     * @param properties 缓存配置
+     * @return 已订阅失效通道的监听容器
      */
     @Bean("letoolCacheInvalidationListenerContainer")
     @ConditionalOnClass(RedisMessageListenerContainer.class)
-    @ConditionalOnBean({RedisCacheInvalidationListener.class, RedisConnectionFactory.class})
-    @ConditionalOnMissingBean(
-            value = RedisMessageListenerContainer.class,
-            name = "letoolCacheInvalidationListenerContainer")
+    @ConditionalOnBean(RedisCacheInvalidationListener.class)
+    @ConditionalOnSingleCandidate(RedisConnectionFactory.class)
+    @ConditionalOnMissingBean(value = RedisMessageListenerContainer.class, name = "letoolCacheInvalidationListenerContainer")
     public RedisMessageListenerContainer letoolCacheInvalidationListenerContainer(
-            RedisConnectionFactory connectionFactory,
+            ObjectProvider<RedisConnectionFactory> connectionFactoryProvider,
             RedisCacheInvalidationListener listener,
             CacheProperties properties) {
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
-        container.setConnectionFactory(connectionFactory);
+        container.setConnectionFactory(connectionFactoryProvider.getObject());
         addInvalidationMessageListener(container, listener, properties);
         return container;
     }
@@ -339,7 +345,7 @@ public class CacheAutoConfiguration {
     @ConditionalOnProperty(prefix = "letool.cache.annotation", name = "enabled", havingValue = "true", matchIfMissing = true)
     public CacheAspect cacheAspect(
             CacheManager cacheManager,
-            @org.springframework.beans.factory.annotation.Autowired(required = false)
+            @Autowired(required = false)
             CacheMutationCoordinator mutationCoordinator) {
         return new CacheAspect(cacheManager, mutationCoordinator);
     }
@@ -356,7 +362,7 @@ public class CacheAutoConfiguration {
     @ConditionalOnProperty(prefix = "letool.cache.monitoring", name = "enabled", havingValue = "true", matchIfMissing = true)
     public CacheMonitor cacheMonitor(
             CacheManager cacheManager,
-            @org.springframework.beans.factory.annotation.Autowired(required = false)
+            @Autowired(required = false)
             CacheInvalidationRecovery invalidationRecovery) {
         return new CacheMonitor(cacheManager, invalidationRecovery);
     }

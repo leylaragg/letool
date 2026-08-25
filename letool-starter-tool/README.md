@@ -356,6 +356,10 @@ POST、PATCH 不会被静默重放。只有调用方确认业务具有幂等保�
 
 > 自动检测 classpath：仅在引入 `spring-boot-starter-data-redis` 后生效。
 
+`RedisUtil` 会在 Spring Boot Redis 自动配置完成后绑定名为 `redisTemplate` 的对象模板，不会覆盖
+业务自定义模板或改写其序列化器。业务已经提前提供唯一 `RedisConnectionFactory`、但没有对象模板时，
+Letool 会在 Boot 默认模板之前创建兼容的 Fastjson2 模板；标准 Boot 场景则直接复用 Boot 默认模板。
+
 ```java
 @Autowired
 private RedisUtil redisUtil;
@@ -364,7 +368,7 @@ private RedisUtil redisUtil;
 redisUtil.set("user:1", "张三", Duration.ofHours(1));
 String name = redisUtil.get("user:1");
 
-// 对象存取（JSON 序列化）
+// 对象存取（具体格式由 redisTemplate 的序列化器决定）
 redisUtil.setObject("user:1", user, Duration.ofHours(1));
 User user = redisUtil.getObject("user:1", User.class);
 
@@ -847,8 +851,8 @@ int totalPages = page.getTotalPages();
 ## 配置属性
 
 通用 `JsonCodec` 不依赖 YAML；通过应用 Bean 或
-`Fastjson2JsonCodec.builder()` 配置。Starter 创建默认对象 `RedisTemplate` 时，可以收紧
-Fastjson2 多态反序列化允许的包名：
+`Fastjson2JsonCodec.builder()` 配置。业务提前提供唯一 Redis 连接工厂、且没有定义对象模板时，
+Starter 创建的兼容 `RedisTemplate` 可以通过以下配置收紧 Fastjson2 多态反序列化允许的包名：
 
 ```yaml
 letool:
@@ -863,6 +867,8 @@ Redis value serializer 会写入类型信息，因此其 allow-list 是独立的
 `JsonCodec` 的普通序列化策略。包名应尽量精确，不应配置为空字符串或过宽的公共包。
 序列化器会自动补齐包分隔符，例如 `com.example` 只允许 `com.example.*`，不会放行
 `com.exampleevil.*`；遇到未授权的类型信息会直接拒绝反序列化。
+业务自行提供或 Spring Boot 创建的 `redisTemplate` 不会被 Letool 修改；这时序列化策略及兼容迁移
+由模板所有者负责，以上 allow-list 不会作用于该模板。
 
 传递依赖的异常模块配置参阅
 [`letool-starter-exception`](../letool-starter-exception/README.md)。

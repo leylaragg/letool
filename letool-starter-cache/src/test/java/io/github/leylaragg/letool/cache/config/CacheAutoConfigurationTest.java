@@ -8,12 +8,16 @@ import io.github.leylaragg.letool.cache.core.CacheReadFailurePolicy;
 import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
 import io.github.leylaragg.letool.cache.serializer.JacksonCacheSerializer;
 import io.github.leylaragg.letool.cache.support.CacheMonitor;
+import io.github.leylaragg.letool.tool.config.LetoolRedisTemplateAutoConfiguration;
+import io.github.leylaragg.letool.tool.config.LetoolToolAutoConfiguration;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.MockedConstruction;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnSingleCandidate;
 import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
@@ -23,6 +27,7 @@ import org.springframework.data.redis.connection.MessageListener;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.connection.SubscriptionListener;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.data.redis.listener.Topic;
@@ -97,12 +102,103 @@ class CacheAutoConfigurationTest {
      */
     @Test
     void shouldStartAsL1OnlyCacheWhenRedisClasspathIsMissing() {
-        contextRunner
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(
+                        LetoolRedisTemplateAutoConfiguration.class,
+                        RedisAutoConfiguration.class,
+                        LetoolToolAutoConfiguration.class,
+                        CacheAutoConfiguration.class))
                 .withClassLoader(new FilteredClassLoader("org.springframework.data.redis"))
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context).hasSingleBean(CacheManager.class);
                     assertThat(context).hasSingleBean(CacheMonitor.class);
+                    assertThat(context).doesNotHaveBean(RedisUtil.class);
+                    assertThat(context).doesNotHaveBean(
+                            "letoolCacheInvalidationStringRedisTemplate");
+                });
+    }
+
+    /**
+     * 标准业务应用只引入 Redis Starter 时，连接工厂由 Spring Boot 自动配置提供。
+     * Letool 必须在它之后注册 RedisUtil 和失效广播组件，不能因条件判断过早静默退化为 L1-only。
+     */
+    @Test
+    void shouldCreateL2AndInvalidationInfrastructureAfterBootRedisAutoConfiguration() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(
+                        LetoolRedisTemplateAutoConfiguration.class,
+                        RedisAutoConfiguration.class,
+                        LetoolToolAutoConfiguration.class,
+                        CacheAutoConfiguration.class))
+                .withUserConfiguration(ListenerContainerTakeoverOnlyConfiguration.class)
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(RedisConnectionFactory.class);
+                    assertThat(context).hasSingleBean(RedisUtil.class);
+                    assertThat(context).hasBean("letoolCacheInvalidationStringRedisTemplate");
+                    assertThat(context.getBean("letoolCacheInvalidationStringRedisTemplate"))
+                            .isInstanceOf(StringRedisTemplate.class);
+                    assertThat(context).hasBean("letoolCacheInvalidationPublisher");
+                    assertThat(extractField(context.getBean(CacheManager.class), "redisUtil"))
+                            .isSameAs(context.getBean(RedisUtil.class));
+                });
+    }
+
+    /**
+     * 失效模板通过 ObjectProvider 延迟取得唯一连接工厂，避免把可选 Redis 基础设施
+     * 声明成无条件注入点，也避免存在多个无主候选时启动失败。
+     */
+    @Test
+    void invalidationTemplateFactoryShouldResolveSingleConnectionFactoryLazily() {
+        Method method = Arrays.stream(CacheAutoConfiguration.class.getDeclaredMethods())
+                .filter(candidate -> candidate.getName()
+                        .equals("letoolCacheInvalidationStringRedisTemplate"))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(method.getParameterTypes()).containsExactly(ObjectProvider.class);
+        assertThat(method.getAnnotation(ConditionalOnSingleCandidate.class)).isNotNull();
+    }
+
+    /**
+     * 默认监听容器同样应延迟取得唯一连接工厂，避免可选 Redis 基础设施形成直接注入警告。
+     */
+    @Test
+    void invalidationListenerContainerFactoryShouldResolveSingleConnectionFactoryLazily() {
+        Method method = Arrays.stream(CacheAutoConfiguration.class.getDeclaredMethods())
+                .filter(candidate -> candidate.getName()
+                        .equals("letoolCacheInvalidationListenerContainer"))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(method.getParameterTypes()).contains(ObjectProvider.class);
+        assertThat(method.getParameterTypes()).doesNotContain(RedisConnectionFactory.class);
+        assertThat(method.getAnnotation(ConditionalOnSingleCandidate.class)).isNotNull();
+    }
+
+    /**
+     * Letool 协议模板只供失效发布器按名称使用，不能和 Boot 默认模板共同参与业务按类型注入。
+     */
+    @Test
+    void shouldKeepBootStringRedisTemplateAsBusinessDefaultCandidate() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(
+                        LetoolRedisTemplateAutoConfiguration.class,
+                        RedisAutoConfiguration.class,
+                        LetoolToolAutoConfiguration.class,
+                        CacheAutoConfiguration.class))
+                .withUserConfiguration(
+                        ListenerContainerTakeoverOnlyConfiguration.class,
+                        StringRedisTemplateConsumerConfiguration.class)
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    StringRedisTemplateConsumer consumer =
+                            context.getBean(StringRedisTemplateConsumer.class);
+                    assertThat(consumer.redisTemplate()).isSameAs(
+                            context.getBean("stringRedisTemplate"));
+                    assertThat(context).hasBean(
+                            "letoolCacheInvalidationStringRedisTemplate");
                 });
     }
 
@@ -467,6 +563,23 @@ class CacheAutoConfigurationTest {
         return connectionFactory;
     }
 
+    /**
+     * 读取自动配置对象持有的依赖，用于确认 CacheManager 没有静默丢失 Redis L2。
+     *
+     * @param target 被检查的对象
+     * @param fieldName 字段名称
+     * @return 字段当前值
+     */
+    private static Object extractField(Object target, String fieldName) {
+        try {
+            Field field = target.getClass().getDeclaredField(fieldName);
+            field.setAccessible(true);
+            return field.get(target);
+        } catch (ReflectiveOperationException exception) {
+            throw new AssertionError("读取自动配置依赖失败: " + fieldName, exception);
+        }
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class UserCacheConfiguration {
 
@@ -587,6 +700,31 @@ class CacheAutoConfigurationTest {
             container.setConnectionFactory(connectionFactory);
             return spy(container);
         }
+    }
+
+    /** 只接管监听容器，连接工厂仍由 Spring Boot Redis 自动配置创建。 */
+    @Configuration(proxyBeanMethods = false)
+    static class ListenerContainerTakeoverOnlyConfiguration {
+
+        @Bean("letoolCacheInvalidationListenerContainer")
+        RedisMessageListenerContainer letoolCacheInvalidationListenerContainer() {
+            return mock(RedisMessageListenerContainer.class);
+        }
+    }
+
+    /** 模拟业务代码按类型注入 Spring Boot 默认 StringRedisTemplate。 */
+    @Configuration(proxyBeanMethods = false)
+    static class StringRedisTemplateConsumerConfiguration {
+
+        @Bean
+        StringRedisTemplateConsumer stringRedisTemplateConsumer(
+                StringRedisTemplate redisTemplate) {
+            return new StringRedisTemplateConsumer(redisTemplate);
+        }
+    }
+
+    /** 保存业务按类型取得的字符串 Redis 模板。 */
+    record StringRedisTemplateConsumer(StringRedisTemplate redisTemplate) {
     }
 
     @Configuration(proxyBeanMethods = false)

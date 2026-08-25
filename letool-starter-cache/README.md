@@ -34,7 +34,9 @@
 </dependency>
 ```
 
-如果项目需要 L2 Redis，请确保业务工程已经配置 Spring Data Redis，并引入 `letool-starter-tool` 中的 Redis 能力。
+如果项目需要 L2 Redis，请确保业务工程已经引入并配置 `spring-boot-starter-data-redis`。
+Letool Tool 会在 Boot 创建连接工厂和对象模板后注册 `RedisUtil`，Cache 随后注册 L2 与失效广播组件；
+业务自定义的 `redisTemplate` 保持优先，框架不会覆盖或改写其序列化器。
 `spring-tx` 由本 starter 提供，用于提交后缓存动作；`spring-jdbc` 仍是可选依赖，只有使用默认
 JDBC Outbox 时业务工程才需要提供它和业务 `JdbcTemplate`。
 

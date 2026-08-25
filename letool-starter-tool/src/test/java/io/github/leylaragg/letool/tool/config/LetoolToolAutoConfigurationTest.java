@@ -9,6 +9,7 @@ import io.github.leylaragg.letool.tool.json.JsonCodec;
 import io.github.leylaragg.letool.tool.spring.SpringUtil;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -29,7 +30,9 @@ import static org.mockito.Mockito.mock;
 class LetoolToolAutoConfigurationTest {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-            .withConfiguration(AutoConfigurations.of(LetoolToolAutoConfiguration.class))
+            .withConfiguration(AutoConfigurations.of(
+                    LetoolRedisTemplateAutoConfiguration.class,
+                    LetoolToolAutoConfiguration.class))
             .withPropertyValues("spring.main.allow-bean-definition-overriding=false");
 
     /**
@@ -114,6 +117,29 @@ class LetoolToolAutoConfigurationTest {
                     Object actual = serializer.deserialize(serializer.serialize(value));
                     assertThat(actual).isInstanceOf(RedisValue.class);
                     assertThat(((RedisValue) actual).getName()).isEqualTo("configured");
+                });
+    }
+
+    /**
+     * 业务提前提供连接工厂时，Letool 应在 Boot 默认模板之前保留原有 Fastjson2 对象模板。
+     * 适配器可以延后注册，但不能因此把既有缓存数据的序列化协议切换为 JDK。
+     */
+    @Test
+    void shouldPreserveFastJsonTemplateWhenUserFactoryExistsBeforeBootRedisAutoConfiguration() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(
+                        LetoolRedisTemplateAutoConfiguration.class,
+                        RedisAutoConfiguration.class,
+                        LetoolToolAutoConfiguration.class))
+                .withUserConfiguration(RedisConnectionFactoryConfiguration.class)
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    RedisTemplate<?, ?> redisTemplate = context.getBean(
+                            "redisTemplate", RedisTemplate.class);
+                    assertThat(redisTemplate.getValueSerializer())
+                            .isInstanceOf(FastJson2JsonRedisSerializer.class);
+                    assertThat(context.getBean(RedisUtil.class).getTemplate())
+                            .isSameAs(redisTemplate);
                 });
     }
 
