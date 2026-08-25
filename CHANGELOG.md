@@ -339,8 +339,8 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
   Bean；业务存在零个、一个或多个监听容器时均保留唯一 Letool 订阅。
 - Redis 在应用启动阶段不可用时，失效订阅改为后台建立并按恢复周期重试，不再阻断 Spring Context。
 - CacheManager 会为 Boot 默认 JDK Key 对象模板创建私有 String Key 视图，保留业务 Value 序列化协议，
-  并兼容 Redis 纯数字版本元数据；Tool Lua API 可显式声明整数结果类型，使标准 Boot Redis 配置可以
-  安全执行强一致写入、区域和前缀清理。
+  并兼容 Redis 纯数字版本元数据；Cache 使用模块内 Lua 执行器显式声明整数结果类型、透传业务值原始
+  字节，不依赖 Tool 新增重载即可单模块编译并安全执行强一致写入、区域和前缀清理。
 - VERSIONED 单读、单写和批量写的 L1 回填会沿用同一次 Redis 操作验证的区域纪元；并发 `evictAll()`
   不再把旧结果重新标记为新纪元。
 - 修复 Tool 与 Cache 在 Spring Boot Redis 连接工厂之前判断 Bean 条件，导致标准应用静默缺少

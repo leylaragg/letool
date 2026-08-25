@@ -8,6 +8,7 @@ import io.github.leylaragg.letool.cache.consistency.CacheWritePolicy;
 import io.github.leylaragg.letool.cache.exception.CacheErrorCode;
 import io.github.leylaragg.letool.cache.exception.CacheException;
 import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
+import io.github.leylaragg.letool.cache.support.RedisCacheScriptExecutor;
 import io.github.leylaragg.letool.tool.redis.RedisUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -1104,7 +1105,7 @@ public class MultiLevelCache<K, V> {
             if (config.isStrongConsistency()) {
                 // 使用 Lua 保证业务值写入和版本推进在 Redis 单线程内原子完成。
                 // 预序列化 value：保留 @type 元数据，确保后续 get 时能正确反序列化。
-                // 使用 executeScriptRaw：TTL 作为纯数字字符串传递，避免被 Fastjson2
+                // 使用缓存模块的原始脚本执行器：TTL 作为纯数字字符串传递，避免被 Fastjson2
                 // 的 WriteClassName 包装成 {"@type":"java.lang.Long","value":259200000}，
                 // 导致 Redis PSETEX 无法解析 TTL。
                 byte[] rawValue = redisUtil.serializeValue(value);
@@ -1120,8 +1121,8 @@ public class MultiLevelCache<K, V> {
                         versionMetadataRetentionMillis()}
                         : new Object[]{rawValue, String.valueOf(ttl.toMillis()),
                         versionMetadataRetentionMillis()};
-                Long version = redisUtil.executeScriptRaw(
-                        script, Long.class, keys, arguments);
+                Long version = RedisCacheScriptExecutor.executeRaw(
+                        redisUtil, script, Long.class, keys, arguments);
                 return version != null && version >= 0 ? version : null;
             }
             redisUtil.boundValueOps(redisKey(key)).set(value, ttl);
@@ -1139,7 +1140,8 @@ public class MultiLevelCache<K, V> {
         try {
             if (config.isStrongConsistency()) {
                 // 删除也要推进版本，否则其它 JVM 可能继续命中旧 L1。
-                return toLong(redisUtil.executeScriptRaw(
+                return toLong(RedisCacheScriptExecutor.executeRaw(
+                        redisUtil,
                         ATOMIC_DELETE_SCRIPT,
                         Long.class,
                         List.of(redisKey(key), versionKey(key)),

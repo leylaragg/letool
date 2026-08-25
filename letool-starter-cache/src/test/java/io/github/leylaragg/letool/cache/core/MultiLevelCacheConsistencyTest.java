@@ -9,9 +9,12 @@ import io.github.leylaragg.letool.cache.serializer.JacksonCacheSerializer;
 import io.github.leylaragg.letool.tool.redis.RedisUtil;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.stubbing.OngoingStubbing;
 import org.springframework.data.redis.core.BoundValueOperations;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
+import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 import java.nio.charset.StandardCharsets;
@@ -32,7 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -184,8 +187,8 @@ class MultiLevelCacheConsistencyTest {
         when(regionOperations.get()).thenAnswer(invocation -> regionEpoch.get());
         when(redisUtil.boundValueOps(anyString())).thenReturn(regionOperations);
         when(redisUtil.serializeValue(any())).thenReturn("old-value".getBytes(StandardCharsets.UTF_8));
-        when(redisUtil.executeScriptRaw(
-                any(), eq(Long.class), anyList(), any(), any(), any()))
+        RedisTemplate<String, Object> scriptTemplate = scriptTemplate(redisUtil);
+        whenScript(scriptTemplate)
                 .thenAnswer(invocation -> {
                     regionEpoch.set(1L);
                     return 7L;
@@ -239,8 +242,7 @@ class MultiLevelCacheConsistencyTest {
         @SuppressWarnings("unchecked")
         BoundValueOperations<String, Object> versionOperations = mock(BoundValueOperations.class);
         when(redisUtil.serializeValue(any())).thenReturn("old".getBytes(StandardCharsets.UTF_8));
-        when(redisUtil.executeScriptRaw(
-                any(), eq(Long.class), anyList(), any(), any(), any())).thenReturn(1L);
+        whenScript(redisUtil).thenReturn(1L);
         when(redisUtil.boundValueOps("test:%META%:critical:version")).thenReturn(versionOperations);
         when(versionOperations.get()).thenThrow(new IllegalStateException("redis unavailable"));
 
@@ -299,11 +301,8 @@ class MultiLevelCacheConsistencyTest {
         RedisUtil redisUtil = mock(RedisUtil.class);
         when(redisUtil.serializeValue(any()))
                 .thenReturn("value".getBytes(StandardCharsets.UTF_8));
-        when(redisUtil.executeScriptRaw(
-                any(), eq(Long.class), anyList(), any(), any(), any()))
-                .thenReturn(1L);
-        when(redisUtil.executeScriptRaw(any(), eq(Long.class), anyList(), any()))
-                .thenReturn(2L);
+        RedisTemplate<String, Object> scriptTemplate = scriptTemplate(redisUtil);
+        whenScript(scriptTemplate).thenReturn(1L, 2L);
         @SuppressWarnings("unchecked")
         BoundValueOperations<String, Object> regionVersion =
                 mock(BoundValueOperations.class);
@@ -323,11 +322,16 @@ class MultiLevelCacheConsistencyTest {
         cache.evict("u1");
 
         String retentionMillis = String.valueOf(Duration.ofDays(7).toMillis());
-        verify(redisUtil).executeScriptRaw(
-                contains("PEXPIRE"), eq(Long.class), anyList(),
+        verify(scriptTemplate).execute(
+                argThat((RedisScript<?> script) ->
+                        script.getScriptAsString().contains("PEXPIRE")),
+                any(RedisSerializer.class), any(RedisSerializer.class), anyList(),
                 any(), any(), eq(retentionMillis));
-        verify(redisUtil).executeScriptRaw(
-                contains("PEXPIRE"), eq(Long.class), anyList(), eq(retentionMillis));
+        verify(scriptTemplate).execute(
+                argThat((RedisScript<?> script) ->
+                        script.getScriptAsString().contains("PEXPIRE")),
+                any(RedisSerializer.class), any(RedisSerializer.class), anyList(),
+                eq(retentionMillis));
     }
 
     @Test
@@ -504,6 +508,26 @@ class MultiLevelCacheConsistencyTest {
      */
     private static Type genericRuleListType() throws NoSuchFieldException {
         return GenericTypes.class.getDeclaredField("rules").getGenericType();
+    }
+
+    /** 创建缓存脚本使用的 RedisTemplate mock。 */
+    @SuppressWarnings("unchecked")
+    private static RedisTemplate<String, Object> scriptTemplate(RedisUtil redisUtil) {
+        RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
+        when(redisUtil.getTemplate()).thenReturn(redisTemplate);
+        return redisTemplate;
+    }
+
+    private static OngoingStubbing<Object> whenScript(RedisUtil redisUtil) {
+        return whenScript(scriptTemplate(redisUtil));
+    }
+
+    /** 对统一 Lua 执行入口配置返回值或异常。 */
+    private static OngoingStubbing<Object> whenScript(
+            RedisTemplate<String, Object> redisTemplate) {
+        return when(redisTemplate.execute(
+                any(RedisScript.class), any(RedisSerializer.class),
+                any(RedisSerializer.class), anyList(), any(Object[].class)));
     }
 
     /**

@@ -1,5 +1,6 @@
 package io.github.leylaragg.letool.cache.consistency;
 
+import io.github.leylaragg.letool.cache.support.RedisCacheScriptExecutor;
 import io.github.leylaragg.letool.tool.redis.RedisUtil;
 
 import java.time.Duration;
@@ -81,7 +82,8 @@ public class RedisCacheFenceStore {
         String token = UUID.randomUUID().toString();
         Instant createdAt = Instant.now();
         try {
-            Long acquired = toLong(redisUtil.executeScriptRaw(
+            Long acquired = toLong(RedisCacheScriptExecutor.executeRaw(
+                    redisUtil,
                     ACQUIRE_SCRIPT,
                     Long.class,
                     List.of(identity.dataKey(), identity.versionKey(), identity.fenceKey()),
@@ -107,8 +109,8 @@ public class RedisCacheFenceStore {
     public CacheFenceState state(String cacheName, String serializedKey) {
         CacheKeyIdentity identity = CacheKeyIdentity.of(redisPrefix, cacheName, serializedKey);
         try {
-            Long fenced = redisUtil.executeScriptRaw(
-                    STATE_SCRIPT, Long.class, List.of(identity.fenceKey()));
+            Long fenced = RedisCacheScriptExecutor.executeRaw(
+                    redisUtil, STATE_SCRIPT, Long.class, List.of(identity.fenceKey()));
             return Long.valueOf(1L).equals(fenced) ? CacheFenceState.FENCED : CacheFenceState.CLEAR;
         } catch (Exception exception) {
             return CacheFenceState.UNKNOWN;
@@ -126,7 +128,8 @@ public class RedisCacheFenceStore {
         CacheKeyIdentity identity = CacheKeyIdentity.of(
                 redisPrefix, fence.cacheName(), fence.serializedKey());
         try {
-            Long result = toLong(redisUtil.executeScriptRaw(
+            Long result = toLong(RedisCacheScriptExecutor.executeRaw(
+                    redisUtil,
                     COMPLETE_SCRIPT,
                     Long.class,
                     List.of(identity.dataKey(), identity.versionKey(),
