@@ -335,8 +335,14 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
   初始 Epoch 0 参与前后校验，并可安全回填 L1。
 - Redis Cluster 区域及前缀清理会在扫描前校验全部主节点状态和 16384 个 Slot 的完整、
   无冲突覆盖，并通过应用客户端逐个 PING 主节点；区域清理失败时不再广播全区域失效。
-- 缓存失效监听容器不再因业务已有其它 `RedisMessageListenerContainer` 而缺席；仅同名
-  `letoolCacheInvalidationListenerContainer` 表示业务方接管 Letool 订阅。
+- 缓存失效订阅改由 Letool 自有生命周期管理，内部 `RedisMessageListenerContainer` 不再暴露为业务
+  Bean；业务存在零个、一个或多个监听容器时均保留唯一 Letool 订阅。
+- Redis 在应用启动阶段不可用时，失效订阅改为后台建立并按恢复周期重试，不再阻断 Spring Context。
+- CacheManager 会为 Boot 默认 JDK Key 对象模板创建私有 String Key 视图，保留业务 Value 序列化协议，
+  并兼容 Redis 纯数字版本元数据；Tool Lua API 可显式声明整数结果类型，使标准 Boot Redis 配置可以
+  安全执行强一致写入、区域和前缀清理。
+- VERSIONED 单读、单写和批量写的 L1 回填会沿用同一次 Redis 操作验证的区域纪元；并发 `evictAll()`
+  不再把旧结果重新标记为新纪元。
 - 修复 Tool 与 Cache 在 Spring Boot Redis 连接工厂之前判断 Bean 条件，导致标准应用静默缺少
   `RedisUtil`、L2 和失效广播的问题；对象模板所有权与既有 Fastjson2 兼容协议保持不变。
 - 版本元数据安全窗口只在启用 L2 且读取校验为 `VERSIONED` 时约束配置；L1-only 或

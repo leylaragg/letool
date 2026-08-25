@@ -16,6 +16,7 @@ import io.github.leylaragg.letool.cache.core.CacheRecoveryScheduler;
 import io.github.leylaragg.letool.cache.core.MultiLevelCache;
 import io.github.leylaragg.letool.cache.core.RedisCacheInvalidationListener;
 import io.github.leylaragg.letool.cache.core.RedisCacheInvalidationPublisher;
+import io.github.leylaragg.letool.cache.core.RedisCacheInvalidationSubscriber;
 import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
 import io.github.leylaragg.letool.cache.serializer.JacksonCacheSerializer;
 import io.github.leylaragg.letool.cache.support.CacheMonitor;
@@ -32,7 +33,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnSingleCandidate;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
@@ -40,11 +40,11 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
+import org.springframework.data.redis.serializer.StringRedisSerializer;
 
-import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 /**
@@ -180,33 +180,52 @@ public class CacheAutoConfiguration {
                                      CacheProperties properties,
                                      @Autowired(required = false) RedisUtil redisUtil,
                                      @Autowired(required = false) CacheInvalidationPublisher invalidationPublisher) {
+        RedisUtil cacheRedisUtil = cacheRedisUtil(redisUtil);
         CacheManager manager = new CacheManager(
-                redisUtil,
+                cacheRedisUtil,
                 serializer,
                 properties.isL1Enabled(),
                 properties.isL2Enabled(),
                 properties.getRedisPrefix(),
                 invalidationPublisher);
-        log.info("CacheManager initialized, L2 Redis: {}", redisUtil != null ? "enabled" : "disabled (Redis not available)");
+        log.info("CacheManager initialized, L2 Redis: {}",
+                cacheRedisUtil != null ? "enabled" : "disabled (Redis not available)");
         return manager;
     }
 
     /**
-     * 注册缓存失效广播专用的字符串 Redis 模板。
+     * 为缓存键空间创建字符串 Key 视图，同时兼容业务 Value 与框架版本元数据协议。
      *
-     * <p>该模板只使用字符串序列化器，确保失效协议不会被业务对象模板的 Fastjson2、Jackson
-     * 或 JDK 序列化器再次包装。它是框架内部 Bean，不参与业务按类型注入。</p>
+     * <p>缓存区域清理依赖可预测的字符串前缀，版本计数器还需要读取 Redis 原生数字字节。
+     * 这里始终为 {@link CacheManager} 创建私有模板，不替换、不修改业务持有的 {@link RedisUtil}，
+     * 因此业务 Redis Key/Value 协议和按类型注入都保持不变。</p>
      *
-     * @param connectionFactoryProvider Redis 连接工厂提供器；方法只在存在唯一候选时注册
-     * @return 失效广播专用字符串模板
+     * @param applicationRedisUtil 业务项目提供或 Tool Starter 创建的 Redis 操作入口
+     * @return 满足缓存字符串 Key 契约的私有 Redis 操作入口；没有 Redis 时返回 {@code null}
      */
-    @Bean(value = "letoolCacheInvalidationStringRedisTemplate", defaultCandidate = false)
-    @ConditionalOnSingleCandidate(RedisConnectionFactory.class)
-    @ConditionalOnMissingBean(name = "letoolCacheInvalidationStringRedisTemplate")
-    @ConditionalOnProperty(prefix = "letool.cache.invalidation", name = "enabled", havingValue = "true", matchIfMissing = true)
-    public StringRedisTemplate letoolCacheInvalidationStringRedisTemplate(
-            ObjectProvider<RedisConnectionFactory> connectionFactoryProvider) {
-        return new StringRedisTemplate(connectionFactoryProvider.getObject());
+    private RedisUtil cacheRedisUtil(RedisUtil applicationRedisUtil) {
+        if (applicationRedisUtil == null) {
+            return null;
+        }
+        RedisTemplate<String, Object> applicationTemplate = applicationRedisUtil.getTemplate();
+        if (applicationTemplate == null) {
+            return applicationRedisUtil;
+        }
+        RedisConnectionFactory connectionFactory = applicationTemplate.getConnectionFactory();
+        if (connectionFactory == null) {
+            return applicationRedisUtil;
+        }
+
+        RedisTemplate<String, Object> cacheTemplate = new RedisTemplate<>();
+        cacheTemplate.setConnectionFactory(connectionFactory);
+        StringRedisSerializer keySerializer = StringRedisSerializer.UTF_8;
+        cacheTemplate.setKeySerializer(keySerializer);
+        cacheTemplate.setHashKeySerializer(keySerializer);
+        cacheTemplate.setValueSerializer(new CacheRedisValueSerializer(
+                applicationTemplate.getValueSerializer()));
+        cacheTemplate.setHashValueSerializer(applicationTemplate.getHashValueSerializer());
+        cacheTemplate.afterPropertiesSet();
+        return new RedisUtil(cacheTemplate);
     }
 
     /**
@@ -216,22 +235,25 @@ public class CacheAutoConfiguration {
      * 这里通过 Redis Pub/Sub 广播失效消息，从而避免多实例部署时读到旧的本地数据。</p>
      */
     @Bean("letoolCacheInvalidationPublisher")
-    @ConditionalOnBean(name = "letoolCacheInvalidationStringRedisTemplate")
+    @ConditionalOnSingleCandidate(RedisConnectionFactory.class)
     @ConditionalOnMissingBean(
             value = CacheInvalidationPublisher.class,
             name = "letoolCacheInvalidationPublisher")
     @ConditionalOnProperty(prefix = "letool.cache.invalidation", name = "enabled", havingValue = "true", matchIfMissing = true)
     public CacheInvalidationPublisher letoolCacheInvalidationPublisher(
-            @Qualifier("letoolCacheInvalidationStringRedisTemplate") StringRedisTemplate redisTemplate,
+            ObjectProvider<RedisConnectionFactory> connectionFactoryProvider,
             CacheProperties properties) {
-        return new RedisCacheInvalidationPublisher(redisTemplate, properties.getInvalidation().getChannel());
+        StringRedisTemplate redisTemplate = new StringRedisTemplate(
+                connectionFactoryProvider.getObject());
+        return new RedisCacheInvalidationPublisher(
+                redisTemplate, properties.getInvalidation().getChannel());
     }
 
     /**
      * 注册 Redis 失效消息监听器。
      *
      * <p>监听器只负责解析消息并调用 {@link CacheManager} 清理本机 L1。
-     * 真正的 Redis 订阅动作由 {@link RedisMessageListenerContainer} 完成。</p>
+     * 真正的 Redis 订阅动作由 {@link RedisCacheInvalidationSubscriber} 在后台完成。</p>
      */
     @Bean("letoolCacheInvalidationListener")
     @ConditionalOnBean(CacheManager.class)
@@ -244,78 +266,33 @@ public class CacheAutoConfiguration {
     }
 
     /**
-     * 注册 Redis Pub/Sub 监听容器。
+     * 注册 Letool 私有的 Redis Pub/Sub 订阅生命周期。
      *
-     * <p>Spring Data Redis 的监听容器会订阅配置中的失效通道，并把收到的消息体转成 UTF-8
-     * 字符串交给 {@link RedisCacheInvalidationListener}。这里没有强依赖 Redis 连接工厂，
-     * 只有在业务项目已经配置 Redis 时才会创建该容器。</p>
-     *
-     * <p>业务没有提供监听容器时，框架创建名为
-     * {@code letoolCacheInvalidationListenerContainer} 的默认容器；存在唯一业务容器时，
-     * 由额外的注册 Bean 把 Letool 失效订阅加入该容器，避免增加同类型候选。</p>
+     * <p>内部监听容器不注册为业务 Bean，因此业务已有监听容器的数量和默认候选关系不会影响
+     * Letool 订阅。启动动作异步执行，Redis 暂时不可用时应用仍可完成 Spring Context 启动。</p>
      *
      * @param connectionFactoryProvider Redis 连接工厂提供器；方法只在存在唯一候选时注册
      * @param listener Letool 失效消息监听器
      * @param properties 缓存配置
-     * @return 已订阅失效通道的监听容器
+     * @return Letool 私有订阅生命周期
      */
-    @Bean("letoolCacheInvalidationListenerContainer")
+    @Bean(value = "letoolCacheInvalidationSubscriber", destroyMethod = "close")
     @ConditionalOnClass(RedisMessageListenerContainer.class)
     @ConditionalOnBean(RedisCacheInvalidationListener.class)
     @ConditionalOnSingleCandidate(RedisConnectionFactory.class)
-    @ConditionalOnMissingBean(value = RedisMessageListenerContainer.class, name = "letoolCacheInvalidationListenerContainer")
-    public RedisMessageListenerContainer letoolCacheInvalidationListenerContainer(
+    @ConditionalOnMissingBean(
+            value = RedisCacheInvalidationSubscriber.class,
+            name = "letoolCacheInvalidationSubscriber")
+    @ConditionalOnProperty(prefix = "letool.cache.invalidation", name = "enabled", havingValue = "true", matchIfMissing = true)
+    public RedisCacheInvalidationSubscriber letoolCacheInvalidationSubscriber(
             ObjectProvider<RedisConnectionFactory> connectionFactoryProvider,
             RedisCacheInvalidationListener listener,
             CacheProperties properties) {
-        RedisMessageListenerContainer container = new RedisMessageListenerContainer();
-        container.setConnectionFactory(connectionFactoryProvider.getObject());
-        addInvalidationMessageListener(container, listener, properties);
-        return container;
-    }
-
-    /**
-     * 将 Letool 失效订阅注册到唯一的业务 Redis 监听容器。
-     *
-     * <p>该 Bean 只在业务提供单个默认候选且没有同名接管容器时创建，因此不会改变业务原有的
-     * 单值按类型注入。用户提供同名容器表示完全接管，框架不会重复注册监听器。</p>
-     *
-     * @param container 唯一的业务 Redis 监听容器
-     * @param listener Letool 失效消息监听器
-     * @param properties 缓存配置
-     * @return 失效订阅已完成注册的标记对象
-     */
-    @Bean("letoolCacheInvalidationListenerRegistration")
-    @ConditionalOnClass(RedisMessageListenerContainer.class)
-    @ConditionalOnBean({RedisCacheInvalidationListener.class, RedisConnectionFactory.class})
-    @ConditionalOnSingleCandidate(RedisMessageListenerContainer.class)
-    @ConditionalOnMissingBean(name = {
-            "letoolCacheInvalidationListenerContainer",
-            "letoolCacheInvalidationListenerRegistration"
-    })
-    @ConditionalOnProperty(prefix = "letool.cache.invalidation", name = "enabled", havingValue = "true", matchIfMissing = true)
-    public Object letoolCacheInvalidationListenerRegistration(
-            RedisMessageListenerContainer container,
-            RedisCacheInvalidationListener listener,
-            CacheProperties properties) {
-        addInvalidationMessageListener(container, listener, properties);
-        return new Object();
-    }
-
-    /**
-     * 把失效消息监听器绑定到配置的 Redis 通道。
-     *
-     * @param container 承载订阅的 Redis 监听容器
-     * @param listener Letool 失效消息监听器
-     * @param properties 缓存配置
-     */
-    private void addInvalidationMessageListener(
-            RedisMessageListenerContainer container,
-            RedisCacheInvalidationListener listener,
-            CacheProperties properties) {
-        container.addMessageListener((message, pattern) ->
-                listener.onMessage(new String(message.getBody(), StandardCharsets.UTF_8)),
-                new ChannelTopic(properties.getInvalidation().getChannel()));
+        return new RedisCacheInvalidationSubscriber(
+                connectionFactoryProvider.getObject(),
+                listener,
+                properties.getInvalidation().getChannel(),
+                properties.getDegradation().getRecoveryInterval());
     }
 
     /**

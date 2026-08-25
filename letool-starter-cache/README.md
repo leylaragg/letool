@@ -36,7 +36,9 @@
 
 如果项目需要 L2 Redis，请确保业务工程已经引入并配置 `spring-boot-starter-data-redis`。
 Letool Tool 会在 Boot 创建连接工厂和对象模板后注册 `RedisUtil`，Cache 随后注册 L2 与失效广播组件；
-业务自定义的 `redisTemplate` 保持优先，框架不会覆盖或改写其序列化器。
+业务自定义的 `redisTemplate` 保持优先，框架不会覆盖或改写其序列化器。CacheManager 会在内部创建
+String Key/Hash Key 私有视图；业务值继续使用原 Value 协议，框架版本计数器则兼容 Redis 产生的
+纯数字字节，确保区域扫描和强一致元数据都可直接工作。
 `spring-tx` 由本 starter 提供，用于提交后缓存动作；`spring-jdbc` 仍是可选依赖，只有使用默认
 JDBC Outbox 时业务工程才需要提供它和业务 `JdbcTemplate`。
 
@@ -247,11 +249,12 @@ sequenceDiagram
 - `read-validation=VERSIONED` 负责兜底。节点离线、网络抖动或重启期间即使错过 Pub/Sub，下一次读取
   也会校验 Redis 单 Key 版本，版本不一致时拒绝旧 L1。
 
-业务没有提供 `RedisMessageListenerContainer` 时，Letool 会创建名为
-`letoolCacheInvalidationListenerContainer` 的默认容器；业务只有一个默认监听容器时，Letool 直接复用
-该容器并自动注册失效通道订阅，不会增加同类型 Bean，也不会破坏业务原有的按类型注入。业务提供同名
-容器表示完全接管，接管方必须自行注册 Letool 失效监听器；不需要跨 JVM 失效时，也可以设置
-`letool.cache.invalidation.enabled=false`，同时关闭失效广播、自动订阅注册和默认监听容器。
+Letool 使用自有类型 `RedisCacheInvalidationSubscriber` 管理失效订阅，内部
+`RedisMessageListenerContainer` 不注册为业务 Bean。业务已有零个、一个或多个监听容器都不会改变
+Letool 的订阅，也不会增加按类型注入候选。首次订阅在后台执行；Redis 暂时不可用时应用仍可启动，
+框架按 `letool.cache.degradation.recovery-interval` 创建新容器重试，建立成功后由 Spring Data Redis
+继续处理运行期重连。不需要跨 JVM 失效时，可以设置 `letool.cache.invalidation.enabled=false`，同时
+关闭失效广播和自动订阅。
 
 `@MultiLevelCacheEvict` 无论写策略如何都只负责失效；只有 `@MultiLevelCachePut` 配合
 `write-policy=UPDATE`，才会把方法返回值写入节点 A 的 L1 和共享 L2。DURABLE Outbox 只持久化并重放
@@ -478,6 +481,7 @@ DURABLE 下主要 Redis key 形态如下，其中 Hash Tag 经过框架转义并
 - 上述“跳过 Redis 继续业务”只适用于缓存读和普通缓存操作；DURABLE 数据库修改必须先建立围栏，
   Redis 不可确认时失败关闭，绝不会跳过围栏继续执行 SQL。
 - `CacheRecoveryScheduler` 会按 `recovery-interval` 定期尝试恢复 L2。
+- 失效订阅启动失败不会阻断 Spring Context，并会按同一恢复周期在后台重新建立。
 - List、Hash、Set、ZSet 恢复成功后会清空降级期间形成的本地快照，下一次读取重新以 Redis 为准。
 
 生产建议：
@@ -598,8 +602,8 @@ PREFIX 消息清理其它节点的 L1。空前缀会快速失败；清理整个�
 主线程的 `KEYS`。Redis Cluster 模式会在扫描前校验主节点状态及 16384 个 Slot 的完整、无冲突覆盖，
 并用应用当前客户端连接逐个 PING 主节点。拓扑或客户端可达性预检可以降低部分清理风险，但不能消除
 预检后的拓扑变化和 SCAN 期间故障；此时方法会失败、标记 L2 降级且不广播全区域失效，调用方应重试
-或告警。该能力要求 Redis 4.0 或更高版本，并要求缓存使用的 RedisTemplate 将
-`StringRedisSerializer` 配置为 Key 序列化器；letool 提供的默认 RedisTemplate 已满足该约束。
+或告警。该能力要求 Redis 4.0 或更高版本，并要求缓存内部使用的 RedisTemplate 将
+`StringRedisSerializer` 配置为 Key 序列化器；CacheManager 会在不修改业务模板的前提下自动满足该约束。
 
 类型解析顺序为：工厂方法显式类型、`CacheConfig.valueType(...)`、RedisTemplate 实际反序列化类型。本模块不再假设 Set 成员一定是 `Long`；生产配置建议显式声明类型。
 
@@ -746,7 +750,7 @@ CacheInvalidationBacklog backlog = cacheMonitor.outboxBacklog(Instant.now());
 - Redis Cluster 上执行区域或前缀清理前，应确认应用账号能够读取完整拓扑、PING 全部主节点，
   且 16384 个 Slot 已由健康主节点完整、无冲突覆盖。预检后的故障仍可能造成部分删除；`evictAll()`
   会失败且不广播，调用方应安排重试和告警。
-- 自定义 RedisTemplate 时必须使用 `StringRedisSerializer` 序列化 Key，否则区域清理会进入既有 L2 降级流程，避免错误扫描其它键空间。
+- CacheManager 会把业务对象模板适配为私有 String Key 视图，区域清理不会要求业务修改原有 Redis Key/Value 协议。
 - 非 String key 的精确失效需要扫描当前缓存区域的本地 key 并比较序列化结果；超大 L1 区域且高频失效时，优先使用 String key 或评估业务侧反向索引。
 - 普通回归运行 `mvn -pl letool-starter-cache -am test`；真实 Redis 门禁运行
   `mvn -pl letool-starter-cache -am -Predis-integration verify`。后者默认使用 Testcontainers Redis 7.2，

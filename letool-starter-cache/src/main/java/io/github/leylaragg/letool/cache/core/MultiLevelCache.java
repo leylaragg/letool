@@ -422,7 +422,8 @@ public class MultiLevelCache<K, V> {
         if (!isL2Enabled()) {
             for (BatchWrite<K> write : writes) {
                 putToL1(write.key(), write.localValue(),
-                        min(config.getL1Ttl(), write.ttl()), LOCAL_ONLY_VERSION);
+                        min(config.getL1Ttl(), write.ttl()),
+                        LOCAL_ONLY_VERSION, LOCAL_ONLY_VERSION);
             }
             return;
         }
@@ -621,7 +622,8 @@ public class MultiLevelCache<K, V> {
                 stats.recordL2Hit();
                 if (config.isL1Enabled()) {
                     // Redis 命中后回填 L1，但本地 TTL 不能超过 Redis 剩余 TTL。
-                    putToL1(key, toLocalValue(l2Lookup), l1TtlForL2Hit(key), l2Lookup.version());
+                    putToL1(key, toLocalValue(l2Lookup), l1TtlForL2Hit(key),
+                            l2Lookup.version(), l2Lookup.regionVersion());
                 }
                 return l2Lookup;
             }
@@ -639,11 +641,11 @@ public class MultiLevelCache<K, V> {
             return CacheLookup.miss();
         }
         if (localValue instanceof NullSentinel) {
-            return CacheLookup.nullHit(localVersion(key));
+            return CacheLookup.nullHit(localVersion(key), localRegionVersion(key));
         }
         @SuppressWarnings("unchecked")
         V value = (V) localValue;
-        return CacheLookup.hit(value, localVersion(key));
+        return CacheLookup.hit(value, localVersion(key), localRegionVersion(key));
     }
 
     private boolean isLocalVersionFresh(K key) {
@@ -672,14 +674,25 @@ public class MultiLevelCache<K, V> {
         return l1Versions.getIfPresent(key);
     }
 
+    private Long localRegionVersion(K key) {
+        if (!config.isL1Enabled() || !config.isStrongConsistency() || !isL2Configured()) {
+            return LOCAL_ONLY_VERSION;
+        }
+        return l1RegionVersions.getIfPresent(key);
+    }
+
     private void putLoadedValue(K key, V value, Duration ttl) {
         putLoadedValue(key, value, ttl, null);
     }
 
     private void putLoadedValue(K key, V value, Duration ttl, Long expectedVersion) {
         Duration l2Ttl = effectiveTtl(ttl, config.getL2Ttl());
+        Long regionBefore = regionVersionBeforeWrite();
         Long version = writeToRedisAndAdvanceVersion(key, value, l2Ttl, expectedVersion);
-        putToL1(key, value, min(config.getL1Ttl(), l2Ttl), version);
+        Long regionAfter = regionVersionAfterWrite();
+        if (isStableWriteRegion(regionBefore, regionAfter)) {
+            putToL1(key, value, min(config.getL1Ttl(), l2Ttl), version, regionAfter);
+        }
     }
 
     private void putLoadedNull(K key) {
@@ -687,12 +700,30 @@ public class MultiLevelCache<K, V> {
     }
 
     private void putLoadedNull(K key, Long expectedVersion) {
+        Long regionBefore = regionVersionBeforeWrite();
         Long version = writeToRedisAndAdvanceVersion(
                 key, REDIS_NULL_SENTINEL, config.getNullValueTtl(), expectedVersion);
-        putToL1(key, NullSentinel.INSTANCE, min(config.getL1Ttl(), config.getNullValueTtl()), version);
+        Long regionAfter = regionVersionAfterWrite();
+        if (isStableWriteRegion(regionBefore, regionAfter)) {
+            putToL1(key, NullSentinel.INSTANCE,
+                    min(config.getL1Ttl(), config.getNullValueTtl()), version, regionAfter);
+        }
     }
 
-    private void putToL1(K key, Object value, Duration ttl, Long version) {
+    /**
+     * 使用已经由同一次 Redis 操作验证过的版本快照回填 L1。
+     *
+     * <p>这里不能在写入前重新读取区域纪元并把它当成旧结果的新标签，否则并发区域清理完成后，
+     * 已被删除的旧值会被错误地归入新纪元。</p>
+     *
+     * @param key 业务缓存 Key
+     * @param value 本地缓存值
+     * @param ttl L1 过期时间
+     * @param version 单 Key 版本
+     * @param regionVersion 产生该值时验证过的区域纪元
+     */
+    private void putToL1(
+            K key, Object value, Duration ttl, Long version, Long regionVersion) {
         if (!config.isL1Enabled()) {
             return;
         }
@@ -700,7 +731,8 @@ public class MultiLevelCache<K, V> {
             evictLocal(key);
             return;
         }
-        if (config.isStrongConsistency() && isL2Configured() && (l2Degraded || version == null)) {
+        if (config.isStrongConsistency() && isL2Configured()
+                && (l2Degraded || version == null || regionVersion == null)) {
             // 强一致模式下没有 Redis 版本就不写 L1，避免把无法证明新鲜的数据留在本地。
             return;
         }
@@ -708,13 +740,28 @@ public class MultiLevelCache<K, V> {
                 .ifPresentOrElse(policy -> policy.put(key, value, ttl), () -> l1Cache.put(key, value));
         if (config.isStrongConsistency() && isL2Enabled()) {
             l1Versions.put(key, version);
-            Long regionVersion = readRegionVersion();
-            if (regionVersion == null) {
-                evictLocal(key);
-            } else {
-                l1RegionVersions.put(key, regionVersion);
-            }
+            l1RegionVersions.put(key, regionVersion);
         }
+    }
+
+    private Long regionVersionBeforeWrite() {
+        if (config.isStrongConsistency() && isL2Configured()) {
+            return readRegionVersion();
+        }
+        return Long.valueOf(LOCAL_ONLY_VERSION);
+    }
+
+    private Long regionVersionAfterWrite() {
+        if (config.isStrongConsistency() && isL2Configured()) {
+            return readRegionVersion();
+        }
+        return Long.valueOf(LOCAL_ONLY_VERSION);
+    }
+
+    /** 只有写入前后的区域纪元一致，写入结果才仍属于当前区域。 */
+    private boolean isStableWriteRegion(Long regionBefore, Long regionAfter) {
+        return !config.isStrongConsistency() || !isL2Configured()
+                || regionBefore != null && regionBefore.equals(regionAfter);
     }
 
     /**
@@ -796,7 +843,8 @@ public class MultiLevelCache<K, V> {
                     || versioned && !read.versionBefore().equals(read.versionAfter())) {
                 continue;
             }
-            CacheLookup<V> lookup = lookupFromRaw(read.value(), read.versionAfter());
+            CacheLookup<V> lookup = lookupFromRaw(
+                    read.value(), read.versionAfter(), regionAfter);
             if (!lookup.hit()) {
                 continue;
             }
@@ -827,7 +875,8 @@ public class MultiLevelCache<K, V> {
                 stats.recordRedisBatch();
                 for (BatchWrite<K> write : writes) {
                     putToL1(write.key(), write.localValue(),
-                            min(config.getL1Ttl(), write.ttl()), LOCAL_ONLY_VERSION);
+                            min(config.getL1Ttl(), write.ttl()),
+                            LOCAL_ONLY_VERSION, LOCAL_ONLY_VERSION);
                     publishedKeys.add(write.key());
                 }
                 return true;
@@ -849,6 +898,10 @@ public class MultiLevelCache<K, V> {
             throw new IllegalStateException("Redis Key serializer 不能为空");
         }
         boolean durable = config.getConsistencyMode() == CacheConsistencyMode.DURABLE;
+        Long regionBefore = readRegionVersion();
+        if (regionBefore == null) {
+            return false;
+        }
         String script = durable ? DURABLE_BATCH_PUT_SCRIPT : ATOMIC_PUT_SCRIPT;
         byte[] scriptBytes = script.getBytes(StandardCharsets.UTF_8);
         List<Object> responses = template.executePipelined((RedisCallback<Object>) connection -> {
@@ -877,7 +930,8 @@ public class MultiLevelCache<K, V> {
         if (responses == null || responses.size() != writes.size()) {
             throw new IllegalStateException("Redis Lua pipeline 返回数量与请求不一致");
         }
-        Long regionVersion = readRegionVersion();
+        Long regionAfter = readRegionVersion();
+        boolean regionStable = regionAfter != null && regionBefore.equals(regionAfter);
         for (int index = 0; index < writes.size(); index++) {
             Long version = nullableLong(responses.get(index));
             if (version == null || version < 0) {
@@ -885,23 +939,24 @@ public class MultiLevelCache<K, V> {
             }
             BatchWrite<K> write = writes.get(index);
             publishedKeys.add(write.key());
-            if (regionVersion != null) {
+            if (regionStable) {
                 putToL1Batch(write.key(), write.localValue(),
-                        min(config.getL1Ttl(), write.ttl()), version, regionVersion);
+                        min(config.getL1Ttl(), write.ttl()), version, regionAfter);
             }
         }
         return true;
     }
 
-    private CacheLookup<V> lookupFromRaw(Object cachedValue, Long version) {
+    private CacheLookup<V> lookupFromRaw(
+            Object cachedValue, Long version, Long regionVersion) {
         if (REDIS_NULL_SENTINEL.equals(cachedValue)) {
-            return CacheLookup.nullHit(version);
+            return CacheLookup.nullHit(version, regionVersion);
         }
         Object converted = convertCachedValue(cachedValue);
         if (converted != null) {
             @SuppressWarnings("unchecked")
             V value = (V) converted;
-            return CacheLookup.hit(value, version);
+            return CacheLookup.hit(value, version, regionVersion);
         }
         return CacheLookup.miss();
     }
@@ -964,8 +1019,10 @@ public class MultiLevelCache<K, V> {
 
     private CacheLookup<V> getFromL2(K key) {
         // 为了避免“读 Redis 值期间并发写入/删除”的窗口，强一致模式下读值前后各读一次版本。
-        Long versionBefore = config.isStrongConsistency() ? readConsistencyVersion(key) : LOCAL_ONLY_VERSION;
-        Long regionBefore = config.isStrongConsistency() ? readRegionVersion() : LOCAL_ONLY_VERSION;
+        Long versionBefore = config.isStrongConsistency()
+                ? readConsistencyVersion(key) : Long.valueOf(LOCAL_ONLY_VERSION);
+        Long regionBefore = config.isStrongConsistency()
+                ? readRegionVersion() : Long.valueOf(LOCAL_ONLY_VERSION);
         if (config.isStrongConsistency() && (versionBefore == null || regionBefore == null)) {
             return CacheLookup.miss();
         }
@@ -974,14 +1031,17 @@ public class MultiLevelCache<K, V> {
             if (cachedValue == null) {
                 return CacheLookup.miss();
             }
-            Long versionAfter = config.isStrongConsistency() ? readConsistencyVersion(key) : LOCAL_ONLY_VERSION;
-            Long regionAfter = config.isStrongConsistency() ? readRegionVersion() : LOCAL_ONLY_VERSION;
+            Long versionAfter = config.isStrongConsistency()
+                    ? readConsistencyVersion(key) : Long.valueOf(LOCAL_ONLY_VERSION);
+            Long regionAfter = config.isStrongConsistency()
+                    ? readRegionVersion() : Long.valueOf(LOCAL_ONLY_VERSION);
             if (config.isStrongConsistency()
                     && (!versionBefore.equals(versionAfter) || !regionBefore.equals(regionAfter))) {
                 return CacheLookup.miss();
             }
             long stableVersion = versionAfter == null ? LOCAL_ONLY_VERSION : versionAfter;
-            return lookupFromRaw(cachedValue, stableVersion);
+            long stableRegionVersion = regionAfter == null ? LOCAL_ONLY_VERSION : regionAfter;
+            return lookupFromRaw(cachedValue, stableVersion, stableRegionVersion);
         } catch (Exception e) {
             rethrowGenericTypeConfigurationFailure(e);
             markL2Degraded(e);
@@ -1060,7 +1120,8 @@ public class MultiLevelCache<K, V> {
                         versionMetadataRetentionMillis()}
                         : new Object[]{rawValue, String.valueOf(ttl.toMillis()),
                         versionMetadataRetentionMillis()};
-                Long version = toLong(redisUtil.executeScriptRaw(script, keys, arguments));
+                Long version = redisUtil.executeScriptRaw(
+                        script, Long.class, keys, arguments);
                 return version != null && version >= 0 ? version : null;
             }
             redisUtil.boundValueOps(redisKey(key)).set(value, ttl);
@@ -1080,6 +1141,7 @@ public class MultiLevelCache<K, V> {
                 // 删除也要推进版本，否则其它 JVM 可能继续命中旧 L1。
                 return toLong(redisUtil.executeScriptRaw(
                         ATOMIC_DELETE_SCRIPT,
+                        Long.class,
                         List.of(redisKey(key), versionKey(key)),
                         versionMetadataRetentionMillis()));
             }
@@ -1279,17 +1341,22 @@ public class MultiLevelCache<K, V> {
                                 Long ttlMillis,
                                 Long versionAfter) { }
 
-    private record CacheLookup<T>(boolean hit, T value, boolean nullValue, Long version) {
+    private record CacheLookup<T>(
+            boolean hit,
+            T value,
+            boolean nullValue,
+            Long version,
+            Long regionVersion) {
         static <T> CacheLookup<T> miss() {
-            return new CacheLookup<>(false, null, false, null);
+            return new CacheLookup<>(false, null, false, null, null);
         }
 
-        static <T> CacheLookup<T> hit(T value, Long version) {
-            return new CacheLookup<>(true, value, false, version);
+        static <T> CacheLookup<T> hit(T value, Long version, Long regionVersion) {
+            return new CacheLookup<>(true, value, false, version, regionVersion);
         }
 
-        static <T> CacheLookup<T> nullHit(Long version) {
-            return new CacheLookup<>(true, null, true, version);
+        static <T> CacheLookup<T> nullHit(Long version, Long regionVersion) {
+            return new CacheLookup<>(true, null, true, version, regionVersion);
         }
     }
 }

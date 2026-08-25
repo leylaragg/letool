@@ -6,6 +6,8 @@ import io.github.leylaragg.letool.cache.core.MultiLevelCache;
 import io.github.leylaragg.letool.cache.core.MultiLevelSetCache;
 import io.github.leylaragg.letool.cache.core.RedisCacheInvalidationListener;
 import io.github.leylaragg.letool.cache.core.RedisCacheInvalidationPublisher;
+import io.github.leylaragg.letool.cache.config.CacheAutoConfiguration;
+import io.github.leylaragg.letool.cache.config.CacheProperties;
 import io.github.leylaragg.letool.cache.serializer.JacksonCacheSerializer;
 import io.github.leylaragg.letool.tool.redis.FastJson2JsonRedisSerializer;
 import io.github.leylaragg.letool.tool.redis.RedisUtil;
@@ -152,6 +154,34 @@ class RedisCacheHardeningIntegrationTest {
             assertTrue(ttl > Duration.ofDays(6).toSeconds());
             assertTrue(ttl <= Duration.ofDays(7).toSeconds());
         }
+    }
+
+    @Test
+    @DisplayName("Boot 默认 JDK Key 模板可通过缓存私有 String Key 视图完成区域清理")
+    void bootDefaultTemplateShouldSupportRegionCleanupThroughPrivateCacheView() {
+        RedisTemplate<String, Object> bootDefaultTemplate = new RedisTemplate<>();
+        bootDefaultTemplate.setConnectionFactory(connectionFactory);
+        bootDefaultTemplate.afterPropertiesSet();
+        assertFalse(bootDefaultTemplate.getKeySerializer() instanceof StringRedisSerializer);
+        RedisUtil businessRedisUtil = new RedisUtil(bootDefaultTemplate);
+        CacheProperties properties = new CacheProperties();
+        properties.setRedisPrefix(redisPrefix);
+        CacheManager cacheManager = new CacheAutoConfiguration().cacheManager(
+                new JacksonCacheSerializer(), properties, businessRedisUtil, null);
+        MultiLevelCache<String, String> cache = cacheManager.getOrCreate(
+                CacheConfig.<String, String>builder("boot-default")
+                        .redisKeyPrefix(redisPrefix)
+                        .l1Enabled(false)
+                        .build());
+
+        cache.put("rule:1", "value-1");
+        assertEquals("value-1", cache.getIfPresent("rule:1"));
+        cache.evictAll();
+
+        assertNull(cache.getIfPresent("rule:1"));
+        assertFalse(cache.isL2Degraded());
+        assertFalse(businessRedisUtil.getTemplate().getKeySerializer()
+                instanceof StringRedisSerializer);
     }
 
     @Test

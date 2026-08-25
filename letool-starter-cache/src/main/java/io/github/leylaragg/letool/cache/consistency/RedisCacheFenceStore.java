@@ -83,6 +83,7 @@ public class RedisCacheFenceStore {
         try {
             Long acquired = toLong(redisUtil.executeScriptRaw(
                     ACQUIRE_SCRIPT,
+                    Long.class,
                     List.of(identity.dataKey(), identity.versionKey(), identity.fenceKey()),
                     token, eventId, String.valueOf(staleAfter.toMillis())));
             if (!Long.valueOf(1L).equals(acquired)) {
@@ -106,7 +107,8 @@ public class RedisCacheFenceStore {
     public CacheFenceState state(String cacheName, String serializedKey) {
         CacheKeyIdentity identity = CacheKeyIdentity.of(redisPrefix, cacheName, serializedKey);
         try {
-            Long fenced = toLong(redisUtil.executeScriptRaw(STATE_SCRIPT, List.of(identity.fenceKey())));
+            Long fenced = redisUtil.executeScriptRaw(
+                    STATE_SCRIPT, Long.class, List.of(identity.fenceKey()));
             return Long.valueOf(1L).equals(fenced) ? CacheFenceState.FENCED : CacheFenceState.CLEAR;
         } catch (Exception exception) {
             return CacheFenceState.UNKNOWN;
@@ -126,6 +128,7 @@ public class RedisCacheFenceStore {
         try {
             Long result = toLong(redisUtil.executeScriptRaw(
                     COMPLETE_SCRIPT,
+                    Long.class,
                     List.of(identity.dataKey(), identity.versionKey(),
                             identity.fenceKey(), identity.processedKey()),
                     fence.token(), fence.eventId(), String.valueOf(staleAfter.multipliedBy(10).toMillis())));

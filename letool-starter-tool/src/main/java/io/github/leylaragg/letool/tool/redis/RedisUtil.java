@@ -16,6 +16,7 @@ import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.serializer.RedisSerializer;
+import org.springframework.data.redis.serializer.SerializationException;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 import java.time.Duration;
@@ -24,6 +25,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
@@ -75,6 +77,25 @@ import java.util.concurrent.TimeUnit;
  * }</pre>
  */
 public class RedisUtil {
+
+    /**
+     * Lua ARGV 序列化器：预序列化业务值保持原字节，其它元数据统一写成 UTF-8 字符串。
+     */
+    private static final RedisSerializer<Object> RAW_SCRIPT_ARGUMENT_SERIALIZER =
+            new RedisSerializer<>() {
+                @Override
+                public byte[] serialize(Object value) throws SerializationException {
+                    if (value instanceof byte[] bytes) {
+                        return bytes;
+                    }
+                    return StringRedisSerializer.UTF_8.serialize(value == null ? null : value.toString());
+                }
+
+                @Override
+                public Object deserialize(byte[] bytes) throws SerializationException {
+                    return StringRedisSerializer.UTF_8.deserialize(bytes);
+                }
+            };
 
     /** 应用侧配置好的 RedisTemplate，value/hashValue 序列化方案由应用决定。 */
     private final RedisTemplate<String, Object> redisTemplate;
@@ -599,25 +620,35 @@ public class RedisUtil {
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
     public <T> T executeScriptRaw(String script, List<String> keys, Object... args) {
-        DefaultRedisScript redisScript = new DefaultRedisScript<>();
+        return (T) executeScriptRaw(script, Object.class, keys, args);
+    }
+
+    /**
+     * 执行使用纯字符串 ARGV 的 Lua 脚本，并显式声明 Redis 返回类型。
+     *
+     * <p>Spring Data Redis 会根据结果类型选择 Lettuce 输出解码器。整数脚本必须声明
+     * {@link Long}，否则 {@link Object} 会被当成普通 Value 解码并在收到整数时失败。</p>
+     *
+     * @param script Lua 脚本内容
+     * @param resultType 脚本返回类型
+     * @param keys KEY 列表
+     * @param args ARGV 参数列表，每个参数通过 {@code toString()} 转换为字符串
+     * @param <T> 脚本返回值类型
+     * @return 脚本执行结果
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public <T> T executeScriptRaw(
+            String script, Class<T> resultType, List<String> keys, Object... args) {
+        DefaultRedisScript<T> redisScript = new DefaultRedisScript<>();
         redisScript.setScriptText(script);
-        redisScript.setResultType(Object.class);
-        // 将所有 args 转为纯字符串，绕过 value serializer 避免 JSON 包装
-        String[] rawArgs = new String[args.length];
-        for (int i = 0; i < args.length; i++) {
-            if (args[i] instanceof byte[] bytes) {
-                rawArgs[i] = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
-            } else {
-                rawArgs[i] = args[i].toString();
-            }
-        }
+        redisScript.setResultType(Objects.requireNonNull(resultType, "脚本返回类型不能为空"));
         RedisSerializer stringSerializer = RedisSerializer.string();
         return (T) redisTemplate.execute(
                 redisScript,
-                stringSerializer,
+                RAW_SCRIPT_ARGUMENT_SERIALIZER,
                 stringSerializer,
                 keys,
-                (Object[]) rawArgs);
+                args);
     }
 
     /**

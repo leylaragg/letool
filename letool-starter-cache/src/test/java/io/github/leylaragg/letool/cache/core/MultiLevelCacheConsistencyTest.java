@@ -20,6 +20,7 @@ import java.lang.reflect.Type;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -30,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
@@ -134,13 +136,111 @@ class MultiLevelCacheConsistencyTest {
     }
 
     @Test
+    @DisplayName("区域清理推进纪元后不得把旧 Redis 命中重新标记为新纪元")
+    void redisHitShouldKeepTheRegionEpochValidatedByTheRead() {
+        RedisUtil redisUtil = mock(RedisUtil.class);
+        @SuppressWarnings("unchecked")
+        BoundValueOperations<String, Object> regionOperations = mock(BoundValueOperations.class);
+        @SuppressWarnings("unchecked")
+        BoundValueOperations<String, Object> versionOperations = mock(BoundValueOperations.class);
+        @SuppressWarnings("unchecked")
+        BoundValueOperations<String, Object> dataOperations = mock(BoundValueOperations.class);
+        AtomicInteger regionReads = new AtomicInteger();
+        when(regionOperations.get()).thenAnswer(invocation ->
+                regionReads.incrementAndGet() <= 2 ? 0L : 1L);
+        when(versionOperations.get()).thenReturn(7L);
+        when(dataOperations.get()).thenReturn("old-value").thenReturn((Object) null);
+        when(redisUtil.getExpire(anyString(), eq(java.util.concurrent.TimeUnit.MILLISECONDS)))
+                .thenReturn(60_000L);
+        when(redisUtil.boundValueOps(anyString())).thenAnswer(invocation -> {
+            String redisKey = invocation.getArgument(0);
+            if (redisKey.endsWith("region-version")) {
+                return regionOperations;
+            }
+            if (redisKey.endsWith(":version")) {
+                return versionOperations;
+            }
+            return dataOperations;
+        });
+        MultiLevelCache<String, String> cache = new MultiLevelCache<>(
+                CacheConfig.<String, String>builder("epoch-read")
+                        .redisKeyPrefix("test:")
+                        .readValidation(CacheReadValidation.VERSIONED),
+                redisUtil,
+                new JacksonCacheSerializer());
+
+        assertEquals("old-value", cache.getIfPresent("rule:1"));
+        assertNull(cache.getIfPresent("rule:1"));
+        assertEquals(0L, cache.estimatedSize());
+    }
+
+    @Test
+    @DisplayName("区域清理跨越单 Key 写入时不得把已删除结果放入新纪元 L1")
+    void singleWriteShouldNotPopulateL1AcrossRegionEpochChange() {
+        RedisUtil redisUtil = mock(RedisUtil.class);
+        AtomicLong regionEpoch = new AtomicLong();
+        @SuppressWarnings("unchecked")
+        BoundValueOperations<String, Object> regionOperations = mock(BoundValueOperations.class);
+        when(regionOperations.get()).thenAnswer(invocation -> regionEpoch.get());
+        when(redisUtil.boundValueOps(anyString())).thenReturn(regionOperations);
+        when(redisUtil.serializeValue(any())).thenReturn("old-value".getBytes(StandardCharsets.UTF_8));
+        when(redisUtil.executeScriptRaw(
+                any(), eq(Long.class), anyList(), any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    regionEpoch.set(1L);
+                    return 7L;
+                });
+        MultiLevelCache<String, String> cache = new MultiLevelCache<>(
+                CacheConfig.<String, String>builder("epoch-write")
+                        .redisKeyPrefix("test:")
+                        .readValidation(CacheReadValidation.VERSIONED),
+                redisUtil,
+                new JacksonCacheSerializer());
+
+        cache.put("rule:1", "old-value");
+
+        assertEquals(0L, cache.estimatedSize());
+    }
+
+    @Test
+    @DisplayName("区域清理跨越批量写入时不得把已删除结果放入新纪元 L1")
+    void batchWriteShouldNotPopulateL1AcrossRegionEpochChange() {
+        RedisUtil redisUtil = mock(RedisUtil.class);
+        AtomicLong regionEpoch = new AtomicLong();
+        @SuppressWarnings("unchecked")
+        BoundValueOperations<String, Object> regionOperations = mock(BoundValueOperations.class);
+        when(regionOperations.get()).thenAnswer(invocation -> regionEpoch.get());
+        when(redisUtil.boundValueOps(anyString())).thenReturn(regionOperations);
+        when(redisUtil.serializeValue(any())).thenReturn("old-value".getBytes(StandardCharsets.UTF_8));
+        @SuppressWarnings("unchecked")
+        RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
+        when(redisUtil.getTemplate()).thenReturn(redisTemplate);
+        doReturn(StringRedisSerializer.UTF_8).when(redisTemplate).getKeySerializer();
+        when(redisTemplate.executePipelined(any(RedisCallback.class))).thenAnswer(invocation -> {
+            regionEpoch.set(1L);
+            return List.of(7L);
+        });
+        MultiLevelCache<String, String> cache = new MultiLevelCache<>(
+                CacheConfig.<String, String>builder("epoch-batch-write")
+                        .redisKeyPrefix("test:")
+                        .readValidation(CacheReadValidation.VERSIONED),
+                redisUtil,
+                new JacksonCacheSerializer());
+
+        cache.putAll(Map.of("rule:1", "old-value"));
+
+        assertEquals(0L, cache.estimatedSize());
+    }
+
+    @Test
     @DisplayName("VERSIONED 模式在 Redis 降级后不得信任或重新建立 L1")
     void versionedModeShouldBypassLocalCacheWhenRedisIsDegraded() {
         RedisUtil redisUtil = mock(RedisUtil.class);
         @SuppressWarnings("unchecked")
         BoundValueOperations<String, Object> versionOperations = mock(BoundValueOperations.class);
         when(redisUtil.serializeValue(any())).thenReturn("old".getBytes(StandardCharsets.UTF_8));
-        when(redisUtil.executeScriptRaw(any(), anyList(), any(), any(), any())).thenReturn(1L);
+        when(redisUtil.executeScriptRaw(
+                any(), eq(Long.class), anyList(), any(), any(), any())).thenReturn(1L);
         when(redisUtil.boundValueOps("test:%META%:critical:version")).thenReturn(versionOperations);
         when(versionOperations.get()).thenThrow(new IllegalStateException("redis unavailable"));
 
@@ -199,9 +299,10 @@ class MultiLevelCacheConsistencyTest {
         RedisUtil redisUtil = mock(RedisUtil.class);
         when(redisUtil.serializeValue(any()))
                 .thenReturn("value".getBytes(StandardCharsets.UTF_8));
-        when(redisUtil.executeScriptRaw(any(), anyList(), any(), any(), any()))
+        when(redisUtil.executeScriptRaw(
+                any(), eq(Long.class), anyList(), any(), any(), any()))
                 .thenReturn(1L);
-        when(redisUtil.executeScriptRaw(any(), anyList(), any()))
+        when(redisUtil.executeScriptRaw(any(), eq(Long.class), anyList(), any()))
                 .thenReturn(2L);
         @SuppressWarnings("unchecked")
         BoundValueOperations<String, Object> regionVersion =
@@ -223,9 +324,10 @@ class MultiLevelCacheConsistencyTest {
 
         String retentionMillis = String.valueOf(Duration.ofDays(7).toMillis());
         verify(redisUtil).executeScriptRaw(
-                contains("PEXPIRE"), anyList(), any(), any(), eq(retentionMillis));
+                contains("PEXPIRE"), eq(Long.class), anyList(),
+                any(), any(), eq(retentionMillis));
         verify(redisUtil).executeScriptRaw(
-                contains("PEXPIRE"), anyList(), eq(retentionMillis));
+                contains("PEXPIRE"), eq(Long.class), anyList(), eq(retentionMillis));
     }
 
     @Test
