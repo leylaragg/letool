@@ -107,7 +107,7 @@ public final class TypeDescriptor {
     }
 
     /**
-     * 参与契约指纹的稳定规范字符串。
+     * 参与契约摘要的稳定规范字符串。
      *
      * @return 规范类型字符串
      */

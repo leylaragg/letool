@@ -1,8 +1,9 @@
-package io.github.leylaragg.letool.ruleengine.evaluate;
+package io.github.leylaragg.letool.ruleengine.api;
 
-import io.github.leylaragg.letool.ruleengine.api.EngineLimits;
-import io.github.leylaragg.letool.ruleengine.compile.CompiledExpression;
-import io.github.leylaragg.letool.ruleengine.compile.DefaultExpressionCompiler;
+import io.github.leylaragg.letool.ruleengine.evaluate.DefaultValueSummarizer;
+import io.github.leylaragg.letool.ruleengine.evaluate.EvaluationOptions;
+import io.github.leylaragg.letool.ruleengine.evaluate.ExpressionEvaluationResult;
+import io.github.leylaragg.letool.ruleengine.evaluate.ValueSummarizer;
 import io.github.leylaragg.letool.ruleengine.fact.FactValues;
 import io.github.leylaragg.letool.ruleengine.fact.RuleFacts;
 import io.github.leylaragg.letool.ruleengine.function.FunctionRegistry;
@@ -17,7 +18,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class EvaluationTraceTest {
+class EvaluationTraceRuntimeTest {
 
     private final FunctionRegistry registry = FunctionRegistry.builder().build();
     private final FactContract emptyContract = FactContract.builder("empty").build();
@@ -79,11 +80,11 @@ class EvaluationTraceTest {
         EngineLimits limits = new EngineLimits(100, 100, 20, 10, 20, 6);
         EvaluationOptions options = EvaluationOptions.of(
                 Locale.ROOT, ZoneId.of("UTC"), true, limits);
-        CompiledExpression compiled = new DefaultExpressionCompiler().compile(
+        CompiledExpression compiled = new ExpressionCompilationPipeline().compile(
                 "1 + 2", emptyContract, registry, limits).requireCompiled();
         ValueSummarizer hostile = (value, maximum) -> "secret".repeat(100);
 
-        ExpressionEvaluationResult result = new DefaultExpressionEvaluator(hostile).evaluate(
+        ExpressionEvaluationResult result = new ExpressionEvaluationRuntime(hostile).evaluate(
                 compiled, RuleFacts.fromMap(Map.of()), registry, options);
 
         assertThat(result.requireValue().toSafeJavaValue()).isEqualTo(java.math.BigInteger.valueOf(3));
@@ -97,10 +98,10 @@ class EvaluationTraceTest {
         EngineLimits limits = new EngineLimits(100, 100, 20, 10, 20, 30);
         EvaluationOptions options = EvaluationOptions.of(
                 Locale.ROOT, ZoneId.of("UTC"), true, limits);
-        CompiledExpression compiled = new DefaultExpressionCompiler().compile(
+        CompiledExpression compiled = new ExpressionCompilationPipeline().compile(
                 "1", emptyContract, registry, limits).requireCompiled();
 
-        ExpressionEvaluationResult result = new DefaultExpressionEvaluator(
+        ExpressionEvaluationResult result = new ExpressionEvaluationRuntime(
                 (value, maximum) -> "safe\r\nsecret\u0000").evaluate(
                 compiled, RuleFacts.fromMap(Map.of()), registry, options);
 
@@ -135,9 +136,9 @@ class EvaluationTraceTest {
     }
 
     private ExpressionEvaluationResult evaluate(String source, EvaluationOptions options) {
-        CompiledExpression compiled = new DefaultExpressionCompiler().compile(
+        CompiledExpression compiled = new ExpressionCompilationPipeline().compile(
                 source, emptyContract, registry, options.limits()).requireCompiled();
-        return new DefaultExpressionEvaluator().evaluate(
+        return new ExpressionEvaluationRuntime().evaluate(
                 compiled, RuleFacts.fromMap(Map.of()), registry, options);
     }
 }

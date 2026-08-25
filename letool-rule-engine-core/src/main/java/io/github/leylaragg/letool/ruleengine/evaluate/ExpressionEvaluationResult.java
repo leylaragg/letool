@@ -1,5 +1,6 @@
 package io.github.leylaragg.letool.ruleengine.evaluate;
 
+import io.github.leylaragg.letool.ruleengine.api.EvaluationTrace;
 import io.github.leylaragg.letool.ruleengine.diagnostic.DiagnosticSeverity;
 import io.github.leylaragg.letool.ruleengine.diagnostic.RuleDiagnostic;
 import io.github.leylaragg.letool.ruleengine.exception.RuleEngineException;

@@ -57,8 +57,9 @@ public enum RuleDiagnosticCode implements ErrorCode {
     MISSING_FACT_VALUE("RULE_ENGINE_EVALUATE_001", "求值所需事实缺失"),
     /** 运行期事实类型与编译契约不一致。 */
     RUNTIME_TYPE_MISMATCH("RULE_ENGINE_EVALUATE_002", "运行期事实类型与编译契约不一致"),
-    /** 编译产物指纹与当前环境不一致。 */
-    FINGERPRINT_MISMATCH("RULE_ENGINE_EVALUATE_003", "编译产物指纹与当前环境不一致"),
+    /** 编译产物的执行环境摘要与当前引擎不一致。 */
+    EXECUTION_ENVIRONMENT_MISMATCH(
+            "RULE_ENGINE_EVALUATE_003", "编译产物与当前执行环境不一致"),
     /** 表达式求值失败。 */
     EVALUATION_ERROR("RULE_ENGINE_EVALUATE_004", "规则表达式求值失败"),
     /** 函数执行失败。 */

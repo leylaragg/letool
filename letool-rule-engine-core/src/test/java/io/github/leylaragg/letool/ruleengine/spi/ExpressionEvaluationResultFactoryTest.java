@@ -4,7 +4,7 @@ import io.github.leylaragg.letool.ruleengine.diagnostic.DiagnosticPhase;
 import io.github.leylaragg.letool.ruleengine.diagnostic.DiagnosticSeverity;
 import io.github.leylaragg.letool.ruleengine.diagnostic.RuleDiagnostic;
 import io.github.leylaragg.letool.ruleengine.diagnostic.RuleDiagnosticCode;
-import io.github.leylaragg.letool.ruleengine.evaluate.EvaluationTrace;
+import io.github.leylaragg.letool.ruleengine.api.EvaluationTrace;
 import io.github.leylaragg.letool.ruleengine.evaluate.ExpressionEvaluationResult;
 import io.github.leylaragg.letool.ruleengine.exception.RuleEngineErrorCode;
 import io.github.leylaragg.letool.ruleengine.exception.RuleEngineException;

@@ -1,8 +1,7 @@
-package io.github.leylaragg.letool.ruleengine.evaluate;
+package io.github.leylaragg.letool.ruleengine.api;
 
-import io.github.leylaragg.letool.ruleengine.api.EngineLimits;
-import io.github.leylaragg.letool.ruleengine.compile.CompiledExpression;
-import io.github.leylaragg.letool.ruleengine.compile.DefaultExpressionCompiler;
+import io.github.leylaragg.letool.ruleengine.evaluate.EvaluationOptions;
+import io.github.leylaragg.letool.ruleengine.evaluate.ExpressionEvaluationResult;
 import io.github.leylaragg.letool.ruleengine.diagnostic.DiagnosticPhase;
 import io.github.leylaragg.letool.ruleengine.diagnostic.RuleDiagnosticCode;
 import io.github.leylaragg.letool.ruleengine.exception.RuleEngineErrorCode;
@@ -28,7 +27,7 @@ import java.util.HashMap;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class DefaultExpressionEvaluatorTest {
+class ExpressionEvaluationRuntimeTest {
 
     private static final TypeDescriptor INTEGER = TypeDescriptor.scalar(TypeKind.INTEGER, false);
     private static final TypeDescriptor DECIMAL = TypeDescriptor.scalar(TypeKind.DECIMAL, false);
@@ -48,7 +47,7 @@ class DefaultExpressionEvaluatorTest {
             "name", "Ada",
             "level", "HIGH",
             "nullable", 1));
-    private final ExpressionEvaluator evaluator = new DefaultExpressionEvaluator();
+    private final ExpressionEvaluationRuntime evaluator = new ExpressionEvaluationRuntime();
 
     @ParameterizedTest
     @CsvSource(delimiter = '|', value = {
@@ -209,7 +208,7 @@ class DefaultExpressionEvaluatorTest {
             source.insert(0, "+(").append(')');
         }
         EngineLimits limits = new EngineLimits(1_000, 1_000, 256, 10, 10, 20);
-        CompiledExpression compiled = new DefaultExpressionCompiler().compile(
+        CompiledExpression compiled = new ExpressionCompilationPipeline().compile(
                 source.toString(), FactContract.builder("empty").build(), registry, limits)
                 .requireCompiled();
 
@@ -229,7 +228,7 @@ class DefaultExpressionEvaluatorTest {
 
     private static CompiledExpression compile(
             String source, FactContract factContract, FunctionRegistry functionRegistry) {
-        return new DefaultExpressionCompiler().compile(source, factContract, functionRegistry,
+        return new ExpressionCompilationPipeline().compile(source, factContract, functionRegistry,
                 EngineLimits.defaults()).requireCompiled();
     }
 }

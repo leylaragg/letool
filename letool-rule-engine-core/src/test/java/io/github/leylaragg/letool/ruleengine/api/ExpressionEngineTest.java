@@ -1,16 +1,10 @@
 package io.github.leylaragg.letool.ruleengine.api;
 
-import io.github.leylaragg.letool.ruleengine.compile.CompiledExpression;
 import io.github.leylaragg.letool.ruleengine.compile.CompilationResult;
-import io.github.leylaragg.letool.ruleengine.compile.CompiledExpressionFixtures;
-import io.github.leylaragg.letool.ruleengine.compile.DefaultExpressionCompiler;
-import io.github.leylaragg.letool.ruleengine.compile.ExpressionCompiler;
 import io.github.leylaragg.letool.ruleengine.diagnostic.RuleDiagnosticCode;
 import io.github.leylaragg.letool.ruleengine.diagnostic.RuleDiagnostic;
-import io.github.leylaragg.letool.ruleengine.evaluate.DefaultExpressionEvaluator;
 import io.github.leylaragg.letool.ruleengine.evaluate.EvaluationOptions;
 import io.github.leylaragg.letool.ruleengine.evaluate.ExpressionEvaluationResult;
-import io.github.leylaragg.letool.ruleengine.evaluate.ExpressionEvaluator;
 import io.github.leylaragg.letool.ruleengine.exception.RuleEngineErrorCode;
 import io.github.leylaragg.letool.ruleengine.exception.RuleEngineException;
 import io.github.leylaragg.letool.ruleengine.fact.FactValue;
@@ -42,7 +36,6 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -106,53 +99,35 @@ class ExpressionEngineTest {
                 .isEqualTo(RuleEngineErrorCode.REGISTRATION_CONFLICT);
         assertThatThrownBy(() -> ExpressionEngine.builder().limits(null))
                 .isInstanceOf(RuleEngineException.class);
-        assertThatThrownBy(() -> ExpressionEngine.builder().compiler(null))
-                .isInstanceOf(RuleEngineException.class);
-        assertThatThrownBy(() -> ExpressionEngine.builder().evaluator(null))
+        assertThatThrownBy(() -> ExpressionEngine.builder().valueSummarizer(null))
                 .isInstanceOf(RuleEngineException.class);
     }
 
     @Test
-    @DisplayName("构建器应注入自定义编译器和求值器")
-    void shouldDelegateToCustomCompilerAndEvaluator() {
-        AtomicBoolean compileCalled = new AtomicBoolean();
-        AtomicBoolean evaluateCalled = new AtomicBoolean();
-        ExpressionCompiler compiler = (source, contract, registry, limits) -> {
-            compileCalled.set(true);
-            return new DefaultExpressionCompiler().compile(source, contract, registry, limits);
-        };
-        ExpressionEvaluator evaluator = (expression, facts, registry, options) -> {
-            evaluateCalled.set(true);
-            return new DefaultExpressionEvaluator().evaluate(expression, facts, registry, options);
-        };
+    @DisplayName("宿主摘要策略只影响轨迹展示")
+    void shouldApplyHostValueSummarizerOnlyToTrace() {
         ExpressionEngine engine = ExpressionEngine.builder()
-                .compiler(compiler)
-                .evaluator(evaluator)
+                .valueSummarizer((value, maximumLength) -> "MASKED")
                 .build();
+        CompiledExpression compiled = engine.compile(
+                "${birthday} IS NOT NULL", BIRTHDAY_CONTRACT).requireCompiled();
 
-        CompiledExpression compiled = engine.compile("${birthday} IS NOT NULL", BIRTHDAY_CONTRACT)
-                .requireCompiled();
-        ExpressionEvaluationResult result = engine.evaluate(compiled,
+        ExpressionEvaluationResult result = engine.evaluate(
+                compiled,
                 RuleFacts.fromMap(Map.of("birthday", LocalDate.of(2000, 1, 1))),
-                EvaluationOptions.defaults());
+                EvaluationOptions.of(java.util.Locale.ROOT, ZoneOffset.UTC, true,
+                        EngineLimits.defaults()));
 
-        assertThat(compileCalled).isTrue();
-        assertThat(evaluateCalled).isTrue();
         assertThat(result.requireBoolean()).isTrue();
+        assertThat(result.trace().nodes())
+                .extracting(node -> node.summary())
+                .containsOnly("MASKED");
     }
 
     @Test
-    @DisplayName("门面应在调用自定义求值器前校验运行事实契约")
-    void shouldNotLetCustomEvaluatorBypassRuntimeFactContract() {
-        AtomicBoolean evaluateCalled = new AtomicBoolean();
-        ExpressionEngine engine = ExpressionEngine.builder()
-                .evaluator((expression, facts, registry, options) -> {
-                    evaluateCalled.set(true);
-                    return ExpressionEvaluationResult.success(
-                            FactValues.booleanValue(true),
-                            io.github.leylaragg.letool.ruleengine.evaluate.EvaluationTrace.disabled());
-                })
-                .build();
+    @DisplayName("门面应在求值前校验运行事实契约")
+    void shouldValidateRuntimeFactContractBeforeEvaluation() {
+        ExpressionEngine engine = ExpressionEngine.builder().build();
         CompiledExpression compiled = engine.compile("${birthday} IS NOT NULL", BIRTHDAY_CONTRACT)
                 .requireCompiled();
 
@@ -163,38 +138,12 @@ class ExpressionEngineTest {
         assertThat(result.isSuccessful()).isFalse();
         assertThat(result.diagnostics()).extracting(diagnostic -> diagnostic.code())
                 .containsExactly(RuleDiagnosticCode.RUNTIME_TYPE_MISMATCH);
-        assertThat(evaluateCalled).isFalse();
     }
 
     @Test
-    @DisplayName("门面应拒绝自定义求值器返回不符合编译结果类型的值")
-    void shouldRejectCustomEvaluatorResultTypeMismatch() {
-        ExpressionEngine engine = ExpressionEngine.builder()
-                .evaluator((expression, facts, registry, options) ->
-                        ExpressionEvaluationResult.success(FactValues.string("wrong"),
-                                io.github.leylaragg.letool.ruleengine.evaluate.EvaluationTrace.disabled()))
-                .build();
-        CompiledExpression compiled = engine.compile("true", FactContract.builder("empty").build())
-                .requireCompiled();
-
-        ExpressionEvaluationResult result = engine.evaluate(
-                compiled, RuleFacts.fromMap(Map.of()), EvaluationOptions.defaults());
-
-        assertThat(result.isSuccessful()).isFalse();
-        assertThat(result.diagnostics()).extracting(RuleDiagnostic::code)
-                .containsExactly(RuleDiagnosticCode.RUNTIME_TYPE_MISMATCH);
-    }
-
-    @Test
-    @DisplayName("门面应以依赖范围报告缺失事实且不调用求值器")
-    void shouldReportMissingFactBeforeCustomEvaluation() {
-        AtomicBoolean evaluateCalled = new AtomicBoolean();
-        ExpressionEngine engine = ExpressionEngine.builder()
-                .evaluator((expression, facts, registry, options) -> {
-                    evaluateCalled.set(true);
-                    return ExpressionEvaluationResult.success(FactValues.booleanValue(true),
-                            io.github.leylaragg.letool.ruleengine.evaluate.EvaluationTrace.disabled());
-                }).build();
+    @DisplayName("门面应以依赖范围报告缺失事实")
+    void shouldReportMissingFactFromDependencyRange() {
+        ExpressionEngine engine = ExpressionEngine.builder().build();
         CompiledExpression compiled = engine.compile(
                 "${birthday} IS NOT NULL", BIRTHDAY_CONTRACT).requireCompiled();
 
@@ -207,7 +156,6 @@ class ExpressionEngineTest {
             assertThat(diagnostic.startPosition()).isZero();
             assertThat(diagnostic.endPosition()).isEqualTo("${birthday}".length());
         });
-        assertThat(evaluateCalled).isFalse();
     }
 
     @Test
@@ -227,20 +175,13 @@ class ExpressionEngineTest {
     }
 
     @Test
-    @DisplayName("指纹不匹配时应返回失败且不调用求值器")
+    @DisplayName("环境摘要不匹配时应在求值前返回失败")
     void shouldRejectFunctionCatalogMismatchBeforeEvaluation() {
         ExpressionEngine sourceEngine = ExpressionEngine.builder().build();
         CompiledExpression compiled = sourceEngine.compile(
                 "${birthday} IS NOT NULL", BIRTHDAY_CONTRACT).requireCompiled();
-        AtomicBoolean evaluateCalled = new AtomicBoolean();
         ExpressionEngine targetEngine = ExpressionEngine.builder()
                 .registerFunction(new AgeFunction(Clock.systemUTC()))
-                .evaluator((expression, facts, registry, options) -> {
-                    evaluateCalled.set(true);
-                    return ExpressionEvaluationResult.success(
-                            FactValues.booleanValue(true),
-                            io.github.leylaragg.letool.ruleengine.evaluate.EvaluationTrace.disabled());
-                })
                 .build();
 
         ExpressionEvaluationResult result = targetEngine.evaluate(compiled,
@@ -250,41 +191,12 @@ class ExpressionEngineTest {
         assertThat(result.isSuccessful()).isFalse();
         assertThat(result.diagnostics()).singleElement()
                 .satisfies(diagnostic -> {
-                    assertThat(diagnostic.code()).isEqualTo(RuleDiagnosticCode.FINGERPRINT_MISMATCH);
-                    assertThat(diagnostic.arguments()).containsExactly("functionCatalogFingerprint");
+                    assertThat(diagnostic.code())
+                            .isEqualTo(RuleDiagnosticCode.EXECUTION_ENVIRONMENT_MISMATCH);
+                    assertThat(diagnostic.arguments()).containsExactly("environmentDigest");
                     assertThat(diagnostic.startPosition()).isZero();
                     assertThat(diagnostic.endPosition()).isEqualTo(compiled.source().length());
                 });
-        assertThat(evaluateCalled).isFalse();
-    }
-
-    @ParameterizedTest(name = "拒绝不匹配维度 {0}")
-    @MethodSource("mismatchedDimensions")
-    @DisplayName("门面应拒绝每一个环境语义维度不匹配")
-    void shouldRejectEveryEnvironmentDimensionMismatch(String dimension, String replacement) {
-        AtomicBoolean evaluateCalled = new AtomicBoolean();
-        ExpressionEngine engine = ExpressionEngine.builder()
-                .evaluator((expression, facts, registry, options) -> {
-                    evaluateCalled.set(true);
-                    return ExpressionEvaluationResult.success(FactValues.booleanValue(true),
-                            io.github.leylaragg.letool.ruleengine.evaluate.EvaluationTrace.disabled());
-                }).build();
-        CompiledExpression original = engine.compile(
-                "${birthday} IS NOT NULL", BIRTHDAY_CONTRACT).requireCompiled();
-        CompiledExpression changed = CompiledExpressionFixtures.withDimension(
-                original, dimension, replacement);
-
-        ExpressionEvaluationResult result = engine.evaluate(changed,
-                RuleFacts.fromMap(Map.of("birthday", LocalDate.of(2000, 1, 1))),
-                EvaluationOptions.defaults());
-
-        assertThat(result.isSuccessful()).isFalse();
-        assertThat(result.diagnostics()).singleElement()
-                .satisfies(diagnostic -> {
-                    assertThat(diagnostic.code()).isEqualTo(RuleDiagnosticCode.FINGERPRINT_MISMATCH);
-                    assertThat(diagnostic.arguments()).containsExactly(dimension);
-                });
-        assertThat(evaluateCalled).isFalse();
     }
 
     @Test
@@ -366,8 +278,8 @@ class ExpressionEngineTest {
         CompiledExpression secondCompiled = second.compile("$STABLE(${amount})", contract)
                 .requireCompiled();
 
-        assertThat(firstCompiled.functionCatalogFingerprint())
-                .isEqualTo(secondCompiled.functionCatalogFingerprint());
+        assertThat(firstCompiled.environmentDigest())
+                .isEqualTo(secondCompiled.environmentDigest());
         assertThat(first.evaluate(firstCompiled, RuleFacts.fromMap(Map.of("amount", 9)),
                 EvaluationOptions.defaults()).requireValue().toSafeJavaValue())
                 .isEqualTo(java.math.BigInteger.valueOf(9));
@@ -376,75 +288,6 @@ class ExpressionEngineTest {
         assertThat(signatureReads).hasValue(1);
         assertThat(returnTypeReads).hasValue(1);
         assertThat(characteristicsReads).hasValue(1);
-    }
-
-    @Test
-    @DisplayName("自定义求值器异常应净化为稳定失败结果")
-    void shouldSanitizeCustomEvaluatorFailure() {
-        ExpressionEngine engine = ExpressionEngine.builder()
-                .evaluator((expression, facts, registry, options) -> {
-                    throw new IllegalStateException("sensitive-evaluator-message");
-                }).build();
-        CompiledExpression compiled = engine.compile("true", FactContract.builder("empty").build())
-                .requireCompiled();
-
-        ExpressionEvaluationResult result = engine.evaluate(
-                compiled, RuleFacts.fromMap(Map.of()), EvaluationOptions.defaults());
-
-        assertThat(result.isSuccessful()).isFalse();
-        assertThat(result.diagnostics()).extracting(RuleDiagnostic::code)
-                .containsExactly(RuleDiagnosticCode.EVALUATION_ERROR);
-        assertThat(result.diagnostics().get(0).arguments()).isEmpty();
-        assertThat(result.failureCause().getMessage()).doesNotContain("sensitive-evaluator-message");
-        assertThat(result.failureCause().getCause()).hasMessage("sensitive-evaluator-message");
-    }
-
-    @Test
-    @DisplayName("自定义求值器抛框架异常也应返回失败结果")
-    void shouldConvertCustomEvaluatorFrameworkExceptionToFailure() {
-        ExpressionEngine engine = ExpressionEngine.builder()
-                .evaluator((expression, facts, registry, options) -> {
-                    throw RuleEngineException.invalidArgument();
-                }).build();
-        CompiledExpression compiled = engine.compile("true", FactContract.builder("empty").build())
-                .requireCompiled();
-
-        ExpressionEvaluationResult result = engine.evaluate(
-                compiled, RuleFacts.fromMap(Map.of()), EvaluationOptions.defaults());
-
-        assertThat(result.isSuccessful()).isFalse();
-        assertThat(result.diagnostics()).extracting(RuleDiagnostic::code)
-                .containsExactly(RuleDiagnosticCode.EVALUATION_ERROR);
-        assertThat(result.failureCause()).isNotNull();
-    }
-
-    @Test
-    @DisplayName("自定义编译器异常应包装为稳定框架异常")
-    void shouldSanitizeCustomCompilerFailure() {
-        ExpressionEngine engine = ExpressionEngine.builder()
-                .compiler((source, contract, registry, limits) -> {
-                    throw new IllegalStateException("sensitive-compiler-message");
-                }).build();
-
-        assertThatThrownBy(() -> engine.compile("true", FactContract.builder("empty").build()))
-                .isInstanceOf(RuleEngineException.class)
-                .satisfies(error -> {
-                    RuleEngineException exception = (RuleEngineException) error;
-                    assertThat(exception.getErrorCode().getCode())
-                            .isEqualTo("RULE_ENGINE_COMPILE_001");
-                    assertThat(exception.getMessage())
-                            .isEqualTo("[RULE_ENGINE_COMPILE_001] 规则表达式编译失败");
-                    assertThat(error.getMessage()).doesNotContain("sensitive-compiler-message");
-                    assertThat(error.getCause()).hasMessage("sensitive-compiler-message");
-                });
-    }
-
-    private static Stream<Arguments> mismatchedDimensions() {
-        return Stream.of(
-                Arguments.of("functionCatalogFingerprint", "0".repeat(64)),
-                Arguments.of("typeCatalogFingerprint", "0".repeat(64)),
-                Arguments.of("engineVersion", "999"),
-                Arguments.of("languageVersion", "999"));
     }
 
     @Test
@@ -486,53 +329,6 @@ class ExpressionEngineTest {
         } finally {
             executor.shutdownNow();
         }
-    }
-
-    @Test
-    @DisplayName("同一引擎注入的自定义编译器和求值器应支持一千次并发调用")
-    void shouldInvokeCustomSpisConcurrentlyWithoutStateInterference() throws Exception {
-        DefaultExpressionCompiler defaultCompiler = new DefaultExpressionCompiler();
-        DefaultExpressionEvaluator defaultEvaluator = new DefaultExpressionEvaluator();
-        AtomicInteger compileCalls = new AtomicInteger();
-        AtomicInteger evaluateCalls = new AtomicInteger();
-        var compileThreads = ConcurrentHashMap.<String>newKeySet();
-        var evaluateThreads = ConcurrentHashMap.<String>newKeySet();
-        ExpressionCompiler compiler = (source, contract, registry, limits) -> {
-            compileCalls.incrementAndGet();
-            compileThreads.add(Thread.currentThread().getName());
-            return defaultCompiler.compile(source, contract, registry, limits);
-        };
-        ExpressionEvaluator evaluator = (expression, facts, registry, options) -> {
-            evaluateCalls.incrementAndGet();
-            evaluateThreads.add(Thread.currentThread().getName());
-            return defaultEvaluator.evaluate(expression, facts, registry, options);
-        };
-        ExpressionEngine engine = ExpressionEngine.builder()
-                .compiler(compiler).evaluator(evaluator).build();
-        FactContract contract = FactContract.builder("amount-spi-v1")
-                .path("amount", INTEGER).build();
-        CompiledExpression baseline = defaultCompiler.compile("${amount} >= 18", contract,
-                io.github.leylaragg.letool.ruleengine.function.FunctionRegistry.builder().build(),
-                EngineLimits.defaults()).requireCompiled();
-        var executor = Executors.newFixedThreadPool(16);
-        try {
-            var tasks = java.util.stream.IntStream.range(0, 1_000)
-                    .<Callable<Boolean>>mapToObj(index -> () -> {
-                        CompiledExpression current = engine.compile("${amount} >= 18", contract)
-                                .requireCompiled();
-                        return current.equals(baseline) && engine.evaluate(current,
-                                RuleFacts.fromMap(Map.of("amount", index)),
-                                EvaluationOptions.defaults()).requireBoolean() == (index >= 18);
-                    }).toList();
-
-            assertThat(executor.invokeAll(tasks)).allSatisfy(future -> assertThat(future.get()).isTrue());
-        } finally {
-            executor.shutdownNow();
-        }
-        assertThat(compileCalls).hasValue(1_000);
-        assertThat(evaluateCalls).hasValue(1_000);
-        assertThat(compileThreads).hasSizeGreaterThan(1);
-        assertThat(evaluateThreads).hasSizeGreaterThan(1);
     }
 
     @Test

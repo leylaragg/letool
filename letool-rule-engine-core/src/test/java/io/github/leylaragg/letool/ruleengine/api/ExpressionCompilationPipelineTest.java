@@ -1,6 +1,6 @@
-package io.github.leylaragg.letool.ruleengine.compile;
+package io.github.leylaragg.letool.ruleengine.api;
 
-import io.github.leylaragg.letool.ruleengine.api.EngineLimits;
+import io.github.leylaragg.letool.ruleengine.compile.CompilationResult;
 import io.github.leylaragg.letool.ruleengine.diagnostic.DiagnosticPhase;
 import io.github.leylaragg.letool.ruleengine.diagnostic.RuleDiagnosticCode;
 import io.github.leylaragg.letool.ruleengine.fact.FactValue;
@@ -28,9 +28,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class DefaultExpressionCompilerTest {
+class ExpressionCompilationPipelineTest {
 
-    private final ExpressionCompiler compiler = new DefaultExpressionCompiler();
+    private final ExpressionCompilationPipeline compiler = new ExpressionCompilationPipeline();
     private final TypeDescriptor integer = TypeDescriptor.scalar(TypeKind.INTEGER, false);
     private final TypeDescriptor decimal = TypeDescriptor.scalar(TypeKind.DECIMAL, true);
     private final FactContract contract = FactContract.builder("facts-1")

@@ -8,7 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TypeCompatibilityCatalogTest {
 
     @Test
-    @DisplayName("类型目录版本、规则清单和指纹应由稳定规范共同锁定")
+    @DisplayName("类型目录版本、规则清单和摘要应由稳定规范共同锁定")
     void shouldExposeVersionedCanonicalCatalog() {
         assertThat(TypeCompatibility.CATALOG_VERSION).isEqualTo("1");
         assertThat(TypeCompatibility.CATALOG_RULES).containsExactly(
@@ -22,7 +22,7 @@ class TypeCompatibilityCatalogTest {
                 "BETWEEN:SAME_ORDERING_DOMAIN",
                 "DIVISION:DECIMAL128",
                 "REMAINDER:BIG_DECIMAL_REMAINDER");
-        assertThat(TypeCompatibility.TYPE_CATALOG_FINGERPRINT)
-                .isEqualTo("b4de134aea98dcac114ed8e0bec450327e083dbc8fb0fae7918ca63a7af65ac9");
+        assertThat(TypeCompatibility.TYPE_CATALOG_DIGEST)
+                .isEqualTo("4483757a0cd93d90fb75b47eb2b310c2b7c10e62bb2ea3c73ff9c2677a519be5");
     }
 }

@@ -1,6 +1,6 @@
 package io.github.leylaragg.letool.ruleengine.architecture;
 
-import io.github.leylaragg.letool.ruleengine.compile.DefaultExpressionCompiler;
+import io.github.leylaragg.letool.ruleengine.api.ExpressionEngine;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -26,7 +26,7 @@ class CoreDependencyBoundaryTest {
     @Test
     @DisplayName("核心编译字节码不应引用宿主、重型运行时或危险能力")
     void shouldNotReferenceForbiddenRuntimePackages() throws Exception {
-        assertThat(ClassFileBoundaryScanner.scanCodeSource(DefaultExpressionCompiler.class))
+        assertThat(ClassFileBoundaryScanner.scanCodeSource(ExpressionEngine.class))
                 .isEmpty();
     }
 

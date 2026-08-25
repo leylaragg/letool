@@ -347,7 +347,8 @@ class RuleDiagnosticTest {
                 Map.entry(RuleDiagnosticCode.OPERATOR_TYPE_MISMATCH, "RULE_ENGINE_TYPE_001"),
                 Map.entry(RuleDiagnosticCode.MISSING_FACT_VALUE, "RULE_ENGINE_EVALUATE_001"),
                 Map.entry(RuleDiagnosticCode.RUNTIME_TYPE_MISMATCH, "RULE_ENGINE_EVALUATE_002"),
-                Map.entry(RuleDiagnosticCode.FINGERPRINT_MISMATCH, "RULE_ENGINE_EVALUATE_003"),
+                Map.entry(RuleDiagnosticCode.EXECUTION_ENVIRONMENT_MISMATCH,
+                        "RULE_ENGINE_EVALUATE_003"),
                 Map.entry(RuleDiagnosticCode.EVALUATION_ERROR, "RULE_ENGINE_EVALUATE_004"),
                 Map.entry(RuleDiagnosticCode.FUNCTION_EXECUTION_ERROR, "RULE_ENGINE_FUNCTION_003"));
         Map<RuleDiagnosticCode, String> actual = Arrays.stream(RuleDiagnosticCode.values())

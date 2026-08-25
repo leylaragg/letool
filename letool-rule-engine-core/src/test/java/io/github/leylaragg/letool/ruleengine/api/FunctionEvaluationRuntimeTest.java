@@ -1,8 +1,7 @@
-package io.github.leylaragg.letool.ruleengine.evaluate;
+package io.github.leylaragg.letool.ruleengine.api;
 
-import io.github.leylaragg.letool.ruleengine.api.EngineLimits;
-import io.github.leylaragg.letool.ruleengine.compile.CompiledExpression;
-import io.github.leylaragg.letool.ruleengine.compile.DefaultExpressionCompiler;
+import io.github.leylaragg.letool.ruleengine.evaluate.EvaluationOptions;
+import io.github.leylaragg.letool.ruleengine.evaluate.ExpressionEvaluationResult;
 import io.github.leylaragg.letool.ruleengine.diagnostic.RuleDiagnosticCode;
 import io.github.leylaragg.letool.ruleengine.exception.RuleEngineErrorCode;
 import io.github.leylaragg.letool.ruleengine.fact.FactValue;
@@ -23,12 +22,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class FunctionEvaluationTest {
+class FunctionEvaluationRuntimeTest {
 
     private static final TypeDescriptor INTEGER = TypeDescriptor.scalar(TypeKind.INTEGER, false);
     private static final TypeDescriptor STRING = TypeDescriptor.scalar(TypeKind.STRING, false);
     private static final FunctionSignature NO_ARGS = FunctionSignature.empty();
-    private final ExpressionEvaluator evaluator = new DefaultExpressionEvaluator();
+    private final ExpressionEvaluationRuntime evaluator = new ExpressionEvaluationRuntime();
     private final FactContract emptyContract = FactContract.builder("empty").build();
     private final RuleFacts noFacts = RuleFacts.fromMap(Map.of());
 
@@ -157,7 +156,7 @@ class FunctionEvaluationTest {
                     assertThat(context.locale()).isEqualTo(Locale.CHINA);
                     assertThat(context.zoneId()).isEqualTo(ZoneId.of("Asia/Shanghai"));
                     assertThat(context.invocationMetadata()).containsOnlyKeys(
-                            "expressionFingerprint", "functionCode", "invocationIndex");
+                        "expressionDigest", "functionCode", "invocationIndex");
                     assertThat(context.invocationMetadata().get("functionCode")).isEqualTo("CONTEXT");
                     return FactValues.integer(index.incrementAndGet());
                 })).build();
@@ -178,7 +177,7 @@ class FunctionEvaluationTest {
     }
 
     private CompiledExpression compile(String source, FunctionRegistry registry, EngineLimits limits) {
-        return new DefaultExpressionCompiler().compile(source, emptyContract, registry, limits)
+        return new ExpressionCompilationPipeline().compile(source, emptyContract, registry, limits)
                 .requireCompiled();
     }
 

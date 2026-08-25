@@ -1,11 +1,14 @@
-package io.github.leylaragg.letool.ruleengine.evaluate;
+package io.github.leylaragg.letool.ruleengine.api;
 
-import io.github.leylaragg.letool.ruleengine.compile.CompiledExpression;
 import io.github.leylaragg.letool.ruleengine.diagnostic.DiagnosticPhase;
 import io.github.leylaragg.letool.ruleengine.diagnostic.DiagnosticSeverity;
 import io.github.leylaragg.letool.ruleengine.diagnostic.RuleDiagnostic;
 import io.github.leylaragg.letool.ruleengine.diagnostic.RuleDiagnosticCode;
 import io.github.leylaragg.letool.ruleengine.exception.RuleEngineException;
+import io.github.leylaragg.letool.ruleengine.evaluate.DefaultValueSummarizer;
+import io.github.leylaragg.letool.ruleengine.evaluate.EvaluationOptions;
+import io.github.leylaragg.letool.ruleengine.evaluate.ExpressionEvaluationResult;
+import io.github.leylaragg.letool.ruleengine.evaluate.ValueSummarizer;
 import io.github.leylaragg.letool.ruleengine.expression.ast.*;
 import io.github.leylaragg.letool.ruleengine.expression.lexer.TokenType;
 import io.github.leylaragg.letool.ruleengine.fact.*;
@@ -26,9 +29,9 @@ import java.util.Deque;
 import java.util.List;
 
 /**
- * 基于已编译 AST 执行标量语义、短路函数调用和安全轨迹的默认求值器。
+ * 基于已编译 AST 执行标量语义、短路函数调用和安全轨迹的包内求值运行时。
  */
-public final class DefaultExpressionEvaluator implements ExpressionEvaluator {
+final class ExpressionEvaluationRuntime {
 
     /** 小数运算统一使用 IEEE 754 decimal128 精度和舍入规则。 */
     private static final MathContext DECIMAL_CONTEXT = MathContext.DECIMAL128;
@@ -37,7 +40,7 @@ public final class DefaultExpressionEvaluator implements ExpressionEvaluator {
     private final ValueSummarizer summarizer;
 
     /** 创建使用默认安全摘要器的无状态求值器。 */
-    public DefaultExpressionEvaluator() {
+    ExpressionEvaluationRuntime() {
         this(new DefaultValueSummarizer());
     }
 
@@ -46,20 +49,27 @@ public final class DefaultExpressionEvaluator implements ExpressionEvaluator {
      *
      * @param summarizer 值摘要器；其输出仍受框架长度边界约束
      */
-    public DefaultExpressionEvaluator(ValueSummarizer summarizer) {
+    ExpressionEvaluationRuntime(ValueSummarizer summarizer) {
         if (summarizer == null) throw RuleEngineException.invalidArgument();
         this.summarizer = summarizer;
     }
 
-    /** {@inheritDoc} */
-    @Override
-    public ExpressionEvaluationResult evaluate(CompiledExpression expression, RuleFacts facts,
+    /**
+     * 在冻结的事实和函数目录中对编译 AST 求值。
+     *
+     * @param expression 已通过类型分析的编译产物
+     * @param facts 本次调用的不可变事实
+     * @param functionRegistry 当前引擎冻结的函数目录
+     * @param options 本次求值选项
+     * @return 成功值或结构化运行诊断
+     */
+    ExpressionEvaluationResult evaluate(CompiledExpression expression, RuleFacts facts,
             FunctionRegistry functionRegistry, EvaluationOptions options) {
         if (expression == null || facts == null || functionRegistry == null || options == null) {
             throw RuleEngineException.invalidArgument();
         }
         EvaluationSession session = new EvaluationSession(
-                expression.fingerprint(), facts, options, summarizer);
+                expression.artifactDigest(), facts, options, summarizer);
         ExpressionEvaluationResult dependencyFailure = RuntimeFactValidator.validate(expression, facts);
         if (dependencyFailure != null) return dependencyFailure;
         try {

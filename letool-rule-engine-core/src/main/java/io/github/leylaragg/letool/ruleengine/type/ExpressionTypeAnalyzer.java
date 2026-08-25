@@ -2,6 +2,7 @@ package io.github.leylaragg.letool.ruleengine.type;
 
 import io.github.leylaragg.letool.ruleengine.compile.ExpressionDependencies;
 import io.github.leylaragg.letool.ruleengine.compile.ExpressionDependency;
+import io.github.leylaragg.letool.ruleengine.compile.DependencyCoverage;
 import io.github.leylaragg.letool.ruleengine.diagnostic.DiagnosticPhase;
 import io.github.leylaragg.letool.ruleengine.diagnostic.DiagnosticSeverity;
 import io.github.leylaragg.letool.ruleengine.diagnostic.RuleDiagnostic;
@@ -19,6 +20,7 @@ import io.github.leylaragg.letool.ruleengine.expression.lexer.TokenType;
 import io.github.leylaragg.letool.ruleengine.fact.FactPath;
 import io.github.leylaragg.letool.ruleengine.fact.FactPathParser;
 import io.github.leylaragg.letool.ruleengine.function.FunctionDescriptor;
+import io.github.leylaragg.letool.ruleengine.function.FunctionFactAccess;
 import io.github.leylaragg.letool.ruleengine.function.FunctionParameter;
 import io.github.leylaragg.letool.ruleengine.function.FunctionRegistry;
 import io.github.leylaragg.letool.ruleengine.function.FunctionSignature;
@@ -85,15 +87,23 @@ public final class ExpressionTypeAnalyzer {
         /** 按首次出现顺序冻结的函数编码。 */
         private final List<String> functionDependencies;
 
+        /** 当前静态事实依赖能否覆盖全部运行时事实读取。 */
+        private final DependencyCoverage dependencyCoverage;
+
         /** 不可变语义诊断。 */
         private final List<RuleDiagnostic> diagnostics;
 
         /** 接收已经冻结的单次分析结果。 */
-        private Analysis(TypeDescriptor resultType, ExpressionDependencies dependencies,
-                List<String> functionDependencies, List<RuleDiagnostic> diagnostics) {
+        private Analysis(
+                TypeDescriptor resultType,
+                ExpressionDependencies dependencies,
+                List<String> functionDependencies,
+                DependencyCoverage dependencyCoverage,
+                List<RuleDiagnostic> diagnostics) {
             this.resultType = resultType;
             this.dependencies = dependencies;
             this.functionDependencies = List.copyOf(functionDependencies);
+            this.dependencyCoverage = dependencyCoverage;
             this.diagnostics = List.copyOf(diagnostics);
         }
 
@@ -105,6 +115,9 @@ public final class ExpressionTypeAnalyzer {
 
         /** @return 按首次出现顺序排列的函数编码 */
         public List<String> functionDependencies() { return functionDependencies; }
+
+        /** @return 静态依赖完整或包含动态事实访问 */
+        public DependencyCoverage dependencyCoverage() { return dependencyCoverage; }
 
         /** @return 不可变语义诊断 */
         public List<RuleDiagnostic> diagnostics() { return diagnostics; }
@@ -132,6 +145,9 @@ public final class ExpressionTypeAnalyzer {
 
         /** 按首次出现顺序去重的函数编码。 */
         private final Map<String, Integer> functions = new LinkedHashMap<>();
+
+        /** 遇到动态事实函数后转为保守状态，后续分析不能恢复为完整。 */
+        private DependencyCoverage dependencyCoverage = DependencyCoverage.COMPLETE;
 
         /** 在预算内累积的语义诊断。 */
         private final List<RuleDiagnostic> diagnostics = new ArrayList<>();
@@ -171,7 +187,7 @@ public final class ExpressionTypeAnalyzer {
                             .thenComparing(value -> value.code().code()))
                     .toList();
             return new Analysis(result, ExpressionDependencies.of(dependencies),
-                    orderedFunctions, orderedDiagnostics);
+                    orderedFunctions, dependencyCoverage, orderedDiagnostics);
         }
 
         /** 按节点种类分派类型规则。 */
@@ -248,6 +264,9 @@ public final class ExpressionTypeAnalyzer {
                 return TypeCompatibility.unknown();
             }
             functions.merge(descriptor.code(), node.startPosition(), Math::min);
+            if (descriptor.factAccess() == FunctionFactAccess.DYNAMIC_FACTS) {
+                dependencyCoverage = DependencyCoverage.DYNAMIC;
+            }
             FunctionSignature signature = descriptor.signature();
             if (!signature.acceptsArgumentCount(node.arguments().size())) {
                 diagnostic(RuleDiagnosticCode.ARGUMENT_COUNT_MISMATCH, node,

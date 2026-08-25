@@ -3,10 +3,8 @@ package io.github.leylaragg.letool.ruleengine.type;
 import io.github.leylaragg.letool.ruleengine.exception.RuleEngineException;
 import io.github.leylaragg.letool.ruleengine.fact.FactPath;
 import io.github.leylaragg.letool.ruleengine.fact.FactPathParser;
+import io.github.leylaragg.letool.ruleengine.internal.digest.DigestBuilder;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -25,14 +23,14 @@ public final class FactContract {
     /** 按注册顺序冻结的规范路径类型。 */
     private final Map<String, TypeDescriptor> descriptors;
 
-    /** 与注册顺序无关的契约语义指纹。 */
-    private final String fingerprint;
+    /** 与注册顺序无关的契约语义摘要。 */
+    private final String contractDigest;
 
     /** 从构建器当前状态创建隔离快照。 */
     private FactContract(String version, Map<String, TypeDescriptor> descriptors) {
         this.version = version;
         this.descriptors = Collections.unmodifiableMap(new LinkedHashMap<>(descriptors));
-        this.fingerprint = fingerprint(version, descriptors);
+        this.contractDigest = calculateDigest(version, descriptors);
     }
 
     /**
@@ -74,54 +72,23 @@ public final class FactContract {
     }
 
     /**
-     * 覆盖版本和排序后路径类型的契约语义指纹。
+     * 覆盖版本和排序后路径类型的契约语义摘要。
      *
-     * @return 六十四位小写十六进制 SHA-256 指纹
+     * @return 六十四位小写十六进制 SHA-256 摘要
      */
-    public String fingerprint() {
-        return fingerprint;
+    public String contractDigest() {
+        return contractDigest;
     }
 
-    /** 排序路径后计算指纹，使构建器注册顺序不影响语义。 */
-    private static String fingerprint(String version, Map<String, TypeDescriptor> descriptors) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            updateField(digest, "LETOOL_FACT_CONTRACT_V1");
-            updateField(digest, version);
-            updateInt(digest, descriptors.size());
-            new TreeMap<>(descriptors).forEach((path, descriptor) -> {
-                updateField(digest, path);
-                updateField(digest, descriptor.toCanonicalString());
-            });
-            return toHex(digest.digest());
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("JDK 缺少 SHA-256 实现", exception);
-        }
-    }
-
-    /** 以 UTF-8 长度前缀写入字段，避免拼接边界歧义。 */
-    private static void updateField(MessageDigest digest, String value) {
-        byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
-        updateInt(digest, bytes.length);
-        digest.update(bytes);
-    }
-
-    /** 以固定大端四字节编码写入整数。 */
-    private static void updateInt(MessageDigest digest, int value) {
-        digest.update((byte) (value >>> 24));
-        digest.update((byte) (value >>> 16));
-        digest.update((byte) (value >>> 8));
-        digest.update((byte) value);
-    }
-
-    /** 将摘要稳定编码为小写十六进制文本。 */
-    private static String toHex(byte[] bytes) {
-        StringBuilder result = new StringBuilder(bytes.length * 2);
-        for (byte value : bytes) {
-            result.append(Character.forDigit(value >>> 4 & 0x0f, 16));
-            result.append(Character.forDigit(value & 0x0f, 16));
-        }
-        return result.toString();
+    /** 排序路径后计算摘要，使构建器注册顺序不影响契约身份。 */
+    private static String calculateDigest(
+            String version, Map<String, TypeDescriptor> descriptors) {
+        DigestBuilder digest = new DigestBuilder("LETOOL_FACT_CONTRACT_V1")
+                .add(version)
+                .add(descriptors.size());
+        new TreeMap<>(descriptors).forEach((path, descriptor) ->
+                digest.add(path).add(descriptor.toCanonicalString()));
+        return digest.finish();
     }
 
     /** {@inheritDoc} */

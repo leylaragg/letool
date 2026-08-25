@@ -11,6 +11,7 @@
     </parent>
 
     <artifactId>letool-starter-rule-engine</artifactId>
+    <version>3.0.0</version>
     <name>letool-starter-rule-engine</name>
     <description>Letool 通用规则引擎 Spring Boot 自动配置</description>
     <packaging>jar</packaging>
@@ -19,6 +20,7 @@
         <dependency>
             <groupId>io.github.leylaragg</groupId>
             <artifactId>letool-rule-engine-core</artifactId>
+            <version>3.0.0</version>
         </dependency>
         <dependency>
             <groupId>io.github.leylaragg</groupId>

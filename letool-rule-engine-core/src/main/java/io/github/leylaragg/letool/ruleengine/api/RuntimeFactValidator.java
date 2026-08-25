@@ -1,6 +1,5 @@
-package io.github.leylaragg.letool.ruleengine.evaluate;
+package io.github.leylaragg.letool.ruleengine.api;
 
-import io.github.leylaragg.letool.ruleengine.compile.CompiledExpression;
 import io.github.leylaragg.letool.ruleengine.compile.ExpressionDependency;
 import io.github.leylaragg.letool.ruleengine.diagnostic.DiagnosticPhase;
 import io.github.leylaragg.letool.ruleengine.diagnostic.DiagnosticSeverity;
@@ -10,13 +9,14 @@ import io.github.leylaragg.letool.ruleengine.exception.RuleEngineException;
 import io.github.leylaragg.letool.ruleengine.fact.FactResolver;
 import io.github.leylaragg.letool.ruleengine.fact.FactValue;
 import io.github.leylaragg.letool.ruleengine.fact.RuleFacts;
+import io.github.leylaragg.letool.ruleengine.evaluate.ExpressionEvaluationResult;
 
 import java.util.List;
 
 /**
  * 按编译产物的类型化依赖验证运行事实，不遍历无关事实。
  */
-public final class RuntimeFactValidator {
+final class RuntimeFactValidator {
 
     private RuntimeFactValidator() {
     }

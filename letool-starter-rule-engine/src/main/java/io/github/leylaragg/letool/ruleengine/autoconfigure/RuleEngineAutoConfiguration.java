@@ -5,12 +5,8 @@ import io.github.leylaragg.letool.exception.message.MessageBundleContributor;
 import io.github.leylaragg.letool.exception.message.MessageResolver;
 import io.github.leylaragg.letool.ruleengine.api.ExpressionEngine;
 import io.github.leylaragg.letool.ruleengine.api.ExpressionEngineBuilder;
-import io.github.leylaragg.letool.ruleengine.compile.DefaultExpressionCompiler;
-import io.github.leylaragg.letool.ruleengine.compile.ExpressionCompiler;
 import io.github.leylaragg.letool.ruleengine.diagnostic.ChineseDiagnosticMessageResolver;
 import io.github.leylaragg.letool.ruleengine.diagnostic.DiagnosticMessageResolver;
-import io.github.leylaragg.letool.ruleengine.evaluate.DefaultExpressionEvaluator;
-import io.github.leylaragg.letool.ruleengine.evaluate.ExpressionEvaluator;
 import io.github.leylaragg.letool.ruleengine.function.RuleFunction;
 import io.github.leylaragg.letool.ruleengine.function.RuleFunctionFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -21,7 +17,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 
-/** 提供规则引擎默认协作者，并收集应用声明的规则函数。 */
+/** 提供完整规则引擎快照，并收集应用声明的规则函数。 */
 @AutoConfiguration(after = ExceptionAutoConfiguration.class)
 @ConditionalOnClass(ExpressionEngine.class)
 @ConditionalOnProperty(
@@ -31,20 +27,6 @@ import org.springframework.context.annotation.Bean;
         matchIfMissing = true)
 @EnableConfigurationProperties(RuleEngineProperties.class)
 public class RuleEngineAutoConfiguration {
-
-    /** @return 默认表达式编译器 */
-    @Bean
-    @ConditionalOnMissingBean(ExpressionCompiler.class)
-    public ExpressionCompiler expressionCompiler() {
-        return new DefaultExpressionCompiler();
-    }
-
-    /** @return 默认表达式求值器 */
-    @Bean
-    @ConditionalOnMissingBean(ExpressionEvaluator.class)
-    public ExpressionEvaluator expressionEvaluator() {
-        return new DefaultExpressionEvaluator();
-    }
 
     /** @return 规则引擎消息资源贡献 */
     @Bean(name = "ruleEngineMessageBundle")
@@ -69,11 +51,9 @@ public class RuleEngineAutoConfiguration {
     }
 
     /**
-     * 使用绑定限制、宿主 SPI 和按 Spring 顺序收集的函数构建引擎快照。
+     * 使用绑定限制和按 Spring 顺序收集的函数构建完整引擎快照。
      *
      * @param properties 规则引擎配置
-     * @param compiler 唯一表达式编译器
-     * @param evaluator 唯一表达式求值器
      * @param functions 应用声明的共享函数
      * @param factories 应用声明的调用级函数工厂
      * @return 不可变表达式引擎
@@ -82,14 +62,10 @@ public class RuleEngineAutoConfiguration {
     @ConditionalOnMissingBean(ExpressionEngine.class)
     public ExpressionEngine expressionEngine(
             RuleEngineProperties properties,
-            ExpressionCompiler compiler,
-            ExpressionEvaluator evaluator,
             ObjectProvider<RuleFunction> functions,
             ObjectProvider<RuleFunctionFactory> factories) {
         ExpressionEngineBuilder builder = ExpressionEngine.builder()
-                .limits(properties.getLimits().toEngineLimits())
-                .compiler(compiler)
-                .evaluator(evaluator);
+                .limits(properties.getLimits().toEngineLimits());
         functions.orderedStream().forEach(builder::registerFunction);
         factories.orderedStream().forEach(builder::registerFunction);
         return builder.build();

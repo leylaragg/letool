@@ -89,7 +89,7 @@ class RuleEngineMessageResolverTest {
             Map.entry("RULE_ENGINE_TYPE_001", "运算符两侧类型不匹配"),
             Map.entry("RULE_ENGINE_EVALUATE_001", "求值所需事实缺失"),
             Map.entry("RULE_ENGINE_EVALUATE_002", "运行期事实类型与编译契约不一致"),
-            Map.entry("RULE_ENGINE_EVALUATE_003", "编译产物指纹与当前环境不一致"),
+            Map.entry("RULE_ENGINE_EVALUATE_003", "编译产物与当前执行环境不一致"),
             Map.entry("RULE_ENGINE_EVALUATE_004", "规则表达式求值失败"));
     private static final Map<String, String> ENGLISH_MESSAGES = Map.ofEntries(
             Map.entry("RULE_ENGINE_LIMIT_001", "Rule source text exceeds the allowed limit"),
@@ -119,7 +119,7 @@ class RuleEngineMessageResolverTest {
             Map.entry("RULE_ENGINE_TYPE_001", "Operator operand types do not match"),
             Map.entry("RULE_ENGINE_EVALUATE_001", "A required fact value is missing"),
             Map.entry("RULE_ENGINE_EVALUATE_002", "Runtime fact type does not match the compiled contract"),
-            Map.entry("RULE_ENGINE_EVALUATE_003", "Compiled expression fingerprint does not match the current environment"),
+            Map.entry("RULE_ENGINE_EVALUATE_003", "Compiled expression does not match the current execution environment"),
             Map.entry("RULE_ENGINE_EVALUATE_004", "Rule expression evaluation failed"));
 
     /** 每个资源文件必须精确覆盖错误码与诊断码的联合空间。 */

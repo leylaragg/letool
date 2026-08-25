@@ -1,24 +1,21 @@
 package io.github.leylaragg.letool.ruleengine.type;
 
 import io.github.leylaragg.letool.ruleengine.exception.RuleEngineException;
+import io.github.leylaragg.letool.ruleengine.internal.digest.DigestBuilder;
 
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.List;
 
 /**
  * 阶段一类型兼容和运算结果规则。
  *
- * <p>规则目录版本固定为一；任何兼容矩阵变更都必须显式升级目录规范并更新指纹。</p>
+ * <p>规则目录版本固定为一；任何兼容矩阵变更都必须显式升级目录规范并更新摘要。</p>
  */
 public final class TypeCompatibility {
 
     /** 阶段一类型目录规范版本。 */
     public static final String CATALOG_VERSION = "1";
 
-    /** 参与类型目录指纹的稳定规则清单。 */
+    /** 参与类型目录摘要的稳定规则清单。 */
     public static final List<String> CATALOG_RULES = List.of(
             "NUMERIC_PROMOTION:INTEGER_DECIMAL_TO_DECIMAL",
             "EQUALITY:EXACT_KIND_OR_NUMERIC",
@@ -31,8 +28,8 @@ public final class TypeCompatibility {
             "DIVISION:DECIMAL128",
             "REMAINDER:BIG_DECIMAL_REMAINDER");
 
-    /** 由目录版本和规则清单计算的 SHA-256 指纹。 */
-    public static final String TYPE_CATALOG_FINGERPRINT = fingerprint();
+    /** 由目录版本和规则清单计算的 SHA-256 摘要。 */
+    public static final String TYPE_CATALOG_DIGEST = calculateCatalogDigest();
 
     /** 工具类不允许实例化。 */
     private TypeCompatibility() {
@@ -134,29 +131,14 @@ public final class TypeCompatibility {
         if (left == null || right == null) throw RuleEngineException.invalidArgument();
     }
 
-    /** 按固定目录版本和规则顺序计算兼容矩阵指纹。 */
-    private static String fingerprint() {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            add(digest, "LETOOL_TYPE_CATALOG");
-            add(digest, CATALOG_VERSION);
-            addInt(digest, CATALOG_RULES.size());
-            for (String rule : CATALOG_RULES) add(digest, rule);
-            return java.util.HexFormat.of().formatHex(digest.digest());
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("JDK 缺少 SHA-256 实现", exception);
+    /** 按固定目录版本和规则顺序计算兼容矩阵摘要。 */
+    private static String calculateCatalogDigest() {
+        DigestBuilder digest = new DigestBuilder("LETOOL_TYPE_CATALOG_V1")
+                .add(CATALOG_VERSION)
+                .add(CATALOG_RULES.size());
+        for (String rule : CATALOG_RULES) {
+            digest.add(rule);
         }
-    }
-
-    /** 以 UTF-8 长度前缀写入字符串，避免拼接边界歧义。 */
-    private static void add(MessageDigest digest, String value) {
-        byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
-        addInt(digest, bytes.length);
-        digest.update(bytes);
-    }
-
-    /** 以固定四字节编码写入整数。 */
-    private static void addInt(MessageDigest digest, int value) {
-        digest.update(ByteBuffer.allocate(Integer.BYTES).putInt(value).array());
+        return digest.finish();
     }
 }

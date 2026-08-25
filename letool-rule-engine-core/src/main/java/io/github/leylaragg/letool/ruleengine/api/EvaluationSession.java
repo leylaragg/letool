@@ -1,6 +1,8 @@
-package io.github.leylaragg.letool.ruleengine.evaluate;
+package io.github.leylaragg.letool.ruleengine.api;
 
 import io.github.leylaragg.letool.ruleengine.exception.RuleEngineException;
+import io.github.leylaragg.letool.ruleengine.evaluate.EvaluationOptions;
+import io.github.leylaragg.letool.ruleengine.evaluate.ValueSummarizer;
 import io.github.leylaragg.letool.ruleengine.expression.ast.AstNode;
 import io.github.leylaragg.letool.ruleengine.fact.FactValue;
 import io.github.leylaragg.letool.ruleengine.fact.RuleFacts;
@@ -16,8 +18,8 @@ import java.util.Map;
  */
 final class EvaluationSession {
 
-    /** 只作为函数安全元数据传递的编译产物指纹。 */
-    private final String expressionFingerprint;
+    /** 只作为函数安全元数据传递的编译产物摘要。 */
+    private final String expressionDigest;
 
     /** 本次调用的不可变事实快照。 */
     private final RuleFacts facts;
@@ -38,9 +40,9 @@ final class EvaluationSession {
     private boolean traceTruncated;
 
     /** 创建仅属于一次求值的可变预算和轨迹会话。 */
-    EvaluationSession(String expressionFingerprint, RuleFacts facts,
+    EvaluationSession(String expressionDigest, RuleFacts facts,
             EvaluationOptions options, ValueSummarizer summarizer) {
-        this.expressionFingerprint = expressionFingerprint;
+        this.expressionDigest = expressionDigest;
         this.facts = facts;
         this.options = options;
         this.summarizer = summarizer;
@@ -60,7 +62,7 @@ final class EvaluationSession {
     /** 为当前函数调用创建上下文，并附加固定安全元数据。 */
     FunctionContext functionContext(String code, int invocationIndex) {
         return FunctionContext.of(facts, options.locale(), options.zoneId(), Map.of(
-                "expressionFingerprint", expressionFingerprint,
+                "expressionDigest", expressionDigest,
                 "functionCode", code,
                 "invocationIndex", Integer.toString(invocationIndex)));
     }

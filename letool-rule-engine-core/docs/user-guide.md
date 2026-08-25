@@ -30,8 +30,8 @@
 下面的 Java 17 示例只使用公开 API，可放在普通 Java 应用中；Spring Boot 应用只需要把手动构建的引擎换成注入的 Bean。
 
 ```java
+import io.github.leylaragg.letool.ruleengine.api.CompiledExpression;
 import io.github.leylaragg.letool.ruleengine.api.ExpressionEngine;
-import io.github.leylaragg.letool.ruleengine.compile.CompiledExpression;
 import io.github.leylaragg.letool.ruleengine.compile.CompilationResult;
 import io.github.leylaragg.letool.ruleengine.diagnostic.RuleDiagnostic;
 import io.github.leylaragg.letool.ruleengine.evaluate.EvaluationOptions;
@@ -97,7 +97,7 @@ FactContract contract = FactContract.builder("order-v2")
 - 路径必须明确注册，父路径与子路径不能同时注册。
 - `nullable=true` 表示路径存在时允许值为 `null`，不等于路径可以缺失。
 - 契约发生不兼容变化时应升级版本，并重新编译受影响规则。
-- `fingerprint()` 覆盖版本、路径和类型，可用于缓存键和发布审计。
+- `contractDigest()` 覆盖版本、路径和类型，可用于缓存键和发布审计。
 
 Java 类型映射、数组和路径限制见[事实与类型](facts-and-types.md)。
 
@@ -120,8 +120,8 @@ flowchart LR
 |------|------|
 | 规则编码和业务版本 | 唯一定位可发布规则 |
 | 表达式源码 | 审核、重编译和回滚 |
-| 事实契约版本/指纹 | 判断事实模型是否兼容 |
-| `CompiledExpression.fingerprint()` | 审计本次编译语义 |
+| 事实契约版本/摘要 | 判断事实模型是否兼容 |
+| `CompiledExpression.artifactDigest()` | 审计本次编译语义 |
 | 发布状态、发布人和时间 | 业务治理 |
 
 `CompiledExpression` 不是数据库实体契约。跨部署保存 Java 对象会把序列化格式与实现细节绑定在一起，默认做法应是保存源码和版本，在发布或启动加载时用当前引擎重新编译。
@@ -131,10 +131,10 @@ flowchart LR
 框架不内置缓存。宿主可以缓存不可变编译产物，缓存键至少包含：
 
 ```text
-规则编码 + 规则版本 + 事实契约指纹 + 函数目录指纹/应用发布版本
+规则编码 + 规则版本 + 事实契约摘要 + 引擎环境摘要
 ```
 
-缓存失效由业务规则发布系统负责。出现 `FINGERPRINT_MISMATCH` 时，不应跳过校验继续执行，而应使用当前引擎和契约重新编译。
+缓存失效由业务规则发布系统负责。出现 `EXECUTION_ENVIRONMENT_MISMATCH` 时，不应跳过校验继续执行，而应使用当前引擎和契约重新编译。
 
 ## 7. 运行期事实与资源限制
 
@@ -163,7 +163,7 @@ ExpressionEvaluationResult result = engine.evaluate(expression, facts, options);
 result.trace().nodes().forEach(node -> System.out.println(node.summary()));
 ```
 
-轨迹只保存有界安全摘要，仍不建议无条件写入生产日志。日志和指标优先记录规则编码、业务版本、编译指纹、诊断码、耗时和轨迹是否截断，不要记录完整事实或异常原始消息。
+轨迹只保存有界安全摘要，仍不建议无条件写入生产日志。日志和指标优先记录规则编码、业务版本、产物摘要、诊断码、耗时和轨迹是否截断，不要记录完整事实或异常原始消息。
 
 ## 9. 并发与性能
 
@@ -173,7 +173,7 @@ result.trace().nodes().forEach(node -> System.out.println(node.summary()));
 - 常规生产流量关闭轨迹，只在试运行、抽样或故障分析时开启。
 - 在规则发布阶段编译，可以把词法、语法和类型错误挡在业务请求之外。
 
-自定义编译器、求值器和函数后，并发安全也取决于这些实现是否兑现契约。
+Letool 固定编译和求值流水线；宿主函数的并发安全仍取决于函数是否兑现声明的线程模型。
 
 ## 10. 监控建议
 
@@ -184,7 +184,7 @@ result.trace().nodes().forEach(node -> System.out.println(node.summary()));
 | 规则编译成功率与耗时 | 观察发布质量和复杂规则 |
 | 诊断码分布 | 区分语法、类型、事实和资源问题 |
 | 求值次数、耗时和失败率 | 观察运行稳定性 |
-| `FINGERPRINT_MISMATCH` 次数 | 发现缓存或部署版本漂移 |
+| `EXECUTION_ENVIRONMENT_MISMATCH` 次数 | 发现缓存或部署版本漂移 |
 | 轨迹截断次数 | 判断调试预算是否合适 |
 | 业务函数耗时和失败率 | 由函数实现或外层拦截器采集 |
 
@@ -192,12 +192,12 @@ result.trace().nodes().forEach(node -> System.out.println(node.summary()));
 
 - [ ] 规则在发布前完成编译，失败诊断可返回编辑端。
 - [ ] 事实契约有明确版本，变更时能定位受影响规则。
-- [ ] 规则源码、版本、契约指纹和编译指纹可审计。
+- [ ] 规则源码、版本、契约摘要和产物摘要可审计。
 - [ ] 请求输入通过 `RuleFacts` 限制规范化，不传入危险对象。
 - [ ] 函数线程模型与实现一致，函数编码和语义版本稳定。
 - [ ] 生产默认关闭轨迹，日志不记录完整事实和敏感 cause。
 - [ ] 缓存键包含规则、契约和函数环境维度，并支持发布失效。
-- [ ] 已演练规则回滚、指纹不匹配和函数故障。
+- [ ] 已演练规则回滚、执行环境不匹配和函数故障。
 
 ## 12. 延伸阅读
 

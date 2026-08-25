@@ -51,7 +51,7 @@ FactContract contract = FactContract.builder("customer-v2")
 
 `scalar(kind, nullable)` 声明标量，`array(elementType, nullable)` 分别声明数组自身与元素可空性，`object(nullable)` 声明字符串键对象。`UNKNOWN` 和 `NULL` 主要用于类型分析内部占位；业务契约应声明真实预期类型。
 
-同一契约不能重复注册路径，也不能同时注册互为父子的路径，例如 `customer` 与 `customer.id`。这保证每个表达式依赖只有一个明确类型。契约版本必须由宿主显式维护；`fingerprint()` 对“版本 + 排序后的路径和规范类型”计算 SHA-256，因此注册顺序不影响指纹，但版本、路径、类型或可空性变化都会改变指纹。
+同一契约不能重复注册路径，也不能同时注册互为父子的路径，例如 `customer` 与 `customer.id`。这保证每个表达式依赖只有一个明确类型。契约版本必须由宿主显式维护；`contractDigest()` 对“版本 + 排序后的路径和规范类型”计算 SHA-256，因此注册顺序不影响摘要，但版本、路径、类型或可空性变化都会改变摘要。
 
 编译产物只记录实际引用路径的类型化依赖；求值前也只校验这些依赖。运行时允许 `INTEGER` 赋给声明为 `DECIMAL` 的路径，但不允许任意字符串、时间或布尔隐式转换；实际 `NULL` 只能赋给 `nullable=true` 的类型。
 
@@ -70,9 +70,9 @@ FactContract contract = FactContract.builder("customer-v2")
 ## 完整可编译示例
 
 ```java
+import io.github.leylaragg.letool.ruleengine.api.CompiledExpression;
 import io.github.leylaragg.letool.ruleengine.api.EngineLimits;
 import io.github.leylaragg.letool.ruleengine.api.ExpressionEngine;
-import io.github.leylaragg.letool.ruleengine.compile.CompiledExpression;
 import io.github.leylaragg.letool.ruleengine.evaluate.EvaluationOptions;
 import io.github.leylaragg.letool.ruleengine.fact.RuleFacts;
 import io.github.leylaragg.letool.ruleengine.type.FactContract;

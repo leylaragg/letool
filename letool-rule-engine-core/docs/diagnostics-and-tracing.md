@@ -31,8 +31,8 @@
 core 内置 `ChineseDiagnosticMessageResolver`，使用诊断码自带的中文兜底文案。Starter 会在存在通用 `MessageResolver` 时适配国际化资源。统一格式包含机器码前缀，动态参数按安全边界追加，不交给通用对象 `toString()`。
 
 ```java
+import io.github.leylaragg.letool.ruleengine.api.CompiledExpression;
 import io.github.leylaragg.letool.ruleengine.api.ExpressionEngine;
-import io.github.leylaragg.letool.ruleengine.compile.CompiledExpression;
 import io.github.leylaragg.letool.ruleengine.compile.CompilationResult;
 import io.github.leylaragg.letool.ruleengine.diagnostic.ChineseDiagnosticMessageResolver;
 import io.github.leylaragg.letool.ruleengine.diagnostic.RuleDiagnostic;
@@ -53,20 +53,20 @@ if (!result.isSuccessful()) {
 }
 ```
 
-异常原因链属于技术日志边界。`failureCause()` 可供受控日志或调试使用，但不要把 `getMessage()` 原样返回给规则作者或 API 客户端；框架有意不把宿主函数、自定义求值器或消息解析器的原始异常文本写入诊断展示。
+异常原因链属于技术日志边界。`failureCause()` 可供受控日志或调试使用，但不要把 `getMessage()` 原样返回给规则作者或 API 客户端；框架有意不把宿主函数、摘要器或消息解析器的原始异常文本写入诊断展示。
 
 ## 开启追踪
 
 默认 `EvaluationOptions.defaults()` 使用 `Locale.ROOT`、UTC、关闭追踪和默认限制。显式开启：
 
 ```java
+import io.github.leylaragg.letool.ruleengine.api.CompiledExpression;
 import io.github.leylaragg.letool.ruleengine.api.EngineLimits;
+import io.github.leylaragg.letool.ruleengine.api.EvaluationTrace;
 import io.github.leylaragg.letool.ruleengine.api.ExpressionEngine;
-import io.github.leylaragg.letool.ruleengine.compile.CompiledExpression;
+import io.github.leylaragg.letool.ruleengine.api.TraceNode;
 import io.github.leylaragg.letool.ruleengine.evaluate.EvaluationOptions;
-import io.github.leylaragg.letool.ruleengine.evaluate.EvaluationTrace;
 import io.github.leylaragg.letool.ruleengine.evaluate.ExpressionEvaluationResult;
-import io.github.leylaragg.letool.ruleengine.evaluate.TraceNode;
 import io.github.leylaragg.letool.ruleengine.fact.RuleFacts;
 import io.github.leylaragg.letool.ruleengine.type.FactContract;
 import io.github.leylaragg.letool.ruleengine.type.TypeDescriptor;
@@ -112,6 +112,6 @@ if (trace.isTruncated()) {
 
 默认 `DefaultValueSummarizer` 不深遍历容器：对象和数组只显示大小；长整数、小数只显示结构信息；字符串只保留受限前缀。`maxTraceNodes` 与 `maxSummaryLength` 分别限制节点数和单摘要长度。
 
-高敏感业务可以实现 `ValueSummarizer`，再构造 `new DefaultExpressionEvaluator(customSummarizer)` 并注入引擎。Starter 不会单独自动收集 `ValueSummarizer` Bean；Spring 应用应提供自定义 `ExpressionEvaluator` Bean。摘要器应返回有界、适合展示的文本；`null`、异常和过长输出仍会在求值会话边界回退、清理或截断。
+高敏感业务可以实现 `ValueSummarizer`，并通过 `ExpressionEngine.builder().valueSummarizer(customSummarizer)` 构建完整引擎。Starter 当前不单独自动收集摘要器 Bean；Spring 应用可声明该完整引擎 Bean，使默认引擎整体退让。摘要器应返回有界、适合展示的文本；`null`、异常和过长输出仍会在求值会话边界回退、清理或截断。
 
 追踪用于解释求值过程，不是审计日志、性能剖析器或事实导出接口。生产环境应按需开启，并根据数据分类决定是否允许字符串前缀进入日志。

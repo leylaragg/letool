@@ -1,8 +1,7 @@
-package io.github.leylaragg.letool.ruleengine.evaluate;
+package io.github.leylaragg.letool.ruleengine.api;
 
-import io.github.leylaragg.letool.ruleengine.api.EngineLimits;
-import io.github.leylaragg.letool.ruleengine.compile.CompiledExpression;
-import io.github.leylaragg.letool.ruleengine.compile.DefaultExpressionCompiler;
+import io.github.leylaragg.letool.ruleengine.evaluate.EvaluationOptions;
+import io.github.leylaragg.letool.ruleengine.evaluate.ExpressionEvaluationResult;
 import io.github.leylaragg.letool.ruleengine.fact.FactValue;
 import io.github.leylaragg.letool.ruleengine.fact.FactValues;
 import io.github.leylaragg.letool.ruleengine.fact.RuleFacts;
@@ -22,7 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class ConcurrentEvaluationTest {
+class ConcurrentEvaluationRuntimeTest {
 
     @Test
     @DisplayName("同一编译产物、注册表和求值器并发一千次不应串扰会话")
@@ -41,9 +40,9 @@ class ConcurrentEvaluationTest {
             }
         }).build();
         FactContract contract = FactContract.builder("empty").build();
-        CompiledExpression expression = new DefaultExpressionCompiler().compile(
+        CompiledExpression expression = new ExpressionCompilationPipeline().compile(
                 "$SCOPED() > 0", contract, registry, EngineLimits.defaults()).requireCompiled();
-        ExpressionEvaluator evaluator = new DefaultExpressionEvaluator();
+        ExpressionEvaluationRuntime evaluator = new ExpressionEvaluationRuntime();
         RuleFacts facts = RuleFacts.fromMap(Map.of());
         ExecutorService executor = Executors.newFixedThreadPool(12);
         try {

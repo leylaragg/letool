@@ -1,21 +1,20 @@
-package io.github.leylaragg.letool.ruleengine.type;
+package io.github.leylaragg.letool.ruleengine.api;
 
-import io.github.leylaragg.letool.ruleengine.api.EngineLimits;
-import io.github.leylaragg.letool.ruleengine.compile.CompiledExpression;
 import io.github.leylaragg.letool.ruleengine.compile.CompilationResult;
-import io.github.leylaragg.letool.ruleengine.compile.DefaultExpressionCompiler;
-import io.github.leylaragg.letool.ruleengine.compile.ExpressionCompiler;
 import io.github.leylaragg.letool.ruleengine.diagnostic.RuleDiagnosticCode;
 import io.github.leylaragg.letool.ruleengine.function.FunctionRegistry;
+import io.github.leylaragg.letool.ruleengine.type.FactContract;
+import io.github.leylaragg.letool.ruleengine.type.TypeDescriptor;
+import io.github.leylaragg.letool.ruleengine.type.TypeKind;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class ExpressionTypeAnalyzerTest {
+class ExpressionTypeAnalysisPipelineTest {
 
-    private final ExpressionCompiler compiler = new DefaultExpressionCompiler();
+    private final ExpressionCompilationPipeline compiler = new ExpressionCompilationPipeline();
     private final FactContract contract = FactContract.builder("types-1")
             .path("integer", TypeDescriptor.scalar(TypeKind.INTEGER, false))
             .path("decimal", TypeDescriptor.scalar(TypeKind.DECIMAL, true))

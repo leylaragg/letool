@@ -12,6 +12,7 @@ String semanticVersion();
 FunctionSignature signature();
 TypeDescriptor returnType();
 FunctionCharacteristics characteristics();
+FunctionFactAccess factAccess();
 FactValue execute(FunctionArguments arguments, FunctionContext context);
 ```
 
@@ -28,7 +29,7 @@ RuleFunction create();
 
 函数编码以 ASCII 字母开头，后续可含 ASCII 字母、数字、下划线，最长 128 个字符；注册时统一为大写。相同规范编码不能重复注册。
 
-`semanticVersion()` 必须匹配 `[A-Za-z0-9][A-Za-z0-9._-]{0,127}`。只要函数行为、参数解释或返回语义发生兼容性相关变化，就应显式更新版本。编码、语义版本、签名、返回类型和特征共同进入函数目录指纹。
+`semanticVersion()` 必须匹配 `[A-Za-z0-9][A-Za-z0-9._-]{0,127}`。只要函数行为、参数解释或返回语义发生兼容性相关变化，就应显式更新版本。编码、语义版本、签名、返回类型、特征和事实访问声明共同进入函数目录摘要。
 
 参数通过 `FunctionParameter.required`、`optional`、`varargs` 声明：必填参数必须在可选参数之前；可变参数只能位于最后且本身可选；名称在单个签名内唯一。单个签名和单次调用最多 256 个参数，可变参数也不能突破该上限。
 
@@ -44,6 +45,8 @@ RuleFunction create();
 
 `FunctionContext` 只暴露 `facts()`、`locale()`、`zoneId()` 和有界字符串 `invocationMetadata()`。它不会提供 Spring 容器、数据库连接、文件、网络客户端或任意属性访问。
 
+`factAccess()` 描述依赖能否静态穷举。默认 `DYNAMIC_FACTS` 是保守选择；函数确认只读取显式参数时，应返回 `EXPLICIT_ARGUMENTS_ONLY`。函数若从 `context.facts()` 读取其他路径，必须保持动态声明。该声明会进入函数目录摘要，并决定编译产物的 `DependencyCoverage`。
+
 共享函数必须声明 `THREAD_SAFE` 并通过 `registerFunction(RuleFunction)` 注册。存在可变调用状态的函数必须声明 `INVOCATION_SCOPED`，并通过 `registerFunction(RuleFunctionFactory)` 注册；两种注册方式混用会被拒绝。
 
 ## 完整共享函数示例
@@ -57,6 +60,7 @@ import io.github.leylaragg.letool.ruleengine.function.FunctionCharacteristics;
 import io.github.leylaragg.letool.ruleengine.function.FunctionContext;
 import io.github.leylaragg.letool.ruleengine.function.FunctionDeterminism;
 import io.github.leylaragg.letool.ruleengine.function.FunctionEffect;
+import io.github.leylaragg.letool.ruleengine.function.FunctionFactAccess;
 import io.github.leylaragg.letool.ruleengine.function.FunctionParameter;
 import io.github.leylaragg.letool.ruleengine.function.FunctionSignature;
 import io.github.leylaragg.letool.ruleengine.function.FunctionThreading;
@@ -93,6 +97,11 @@ public final class DoubleFunction implements RuleFunction {
     }
 
     @Override
+    public FunctionFactAccess factAccess() {
+        return FunctionFactAccess.EXPLICIT_ARGUMENTS_ONLY;
+    }
+
+    @Override
     public FactValue execute(FunctionArguments arguments, FunctionContext context) {
         BigInteger value = arguments.get(0).asBigInteger();
         return FactValues.integer(value.multiply(BigInteger.TWO));
@@ -106,7 +115,7 @@ public final class DoubleFunction implements RuleFunction {
 }
 ```
 
-`newEngine()` 展示了纯 Java 共享函数注册；构建出的引擎冻结函数元数据和目录指纹。
+`newEngine()` 展示了纯 Java 共享函数注册；构建出的引擎冻结函数元数据和目录摘要。
 
 ## 调用级工厂示例
 
@@ -121,6 +130,7 @@ import io.github.leylaragg.letool.ruleengine.function.FunctionContext;
 import io.github.leylaragg.letool.ruleengine.function.FunctionDescriptor;
 import io.github.leylaragg.letool.ruleengine.function.FunctionDeterminism;
 import io.github.leylaragg.letool.ruleengine.function.FunctionEffect;
+import io.github.leylaragg.letool.ruleengine.function.FunctionFactAccess;
 import io.github.leylaragg.letool.ruleengine.function.FunctionParameter;
 import io.github.leylaragg.letool.ruleengine.function.FunctionSignature;
 import io.github.leylaragg.letool.ruleengine.function.FunctionThreading;
@@ -141,7 +151,8 @@ public final class IdentityFunctionFactory implements RuleFunctionFactory {
             FunctionCharacteristics.of(
                     FunctionDeterminism.DETERMINISTIC,
                     FunctionEffect.PURE,
-                    FunctionThreading.INVOCATION_SCOPED));
+                    FunctionThreading.INVOCATION_SCOPED),
+            FunctionFactAccess.EXPLICIT_ARGUMENTS_ONLY);
 
     @Override
     public FunctionDescriptor descriptor() {
@@ -156,6 +167,7 @@ public final class IdentityFunctionFactory implements RuleFunctionFactory {
             public FunctionSignature signature() { return DESCRIPTOR.signature(); }
             public TypeDescriptor returnType() { return DESCRIPTOR.returnType(); }
             public FunctionCharacteristics characteristics() { return DESCRIPTOR.characteristics(); }
+            public FunctionFactAccess factAccess() { return DESCRIPTOR.factAccess(); }
             public FactValue execute(FunctionArguments arguments, FunctionContext context) {
                 return arguments.get(0);
             }

@@ -24,6 +24,19 @@ public interface RuleFunction {
     FunctionCharacteristics characteristics();
 
     /**
+     * 声明函数是否读取显式参数以外的事实。
+     *
+     * <p>既有函数默认按动态事实处理，避免框架在没有明确声明时错误地把静态依赖
+     * 视为完整。确认只使用参数的纯函数应显式返回
+     * {@link FunctionFactAccess#EXPLICIT_ARGUMENTS_ONLY}。</p>
+     *
+     * @return 保守的事实访问声明
+     */
+    default FunctionFactAccess factAccess() {
+        return FunctionFactAccess.DYNAMIC_FACTS;
+    }
+
+    /**
      * 执行函数。
      *
      * @param arguments 不可变事实值参数

@@ -1,14 +1,12 @@
 package io.github.leylaragg.letool.ruleengine.api;
 
-import io.github.leylaragg.letool.ruleengine.compile.DefaultExpressionCompiler;
-import io.github.leylaragg.letool.ruleengine.compile.ExpressionCompiler;
-import io.github.leylaragg.letool.ruleengine.evaluate.DefaultExpressionEvaluator;
-import io.github.leylaragg.letool.ruleengine.evaluate.ExpressionEvaluator;
 import io.github.leylaragg.letool.ruleengine.exception.RuleEngineException;
 import io.github.leylaragg.letool.ruleengine.function.FunctionRegistry;
 import io.github.leylaragg.letool.ruleengine.function.FunctionDescriptor;
 import io.github.leylaragg.letool.ruleengine.function.RuleFunction;
 import io.github.leylaragg.letool.ruleengine.function.RuleFunctionFactory;
+import io.github.leylaragg.letool.ruleengine.evaluate.DefaultValueSummarizer;
+import io.github.leylaragg.letool.ruleengine.evaluate.ValueSummarizer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -21,14 +19,11 @@ import java.util.List;
  */
 public final class ExpressionEngineBuilder {
 
-    /** 待固化的编译器，默认使用 core 实现。 */
-    private ExpressionCompiler compiler = new DefaultExpressionCompiler();
-
-    /** 待固化的求值器，默认使用 core 实现。 */
-    private ExpressionEvaluator evaluator = new DefaultExpressionEvaluator();
-
     /** 待固化的资源上限。 */
     private EngineLimits limits = EngineLimits.defaults();
+
+    /** 只影响轨迹展示、不参与表达式求值语义的值摘要器。 */
+    private ValueSummarizer valueSummarizer = new DefaultValueSummarizer();
 
     /** 按注册顺序保存的函数及工厂元数据快照。 */
     private final List<Registration> registrations = new ArrayList<>();
@@ -78,26 +73,17 @@ public final class ExpressionEngineBuilder {
     }
 
     /**
-     * 注入宿主编译器 SPI。
+     * 配置轨迹节点使用的有界值摘要器。
      *
-     * @param compiler 非空编译器
+     * <p>摘要器只负责展示，不能改变事实、类型或求值结果；框架仍会净化控制字符并
+     * 按资源限制截断输出。</p>
+     *
+     * @param valueSummarizer 宿主提供的安全摘要策略
      * @return 当前构建器
      */
-    public ExpressionEngineBuilder compiler(ExpressionCompiler compiler) {
-        if (compiler == null) throw RuleEngineException.invalidArgument();
-        this.compiler = compiler;
-        return this;
-    }
-
-    /**
-     * 注入宿主求值器 SPI；门面治理校验仍会先于该 SPI 执行。
-     *
-     * @param evaluator 非空求值器
-     * @return 当前构建器
-     */
-    public ExpressionEngineBuilder evaluator(ExpressionEvaluator evaluator) {
-        if (evaluator == null) throw RuleEngineException.invalidArgument();
-        this.evaluator = evaluator;
+    public ExpressionEngineBuilder valueSummarizer(ValueSummarizer valueSummarizer) {
+        if (valueSummarizer == null) throw RuleEngineException.invalidArgument();
+        this.valueSummarizer = valueSummarizer;
         return this;
     }
 
@@ -109,7 +95,7 @@ public final class ExpressionEngineBuilder {
     public ExpressionEngine build() {
         FunctionRegistry.Builder registry = FunctionRegistry.builder();
         for (Registration registration : List.copyOf(registrations)) registration.register(registry);
-        return new DefaultExpressionEngine(compiler, evaluator, limits, registry.build());
+        return new DefaultExpressionEngine(limits, registry.build(), valueSummarizer);
     }
 
     /** 在构建前拒绝函数编码冲突，避免依赖注册顺序决定覆盖关系。 */
@@ -187,6 +173,11 @@ public final class ExpressionEngineBuilder {
         /** {@inheritDoc} */
         @Override public io.github.leylaragg.letool.ruleengine.function.FunctionCharacteristics characteristics() {
             return descriptor.characteristics();
+        }
+        /** {@inheritDoc} */
+        @Override
+        public io.github.leylaragg.letool.ruleengine.function.FunctionFactAccess factAccess() {
+            return descriptor.factAccess();
         }
         /** {@inheritDoc} */
         @Override

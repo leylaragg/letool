@@ -1,11 +1,8 @@
 package io.github.leylaragg.letool.ruleengine.function;
 
 import io.github.leylaragg.letool.ruleengine.exception.RuleEngineException;
+import io.github.leylaragg.letool.ruleengine.internal.digest.DigestBuilder;
 
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -18,13 +15,13 @@ public final class FunctionRegistry {
     /** 按规范函数编码索引的不可变注册快照。 */
     private final Map<String, Registration> registrations;
 
-    /** 仅覆盖函数元数据、不依赖实例身份的目录指纹。 */
-    private final String fingerprint;
+    /** 仅覆盖函数元数据、不依赖实例身份的目录摘要。 */
+    private final String catalogDigest;
 
     /** 从构建器当前注册项创建只读目录。 */
     private FunctionRegistry(Map<String, Registration> registrations) {
         this.registrations = Map.copyOf(registrations);
-        this.fingerprint = calculateFingerprint(this.registrations);
+        this.catalogDigest = calculateCatalogDigest(this.registrations);
     }
 
     /**
@@ -66,12 +63,12 @@ public final class FunctionRegistry {
     }
 
     /**
-     * 覆盖排序后函数元数据的稳定目录指纹。
+     * 覆盖排序后函数元数据的稳定目录摘要。
      *
-     * @return 小写十六进制 SHA-256 指纹
+     * @return 小写十六进制 SHA-256 摘要
      */
-    public String fingerprint() {
-        return fingerprint;
+    public String catalogDigest() {
+        return catalogDigest;
     }
 
     /** 规范化编码并要求目录中存在对应注册项。 */
@@ -93,48 +90,36 @@ public final class FunctionRegistry {
         }
     }
 
-    /** 按函数编码排序后计算与注册顺序无关的目录指纹。 */
-    private static String calculateFingerprint(Map<String, Registration> registrations) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            add(digest, "LETOOL_FUNCTION_REGISTRY");
-            add(digest, "1");
-            List<FunctionDescriptor> descriptors = registrations.values().stream()
-                    .map(registration -> registration.descriptor)
-                    .sorted(java.util.Comparator.comparing(FunctionDescriptor::code))
-                    .toList();
-            add(digest, Integer.toString(descriptors.size()));
-            for (FunctionDescriptor descriptor : descriptors) {
-                addDescriptor(digest, descriptor);
-            }
-            return java.util.HexFormat.of().formatHex(digest.digest());
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 unavailable", exception);
+    /** 按函数编码排序后计算与注册顺序无关的目录摘要。 */
+    private static String calculateCatalogDigest(Map<String, Registration> registrations) {
+        DigestBuilder digest = new DigestBuilder("LETOOL_FUNCTION_REGISTRY_V1");
+        List<FunctionDescriptor> descriptors = registrations.values().stream()
+                .map(registration -> registration.descriptor)
+                .sorted(java.util.Comparator.comparing(FunctionDescriptor::code))
+                .toList();
+        digest.add(descriptors.size());
+        for (FunctionDescriptor descriptor : descriptors) {
+            addDescriptor(digest, descriptor);
         }
+        return digest.finish();
     }
 
     /** 按稳定字段顺序写入一条完整函数描述。 */
-    private static void addDescriptor(MessageDigest digest, FunctionDescriptor descriptor) {
-        add(digest, descriptor.code());
-        add(digest, descriptor.semanticVersion());
-        add(digest, Integer.toString(descriptor.signature().parameters().size()));
+    private static void addDescriptor(DigestBuilder digest, FunctionDescriptor descriptor) {
+        digest.add(descriptor.code());
+        digest.add(descriptor.semanticVersion());
+        digest.add(descriptor.signature().parameters().size());
         for (FunctionParameter parameter : descriptor.signature().parameters()) {
-            add(digest, parameter.name());
-            add(digest, parameter.type().toCanonicalString());
-            add(digest, Boolean.toString(parameter.optional()));
-            add(digest, Boolean.toString(parameter.varargs()));
+            digest.add(parameter.name());
+            digest.add(parameter.type().toCanonicalString());
+            digest.add(Boolean.toString(parameter.optional()));
+            digest.add(Boolean.toString(parameter.varargs()));
         }
-        add(digest, descriptor.returnType().toCanonicalString());
-        add(digest, descriptor.characteristics().determinism().name());
-        add(digest, descriptor.characteristics().effect().name());
-        add(digest, descriptor.characteristics().threading().name());
-    }
-
-    /** 以 UTF-8 长度前缀写入字段，避免拼接边界歧义。 */
-    private static void add(MessageDigest digest, String value) {
-        byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
-        digest.update(ByteBuffer.allocate(Integer.BYTES).putInt(bytes.length).array());
-        digest.update(bytes);
+        digest.add(descriptor.returnType().toCanonicalString());
+        digest.add(descriptor.characteristics().determinism().name());
+        digest.add(descriptor.characteristics().effect().name());
+        digest.add(descriptor.characteristics().threading().name());
+        digest.add(descriptor.factAccess().name());
     }
 
     /**

@@ -50,15 +50,15 @@ class FactContractTest {
                 .contains(TypeDescriptor.scalar(TypeKind.INTEGER, false));
         assertThat(contract.descriptor("customer.name")).isEmpty();
         assertThat(contract.descriptors()).isUnmodifiable();
-        assertThat(contract.fingerprint()).matches("[0-9a-f]{64}");
+        assertThat(contract.contractDigest()).matches("[0-9a-f]{64}");
         assertThat(FactContract.builder("empty").build().descriptors()).isEmpty();
     }
 
     /**
-     * 验证指纹不依赖注册顺序，但会响应版本、路径和类型变化。
+     * 验证摘要不依赖注册顺序，但会响应版本、路径和类型变化。
      */
     @Test
-    void shouldProduceDeterministicSemanticFingerprint() {
+    void shouldProduceDeterministicSemanticDigest() {
         TypeDescriptor integer = TypeDescriptor.scalar(TypeKind.INTEGER, false);
         TypeDescriptor string = TypeDescriptor.scalar(TypeKind.STRING, true);
         FactContract first = FactContract.builder("v1")
@@ -70,25 +70,25 @@ class FactContractTest {
                 .path("customer.age", integer)
                 .build();
 
-        assertThat(first.fingerprint()).isEqualTo(reordered.fingerprint());
-        assertThat(first.fingerprint())
+        assertThat(first.contractDigest()).isEqualTo(reordered.contractDigest());
+        assertThat(first.contractDigest())
                 .isEqualTo("44fb5153c328be7051871a5f4814cd344cf111e151919bc620bb602f688a7cb7");
         assertThat(first).isEqualTo(reordered);
         assertThat(first.hashCode()).isEqualTo(reordered.hashCode());
         assertThat(FactContract.builder("v2")
                 .path("customer.age", integer)
                 .path("customer.name", string)
-                .build().fingerprint()).isNotEqualTo(first.fingerprint());
+                .build().contractDigest()).isNotEqualTo(first.contractDigest());
         assertThat(first).isNotEqualTo(FactContract.builder("v2")
                 .path("customer.age", integer).path("customer.name", string).build());
         assertThat(FactContract.builder("v1")
                 .path("customer.age", TypeDescriptor.scalar(TypeKind.DECIMAL, false))
                 .path("customer.name", string)
-                .build().fingerprint()).isNotEqualTo(first.fingerprint());
+                .build().contractDigest()).isNotEqualTo(first.contractDigest());
         assertThat(FactContract.builder("v1")
                 .path("customer.height", integer)
                 .path("customer.name", string)
-                .build().fingerprint()).isNotEqualTo(first.fingerprint());
+                .build().contractDigest()).isNotEqualTo(first.contractDigest());
     }
 
     /**
@@ -137,7 +137,7 @@ class FactContractTest {
      * 验证多层数组规范串按内层到外层保留每一层可空性。
      */
     @Test
-    void shouldPreserveNestedArrayNullabilityInCanonicalStringAndFingerprint() {
+    void shouldPreserveNestedArrayNullabilityInCanonicalStringAndDigest() {
         TypeDescriptor string = TypeDescriptor.scalar(TypeKind.STRING, false);
         TypeDescriptor innerNullable = TypeDescriptor.array(string, true);
         TypeDescriptor outerRequired = TypeDescriptor.array(innerNullable, false);
@@ -150,9 +150,9 @@ class FactContractTest {
                 .isEqualTo("ARRAY<ARRAY<STRING!>!>?");
         assertThat(outerRequired).isNotEqualTo(outerNullable);
         assertThat(outerRequired.hashCode()).isNotEqualTo(outerNullable.hashCode());
-        assertThat(FactContract.builder("v1").path("matrix", outerRequired).build().fingerprint())
+        assertThat(FactContract.builder("v1").path("matrix", outerRequired).build().contractDigest())
                 .isNotEqualTo(FactContract.builder("v1")
-                        .path("matrix", outerNullable).build().fingerprint());
+                        .path("matrix", outerNullable).build().contractDigest());
     }
 
     /**

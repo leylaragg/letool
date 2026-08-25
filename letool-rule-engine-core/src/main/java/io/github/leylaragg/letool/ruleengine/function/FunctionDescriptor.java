@@ -33,22 +33,28 @@ public final class FunctionDescriptor {
     /** 确定性、副作用和线程模型元数据。 */
     private final FunctionCharacteristics characteristics;
 
+    /** 函数读取事实的静态可分析边界。 */
+    private final FunctionFactAccess factAccess;
+
     /** 接收并冻结完整函数元数据。 */
     private FunctionDescriptor(
             String code,
             String semanticVersion,
             FunctionSignature signature,
             TypeDescriptor returnType,
-            FunctionCharacteristics characteristics) {
+            FunctionCharacteristics characteristics,
+            FunctionFactAccess factAccess) {
         this.code = normalizeCode(code);
         if (semanticVersion == null || !VERSION_PATTERN.matcher(semanticVersion).matches()
-                || signature == null || returnType == null || characteristics == null) {
+                || signature == null || returnType == null
+                || characteristics == null || factAccess == null) {
             throw RuleEngineException.invalidArgument();
         }
         this.semanticVersion = semanticVersion;
         this.signature = signature;
         this.returnType = returnType;
         this.characteristics = characteristics;
+        this.factAccess = factAccess;
     }
 
     /**
@@ -68,7 +74,30 @@ public final class FunctionDescriptor {
             TypeDescriptor returnType,
             FunctionCharacteristics characteristics) {
         return new FunctionDescriptor(
-                code, semanticVersion, signature, returnType, characteristics);
+                code, semanticVersion, signature, returnType,
+                characteristics, FunctionFactAccess.DYNAMIC_FACTS);
+    }
+
+    /**
+     * 创建包含事实访问声明的完整函数描述符。
+     *
+     * @param code 函数编码
+     * @param semanticVersion 语义版本
+     * @param signature 参数签名
+     * @param returnType 返回类型
+     * @param characteristics 函数特征
+     * @param factAccess 事实访问声明
+     * @return 规范化不可变描述符
+     */
+    public static FunctionDescriptor of(
+            String code,
+            String semanticVersion,
+            FunctionSignature signature,
+            TypeDescriptor returnType,
+            FunctionCharacteristics characteristics,
+            FunctionFactAccess factAccess) {
+        return new FunctionDescriptor(
+                code, semanticVersion, signature, returnType, characteristics, factAccess);
     }
 
     /**
@@ -81,7 +110,7 @@ public final class FunctionDescriptor {
         if (function == null) throw RuleEngineException.invalidArgument();
         try {
             return of(function.code(), function.semanticVersion(), function.signature(),
-                    function.returnType(), function.characteristics());
+                    function.returnType(), function.characteristics(), function.factAccess());
         } catch (RuntimeException exception) {
             throw RuleEngineException.invalidArgument();
         }
@@ -97,7 +126,7 @@ public final class FunctionDescriptor {
     }
 
     /**
-     * 参与函数目录指纹的语义版本。
+     * 参与函数目录摘要的语义版本。
      *
      * @return 语义版本
      */
@@ -132,6 +161,15 @@ public final class FunctionDescriptor {
         return characteristics;
     }
 
+    /**
+     * 返回编译期依赖分析使用的事实访问声明。
+     *
+     * @return 显式参数或动态事实访问
+     */
+    public FunctionFactAccess factAccess() {
+        return factAccess;
+    }
+
     /** 把受限 ASCII 编码规范化为与区域无关的大写形式。 */
     static String normalizeCode(String code) {
         // 先按 UTF-16 长度做常量时间上界检查，再执行完整 ASCII 结构校验。
@@ -149,12 +187,14 @@ public final class FunctionDescriptor {
                 && semanticVersion.equals(that.semanticVersion)
                 && signature.equals(that.signature)
                 && returnType.equals(that.returnType)
-                && characteristics.equals(that.characteristics);
+                && characteristics.equals(that.characteristics)
+                && factAccess == that.factAccess;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(code, semanticVersion, signature, returnType, characteristics);
+        return Objects.hash(
+                code, semanticVersion, signature, returnType, characteristics, factAccess);
     }
 
     @Override

@@ -30,7 +30,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 /**
- * 只读函数注册表、生命周期和目录指纹测试。
+ * 只读函数注册表、生命周期和目录摘要测试。
  */
 class FunctionRegistryTest {
 
@@ -383,10 +383,10 @@ class FunctionRegistryTest {
     }
 
     /**
-     * 验证目录指纹不依赖注册顺序或实例身份。
+     * 验证目录摘要不依赖注册顺序或实例身份。
      */
     @Test
-    void shouldProduceStableFingerprintAcrossOrderAndInstances() {
+    void shouldProduceStableDigestAcrossOrderAndInstances() {
         FunctionRegistry first = FunctionRegistry.builder()
                 .register(function("LENGTH", "1", oneStringArgument(), THREAD_SAFE))
                 .register(function("NOW", "2", FunctionSignature.empty(),
@@ -400,15 +400,15 @@ class FunctionRegistryTest {
                 .register(function("LENGTH", "1", oneStringArgument(), THREAD_SAFE))
                 .build();
 
-        assertThat(first.fingerprint()).isEqualTo(reordered.fingerprint());
-        assertThat(first.fingerprint()).matches("[0-9a-f]{64}");
+        assertThat(first.catalogDigest()).isEqualTo(reordered.catalogDigest());
+        assertThat(first.catalogDigest()).matches("[0-9a-f]{64}");
     }
 
     /**
      * 验证长度前缀序列化能区分简单拼接会混淆的参数边界。
      */
     @Test
-    void shouldSeparateFingerprintFieldBoundaries() {
+    void shouldSeparateDigestFieldBoundaries() {
         FunctionRegistry first = registry(function(
                 "BOUNDARY", "1", FunctionSignature.of(
                         FunctionParameter.required("A", STRING),
@@ -418,48 +418,48 @@ class FunctionRegistryTest {
                         FunctionParameter.required("AB", STRING),
                         FunctionParameter.required("C", STRING)), THREAD_SAFE));
 
-        assertThat(first.fingerprint()).isNotEqualTo(second.fingerprint());
+        assertThat(first.catalogDigest()).isNotEqualTo(second.catalogDigest());
     }
 
     /**
-     * 验证一个稳定目录具有固定黄金指纹。
+     * 验证一个稳定目录具有固定黄金摘要。
      */
     @Test
-    void shouldMatchGoldenFingerprint() {
+    void shouldMatchGoldenDigest() {
         FunctionRegistry registry = FunctionRegistry.builder()
                 .register(function("LENGTH", "1.0.0", oneStringArgument(), THREAD_SAFE))
                 .build();
 
-        assertThat(registry.fingerprint())
-                .isEqualTo("346fc213bd3c49c65cf8b816c9f7b301fa87cb179dc5ce1d45f2a9cbf0bc9269");
+        assertThat(registry.catalogDigest())
+                .isEqualTo("438279e835745bf42701281acf9a11ccf6573228c8fb35bafd59106446510885");
     }
 
     /**
-     * 验证签名、版本、返回类型和每项函数特征都会影响目录指纹。
+     * 验证签名、版本、返回类型和每项函数特征都会影响目录摘要。
      */
     @Test
-    void shouldIncludeAllSemanticMetadataInFingerprint() {
+    void shouldIncludeAllSemanticMetadataInDigest() {
         FunctionRegistry baseline = registry(function(
                 "LENGTH", "1", oneStringArgument(), THREAD_SAFE));
 
-        assertDifferentFingerprint(baseline, function(
+        assertDifferentDigest(baseline, function(
                 "SIZE", "1", oneStringArgument(), THREAD_SAFE));
-        assertDifferentFingerprint(baseline, function(
+        assertDifferentDigest(baseline, function(
                 "LENGTH", "2", oneStringArgument(), THREAD_SAFE));
-        assertDifferentFingerprint(baseline, function(
+        assertDifferentDigest(baseline, function(
                 "LENGTH", "1", FunctionSignature.of(
                         FunctionParameter.optional("value", STRING)), THREAD_SAFE));
-        assertDifferentFingerprint(baseline, function(
+        assertDifferentDigest(baseline, function(
                 "LENGTH", "1", FunctionSignature.of(
                         FunctionParameter.varargs("value", STRING)), THREAD_SAFE));
-        assertDifferentFingerprint(baseline, function(
+        assertDifferentDigest(baseline, function(
                 "LENGTH", "1", FunctionSignature.of(
                         FunctionParameter.required("text", STRING)), THREAD_SAFE));
-        assertDifferentFingerprint(baseline, function(
+        assertDifferentDigest(baseline, function(
                 "LENGTH", "1", FunctionSignature.of(
                         FunctionParameter.required("value", INTEGER)), THREAD_SAFE));
         TypeDescriptor string = TypeDescriptor.scalar(TypeKind.STRING, false);
-        assertDifferentFingerprint(baseline, function(
+        assertDifferentDigest(baseline, function(
                 "LENGTH", "1", oneStringArgument(),
                 TypeDescriptor.array(TypeDescriptor.array(string, true), false), THREAD_SAFE));
         FunctionRegistry nestedOuterNullable = registry(function(
@@ -468,18 +468,18 @@ class FunctionRegistryTest {
         assertThat(registry(function(
                 "LENGTH", "1", oneStringArgument(),
                 TypeDescriptor.array(TypeDescriptor.array(string, true), false), THREAD_SAFE))
-                .fingerprint()).isNotEqualTo(nestedOuterNullable.fingerprint());
-        assertDifferentFingerprint(baseline, function(
+                .catalogDigest()).isNotEqualTo(nestedOuterNullable.catalogDigest());
+        assertDifferentDigest(baseline, function(
                 "LENGTH", "1", oneStringArgument(), STRING, THREAD_SAFE));
-        assertDifferentFingerprint(baseline, function(
+        assertDifferentDigest(baseline, function(
                 "LENGTH", "1", oneStringArgument(),
                 characteristics(FunctionDeterminism.NON_DETERMINISTIC,
                         FunctionEffect.PURE, FunctionThreading.THREAD_SAFE)));
-        assertDifferentFingerprint(baseline, function(
+        assertDifferentDigest(baseline, function(
                 "LENGTH", "1", oneStringArgument(),
                 characteristics(FunctionDeterminism.DETERMINISTIC,
                         FunctionEffect.CONTEXTUAL, FunctionThreading.THREAD_SAFE)));
-        assertDifferentFingerprint(baseline, functionFactoryRegistryDescriptor(
+        assertDifferentDigest(baseline, functionFactoryRegistryDescriptor(
                 "LENGTH", "1", oneStringArgument(), INTEGER,
                 characteristics(FunctionDeterminism.DETERMINISTIC,
                         FunctionEffect.PURE, FunctionThreading.INVOCATION_SCOPED)));
@@ -904,7 +904,7 @@ class FunctionRegistryTest {
     }
 
     /**
-     * 构造工厂注册的注册表，用于比较线程特征指纹。
+     * 构造工厂注册的注册表，用于比较线程特征摘要。
      *
      * @param code 编码
      * @param version 版本
@@ -927,27 +927,27 @@ class FunctionRegistryTest {
     }
 
     /**
-     * 断言函数元数据变化导致指纹变化。
+     * 断言函数元数据变化导致摘要变化。
      *
      * @param baseline 基准注册表
      * @param changed 变化后的函数
      */
-    private static void assertDifferentFingerprint(
+    private static void assertDifferentDigest(
             FunctionRegistry baseline,
             RuleFunction changed) {
-        assertThat(registry(changed).fingerprint()).isNotEqualTo(baseline.fingerprint());
+        assertThat(registry(changed).catalogDigest()).isNotEqualTo(baseline.catalogDigest());
     }
 
     /**
-     * 断言函数元数据变化导致指纹变化。
+     * 断言函数元数据变化导致摘要变化。
      *
      * @param baseline 基准注册表
      * @param changed 变化后的注册表
      */
-    private static void assertDifferentFingerprint(
+    private static void assertDifferentDigest(
             FunctionRegistry baseline,
             FunctionRegistry changed) {
-        assertThat(changed.fingerprint()).isNotEqualTo(baseline.fingerprint());
+        assertThat(changed.catalogDigest()).isNotEqualTo(baseline.catalogDigest());
     }
 
     /**
