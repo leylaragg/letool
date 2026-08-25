@@ -116,7 +116,6 @@ class RedisCacheHardeningIntegrationTest {
     void batchIoShouldBeBoundedAndVersionMetadataShouldExpire() {
         CacheConfig<String, String> config = CacheConfig.<String, String>builder("batch")
                 .redisKeyPrefix(redisPrefix)
-                .l1Enabled(false)
                 .l1Ttl(Duration.ofMinutes(10))
                 .l2Ttl(Duration.ofHours(1))
                 .redisBatchSize(256)
@@ -130,12 +129,19 @@ class RedisCacheHardeningIntegrationTest {
         }
 
         cache.putAll(entries);
+        // 仅清空本机快照，验证从未创建区域 Epoch 时可从真实 Redis 安全回填 L1。
+        cache.evictLocalAll();
         long batchesAfterWrite = cache.stats().getRedisBatchCount();
         Map<String, String> loaded = cache.getAllPresent(
                 new LinkedHashSet<>(entries.keySet()));
 
         assertEquals(entries, loaded);
+        assertFalse(cache.isL2Degraded());
+        assertEquals(entries.size(), cache.estimatedSize());
         assertEquals(3, cache.stats().getRedisBatchCount() - batchesAfterWrite);
+        long batchesAfterRead = cache.stats().getRedisBatchCount();
+        assertEquals("value-0", cache.getIfPresent("key-0"));
+        assertEquals(batchesAfterRead, cache.stats().getRedisBatchCount());
         Set<String> versionKeys = redisTemplate.keys(
                 redisPrefix + "%META%:batch:*:version");
         assertNotNull(versionKeys);

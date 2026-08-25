@@ -22,11 +22,13 @@ import io.github.leylaragg.letool.cache.support.CacheMonitor;
 import io.github.leylaragg.letool.tool.redis.RedisUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnSingleCandidate;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.ObjectProvider;
@@ -174,8 +176,8 @@ public class CacheAutoConfiguration {
     @ConditionalOnMissingBean(CacheManager.class)
     public CacheManager cacheManager(CacheSerializer serializer,
                                      CacheProperties properties,
-                                     @org.springframework.beans.factory.annotation.Autowired(required = false) RedisUtil redisUtil,
-                                     @org.springframework.beans.factory.annotation.Autowired(required = false) CacheInvalidationPublisher invalidationPublisher) {
+                                     @Autowired(required = false) RedisUtil redisUtil,
+                                     @Autowired(required = false) CacheInvalidationPublisher invalidationPublisher) {
         CacheManager manager = new CacheManager(
                 redisUtil,
                 serializer,
@@ -245,6 +247,10 @@ public class CacheAutoConfiguration {
      * <p>Spring Data Redis 的监听容器会订阅配置中的失效通道，并把收到的消息体转成 UTF-8
      * 字符串交给 {@link RedisCacheInvalidationListener}。这里没有强依赖 Redis 连接工厂，
      * 只有在业务项目已经配置 Redis 时才会创建该容器。</p>
+     *
+     * <p>业务没有提供监听容器时，框架创建名为
+     * {@code letoolCacheInvalidationListenerContainer} 的默认容器；存在唯一业务容器时，
+     * 由额外的注册 Bean 把 Letool 失效订阅加入该容器，避免增加同类型候选。</p>
      */
     @Bean("letoolCacheInvalidationListenerContainer")
     @ConditionalOnClass(RedisMessageListenerContainer.class)
@@ -258,10 +264,52 @@ public class CacheAutoConfiguration {
             CacheProperties properties) {
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
         container.setConnectionFactory(connectionFactory);
+        addInvalidationMessageListener(container, listener, properties);
+        return container;
+    }
+
+    /**
+     * 将 Letool 失效订阅注册到唯一的业务 Redis 监听容器。
+     *
+     * <p>该 Bean 只在业务提供单个默认候选且没有同名接管容器时创建，因此不会改变业务原有的
+     * 单值按类型注入。用户提供同名容器表示完全接管，框架不会重复注册监听器。</p>
+     *
+     * @param container 唯一的业务 Redis 监听容器
+     * @param listener Letool 失效消息监听器
+     * @param properties 缓存配置
+     * @return 失效订阅已完成注册的标记对象
+     */
+    @Bean("letoolCacheInvalidationListenerRegistration")
+    @ConditionalOnClass(RedisMessageListenerContainer.class)
+    @ConditionalOnBean({RedisCacheInvalidationListener.class, RedisConnectionFactory.class})
+    @ConditionalOnSingleCandidate(RedisMessageListenerContainer.class)
+    @ConditionalOnMissingBean(name = {
+            "letoolCacheInvalidationListenerContainer",
+            "letoolCacheInvalidationListenerRegistration"
+    })
+    @ConditionalOnProperty(prefix = "letool.cache.invalidation", name = "enabled", havingValue = "true", matchIfMissing = true)
+    public Object letoolCacheInvalidationListenerRegistration(
+            RedisMessageListenerContainer container,
+            RedisCacheInvalidationListener listener,
+            CacheProperties properties) {
+        addInvalidationMessageListener(container, listener, properties);
+        return new Object();
+    }
+
+    /**
+     * 把失效消息监听器绑定到配置的 Redis 通道。
+     *
+     * @param container 承载订阅的 Redis 监听容器
+     * @param listener Letool 失效消息监听器
+     * @param properties 缓存配置
+     */
+    private void addInvalidationMessageListener(
+            RedisMessageListenerContainer container,
+            RedisCacheInvalidationListener listener,
+            CacheProperties properties) {
         container.addMessageListener((message, pattern) ->
                 listener.onMessage(new String(message.getBody(), StandardCharsets.UTF_8)),
                 new ChannelTopic(properties.getInvalidation().getChannel()));
-        return container;
     }
 
     /**

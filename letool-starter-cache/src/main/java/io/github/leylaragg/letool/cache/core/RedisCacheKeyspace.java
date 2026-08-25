@@ -27,6 +27,9 @@ final class RedisCacheKeyspace {
     /** SCAN 每次建议 Redis 返回的 Key 数量，也是单次 UNLINK 的最大批次大小。 */
     private static final long SCAN_BATCH_SIZE = 1000L;
 
+    /** Redis Cluster 固定包含 16384 个 Slot。 */
+    private static final int CLUSTER_SLOT_COUNT = 16384;
+
     /** 当前缓存区域的完整 Key 前缀，末尾包含分隔符。 */
     private final String regionPrefix;
 
@@ -126,12 +129,13 @@ final class RedisCacheKeyspace {
     /**
      * 使用 SCAN 和 UNLINK 清理当前缓存区域的全部 Redis Key。
      *
-     * <p>游标按批次遍历，不会把全部 Key 一次性加载到 JVM 内存。Redis Cluster 模式下逐个扫描
-     * 可用主节点，避免只清理当前连接节点。UNLINK 只解除 Key 与 Value 的关联，实际内存回收由
-     * Redis 后台线程完成，适合缓存区域清理。</p>
+     * <p>游标按批次遍历，不会把全部 Key 一次性加载到 JVM 内存。Redis Cluster 模式会先校验
+     * 完整主节点及 Slot 拓扑，再使用当前应用连接逐个 PING 主节点，降低因客户端无法访问某个主节点而
+     * 只清理部分 Slot 的风险。该预检仍不能消除预检完成后的拓扑变化或扫描期间故障。UNLINK 只解除
+     * Key 与 Value 的关联，实际内存回收由 Redis 后台线程完成，适合缓存区域清理。</p>
      *
      * @param redisOperations Redis 原生操作入口
-     * @return 提交给 UNLINK 的 Key 数量
+     * @return 经 UNLINK 确认删除的 Key 数量
      */
     long scanAndUnlink(RedisOperations<String, Object> redisOperations) {
         return scanAndUnlinkPattern(redisOperations, scanPattern);
@@ -142,7 +146,7 @@ final class RedisCacheKeyspace {
      *
      * @param redisOperations Redis 原生操作入口
      * @param serializedBusinessKeyPrefix 序列化业务 key 前缀
-     * @return 提交给 UNLINK 的 Key 数量
+     * @return 经 UNLINK 确认删除的 Key 数量
      */
     long scanAndUnlink(
             RedisOperations<String, Object> redisOperations,
@@ -176,7 +180,7 @@ final class RedisCacheKeyspace {
      *
      * @param connection Redis 原生连接
      * @param options 限定当前缓存区域的扫描参数
-     * @return 提交给 UNLINK 的 Key 数量
+     * @return 经 UNLINK 确认删除的 Key 数量
      */
     private long scanAndUnlink(RedisConnection connection, ScanOptions options) {
         if (!(connection instanceof RedisClusterConnection clusterConnection)) {
@@ -184,20 +188,103 @@ final class RedisCacheKeyspace {
             return scanCursorAndUnlink(keyCommands.scan(options), keyCommands);
         }
 
-        long removed = 0L;
-        int availableMasterCount = 0;
+        List<RedisClusterNode> masterNodes = requireAvailableClusterMasters(
+                clusterConnection.clusterGetNodes()
+        );
+        requireReachableClusterMasters(clusterConnection, masterNodes);
         RedisKeyCommands keyCommands = clusterConnection.keyCommands();
-        for (RedisClusterNode node : clusterConnection.clusterGetNodes()) {
-            if (!node.isMaster() || !node.isConnected() || node.isMarkedAsFail()) {
-                continue;
-            }
-            availableMasterCount++;
+        long removed = 0L;
+        for (RedisClusterNode node : masterNodes) {
             removed += scanCursorAndUnlink(clusterConnection.scan(node, options), keyCommands);
         }
-        if (availableMasterCount == 0) {
-            throw new IllegalStateException("Redis Cluster 中没有可用于缓存区域清理的主节点");
-        }
         return removed;
+    }
+
+    /**
+     * 收集并校验 Redis Cluster 节点与主节点拓扑。
+     *
+     * <p>先检查全部节点的过渡状态，再筛选主节点，避免未知角色的握手节点被静默忽略；
+     * 所有校验必须在扫描前完成，否则可能先删除部分 Slot，随后才发现拓扑缺失。</p>
+     *
+     * @param clusterNodes 当前连接发现的集群节点
+     * @return 已确认全部可用的主节点
+     */
+    private List<RedisClusterNode> requireAvailableClusterMasters(
+            Iterable<RedisClusterNode> clusterNodes) {
+        List<RedisClusterNode> discoveredNodes = new ArrayList<>();
+        for (RedisClusterNode node : clusterNodes) {
+            discoveredNodes.add(node);
+        }
+        for (RedisClusterNode node : discoveredNodes) {
+            if (node.getFlags().contains(RedisClusterNode.Flag.HANDSHAKE)
+                    || node.getFlags().contains(RedisClusterNode.Flag.NOADDR)) {
+                throw new IllegalStateException("Redis Cluster 节点拓扑不可用于缓存区域清理");
+            }
+        }
+
+        List<RedisClusterNode> masterNodes = new ArrayList<>();
+        for (RedisClusterNode node : discoveredNodes) {
+            if (node.isMaster()) {
+                masterNodes.add(node);
+            }
+        }
+        if (masterNodes.isEmpty()) {
+            throw new IllegalStateException("Redis Cluster 中没有缓存区域清理所需的主节点");
+        }
+        for (RedisClusterNode masterNode : masterNodes) {
+            if (!masterNode.isConnected() || masterNode.isMarkedAsFail()) {
+                throw new IllegalStateException("Redis Cluster 主节点不可用于缓存区域清理");
+            }
+        }
+        requireCompleteClusterSlotCoverage(masterNodes);
+        return masterNodes;
+    }
+
+    /**
+     * 使用当前应用客户端连接确认全部主节点可达。
+     *
+     * <p>节点拓扑中的连接状态只表示发现结果，不能替代应用实际发出的命令；因此必须在全部拓扑校验
+     * 通过后、任何扫描开始前逐节点 PING。该预检仍不能阻止其后的网络故障或拓扑变化。</p>
+     *
+     * @param clusterConnection 当前应用使用的 Redis Cluster 连接
+     * @param masterNodes 已完成状态与 Slot 校验的主节点
+     */
+    private void requireReachableClusterMasters(
+            RedisClusterConnection clusterConnection,
+            List<RedisClusterNode> masterNodes) {
+        for (RedisClusterNode masterNode : masterNodes) {
+            String response = clusterConnection.ping(masterNode);
+            if (response == null || !"PONG".equalsIgnoreCase(response)) {
+                throw new IllegalStateException("Redis Cluster 主节点未通过应用客户端可达性预检");
+            }
+        }
+    }
+
+    /**
+     * 校验全部 Redis Cluster Slot 恰好由一个可用主节点负责。
+     *
+     * <p>缺口会遗漏缓存数据，重复声明则说明当前拓扑不稳定，两种情况都不能开始清理。</p>
+     *
+     * @param masterNodes 已确认在线且状态正常的主节点
+     */
+    private void requireCompleteClusterSlotCoverage(List<RedisClusterNode> masterNodes) {
+        boolean[] claimedSlots = new boolean[CLUSTER_SLOT_COUNT];
+        int claimedSlotCount = 0;
+        for (RedisClusterNode masterNode : masterNodes) {
+            for (Integer slot : masterNode.getSlotRange().getSlots()) {
+                if (slot == null
+                        || slot < 0
+                        || slot >= CLUSTER_SLOT_COUNT
+                        || claimedSlots[slot]) {
+                    throw new IllegalStateException("Redis Cluster 主节点 Slot 拓扑不完整或存在冲突");
+                }
+                claimedSlots[slot] = true;
+                claimedSlotCount++;
+            }
+        }
+        if (claimedSlotCount != CLUSTER_SLOT_COUNT) {
+            throw new IllegalStateException("Redis Cluster 主节点 Slot 拓扑不完整或存在冲突");
+        }
     }
 
     /**
@@ -205,7 +292,7 @@ final class RedisCacheKeyspace {
      *
      * @param cursor Redis Key 扫描游标
      * @param keyCommands 执行 UNLINK 的 Redis Key 命令入口
-     * @return 提交给 UNLINK 的 Key 数量
+     * @return 经 UNLINK 确认删除的 Key 数量
      */
     private long scanCursorAndUnlink(Cursor<byte[]> cursor, RedisKeyCommands keyCommands) {
         List<byte[]> batch = new ArrayList<>((int) SCAN_BATCH_SIZE);
@@ -214,17 +301,34 @@ final class RedisCacheKeyspace {
             while (cursor.hasNext()) {
                 batch.add(cursor.next());
                 if (batch.size() == SCAN_BATCH_SIZE) {
-                    keyCommands.unlink(batch.toArray(byte[][]::new));
-                    removed += batch.size();
+                    removed += unlinkBatch(batch, keyCommands);
                     batch.clear();
                 }
             }
             if (!batch.isEmpty()) {
-                keyCommands.unlink(batch.toArray(byte[][]::new));
-                removed += batch.size();
+                removed += unlinkBatch(batch, keyCommands);
             }
         }
         return removed;
+    }
+
+    /**
+     * 删除一个扫描批次，并校验 Redis 确认数量与请求一致。
+     *
+     * <p>SCAN 与 UNLINK 之间 Key 可能并发过期或被删除，因此少于批次大小是合法结果；
+     * 仅缺失、负数或超过请求数量的返回值违反命令接口。</p>
+     *
+     * @param batch 本次待删除的 Key
+     * @param keyCommands 执行 UNLINK 的 Redis Key 命令入口
+     * @return Redis 确认删除的 Key 数量
+     */
+    private long unlinkBatch(List<byte[]> batch, RedisKeyCommands keyCommands) {
+        byte[][] keys = batch.toArray(byte[][]::new);
+        Long unlinked = keyCommands.unlink(keys);
+        if (unlinked == null || unlinked < 0L || unlinked > keys.length) {
+            throw new IllegalStateException("Redis UNLINK 返回的删除数量无效");
+        }
+        return unlinked;
     }
 
     /**

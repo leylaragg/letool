@@ -347,12 +347,14 @@ public class CacheConfig<K, V> {
                 || recoveryInterval == null || recoveryInterval.isNegative()) {
             throw CacheException.configurationInvalid("version-metadata-retention");
         }
-        Duration metadataSafetyWindow = l1Ttl
-                .plus(fenceTtl.compareTo(recoveryInterval) >= 0
-                        ? fenceTtl : recoveryInterval)
-                .plus(Duration.ofMinutes(10));
-        if (versionMetadataRetention.compareTo(metadataSafetyWindow) < 0) {
-            throw CacheException.configurationInvalid("version-metadata-retention");
+        if (requiresVersionMetadata()) {
+            Duration metadataSafetyWindow = l1Ttl
+                    .plus(fenceTtl.compareTo(recoveryInterval) >= 0
+                            ? fenceTtl : recoveryInterval)
+                    .plus(Duration.ofMinutes(10));
+            if (versionMetadataRetention.compareTo(metadataSafetyWindow) < 0) {
+                throw CacheException.configurationInvalid("version-metadata-retention");
+            }
         }
         if (redisKeyPrefix == null || redisKeyPrefix.trim().isEmpty()) {
             throw CacheException.configurationInvalid("redis-key-prefix");
@@ -383,6 +385,17 @@ public class CacheConfig<K, V> {
             throw CacheException.configurationInvalid("durable-requires-l2-versioned");
         }
         return this;
+    }
+
+    /**
+     * 判断当前读取链路是否依赖 Redis 版本元数据。
+     *
+     * <p>L1-only 或 NONE 校验不会读取远程版本，不能被无关的元数据安全窗口阻止启动。</p>
+     *
+     * @return 启用 L2 且使用 VERSIONED 读取校验时返回 {@code true}
+     */
+    private boolean requiresVersionMetadata() {
+        return l2Enabled && readValidation == CacheReadValidation.VERSIONED;
     }
 
     /** @return 缓存区域名称 */

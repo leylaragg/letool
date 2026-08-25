@@ -1,5 +1,6 @@
 package io.github.leylaragg.letool.cache.core;
 
+import io.github.leylaragg.letool.cache.exception.CacheException;
 import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
 import io.github.leylaragg.letool.tool.redis.RedisUtil;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,11 +18,14 @@ import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @DisplayName("MultiLevelZSetCache 测试")
@@ -247,6 +251,30 @@ class MultiLevelZSetCacheTest {
         assertTrue(cache.range("game:9", 0, -1).isEmpty());
         verify(publisher).publish(argThat(message ->
                 message.isAll() && "ranking".equals(message.getCacheName())));
+    }
+
+    /** Redis 区域清理失败时不得向其它节点广播不真实的全区域失效。 */
+    @Test
+    @DisplayName("evictAll 清理 Redis 失败时不广播 ALL")
+    void evictAllShouldNotPublishWhenRedisCleanupFails() {
+        CacheInvalidationPublisher publisher = mock(CacheInvalidationPublisher.class);
+        RuntimeException cleanupFailure = new RuntimeException("scan failed");
+        when(redisUtil.getTemplate()).thenThrow(cleanupFailure);
+        MultiLevelZSetCache<String, String> cache = new CacheManager(
+                redisUtil,
+                serializer,
+                true,
+                true,
+                "test:cache:",
+                publisher
+        ).getOrCreateZSetCache(config, Function.identity(), String.class);
+
+        CacheException exception = assertThrows(CacheException.class, cache::evictAll);
+
+        assertEquals("CACHE_006", exception.getCode());
+        assertSame(cleanupFailure, exception.getCause());
+        assertTrue(cache.isL2Degraded());
+        verifyNoInteractions(publisher);
     }
 
     /**

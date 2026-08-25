@@ -331,9 +331,18 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
 
 ### Fixed
 
+- 修复 VERSIONED 批量读取把尚未创建的区域 Epoch 视为不稳定版本的问题；缺失值现在按
+  初始 Epoch 0 参与前后校验，并可安全回填 L1。
+- Redis Cluster 区域及前缀清理会在扫描前校验全部主节点状态和 16384 个 Slot 的完整、
+  无冲突覆盖，并通过应用客户端逐个 PING 主节点；区域清理失败时不再广播全区域失效。
+- 缓存失效监听容器不再因业务已有其它 `RedisMessageListenerContainer` 而缺席；仅同名
+  `letoolCacheInvalidationListenerContainer` 表示业务方接管 Letool 订阅。
+- 版本元数据安全窗口只在启用 L2 且读取校验为 `VERSIONED` 时约束配置；L1-only 或
+  `NONE` 读取不再被无关的保留期关系阻止启动。
+- 参数化 `Type` 遇到不支持泛型反序列化的自定义 `CacheSerializer` 时，`CACHE_007`
+  会直接向调用方暴露，不再被当作 Redis 故障降级或普通缓存未命中吞掉。
 - 修复缓存失效消息受业务 Redis 值序列化器影响、全局 Redis 前缀未被单缓存继承、
-  Set 在 Redis 故障时把错误伪装为空集合，以及强一致批量读取在区域 Epoch 尚未创建时
-  误降级或丢弃有效命中的问题。
+  以及 Set 在 Redis 故障时把错误伪装为空集合的问题。
 - 为单 Key 版本元数据增加安全保留期和 Lua `PEXPIRE`，避免一次性 Key 的版本元数据
   无界增长；自动配置基础设施改用稳定 Bean 名并保留用户 Bean 退让。
 - 统一管理 `commons-io` 2.20.0，修复 `commons-compress` 1.28.0 与 EasyExcel/POI

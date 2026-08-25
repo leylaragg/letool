@@ -2,11 +2,17 @@ package io.github.leylaragg.letool.cache.core;
 
 import io.github.leylaragg.letool.cache.consistency.CacheReadValidation;
 import io.github.leylaragg.letool.cache.consistency.CacheConsistencyMode;
+import io.github.leylaragg.letool.cache.exception.CacheErrorCode;
+import io.github.leylaragg.letool.cache.exception.CacheException;
+import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
 import io.github.leylaragg.letool.cache.serializer.JacksonCacheSerializer;
 import io.github.leylaragg.letool.tool.redis.RedisUtil;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.BoundValueOperations;
+import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -17,12 +23,20 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -30,6 +44,94 @@ import static org.mockito.Mockito.when;
  */
 @DisplayName("KV 缓存一致性故障边界")
 class MultiLevelCacheConsistencyTest {
+
+    @Test
+    @DisplayName("evictAll 的 Redis 区域清理失败时不得广播 ALL")
+    void evictAllShouldFailClosedWithoutPublishingWhenRegionCleanupFails() {
+        RedisUtil redisUtil = mock(RedisUtil.class);
+        CacheInvalidationPublisher publisher = mock(CacheInvalidationPublisher.class);
+        RuntimeException cleanupFailure = new RuntimeException("scan failed");
+        when(redisUtil.getTemplate()).thenThrow(cleanupFailure);
+        MultiLevelCache<String, String> cache = new MultiLevelCache<>(
+                CacheConfig.<String, String>builder("critical")
+                        .redisKeyPrefix("test:")
+                        .strongConsistency(false)
+                        .build(),
+                redisUtil,
+                new JacksonCacheSerializer(),
+                publisher,
+                "node-a",
+                () -> { }
+        );
+
+        CacheException exception = assertThrows(CacheException.class, cache::evictAll);
+
+        assertEquals("CACHE_006", exception.getCode());
+        assertSame(cleanupFailure, exception.getCause());
+        assertTrue(cache.isL2Degraded());
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
+    @DisplayName("evictAll 的区域版本推进失败时不得广播 ALL")
+    void evictAllShouldFailClosedWithoutPublishingWhenRegionVersionBumpFails() {
+        RedisUtil redisUtil = mock(RedisUtil.class);
+        CacheInvalidationPublisher publisher = mock(CacheInvalidationPublisher.class);
+        @SuppressWarnings("unchecked")
+        RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
+        RuntimeException bumpFailure = new RuntimeException("region version bump failed");
+        when(redisUtil.getTemplate()).thenReturn(redisTemplate);
+        doReturn(StringRedisSerializer.UTF_8).when(redisTemplate).getKeySerializer();
+        when(redisTemplate.execute(any(RedisCallback.class))).thenReturn(0L);
+        when(redisUtil.increment(any(), eq(1L))).thenThrow(bumpFailure);
+        MultiLevelCache<String, String> cache = new MultiLevelCache<>(
+                CacheConfig.<String, String>builder("critical")
+                        .redisKeyPrefix("test:")
+                        .strongConsistency(true)
+                        .build(),
+                redisUtil,
+                new JacksonCacheSerializer(),
+                publisher,
+                "node-a",
+                () -> { }
+        );
+
+        CacheException exception = assertThrows(CacheException.class, cache::evictAll);
+
+        assertEquals("CACHE_006", exception.getCode());
+        assertSame(bumpFailure, exception.getCause());
+        assertTrue(cache.isL2Degraded());
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
+    @DisplayName("evictAll 在 L2 已降级时不得重试清理或广播 ALL")
+    void evictAllShouldFailClosedWithoutRedisRetryWhenL2IsAlreadyDegraded() {
+        RedisUtil redisUtil = mock(RedisUtil.class);
+        CacheInvalidationPublisher publisher = mock(CacheInvalidationPublisher.class);
+        RuntimeException failure = new RuntimeException("redis unavailable");
+        when(redisUtil.getTemplate()).thenThrow(failure);
+        MultiLevelCache<String, String> cache = new MultiLevelCache<>(
+                CacheConfig.<String, String>builder("critical")
+                        .redisKeyPrefix("test:")
+                        .strongConsistency(false)
+                        .build(),
+                redisUtil,
+                new JacksonCacheSerializer(),
+                publisher,
+                "node-a",
+                () -> { }
+        );
+        assertThrows(CacheException.class, cache::evictAll);
+        org.mockito.Mockito.clearInvocations(redisUtil, publisher);
+
+        CacheException exception = assertThrows(CacheException.class, cache::evictAll);
+
+        assertEquals("CACHE_006", exception.getCode());
+        assertSame(failure, exception.getCause());
+        verify(redisUtil, never()).getTemplate();
+        verifyNoInteractions(publisher);
+    }
 
     @Test
     @DisplayName("VERSIONED 模式在 Redis 降级后不得信任或重新建立 L1")
@@ -151,6 +253,214 @@ class MultiLevelCacheConsistencyTest {
         List<RuleDto> rules = cache.getIfPresent("rules");
 
         assertEquals(List.of(new RuleDto("R1")), rules);
+    }
+
+    @Test
+    @DisplayName("旧序列化器不支持泛型单 Key 时暴露配置错误且不降级 L2")
+    void genericTypeConfigurationFailureShouldEscapeSingleReadWithoutDegradation()
+            throws NoSuchFieldException {
+        RedisUtil redisUtil = redisReturningRawRuleList();
+        MultiLevelCache<String, List<RuleDto>> cache = legacyGenericCache(redisUtil);
+
+        CacheException exception = assertThrows(
+                CacheException.class,
+                () -> cache.getIfPresent("rules")
+        );
+
+        assertEquals(CacheErrorCode.GENERIC_TYPE_UNSUPPORTED.getCode(), exception.getCode());
+        assertFalse(cache.isL2Degraded());
+    }
+
+    @Test
+    @DisplayName("旧序列化器不支持泛型批量读取时暴露配置错误且不降级 L2")
+    void genericTypeConfigurationFailureShouldEscapeBatchReadWithoutDegradation()
+            throws NoSuchFieldException {
+        RedisUtil redisUtil = mock(RedisUtil.class);
+        when(redisUtil.pipeline(any())).thenReturn(List.of(
+                List.of(Map.of("code", "R1")),
+                Duration.ofMinutes(5).toMillis()
+        ));
+        MultiLevelCache<String, List<RuleDto>> cache = legacyGenericCache(redisUtil);
+
+        CacheException exception = assertThrows(
+                CacheException.class,
+                () -> cache.getAllPresent(Set.of("rules"))
+        );
+
+        assertEquals(CacheErrorCode.GENERIC_TYPE_UNSUPPORTED.getCode(), exception.getCode());
+        assertFalse(cache.isL2Degraded());
+    }
+
+    @Test
+    @DisplayName("泛型配置错误直接抛出时保留原始异常实例")
+    void directGenericTypeConfigurationFailureShouldPreserveOriginalInstance()
+            throws NoSuchFieldException {
+        RedisUtil redisUtil = redisReturningRawRuleList();
+        CacheException expected = CacheException.genericTypeUnsupported(genericRuleListType());
+        MultiLevelCache<String, List<RuleDto>> cache = genericCache(
+                redisUtil,
+                genericTypeFailingSerializer(expected)
+        );
+
+        CacheException actual = assertThrows(
+                CacheException.class,
+                () -> cache.getIfPresent("rules")
+        );
+
+        assertSame(expected, actual);
+        assertFalse(cache.isL2Degraded());
+    }
+
+    @Test
+    @DisplayName("泛型配置错误被一层包装时保留原因链中的原始实例")
+    void wrappedGenericTypeConfigurationFailureShouldPreserveOriginalCause()
+            throws NoSuchFieldException {
+        RedisUtil redisUtil = redisReturningRawRuleList();
+        CacheException expected = CacheException.genericTypeUnsupported(genericRuleListType());
+        MultiLevelCache<String, List<RuleDto>> cache = genericCache(
+                redisUtil,
+                genericTypeFailingSerializer(new RuntimeException(expected))
+        );
+
+        CacheException actual = assertThrows(
+                CacheException.class,
+                () -> cache.getIfPresent("rules")
+        );
+
+        assertSame(expected, actual);
+        assertFalse(cache.isL2Degraded());
+    }
+
+    @Test
+    @DisplayName("其他序列化异常仍按未命中处理")
+    void nonGenericSerializerFailureShouldRemainCacheMiss() throws NoSuchFieldException {
+        RedisUtil redisUtil = redisReturningRawRuleList();
+        CacheException other = CacheException.loaderFailed(new IllegalStateException("loader"));
+        MultiLevelCache<String, List<RuleDto>> cache = genericCache(
+                redisUtil,
+                genericTypeFailingSerializer(other)
+        );
+
+        assertNull(cache.getIfPresent("rules"));
+        assertFalse(cache.isL2Degraded());
+    }
+
+    @Test
+    @DisplayName("其他 L2 读取异常仍触发降级且不向外传播")
+    void nonGenericL2FailureShouldRemainDegradedMiss() throws NoSuchFieldException {
+        RedisUtil redisUtil = mock(RedisUtil.class);
+        @SuppressWarnings("unchecked")
+        BoundValueOperations<String, Object> data = mock(BoundValueOperations.class);
+        when(redisUtil.boundValueOps("test:legacy-generic:rules"))
+                .thenReturn(data);
+        when(data.get()).thenThrow(CacheException.loaderFailed(new IllegalStateException("redis")));
+        MultiLevelCache<String, List<RuleDto>> cache = legacyGenericCache(redisUtil);
+
+        assertNull(cache.getIfPresent("rules"));
+        assertTrue(cache.isL2Degraded());
+    }
+
+    /**
+     * 创建声明泛型值、但序列化 SPI 仅支持旧 Class 方法的缓存。
+     *
+     * @param redisUtil Redis 测试替身
+     * @return 用于验证 SPI 能力不匹配边界的缓存
+     * @throws NoSuchFieldException 测试泛型类型字段不存在时抛出
+     */
+    private static MultiLevelCache<String, List<RuleDto>> legacyGenericCache(
+            RedisUtil redisUtil) throws NoSuchFieldException {
+        return genericCache(redisUtil, classOnlySerializer());
+    }
+
+    /**
+     * 创建声明泛型值并使用指定序列化器的缓存。
+     *
+     * @param redisUtil Redis 测试替身
+     * @param serializer 待验证的序列化器
+     * @return 泛型值缓存
+     * @throws NoSuchFieldException 测试泛型类型字段不存在时抛出
+     */
+    private static MultiLevelCache<String, List<RuleDto>> genericCache(
+            RedisUtil redisUtil,
+            CacheSerializer serializer) throws NoSuchFieldException {
+        return new MultiLevelCache<>(
+                CacheConfig.<String, List<RuleDto>>builder("legacy-generic")
+                        .redisKeyPrefix("test:")
+                        .strongConsistency(false)
+                        .valueType(genericRuleListType())
+                        .build(),
+                redisUtil,
+                serializer
+        );
+    }
+
+    /**
+     * 获取测试 DTO 集合的参数化类型。
+     *
+     * @return {@code List<RuleDto>} 类型
+     * @throws NoSuchFieldException 测试泛型类型字段不存在时抛出
+     */
+    private static Type genericRuleListType() throws NoSuchFieldException {
+        return GenericTypes.class.getDeclaredField("rules").getGenericType();
+    }
+
+    /**
+     * 模拟 Redis 返回尚未恢复元素类型的原始 Map 集合。
+     *
+     * @return 已配置原始缓存值的 Redis 测试替身
+     */
+    private static RedisUtil redisReturningRawRuleList() {
+        RedisUtil redisUtil = mock(RedisUtil.class);
+        @SuppressWarnings("unchecked")
+        BoundValueOperations<String, Object> data = mock(BoundValueOperations.class);
+        when(redisUtil.boundValueOps("test:legacy-generic:rules"))
+                .thenReturn(data);
+        when(data.get()).thenReturn(List.of(Map.of("code", "R1")));
+        return redisUtil;
+    }
+
+    /**
+     * 模拟升级前仅实现 Class 反序列化能力的自定义序列化器。
+     *
+     * @return 未覆盖 Type 方法的旧版 SPI 实现
+     */
+    private static CacheSerializer classOnlySerializer() {
+        return new CacheSerializer() {
+            @Override
+            public <T> String serialize(T value) {
+                return String.valueOf(value);
+            }
+
+            @Override
+            public <T> T deserialize(String json, Class<T> clazz) {
+                return null;
+            }
+        };
+    }
+
+    /**
+     * 创建在 Type 反序列化时抛出指定异常的序列化器。
+     *
+     * @param failure 泛型反序列化时抛出的异常
+     * @return 泛型反序列化失败的序列化器
+     */
+    private static CacheSerializer genericTypeFailingSerializer(RuntimeException failure) {
+        return new CacheSerializer() {
+            @Override
+            public <T> String serialize(T value) {
+                return String.valueOf(value);
+            }
+
+            @Override
+            public <T> T deserialize(String json, Class<T> clazz) {
+                return null;
+            }
+
+            @Override
+            public Object deserialize(String json, Type type) {
+                throw failure;
+            }
+        };
     }
 
     private static final class GenericTypes {

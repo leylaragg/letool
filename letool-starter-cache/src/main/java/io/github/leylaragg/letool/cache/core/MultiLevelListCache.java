@@ -2,6 +2,7 @@ package io.github.leylaragg.letool.cache.core;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import io.github.leylaragg.letool.cache.exception.CacheException;
 import io.github.leylaragg.letool.tool.redis.RedisUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,6 +69,8 @@ public class MultiLevelListCache<K, V> {
 
     /** Redis L2 当前是否处于降级状态。 */
     private volatile boolean l2Degraded = false;
+    /** 最近一次触发降级的异常，供失败关闭路径保留诊断原因链。 */
+    private volatile Exception lastL2Failure;
 
     /**
      * 创建 List 二级缓存实例。
@@ -222,15 +225,22 @@ public class MultiLevelListCache<K, V> {
     /**
      * 清空当前 List 缓存区域的全部 L1/L2 数据，并广播其它 JVM 清理本地快照。
      *
-     * <p>Redis L2 使用 SCAN + UNLINK 分批清理，只匹配当前缓存名称对应的键空间。</p>
+     * <p>始终先清理当前 JVM 的 L1。启用 L2 时，Redis 使用 SCAN + UNLINK 分批清理，
+     * 只有完整成功后才广播；L1-only 模式在本地清理完成后广播。</p>
+     *
+     * @throws CacheException L2 已降级或 Redis 区域清理失败时抛出
      */
     public void evictAll() {
         evictLocalAll();
-        if (l2Enabled && !l2Degraded) {
+        if (l2Enabled) {
+            if (l2Degraded) {
+                throw CacheException.l2Unavailable(lastL2Failure);
+            }
             try {
                 keyspace.scanAndUnlink(redisUtil.getTemplate());
             } catch (Exception e) {
                 markL2Degraded(e);
+                throw CacheException.l2Unavailable(e);
             }
         }
         publishInvalidationAll();
@@ -283,6 +293,7 @@ public class MultiLevelListCache<K, V> {
             redisUtil.hasKey(keyspace.healthCheckKey());
             evictLocalAll();
             l2Degraded = false;
+            lastL2Failure = null;
             return true;
         } catch (Exception e) {
             return false;
@@ -486,6 +497,7 @@ public class MultiLevelListCache<K, V> {
     }
 
     private void markL2Degraded(Exception e) {
+        lastL2Failure = e;
         if (!l2Degraded) {
             l2Degraded = true;
             degradationListener.run();

@@ -9,6 +9,8 @@ import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
 import io.github.leylaragg.letool.cache.serializer.JacksonCacheSerializer;
 import io.github.leylaragg.letool.cache.support.CacheMonitor;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.mockito.MockedConstruction;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -17,6 +19,13 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.springframework.data.redis.connection.MessageListener;
+import org.springframework.data.redis.connection.RedisConnection;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.connection.SubscriptionListener;
+import org.springframework.data.redis.listener.ChannelTopic;
+import org.springframework.data.redis.listener.RedisMessageListenerContainer;
+import org.springframework.data.redis.listener.Topic;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import io.github.leylaragg.letool.cache.consistency.CacheInvalidationEventStore;
@@ -31,6 +40,14 @@ import java.util.Arrays;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * {@link CacheAutoConfiguration} 的自动装配契约测试。
@@ -38,6 +55,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>重点覆盖业务项目自定义缓存基础设施 Bean 时，cache starter 是否正确退让。</p>
  */
 class CacheAutoConfigurationTest {
+
+    private static final String TEST_INVALIDATION_CHANNEL = "letool:test:invalidation";
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(CacheAutoConfiguration.class))
@@ -220,9 +239,9 @@ class CacheAutoConfigurationTest {
                 });
     }
 
-    /** 失效基础设施必须同时声明稳定 Bean 名和类型退让条件。 */
+    /** 失效基础设施按各自所有权声明稳定 Bean 名和退让条件。 */
     @Test
-    void invalidationInfrastructureShouldUseStableNamesAndTypedBackoff() {
+    void invalidationInfrastructureShouldUseStableNamesAndOwnershipBackoff() {
         assertNamedTypedBackoff(
                 "letoolCacheInvalidationPublisher",
                 io.github.leylaragg.letool.cache.core.CacheInvalidationPublisher.class);
@@ -231,7 +250,89 @@ class CacheAutoConfigurationTest {
                 io.github.leylaragg.letool.cache.core.RedisCacheInvalidationListener.class);
         assertNamedTypedBackoff(
                 "letoolCacheInvalidationListenerContainer",
-                org.springframework.data.redis.listener.RedisMessageListenerContainer.class);
+                RedisMessageListenerContainer.class);
+    }
+
+    /** 业务只有一个监听容器时，Letool 应复用它订阅失效通道并保持类型注入唯一。 */
+    @Test
+    void shouldRegisterInvalidationListenerOnSingleBusinessContainer() {
+        contextRunner
+                .withUserConfiguration(BusinessRedisListenerConfiguration.class)
+                .withPropertyValues(
+                        "letool.cache.invalidation.channel=" + TEST_INVALIDATION_CHANNEL)
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(RedisMessageListenerContainer.class);
+                    assertThat(context).doesNotHaveBean("letoolCacheInvalidationListenerContainer");
+                    assertThat(context).hasBean("letoolCacheInvalidationListenerRegistration");
+                    assertThat(context.getBeansOfType(RedisMessageListenerContainer.class))
+                            .containsOnlyKeys("businessRedisMessageListenerContainer");
+                    RedisMessageListenerContainer businessContainer = context.getBean(
+                            "businessRedisMessageListenerContainer",
+                            RedisMessageListenerContainer.class);
+                    BusinessRedisListenerConsumer consumer =
+                            context.getBean(BusinessRedisListenerConsumer.class);
+                    assertThat(consumer.listenerContainer()).isSameAs(businessContainer);
+                    ArgumentCaptor<Topic> topicCaptor = ArgumentCaptor.forClass(Topic.class);
+                    verify(businessContainer).addMessageListener(
+                            any(MessageListener.class),
+                            topicCaptor.capture());
+                    assertThat(topicCaptor.getValue()).isInstanceOf(ChannelTopic.class);
+                    assertThat(topicCaptor.getValue().getTopic())
+                            .isEqualTo(TEST_INVALIDATION_CHANNEL);
+                });
+    }
+
+    /** 没有业务容器时，Letool 应创建普通默认候选并保持原有类型注入兼容。 */
+    @Test
+    void shouldCreateDefaultListenerContainerWhenBusinessContainerIsMissing() {
+        try (MockedConstruction<RedisMessageListenerContainer> construction =
+                     mockConstruction(RedisMessageListenerContainer.class)) {
+            contextRunner
+                    .withUserConfiguration(LetoolOnlyRedisListenerConfiguration.class)
+                    .withPropertyValues(
+                            "letool.cache.invalidation.channel=" + TEST_INVALIDATION_CHANNEL)
+                    .run(context -> {
+                        assertThat(context).hasNotFailed();
+                        assertThat(context).hasSingleBean(RedisMessageListenerContainer.class);
+                        assertThat(context).doesNotHaveBean(
+                                "letoolCacheInvalidationListenerRegistration");
+                        RedisMessageListenerContainer letoolContainer = context.getBean(
+                                "letoolCacheInvalidationListenerContainer",
+                                RedisMessageListenerContainer.class);
+                        BusinessRedisListenerConsumer consumer =
+                                context.getBean(BusinessRedisListenerConsumer.class);
+                        assertThat(consumer.listenerContainer()).isSameAs(letoolContainer);
+                        assertThat(construction.constructed()).containsExactly(letoolContainer);
+                        ArgumentCaptor<Topic> topicCaptor = ArgumentCaptor.forClass(Topic.class);
+                        verify(letoolContainer).addMessageListener(
+                                any(MessageListener.class),
+                                topicCaptor.capture());
+                        assertThat(topicCaptor.getValue()).isInstanceOf(ChannelTopic.class);
+                        assertThat(topicCaptor.getValue().getTopic())
+                                .isEqualTo(TEST_INVALIDATION_CHANNEL);
+                    });
+        }
+    }
+
+    /** 同名容器表示业务方显式接管 Letool 失效订阅，自动配置应当退让。 */
+    @Test
+    void shouldBackOffWhenUserProvidesNamedInvalidationListenerContainer() {
+        contextRunner
+                .withUserConfiguration(NamedInvalidationListenerConfiguration.class)
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(RedisMessageListenerContainer.class);
+                    assertThat(context).doesNotHaveBean(
+                            "letoolCacheInvalidationListenerRegistration");
+                    assertThat(context.getBean("letoolCacheInvalidationListenerContainer"))
+                            .isSameAs(context.getBean(RedisMessageListenerContainer.class));
+                    RedisMessageListenerContainer container =
+                            context.getBean(RedisMessageListenerContainer.class);
+                    verify(container, never()).addMessageListener(
+                            any(MessageListener.class),
+                            any(ChannelTopic.class));
+                });
     }
 
     /**
@@ -345,6 +446,27 @@ class CacheAutoConfigurationTest {
         }
     }
 
+    /**
+     * 创建可完成监听容器订阅确认的 Redis 连接工厂替身。
+     *
+     * @return 不建立网络连接的 Redis 连接工厂
+     */
+    private static RedisConnectionFactory mockRedisConnectionFactory() {
+        RedisConnectionFactory connectionFactory = mock(RedisConnectionFactory.class);
+        RedisConnection connection = mock(RedisConnection.class);
+        when(connectionFactory.getConnection()).thenReturn(connection);
+        doAnswer(invocation -> {
+            MessageListener listener = invocation.getArgument(0);
+            byte[] channel = invocation.getArgument(1);
+            assertThat(listener).isInstanceOf(SubscriptionListener.class);
+            SubscriptionListener subscriptionListener = (SubscriptionListener) listener;
+            // 这里只模拟订阅确认以完成容器生命周期，不建立真实 Redis 网络连接。
+            subscriptionListener.onChannelSubscribed(channel, 1);
+            return null;
+        }).when(connection).subscribe(any(MessageListener.class), any(byte[][].class));
+        return connectionFactory;
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class UserCacheConfiguration {
 
@@ -390,6 +512,80 @@ class CacheAutoConfigurationTest {
         @Bean
         CacheInvalidationEventStore cacheInvalidationEventStore() {
             return org.mockito.Mockito.mock(CacheInvalidationEventStore.class);
+        }
+    }
+
+    /** 提供普通业务 Redis 监听容器，验证 Letool 复用它且不增加同类型 Bean。 */
+    @Configuration(proxyBeanMethods = false)
+    static class BusinessRedisListenerConfiguration {
+
+        @Bean
+        RedisConnectionFactory redisConnectionFactory() {
+            return mockRedisConnectionFactory();
+        }
+
+        @Bean
+        RedisMessageListenerContainer businessRedisMessageListenerContainer(
+                RedisConnectionFactory connectionFactory) {
+            RedisMessageListenerContainer container = new RedisMessageListenerContainer();
+            container.setConnectionFactory(connectionFactory);
+            return spy(container);
+        }
+
+        /**
+         * 创建按类型依赖 Redis 监听容器的业务消费者。
+         *
+         * @param listenerContainer 业务默认监听容器
+         * @return 业务监听消费者
+         */
+        @Bean
+        BusinessRedisListenerConsumer businessRedisListenerConsumer(
+                RedisMessageListenerContainer listenerContainer) {
+            return new BusinessRedisListenerConsumer(listenerContainer);
+        }
+    }
+
+    /** 只提供 Redis 连接，让自动配置创建默认的 Letool 监听容器。 */
+    @Configuration(proxyBeanMethods = false)
+    static class LetoolOnlyRedisListenerConfiguration {
+
+        @Bean
+        RedisConnectionFactory redisConnectionFactory() {
+            return mockRedisConnectionFactory();
+        }
+
+        /**
+         * 创建按类型依赖唯一监听容器的消费者，验证默认场景保持兼容。
+         *
+         * @param listenerContainer 唯一的 Redis 监听容器
+         * @return 监听容器消费者
+         */
+        @Bean
+        BusinessRedisListenerConsumer businessRedisListenerConsumer(
+                RedisMessageListenerContainer listenerContainer) {
+            return new BusinessRedisListenerConsumer(listenerContainer);
+        }
+    }
+
+    /** 保存业务按类型注入到的 Redis 监听容器。 */
+    record BusinessRedisListenerConsumer(RedisMessageListenerContainer listenerContainer) {
+    }
+
+    /** 提供同名 Letool 监听容器，验证自动配置按所有权退让。 */
+    @Configuration(proxyBeanMethods = false)
+    static class NamedInvalidationListenerConfiguration {
+
+        @Bean
+        RedisConnectionFactory redisConnectionFactory() {
+            return mockRedisConnectionFactory();
+        }
+
+        @Bean("letoolCacheInvalidationListenerContainer")
+        RedisMessageListenerContainer letoolCacheInvalidationListenerContainer(
+                RedisConnectionFactory connectionFactory) {
+            RedisMessageListenerContainer container = new RedisMessageListenerContainer();
+            container.setConnectionFactory(connectionFactory);
+            return spy(container);
         }
     }
 

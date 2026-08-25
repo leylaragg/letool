@@ -62,7 +62,8 @@ letool:
       recovery-batch-size: 100
       recovery-lease: 30s
       retry-base-delay: 1s
-      # 必须不小于 l1-ttl + max(fence-ttl, recovery-interval) + 10m
+      # 启用 L2 且 read-validation=VERSIONED 时，必须不小于
+      # l1-ttl + max(fence-ttl, recovery-interval) + 10m
       version-metadata-retention: 7d
       completed-retention: 7d
       cleanup-interval: 1h
@@ -243,6 +244,12 @@ sequenceDiagram
 - Redis Pub/Sub 负责快速通知在线节点清理 L1，降低旧值继续存在的时间。
 - `read-validation=VERSIONED` 负责兜底。节点离线、网络抖动或重启期间即使错过 Pub/Sub，下一次读取
   也会校验 Redis 单 Key 版本，版本不一致时拒绝旧 L1。
+
+业务没有提供 `RedisMessageListenerContainer` 时，Letool 会创建名为
+`letoolCacheInvalidationListenerContainer` 的默认容器；业务只有一个默认监听容器时，Letool 直接复用
+该容器并自动注册失效通道订阅，不会增加同类型 Bean，也不会破坏业务原有的按类型注入。业务提供同名
+容器表示完全接管，接管方必须自行注册 Letool 失效监听器；不需要跨 JVM 失效时，也可以设置
+`letool.cache.invalidation.enabled=false`，同时关闭失效广播、自动订阅注册和默认监听容器。
 
 `@MultiLevelCacheEvict` 无论写策略如何都只负责失效；只有 `@MultiLevelCachePut` 配合
 `write-policy=UPDATE`，才会把方法返回值写入节点 A 的 L1 和共享 L2。DURABLE Outbox 只持久化并重放
@@ -506,6 +513,9 @@ CacheConfig<String, List<RuleDto>> config = CacheConfig
 
 框架不新增 Java `ServiceLoader` SPI。现有 `CacheSerializer` 继续作为序列化扩展点，并增加
 `deserialize(String, Type)`；失效协议、前缀扫描、版本治理和读取故障策略保持框架内部实现。
+自定义序列化器如果仍只实现 `deserialize(String, Class)`，就不具备恢复参数化 `Type` 的 SPI 能力；
+读取这类缓存时会直接抛出 `CACHE_007`。该错误表示序列化器能力与缓存声明不匹配，不属于 Redis
+运行故障，也不会触发 L2 降级。
 
 ## Redis 原生集合缓存
 
@@ -583,8 +593,10 @@ ruleIndex.evictByPrefix("project:");
 PREFIX 消息清理其它节点的 L1。空前缀会快速失败；清理整个区域应使用 `evictAll()`。
 
 区域清理使用 `SCAN + UNLINK` 分批处理，只扫描当前缓存名称对应的键空间，不调用会阻塞 Redis
-主线程的 `KEYS`。Redis Cluster 模式会逐个扫描当前拓扑中的可用主节点，不会只清理当前连接
-节点。该能力要求 Redis 4.0 或更高版本，并要求缓存使用的 RedisTemplate 将
+主线程的 `KEYS`。Redis Cluster 模式会在扫描前校验主节点状态及 16384 个 Slot 的完整、无冲突覆盖，
+并用应用当前客户端连接逐个 PING 主节点。拓扑或客户端可达性预检可以降低部分清理风险，但不能消除
+预检后的拓扑变化和 SCAN 期间故障；此时方法会失败、标记 L2 降级且不广播全区域失效，调用方应重试
+或告警。该能力要求 Redis 4.0 或更高版本，并要求缓存使用的 RedisTemplate 将
 `StringRedisSerializer` 配置为 Key 序列化器；letool 提供的默认 RedisTemplate 已满足该约束。
 
 类型解析顺序为：工厂方法显式类型、`CacheConfig.valueType(...)`、RedisTemplate 实际反序列化类型。本模块不再假设 Set 成员一定是 `Long`；生产配置建议显式声明类型。
@@ -672,7 +684,7 @@ CacheInvalidationBacklog backlog = cacheMonitor.outboxBacklog(Instant.now());
 | `letool.cache.consistency.recovery-batch-size` | `100` | Outbox 单批最大领取数量 |
 | `letool.cache.consistency.recovery-lease` | `30s` | 单个恢复实例的处理租约 |
 | `letool.cache.consistency.retry-base-delay` | `1s` | 失败指数退避的基础延迟 |
-| `letool.cache.consistency.version-metadata-retention` | `7d` | 单 Key 版本元数据安全保留期 |
+| `letool.cache.consistency.version-metadata-retention` | `7d` | 单 Key 版本元数据安全保留期；仅 L2 + VERSIONED 校验安全窗口 |
 | `letool.cache.consistency.completed-retention` | `7d` | 已完成 Outbox 事件保留时间 |
 | `letool.cache.consistency.cleanup-interval` | `1h` | 已完成 Outbox 事件清理间隔 |
 | `letool.cache.consistency.cleanup-batch-size` | `1000` | 已完成 Outbox 单次最大清理数量 |
@@ -729,7 +741,9 @@ CacheInvalidationBacklog backlog = cacheMonitor.outboxBacklog(Instant.now());
 - 复合对象 key 配置稳定序列化器，并把序列化规则作为兼容性协议管理。
 - 集合写入和 TTL 刷新当前是两个 Redis 命令；需要事务级原子性的队列、排行榜或超高频写路径，应在业务层使用 Lua/事务或更成熟的分布式数据结构方案。
 - 区域级 `evictAll()` 使用 `SCAN + UNLINK` 分批清理，但它仍会遍历当前缓存区域的全部 Key；超大区域不要高频执行。
-- Redis Cluster 上执行区域清理前，应确认应用账号能够读取集群拓扑并访问全部主节点。
+- Redis Cluster 上执行区域或前缀清理前，应确认应用账号能够读取完整拓扑、PING 全部主节点，
+  且 16384 个 Slot 已由健康主节点完整、无冲突覆盖。预检后的故障仍可能造成部分删除；`evictAll()`
+  会失败且不广播，调用方应安排重试和告警。
 - 自定义 RedisTemplate 时必须使用 `StringRedisSerializer` 序列化 Key，否则区域清理会进入既有 L2 降级流程，避免错误扫描其它键空间。
 - 非 String key 的精确失效需要扫描当前缓存区域的本地 key 并比较序列化结果；超大 L1 区域且高频失效时，优先使用 String key 或评估业务侧反向索引。
 - 普通回归运行 `mvn -pl letool-starter-cache -am test`；真实 Redis 门禁运行

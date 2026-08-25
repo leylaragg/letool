@@ -5,6 +5,7 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.Expiry;
 import io.github.leylaragg.letool.cache.consistency.CacheConsistencyMode;
 import io.github.leylaragg.letool.cache.consistency.CacheWritePolicy;
+import io.github.leylaragg.letool.cache.exception.CacheErrorCode;
 import io.github.leylaragg.letool.cache.exception.CacheException;
 import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
 import io.github.leylaragg.letool.tool.redis.RedisUtil;
@@ -131,6 +132,8 @@ public class MultiLevelCache<K, V> {
 
     /** Redis 是否处于降级状态。降级后读写路径会跳过 L2，等待恢复调度探测。 */
     private volatile boolean l2Degraded = false;
+    /** 最近一次触发降级的异常，供失败关闭路径保留诊断原因链。 */
+    private volatile Exception lastL2Failure;
 
     /**
      * 创建 KV 二级缓存实例。
@@ -216,6 +219,8 @@ public class MultiLevelCache<K, V> {
      * @param key 缓存 key
      * @param loader 数据加载器，通常查询数据库或远程服务
      * @return 缓存值，可能为 null
+     * @throws CacheException 配置参数化 Type 但序列化 SPI 不支持泛型反序列化，
+     * 或 loader 执行失败时抛出
      */
     public V getOrLoad(K key, Function<K, V> loader) {
         return getOrLoad(key, loader, config.getL2Ttl());
@@ -231,6 +236,8 @@ public class MultiLevelCache<K, V> {
      * @param loader 数据加载器
      * @param ttl 本次写回 L2 的过期时间；为 null、0 或负数时使用配置默认 TTL
      * @return 缓存值，可能为 null
+     * @throws CacheException 配置参数化 Type 但序列化 SPI 不支持泛型反序列化，
+     * 或 loader 执行失败时抛出
      */
     public V getOrLoad(K key, Function<K, V> loader, Duration ttl) {
         if (key == null) {
@@ -285,6 +292,7 @@ public class MultiLevelCache<K, V> {
      *
      * @param key 缓存 key
      * @return 当前已缓存的值；L1/L2 都未命中时返回 null
+     * @throws CacheException 配置参数化 Type 但序列化 SPI 不支持泛型反序列化时抛出
      */
     public V getIfPresent(K key) {
         if (key == null) {
@@ -302,6 +310,7 @@ public class MultiLevelCache<K, V> {
      *
      * @param keys 缓存 key 集合
      * @return 已命中的 key/value 映射；未命中的 key 不会出现在返回结果中
+     * @throws CacheException 配置参数化 Type 但序列化 SPI 不支持泛型反序列化时抛出
      */
     public Map<K, V> getAllPresent(Set<K> keys) {
         if (keys == null || keys.isEmpty()) {
@@ -452,18 +461,24 @@ public class MultiLevelCache<K, V> {
     /**
      * 清空当前缓存区域。
      *
-     * <p>该方法会清理当前 JVM 的 L1，并尽力删除当前缓存区域前缀下的 Redis key，
-     * 最后广播其它 JVM 清理本地副本。</p>
+     * <p>该方法始终先清理当前 JVM 的 L1。启用 L2 时，只有 Redis 区域清理和区域版本推进全部成功后，
+     * 才广播其它 JVM 清理本地副本；L1-only 模式则在本地清理完成后广播。</p>
+     *
+     * @throws CacheException L2 已降级，或 Redis 区域清理、区域版本推进失败时抛出
      */
     public void evictAll() {
         evictLocalAll();
-        if (isL2Enabled()) {
+        if (isL2Configured()) {
+            if (l2Degraded) {
+                throw CacheException.l2Unavailable(lastL2Failure);
+            }
             try {
                 // 使用 SCAN + UNLINK 分批清理当前区域，避免 KEYS 阻塞 Redis 主线程。
                 keyspace.scanAndUnlink(redisUtil.getTemplate());
                 bumpConsistencyVersion();
             } catch (Exception e) {
                 markL2Degraded(e);
+                throw CacheException.l2Unavailable(e);
             }
         }
         invalidationPublisher.publish(CacheInvalidationMessage.all(name, instanceId));
@@ -556,6 +571,7 @@ public class MultiLevelCache<K, V> {
         try {
             redisUtil.hasKey(keyspace.healthCheckKey());
             l2Degraded = false;
+            lastL2Failure = null;
             return true;
         } catch (Exception e) {
             return false;
@@ -732,11 +748,22 @@ public class MultiLevelCache<K, V> {
             stats.recordRedisBatch();
             parseRedisBatch(keys, responses, result, versioned, durable);
         } catch (Exception exception) {
+            rethrowGenericTypeConfigurationFailure(exception);
             markL2Degraded(exception);
         }
     }
 
-    /** 解析 pipeline 响应，版本前后不一致的条目按未命中处理。 */
+    /**
+     * 解析 pipeline 响应，版本前后不一致的条目按未命中处理。
+     *
+     * <p>Redis 尚未创建区域版本时表示初始版本 0，稳定性判定与 L1 快照统一使用该纪元。</p>
+     *
+     * @param keys 当前分块中的业务 key
+     * @param responses Redis pipeline 按请求顺序返回的结果
+     * @param result 承载稳定命中的批量结果
+     * @param versioned 是否校验单 Key 版本与区域版本
+     * @param durable 是否同时校验写围栏
+     */
     private void parseRedisBatch(List<K> keys,
                                  List<Object> responses,
                                  Map<K, V> result,
@@ -749,7 +776,7 @@ public class MultiLevelCache<K, V> {
         }
         int cursor = 0;
         Long regionBefore = versioned
-                ? nullableLong(responses.get(cursor++))
+                ? zeroIfNull(responses.get(cursor++))
                 : Long.valueOf(LOCAL_ONLY_VERSION);
         List<BatchRead<K>> reads = new ArrayList<>(keys.size());
         for (K key : keys) {
@@ -761,7 +788,7 @@ public class MultiLevelCache<K, V> {
             reads.add(new BatchRead<>(key, fenced, versionBefore, value, ttlMillis, versionAfter));
         }
         Long regionAfter = versioned
-                ? nullableLong(responses.get(cursor))
+                ? zeroIfNull(responses.get(cursor))
                 : Long.valueOf(LOCAL_ONLY_VERSION);
         boolean regionStable = !versioned || java.util.Objects.equals(regionBefore, regionAfter);
         for (BatchRead<K> read : reads) {
@@ -896,6 +923,7 @@ public class MultiLevelCache<K, V> {
         try {
             return serializer.deserialize(serializer.serialize(cachedValue), valueType);
         } catch (Exception exception) {
+            rethrowGenericTypeConfigurationFailure(exception);
             log.warn(
                     "L2 cache [{}] cannot restore declared generic value type, causeType={}",
                     name,
@@ -955,9 +983,40 @@ public class MultiLevelCache<K, V> {
             long stableVersion = versionAfter == null ? LOCAL_ONLY_VERSION : versionAfter;
             return lookupFromRaw(cachedValue, stableVersion);
         } catch (Exception e) {
+            rethrowGenericTypeConfigurationFailure(e);
             markL2Degraded(e);
             return CacheLookup.miss();
         }
+    }
+
+    /**
+     * 重新抛出序列化 SPI 与声明泛型能力不匹配的配置错误。
+     *
+     * <p>该错误属于启动或配置问题，不是 Redis 运行故障，必须暴露给使用者，
+     * 不能触发 L2 降级。仅检查当前异常和一层直接原因，避免改变其他异常分类。</p>
+     *
+     * @param exception 当前处理链捕获的异常
+     * @throws CacheException 当前异常或直接原因是泛型能力不匹配时原样抛出
+     */
+    private static void rethrowGenericTypeConfigurationFailure(Exception exception) {
+        if (exception instanceof CacheException cacheException
+                && isGenericTypeConfigurationFailure(cacheException)) {
+            throw cacheException;
+        }
+        if (exception.getCause() instanceof CacheException cacheException
+                && isGenericTypeConfigurationFailure(cacheException)) {
+            throw cacheException;
+        }
+    }
+
+    /**
+     * 判断缓存异常是否为序列化 SPI 泛型能力不匹配。
+     *
+     * @param exception 缓存异常
+     * @return 错误码为 {@link CacheErrorCode#GENERIC_TYPE_UNSUPPORTED} 时返回 {@code true}
+     */
+    private static boolean isGenericTypeConfigurationFailure(CacheException exception) {
+        return CacheErrorCode.GENERIC_TYPE_UNSUPPORTED.getCode().equals(exception.getCode());
     }
 
     private Duration l1TtlForL2Hit(K key) {
@@ -1048,15 +1107,13 @@ public class MultiLevelCache<K, V> {
         }
     }
 
-    private Long bumpConsistencyVersion() {
+    private void bumpConsistencyVersion() {
         if (!config.isStrongConsistency() || !isL2Enabled()) {
-            return LOCAL_ONLY_VERSION;
+            return;
         }
-        try {
-            return redisUtil.increment(keyspace.regionVersionKey(), 1);
-        } catch (Exception e) {
-            markL2Degraded(e);
-            return null;
+        Long version = redisUtil.increment(keyspace.regionVersionKey(), 1);
+        if (version == null) {
+            throw new IllegalStateException("Redis 缓存区域版本推进未返回结果");
         }
     }
 
@@ -1089,6 +1146,7 @@ public class MultiLevelCache<K, V> {
 
     private void markL2Degraded(Exception cause) {
         stats.recordL2Degraded();
+        lastL2Failure = cause;
         if (!l2Degraded) {
             l2Degraded = true;
             // 只在第一次降级时登记恢复任务，避免 Redis 抖动时重复加入队列。

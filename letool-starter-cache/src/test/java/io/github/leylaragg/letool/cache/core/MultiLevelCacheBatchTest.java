@@ -1,5 +1,6 @@
 package io.github.leylaragg.letool.cache.core;
 
+import io.github.leylaragg.letool.cache.consistency.CacheReadValidation;
 import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
 import io.github.leylaragg.letool.tool.redis.RedisUtil;
 import org.junit.jupiter.api.DisplayName;
@@ -174,22 +175,35 @@ class MultiLevelCacheBatchTest {
     }
 
     @Test
-    @DisplayName("强一致批量读遇到尚未创建的区域版本时不应误判 Redis 降级")
+    @DisplayName("强一致批量读将缺失的区域版本按初始纪元 0 回填 L1")
     @SuppressWarnings("unchecked")
-    void versionedBatchReadShouldAcceptMissingRegionVersion() {
+    void versionedBatchReadShouldUseInitialEpochWhenRegionVersionIsMissing() {
         RedisUtil redisUtil = mock(RedisUtil.class);
         RedisOperations<String, Object> operations = mock(RedisOperations.class);
         ValueOperations<String, Object> valueOperations = mock(ValueOperations.class);
+        BoundValueOperations<String, Object> versionOperations = mock(BoundValueOperations.class);
+        BoundValueOperations<String, Object> regionVersionOperations = mock(BoundValueOperations.class);
+        BoundValueOperations<String, Object> dataOperations = mock(BoundValueOperations.class);
         when(operations.opsForValue()).thenReturn(valueOperations);
         when(redisUtil.pipeline(any())).thenAnswer(answer -> {
             Consumer<RedisOperations<String, Object>> callback = answer.getArgument(0);
             callback.accept(operations);
             return Arrays.asList(null, 1L, "cached", 300_000L, 1L, null);
         });
+        when(redisUtil.boundValueOps(argThat(key -> key != null
+                && key.endsWith(":region-version"))))
+                .thenReturn(regionVersionOperations);
+        when(redisUtil.boundValueOps(argThat(key -> key != null && key.endsWith(":version")
+                && !key.endsWith(":region-version"))))
+                .thenReturn(versionOperations);
+        when(redisUtil.boundValueOps(argThat(key -> key != null
+                && key.endsWith(":missing-key"))))
+                .thenReturn(dataOperations);
+        when(versionOperations.get()).thenReturn(1L);
+        when(regionVersionOperations.get()).thenReturn(null);
         MultiLevelCache<String, String> cache = new MultiLevelCache<>(
                 CacheConfig.<String, String>builder("empty-versioned-batch")
-                        .l1Enabled(false)
-                        .strongConsistency(true)
+                        .readValidation(CacheReadValidation.VERSIONED)
                         .build(),
                 redisUtil,
                 mock(CacheSerializer.class)
@@ -199,6 +213,9 @@ class MultiLevelCacheBatchTest {
 
         assertEquals(Map.of("missing-key", "cached"), result);
         assertFalse(cache.isL2Degraded());
+        assertEquals(1, cache.estimatedSize());
+        assertEquals("cached", cache.getIfPresent("missing-key"));
+        verify(dataOperations, never()).get();
     }
 
     @Test

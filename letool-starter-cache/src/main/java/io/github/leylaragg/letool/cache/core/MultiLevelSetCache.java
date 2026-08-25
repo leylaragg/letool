@@ -352,15 +352,22 @@ public class MultiLevelSetCache<K, V> {
     /**
      * 清空当前缓存区域的所有 L1/L2 数据，并广播其它 JVM 清理本地副本。
      *
-     * <p>Redis L2 使用 SCAN + UNLINK 分批清理，只匹配当前缓存名称对应的键空间。</p>
+     * <p>始终先清理当前 JVM 的 L1。启用 L2 时，Redis 使用 SCAN + UNLINK 分批清理，
+     * 只有完整成功后才广播；L1-only 模式在本地清理完成后广播。</p>
+     *
+     * @throws CacheException L2 已降级或 Redis 区域清理失败时抛出
      */
     public void evictAll() {
         evictLocalAll();
-        if (l2Enabled && !l2Degraded) {
+        if (l2Enabled) {
+            if (l2Degraded) {
+                throw CacheException.l2Unavailable(lastL2Failure);
+            }
             try {
                 keyspace.scanAndUnlink(redisUtil.getTemplate());
             } catch (Exception e) {
                 markL2Degraded(e);
+                throw CacheException.l2Unavailable(e);
             }
         }
         publishInvalidationAll();

@@ -377,6 +377,30 @@ class MultiLevelSetCacheTest {
                 message.isAll() && "rule:index".equals(message.getCacheName())));
     }
 
+    /** Redis 区域清理失败时不得向其它节点广播不真实的全区域失效。 */
+    @Test
+    @DisplayName("evictAll 清理 Redis 失败时不广播 ALL")
+    void evictAllShouldNotPublishWhenRedisCleanupFails() {
+        CacheInvalidationPublisher publisher = mock(CacheInvalidationPublisher.class);
+        RuntimeException cleanupFailure = new RuntimeException("scan failed");
+        when(redisUtil.getTemplate()).thenThrow(cleanupFailure);
+        MultiLevelSetCache<String, String> cache = new CacheManager(
+                redisUtil,
+                serializer,
+                true,
+                true,
+                "test:cache:",
+                publisher
+        ).getOrCreateSetCache(config, Function.identity(), String.class);
+
+        CacheException exception = assertThrows(CacheException.class, cache::evictAll);
+
+        assertEquals("CACHE_006", exception.getCode());
+        assertSame(cleanupFailure, exception.getCause());
+        assertTrue(cache.isL2Degraded());
+        verifyNoInteractions(publisher);
+    }
+
     @Test
     @DisplayName("evictByPrefix 只清理匹配业务 Key 并广播 PREFIX")
     void evictByPrefixShouldClearOnlyMatchingKeys() {

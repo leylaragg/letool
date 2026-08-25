@@ -230,6 +230,45 @@ class CacheConfigTest {
                         .build(),
                 "null-value-ttl"
         );
+        assertConfigurationInvalid(
+                () -> CacheConfig.builder("bad")
+                        .l2Enabled(false)
+                        .versionMetadataRetention(Duration.ZERO)
+                        .build(),
+                "version-metadata-retention"
+        );
+    }
+
+    @Test
+    @DisplayName("L2 关闭时 NONE 和 VERSIONED 都不受版本元数据安全窗口限制")
+    void shouldSkipVersionMetadataSafetyWindowWhenL2Disabled() {
+        for (CacheReadValidation validation : CacheReadValidation.values()) {
+            CacheConfig<String, String> config = assertDoesNotThrow(
+                    () -> CacheConfig.<String, String>builder("l1-only-" + validation)
+                            .l2Enabled(false)
+                            .readValidation(validation)
+                            .l1Ttl(Duration.ofDays(30))
+                            .versionMetadataRetention(Duration.ofDays(7))
+                            .build()
+            );
+
+            assertEquals(validation, config.getReadValidation());
+        }
+    }
+
+    @Test
+    @DisplayName("L2 开启但不读取版本元数据时不受安全窗口限制")
+    void shouldSkipVersionMetadataSafetyWindowForNoneValidation() {
+        CacheConfig<String, String> config = assertDoesNotThrow(
+                () -> CacheConfig.<String, String>builder("unversioned")
+                        .l2Enabled(true)
+                        .readValidation(CacheReadValidation.NONE)
+                        .l1Ttl(Duration.ofDays(30))
+                        .versionMetadataRetention(Duration.ofDays(7))
+                        .build()
+        );
+
+        assertEquals(CacheReadValidation.NONE, config.getReadValidation());
     }
 
     @Test
@@ -238,11 +277,10 @@ class CacheConfigTest {
         CacheException exception = assertThrows(
                 CacheException.class,
                 () -> CacheConfig.<String, String>builder("metadata")
-                        .l1Ttl(Duration.ofHours(1))
-                        .l2Ttl(Duration.ofHours(2))
+                        .l1Ttl(Duration.ofDays(30))
                         .fenceTtl(Duration.ofMinutes(2))
                         .recoveryInterval(Duration.ofSeconds(5))
-                        .versionMetadataRetention(Duration.ofHours(1))
+                        .versionMetadataRetention(Duration.ofDays(7))
                         .build()
         );
 
