@@ -437,6 +437,7 @@ public class CacheManager {
                 .readValidation(config.getReadValidation())
                 .writePolicy(config.getWritePolicy())
                 .readFailurePolicy(config.getReadFailurePolicy())
+                .writeFailurePolicy(config.getWriteFailurePolicy())
                 .nullValueCache(config.isNullValueCache())
                 .nullValueTtl(config.getNullValueTtl())
                 .valueType(config.getValueTypeDescriptor())

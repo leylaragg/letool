@@ -353,6 +353,7 @@ public class MultiLevelCache<K, V> {
      *
      * @param key 缓存 key
      * @param value 缓存值；为 null 且启用 null 值缓存时写入空值哨兵
+     * @throws CacheException 严格写策略下 Redis 变更无法确认时抛出
      */
     public void put(K key, V value) {
         put(key, value, config.getL2Ttl());
@@ -364,6 +365,7 @@ public class MultiLevelCache<K, V> {
      * @param key 缓存 key
      * @param value 缓存值；为 null 且启用 null 值缓存时写入空值哨兵
      * @param ttl L2 过期时间；为 null、0 或负数时使用配置默认 TTL
+     * @throws CacheException 严格写策略下 Redis 变更无法确认时抛出
      */
     public void put(K key, V value, Duration ttl) {
         if (key == null) {
@@ -382,6 +384,7 @@ public class MultiLevelCache<K, V> {
      * 使用默认 L2 TTL 批量写入缓存。
      *
      * @param entries 待写入条目；空 Map 无操作，null key 忽略
+     * @throws CacheException 严格写策略下任一批次的 Redis 变更无法确认时抛出；已确认批次不会回滚
      */
     public void putAll(Map<K, V> entries) {
         putAll(entries, config.getL2Ttl());
@@ -395,6 +398,7 @@ public class MultiLevelCache<K, V> {
      *
      * @param entries 待写入条目；null value 遵循空值缓存配置
      * @param ttl 正常业务值的 L2 TTL
+     * @throws CacheException 严格写策略下任一批次的 Redis 变更无法确认时抛出；已确认批次不会回滚
      */
     public void putAll(Map<K, V> entries, Duration ttl) {
         if (entries == null || entries.isEmpty()) {
@@ -421,6 +425,7 @@ public class MultiLevelCache<K, V> {
         }
         stats.recordBatchWrite(writes.size());
         if (!isL2Enabled()) {
+            requireWritableL2IfStrict();
             for (BatchWrite<K> write : writes) {
                 putToL1(write.key(), write.localValue(),
                         min(config.getL1Ttl(), write.ttl()),
@@ -448,15 +453,23 @@ public class MultiLevelCache<K, V> {
      * <p>完整流程会删除当前 JVM 的 L1、删除 Redis L2、推进缓存区域版本，并广播其它 JVM 清理 L1。</p>
      *
      * @param key 缓存 key
+     * @throws CacheException 严格写策略下 Redis 删除无法确认时抛出
      */
     public void evict(K key) {
         if (key == null) {
             return;
         }
-        // 当前 JVM 先删 L1，再删 Redis 并推进版本，最后广播其它 JVM 删除自己的 L1。
-        evictLocal(key);
+        if (isStrictWriteFailurePolicy() && isL2Configured()) {
+            // 严格模式先确认共享删除，再清理本地副本，避免把失败伪装成已完成。
+            requireWritableL2IfStrict();
+            deleteFromRedisAndAdvanceVersion(key);
+            evictLocal(key);
+        } else {
+            // 兼容模式保持先删 L1 的既有可用性优先语义。
+            evictLocal(key);
+            deleteFromRedisAndAdvanceVersion(key);
+        }
         stats.recordEviction();
-        deleteFromRedisAndAdvanceVersion(key);
         publishInvalidation(Set.of(key));
     }
 
@@ -607,6 +620,11 @@ public class MultiLevelCache<K, V> {
         return config.getWritePolicy();
     }
 
+    /** @return Redis L2 变更失败时的处理策略 */
+    public CacheWriteFailurePolicy getWriteFailurePolicy() {
+        return config.getWriteFailurePolicy();
+    }
+
     private CacheLookup<V> getPresentLookup(K key) {
         if (config.isL1Enabled()) {
             // 强一致模式下，getFreshLocal 不只是读 Caffeine，还会校验 Redis 版本。
@@ -687,10 +705,12 @@ public class MultiLevelCache<K, V> {
     }
 
     private void putLoadedValue(K key, V value, Duration ttl, Long expectedVersion) {
+        requireWritableL2IfStrict();
         Duration l2Ttl = effectiveTtl(ttl, config.getL2Ttl());
         Long regionBefore = regionVersionBeforeWrite();
         Long version = writeToRedisAndAdvanceVersion(key, value, l2Ttl, expectedVersion);
         Long regionAfter = regionVersionAfterWrite();
+        failIfWriteBecameUnconfirmed();
         if (isStableWriteRegion(regionBefore, regionAfter)) {
             putToL1(key, value, min(config.getL1Ttl(), l2Ttl), version, regionAfter);
         }
@@ -701,10 +721,12 @@ public class MultiLevelCache<K, V> {
     }
 
     private void putLoadedNull(K key, Long expectedVersion) {
+        requireWritableL2IfStrict();
         Long regionBefore = regionVersionBeforeWrite();
         Long version = writeToRedisAndAdvanceVersion(
                 key, REDIS_NULL_SENTINEL, config.getNullValueTtl(), expectedVersion);
         Long regionAfter = regionVersionAfterWrite();
+        failIfWriteBecameUnconfirmed();
         if (isStableWriteRegion(regionBefore, regionAfter)) {
             putToL1(key, NullSentinel.INSTANCE,
                     min(config.getL1Ttl(), config.getNullValueTtl()), version, regionAfter);
@@ -885,6 +907,8 @@ public class MultiLevelCache<K, V> {
             return writeVersionedRedisBatch(writes, publishedKeys);
         } catch (Exception exception) {
             markL2Degraded(exception);
+            CacheWriteFailureSupport.throwIfStrict(
+                    config.getWriteFailurePolicy(), exception);
             return false;
         }
     }
@@ -936,6 +960,9 @@ public class MultiLevelCache<K, V> {
         for (int index = 0; index < writes.size(); index++) {
             Long version = nullableLong(responses.get(index));
             if (version == null || version < 0) {
+                if (isStrictWriteFailurePolicy()) {
+                    throw CacheWriteFailureSupport.unconfirmed("KV PUT pipeline");
+                }
                 continue;
             }
             BatchWrite<K> write = writes.get(index);
@@ -1098,8 +1125,12 @@ public class MultiLevelCache<K, V> {
 
     private Long writeToRedisAndAdvanceVersion(
             K key, Object value, Duration ttl, Long expectedVersion) {
-        if (!isL2Enabled()) {
+        if (!isL2Configured()) {
             return LOCAL_ONLY_VERSION;
+        }
+        requireWritableL2IfStrict();
+        if (l2Degraded) {
+            return null;
         }
         try {
             if (config.isStrongConsistency()) {
@@ -1123,36 +1154,69 @@ public class MultiLevelCache<K, V> {
                         versionMetadataRetentionMillis()};
                 Long version = RedisCacheScriptExecutor.executeRaw(
                         redisUtil, script, Long.class, keys, arguments);
-                return version != null && version >= 0 ? version : null;
+                if (version == null || version < 0) {
+                    throw CacheWriteFailureSupport.unconfirmed("KV PUT");
+                }
+                return version;
             }
             redisUtil.boundValueOps(redisKey(key)).set(value, ttl);
             return LOCAL_ONLY_VERSION;
         } catch (Exception e) {
             markL2Degraded(e);
+            CacheWriteFailureSupport.throwIfStrict(config.getWriteFailurePolicy(), e);
             return null;
         }
     }
 
     private Long deleteFromRedisAndAdvanceVersion(K key) {
-        if (!isL2Enabled()) {
+        if (!isL2Configured()) {
             return LOCAL_ONLY_VERSION;
+        }
+        requireWritableL2IfStrict();
+        if (l2Degraded) {
+            return null;
         }
         try {
             if (config.isStrongConsistency()) {
                 // 删除也要推进版本，否则其它 JVM 可能继续命中旧 L1。
-                return toLong(RedisCacheScriptExecutor.executeRaw(
+                Long version = toLong(RedisCacheScriptExecutor.executeRaw(
                         redisUtil,
                         ATOMIC_DELETE_SCRIPT,
                         Long.class,
                         List.of(redisKey(key), versionKey(key)),
                         versionMetadataRetentionMillis()));
+                if (version == null || version < 0) {
+                    throw CacheWriteFailureSupport.unconfirmed("KV DEL");
+                }
+                return version;
             }
             redisUtil.delete(redisKey(key));
             return LOCAL_ONLY_VERSION;
         } catch (Exception e) {
             markL2Degraded(e);
+            CacheWriteFailureSupport.throwIfStrict(config.getWriteFailurePolicy(), e);
             return null;
         }
+    }
+
+    /** 严格策略下，已经降级的共享 L2 不能继续伪装成本地写成功。 */
+    private void requireWritableL2IfStrict() {
+        if (isL2Configured() && l2Degraded) {
+            CacheWriteFailureSupport.throwIfStrict(
+                    config.getWriteFailurePolicy(), lastL2Failure);
+        }
+    }
+
+    /** 区域纪元在写入前后失效时，严格策略必须暴露无法确认的写结果。 */
+    private void failIfWriteBecameUnconfirmed() {
+        if (isL2Configured() && l2Degraded) {
+            CacheWriteFailureSupport.throwIfStrict(
+                    config.getWriteFailurePolicy(), lastL2Failure);
+        }
+    }
+
+    private boolean isStrictWriteFailurePolicy() {
+        return config.getWriteFailurePolicy() == CacheWriteFailurePolicy.FAIL_CLOSED;
     }
 
     private Long readConsistencyVersion(K key) {

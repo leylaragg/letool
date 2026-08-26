@@ -4,6 +4,7 @@ import io.github.leylaragg.letool.cache.consistency.CacheConsistencyMode;
 import io.github.leylaragg.letool.cache.consistency.CacheReadValidation;
 import io.github.leylaragg.letool.cache.consistency.CacheWritePolicy;
 import io.github.leylaragg.letool.cache.core.CacheReadFailurePolicy;
+import io.github.leylaragg.letool.cache.core.CacheWriteFailurePolicy;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
@@ -84,6 +85,9 @@ public class CacheProperties {
         /** Redis 读取失败后的默认处理策略。 */
         private CacheReadFailurePolicy readFailurePolicy =
                 CacheReadFailurePolicy.STALE_IF_AVAILABLE;
+        /** Redis L2 变更失败后的默认处理策略。 */
+        private CacheWriteFailurePolicy writeFailurePolicy =
+                CacheWriteFailurePolicy.BEST_EFFORT;
         /** DURABLE Redis 围栏最大存活时间。 */
         private Duration fenceTtl = Duration.ofMinutes(2);
         /** Outbox 恢复扫描间隔。 */
@@ -113,6 +117,8 @@ public class CacheProperties {
         public void setWritePolicy(CacheWritePolicy writePolicy) { this.writePolicy = writePolicy; }
         public CacheReadFailurePolicy getReadFailurePolicy() { return readFailurePolicy; }
         public void setReadFailurePolicy(CacheReadFailurePolicy readFailurePolicy) { this.readFailurePolicy = readFailurePolicy; }
+        public CacheWriteFailurePolicy getWriteFailurePolicy() { return writeFailurePolicy; }
+        public void setWriteFailurePolicy(CacheWriteFailurePolicy writeFailurePolicy) { this.writeFailurePolicy = writeFailurePolicy; }
         public Duration getFenceTtl() { return fenceTtl; }
         public void setFenceTtl(Duration fenceTtl) { this.fenceTtl = fenceTtl; }
         public Duration getRecoveryInterval() { return recoveryInterval; }
@@ -163,6 +169,8 @@ public class CacheProperties {
         private CacheWritePolicy writePolicy;
         /** Redis 读取失败策略；为空时继承全局配置。 */
         private CacheReadFailurePolicy readFailurePolicy;
+        /** Redis L2 变更失败策略；为空时继承全局配置。 */
+        private CacheWriteFailurePolicy writeFailurePolicy;
         /** 单 Key 版本元数据保留期；为空时继承全局配置。 */
         private Duration versionMetadataRetention;
         /** 是否缓存 null 结果。 */
@@ -194,6 +202,8 @@ public class CacheProperties {
         public void setWritePolicy(CacheWritePolicy writePolicy) { this.writePolicy = writePolicy; }
         public CacheReadFailurePolicy getReadFailurePolicy() { return readFailurePolicy; }
         public void setReadFailurePolicy(CacheReadFailurePolicy readFailurePolicy) { this.readFailurePolicy = readFailurePolicy; }
+        public CacheWriteFailurePolicy getWriteFailurePolicy() { return writeFailurePolicy; }
+        public void setWriteFailurePolicy(CacheWriteFailurePolicy writeFailurePolicy) { this.writeFailurePolicy = writeFailurePolicy; }
         public Duration getVersionMetadataRetention() { return versionMetadataRetention; }
         public void setVersionMetadataRetention(Duration versionMetadataRetention) { this.versionMetadataRetention = versionMetadataRetention; }
         public boolean isNullValueCache() { return nullValueCache; }

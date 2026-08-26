@@ -1,6 +1,7 @@
 package io.github.leylaragg.letool.cache.core;
 
 import io.github.leylaragg.letool.cache.consistency.CacheReadValidation;
+import io.github.leylaragg.letool.cache.exception.CacheException;
 import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
 import io.github.leylaragg.letool.tool.redis.RedisUtil;
 import org.junit.jupiter.api.DisplayName;
@@ -31,6 +32,94 @@ import static org.mockito.Mockito.*;
 /** KV 缓存批量读写契约测试。 */
 @DisplayName("MultiLevelCache 批量读写测试")
 class MultiLevelCacheBatchTest {
+
+    @Test
+    @DisplayName("严格写策略下批量分块失败必须暴露且不回填未确认条目")
+    @SuppressWarnings("unchecked")
+    void strictPutAllShouldExposeFailedChunkWithoutCachingUnconfirmedEntry() {
+        RedisUtil redisUtil = mock(RedisUtil.class);
+        RedisOperations<String, Object> operations = mock(RedisOperations.class);
+        ValueOperations<String, Object> valueOperations = mock(ValueOperations.class);
+        when(operations.opsForValue()).thenReturn(valueOperations);
+        RuntimeException redisFailure = new RuntimeException("second chunk failed");
+        java.util.concurrent.atomic.AtomicInteger invocation =
+                new java.util.concurrent.atomic.AtomicInteger();
+        when(redisUtil.pipeline(any())).thenAnswer(answer -> {
+            Consumer<RedisOperations<String, Object>> callback = answer.getArgument(0);
+            callback.accept(operations);
+            if (invocation.getAndIncrement() == 0) {
+                return List.of();
+            }
+            throw redisFailure;
+        });
+        CacheInvalidationPublisher publisher = mock(CacheInvalidationPublisher.class);
+        MultiLevelCache<String, String> cache = new MultiLevelCache<>(
+                CacheConfig.<String, String>builder("strict-batch")
+                        .strongConsistency(false)
+                        .redisBatchSize(1)
+                        .writeFailurePolicy(CacheWriteFailurePolicy.FAIL_CLOSED)
+                        .build(),
+                redisUtil,
+                mock(CacheSerializer.class),
+                publisher,
+                "node-a",
+                () -> { }
+        );
+        Map<String, String> entries = new java.util.LinkedHashMap<>();
+        entries.put("a", "1");
+        entries.put("b", "2");
+
+        CacheException thrown = assertThrows(CacheException.class,
+                () -> cache.putAll(entries));
+
+        assertEquals("CACHE_006", thrown.getCode());
+        assertSame(redisFailure, thrown.getCause());
+        assertEquals("1", cache.getIfPresent("a"));
+        assertNull(cache.getIfPresent("b"));
+        verify(publisher, never()).publish(argThat(message -> message.getKeys().contains("b")));
+    }
+
+    @Test
+    @DisplayName("严格写策略下强一致 pipeline 空结果必须视为无法确认")
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void strictVersionedPutAllShouldRejectNullScriptResult() {
+        RedisUtil redisUtil = mock(RedisUtil.class);
+        RedisTemplate<String, Object> template = mock(RedisTemplate.class);
+        RedisConnection connection = mock(RedisConnection.class);
+        RedisScriptingCommands scriptingCommands = mock(RedisScriptingCommands.class);
+        BoundValueOperations<String, Object> regionVersion = mock(BoundValueOperations.class);
+        when(redisUtil.getTemplate()).thenReturn(template);
+        doReturn(new StringRedisSerializer()).when(template).getKeySerializer();
+        when(connection.scriptingCommands()).thenReturn(scriptingCommands);
+        when(redisUtil.serializeValue(any())).thenReturn("1".getBytes());
+        when(redisUtil.boundValueOps("letool:cache:%META%:strict-versioned:region-version"))
+                .thenReturn(regionVersion);
+        when(regionVersion.get()).thenReturn(0L);
+        when(template.executePipelined(any(RedisCallback.class))).thenAnswer(answer -> {
+            RedisCallback callback = answer.getArgument(0);
+            callback.doInRedis(connection);
+            return Arrays.asList((Object) null);
+        });
+        CacheInvalidationPublisher publisher = mock(CacheInvalidationPublisher.class);
+        MultiLevelCache<String, String> cache = new MultiLevelCache<>(
+                CacheConfig.<String, String>builder("strict-versioned")
+                        .strongConsistency(true)
+                        .writeFailurePolicy(CacheWriteFailurePolicy.FAIL_CLOSED)
+                        .build(),
+                redisUtil,
+                mock(CacheSerializer.class),
+                publisher,
+                "node-a",
+                () -> { }
+        );
+
+        CacheException thrown = assertThrows(CacheException.class,
+                () -> cache.putAll(Map.of("a", "1")));
+
+        assertEquals("CACHE_006", thrown.getCode());
+        assertNull(cache.getIfPresent("a"));
+        verifyNoInteractions(publisher);
+    }
 
     @Test
     @DisplayName("putAll 保留 null 哨兵语义并忽略 null key")

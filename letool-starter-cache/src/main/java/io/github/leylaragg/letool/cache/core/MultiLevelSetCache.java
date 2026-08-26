@@ -64,6 +64,8 @@ public class MultiLevelSetCache<K, V> {
     private final boolean strongConsistency;
     /** Redis 读取失败后的返回或抛错策略。 */
     private final CacheReadFailurePolicy readFailurePolicy;
+    /** Redis L2 变更失败后的处理策略。 */
+    private final CacheWriteFailurePolicy writeFailurePolicy;
     /** 业务 key 到 Redis key 后缀的转换函数。 */
     private final Function<K, String> keySerializer;
     /** Redis Set 成员读取后的目标类型。 */
@@ -123,6 +125,7 @@ public class MultiLevelSetCache<K, V> {
         this.l2Enabled = redisUtil != null && config.isL2Enabled();
         this.strongConsistency = config.isStrongConsistency();
         this.readFailurePolicy = config.getReadFailurePolicy();
+        this.writeFailurePolicy = config.getWriteFailurePolicy();
         this.keySerializer = keySerializer == null ? String::valueOf : keySerializer;
         this.memberType = resolveMemberType(memberType, config.getValueType());
         this.invalidationPublisher = invalidationPublisher == null ? CacheInvalidationPublisher.noop() : invalidationPublisher;
@@ -159,6 +162,7 @@ public class MultiLevelSetCache<K, V> {
      *
      * @param key 业务 key；为 {@code null} 时忽略
      * @param member 待新增成员；为 {@code null} 时忽略
+     * @throws CacheException 严格写策略下 Redis 变更无法确认时抛出
      */
     public void add(K key, V member) {
         if (key == null || member == null) {
@@ -182,6 +186,7 @@ public class MultiLevelSetCache<K, V> {
      *
      * @param key 业务 key；为 {@code null} 时忽略
      * @param membersToAdd 待新增成员集合
+     * @throws CacheException 严格写策略下 Redis 变更无法确认时抛出
      */
     public void addAll(K key, Collection<V> membersToAdd) {
         if (key == null || membersToAdd == null || membersToAdd.isEmpty()) {
@@ -215,33 +220,49 @@ public class MultiLevelSetCache<K, V> {
      *
      * @param key 业务 key；为 {@code null} 时忽略
      * @param member 待删除成员；为 {@code null} 时忽略
+     * @throws CacheException 严格写策略下 Redis 删除无法确认时抛出
      */
     public void remove(K key, V member) {
         if (key == null || member == null) {
             return;
         }
+        if (isStrictWriteFailurePolicy() && l2Enabled) {
+            sremFromRedis(key, member);
+            removeLocalMember(key, member);
+        } else {
+            removeLocalMember(key, member);
+            sremFromRedis(key, member);
+        }
+        removeCount.incrementAndGet();
+        publishInvalidation(key);
+    }
+
+    private void removeLocalMember(K key, V member) {
         if (l1Enabled) {
             Set<V> members = l1Cache.getIfPresent(key);
             if (members != null) {
                 members.remove(member);
             }
         }
-        removeCount.incrementAndGet();
-        sremFromRedis(key, member);
-        publishInvalidation(key);
     }
 
     /**
      * 删除整个 key 对应的集合。
      *
      * @param key 业务 key；为 {@code null} 时忽略
+     * @throws CacheException 严格写策略下 Redis 删除无法确认时抛出
      */
     public void removeKey(K key) {
         if (key == null) {
             return;
         }
-        evictLocal(key);
-        deleteFromRedis(key);
+        if (isStrictWriteFailurePolicy() && l2Enabled) {
+            deleteFromRedis(key);
+            evictLocal(key);
+        } else {
+            evictLocal(key);
+            deleteFromRedis(key);
+        }
         publishInvalidation(key);
     }
 
@@ -501,20 +522,30 @@ public class MultiLevelSetCache<K, V> {
     }
 
     private boolean saddToRedis(K key, V member) {
-        if (!l2Enabled || l2Degraded) {
+        if (!l2Enabled) {
+            return false;
+        }
+        requireWritableL2IfStrict();
+        if (l2Degraded) {
             return false;
         }
         try {
-            redisUtil.boundSetOps(redisKey(key)).add(member);
-            return setTtl(key);
+            Long added = redisUtil.boundSetOps(redisKey(key)).add(member);
+            if (added == null) {
+                throw CacheWriteFailureSupport.unconfirmed("SADD");
+            }
         } catch (Exception e) {
-            markL2Degraded(e);
-            return false;
+            return handleWriteFailure(e);
         }
+        return setTtl(key);
     }
 
     private boolean saddAllToRedis(K key, Collection<V> members) {
-        if (!l2Enabled || l2Degraded) {
+        if (!l2Enabled) {
+            return false;
+        }
+        requireWritableL2IfStrict();
+        if (l2Degraded) {
             return false;
         }
         try {
@@ -522,24 +553,35 @@ public class MultiLevelSetCache<K, V> {
                     .filter(member -> member != null)
                     .toArray();
             if (values.length > 0) {
-                redisUtil.boundSetOps(redisKey(key)).add(values);
-                return setTtl(key);
+                Long added = redisUtil.boundSetOps(redisKey(key)).add(values);
+                if (added == null) {
+                    throw CacheWriteFailureSupport.unconfirmed("SADD");
+                }
+            } else {
+                return true;
+            }
+        } catch (Exception e) {
+            return handleWriteFailure(e);
+        }
+        return setTtl(key);
+    }
+
+    private boolean sremFromRedis(K key, V member) {
+        if (!l2Enabled) {
+            return true;
+        }
+        requireWritableL2IfStrict();
+        if (l2Degraded) {
+            return false;
+        }
+        try {
+            Long removed = redisUtil.boundSetOps(redisKey(key)).remove(member);
+            if (removed == null) {
+                throw CacheWriteFailureSupport.unconfirmed("SREM");
             }
             return true;
         } catch (Exception e) {
-            markL2Degraded(e);
-            return false;
-        }
-    }
-
-    private void sremFromRedis(K key, V member) {
-        if (!l2Enabled || l2Degraded) {
-            return;
-        }
-        try {
-            redisUtil.boundSetOps(redisKey(key)).remove(member);
-        } catch (Exception e) {
-            markL2Degraded(e);
+            return handleWriteFailure(e);
         }
     }
 
@@ -575,26 +617,49 @@ public class MultiLevelSetCache<K, V> {
         return Boolean.TRUE.equals(redisUtil.boundSetOps(redisKey(key)).isMember(member));
     }
 
-    private void deleteFromRedis(K key) {
-        if (!l2Enabled || l2Degraded) {
-            return;
+    private boolean deleteFromRedis(K key) {
+        if (!l2Enabled) {
+            return true;
+        }
+        requireWritableL2IfStrict();
+        if (l2Degraded) {
+            return false;
         }
         try {
             redisUtil.delete(redisKey(key));
+            return true;
         } catch (Exception e) {
-            markL2Degraded(e);
+            return handleWriteFailure(e);
         }
     }
 
     private boolean setTtl(K key) {
         try {
             // Redis SADD 不会自动设置过期时间，因此每次写入后补充 TTL。
-            redisUtil.expire(redisKey(key), l2Ttl.toMillis(), TimeUnit.MILLISECONDS);
+            if (!redisUtil.expire(redisKey(key), l2Ttl.toMillis(), TimeUnit.MILLISECONDS)) {
+                throw CacheWriteFailureSupport.unconfirmed("PEXPIRE");
+            }
             return true;
         } catch (Exception e) {
-            markL2Degraded(e);
-            return false;
+            return handleWriteFailure(e);
         }
+    }
+
+    private boolean handleWriteFailure(Exception cause) {
+        markL2Degraded(cause);
+        CacheWriteFailureSupport.throwIfStrict(writeFailurePolicy, cause);
+        return false;
+    }
+
+    /** 严格策略不允许把已经降级的 L2 变更伪装成本地成功。 */
+    private void requireWritableL2IfStrict() {
+        if (l2Degraded) {
+            CacheWriteFailureSupport.throwIfStrict(writeFailurePolicy, lastL2Failure);
+        }
+    }
+
+    private boolean isStrictWriteFailurePolicy() {
+        return writeFailurePolicy == CacheWriteFailurePolicy.FAIL_CLOSED;
     }
 
     @SuppressWarnings("unchecked")

@@ -21,6 +21,9 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
 
 - `letool-starter-cache` 新增 KV 有界 Pipeline 批量读写、Set 安全前缀失效、
   Redis 读取故障策略、带状态集合读取结果、泛型 `Type` 反序列化及真实 Redis Profile。
+- `letool-starter-cache` 新增默认兼容的 `BEST_EFFORT`/`FAIL_CLOSED` Redis 写失败策略，
+  覆盖 KV、Set、List、Hash、ZSet；严格策略会保留失败原因、避免先修改 L1 或广播成功，
+  且不引入数据库或业务重建 SPI。
 - 新增 `letool-starter-oss-minio`、`letool-starter-oss-aliyun` 和
   `letool-starter-oss-tencent-cos`，分别通过官方 SDK 提供真实对象存储能力，
   并支持业务凭证、客户端配置、官方客户端和 `OssProvider` Bean 退让。

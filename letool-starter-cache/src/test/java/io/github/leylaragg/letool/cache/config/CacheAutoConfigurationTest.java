@@ -5,6 +5,7 @@ import io.github.leylaragg.letool.cache.core.CacheConfig;
 import io.github.leylaragg.letool.cache.core.CacheManager;
 import io.github.leylaragg.letool.cache.core.MultiLevelCache;
 import io.github.leylaragg.letool.cache.core.CacheReadFailurePolicy;
+import io.github.leylaragg.letool.cache.core.CacheWriteFailurePolicy;
 import io.github.leylaragg.letool.cache.core.RedisCacheInvalidationSubscriber;
 import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
 import io.github.leylaragg.letool.cache.serializer.JacksonCacheSerializer;
@@ -372,6 +373,23 @@ class CacheAutoConfigurationTest {
 
                     assertThat(config.getReadFailurePolicy())
                             .isEqualTo(CacheReadFailurePolicy.FAIL_CLOSED);
+                });
+    }
+
+    /** 实例级写失败策略应覆盖全局默认值并写入实际缓存配置。 */
+    @Test
+    void shouldApplyInstanceWriteFailurePolicy() {
+        contextRunner
+                .withPropertyValues(
+                        "letool.cache.consistency.write-failure-policy=BEST_EFFORT",
+                        "letool.cache.instances[0].name=critical-cache",
+                        "letool.cache.instances[0].write-failure-policy=FAIL_CLOSED")
+                .run(context -> {
+                    CacheManager cacheManager = context.getBean(CacheManager.class);
+                    MultiLevelCache<Object, Object> cache = cacheManager.get("critical-cache");
+
+                    assertThat(cache.getWriteFailurePolicy())
+                            .isEqualTo(CacheWriteFailurePolicy.FAIL_CLOSED);
                 });
     }
 

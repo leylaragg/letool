@@ -42,6 +42,86 @@ class MultiLevelSetCacheTest {
                 .redisKeyPrefix("test:cache:")
                 .strongConsistency(false)
                 .build();
+        lenient().when(boundSetOperations.add(any())).thenReturn(1L);
+        lenient().when(boundSetOperations.add(any(Object[].class))).thenReturn(1L);
+        lenient().when(boundSetOperations.remove(any())).thenReturn(0L);
+        lenient().when(redisUtil.expire(any(), anyLong(), any())).thenReturn(true);
+    }
+
+    @Test
+    @DisplayName("严格写策略下 SADD 异常必须暴露且不污染已有 L1")
+    void strictAddShouldExposeRedisFailureWithoutChangingLocalSnapshot() {
+        String redisKey = "test:cache:rule%3Aindex:project:strict-add";
+        when(redisUtil.boundSetOps(redisKey)).thenReturn(boundSetOperations);
+        when(boundSetOperations.members()).thenReturn(Set.of("rule-a"));
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateSetCache(strictWriteConfig(), Function.identity(), String.class);
+        assertEquals(Set.of("rule-a"), cache.getMembers("project:strict-add"));
+        RuntimeException redisFailure = new RuntimeException("sadd failed");
+        when(boundSetOperations.add("rule-b")).thenThrow(redisFailure);
+
+        CacheException thrown = assertThrows(CacheException.class,
+                () -> cache.add("project:strict-add", "rule-b"));
+
+        assertEquals("CACHE_006", thrown.getCode());
+        assertSame(redisFailure, thrown.getCause());
+        assertEquals(Set.of("rule-a"), cache.getMembers("project:strict-add"));
+    }
+
+    @Test
+    @DisplayName("严格写策略下 SADD 成功但 TTL 失败仍必须暴露")
+    void strictAddShouldRejectFailedTtl() {
+        String redisKey = "test:cache:rule%3Aindex:project:strict-ttl";
+        when(redisUtil.boundSetOps(redisKey)).thenReturn(boundSetOperations);
+        when(boundSetOperations.add("rule-a")).thenReturn(1L);
+        when(redisUtil.expire(redisKey, Duration.ofHours(1).toMillis(),
+                java.util.concurrent.TimeUnit.MILLISECONDS)).thenReturn(false);
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateSetCache(strictWriteConfig(), Function.identity(), String.class);
+
+        CacheException thrown = assertThrows(CacheException.class,
+                () -> cache.add("project:strict-ttl", "rule-a"));
+
+        assertEquals("CACHE_006", thrown.getCode());
+        assertEquals(0, cache.estimatedSize());
+    }
+
+    @Test
+    @DisplayName("严格写策略下 SREM 异常必须保留已有 L1 成员")
+    void strictRemoveShouldExposeRedisFailureWithoutChangingLocalSnapshot() {
+        String redisKey = "test:cache:rule%3Aindex:project:strict-remove";
+        when(redisUtil.boundSetOps(redisKey)).thenReturn(boundSetOperations);
+        when(boundSetOperations.members()).thenReturn(Set.of("rule-a"));
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateSetCache(strictWriteConfig(), Function.identity(), String.class);
+        assertEquals(Set.of("rule-a"), cache.getMembers("project:strict-remove"));
+        RuntimeException redisFailure = new RuntimeException("srem failed");
+        when(boundSetOperations.remove("rule-a")).thenThrow(redisFailure);
+
+        CacheException thrown = assertThrows(CacheException.class,
+                () -> cache.remove("project:strict-remove", "rule-a"));
+
+        assertSame(redisFailure, thrown.getCause());
+        assertEquals(Set.of("rule-a"), cache.getMembers("project:strict-remove"));
+    }
+
+    @Test
+    @DisplayName("严格写策略下 DEL 异常必须保留已有 L1 集合")
+    void strictRemoveKeyShouldExposeRedisFailureWithoutClearingLocalSnapshot() {
+        String redisKey = "test:cache:rule%3Aindex:project:strict-delete";
+        when(redisUtil.boundSetOps(redisKey)).thenReturn(boundSetOperations);
+        when(boundSetOperations.members()).thenReturn(Set.of("rule-a"));
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateSetCache(strictWriteConfig(), Function.identity(), String.class);
+        assertEquals(Set.of("rule-a"), cache.getMembers("project:strict-delete"));
+        RuntimeException redisFailure = new RuntimeException("del failed");
+        doThrow(redisFailure).when(redisUtil).delete(redisKey);
+
+        CacheException thrown = assertThrows(CacheException.class,
+                () -> cache.removeKey("project:strict-delete"));
+
+        assertSame(redisFailure, thrown.getCause());
+        assertEquals(Set.of("rule-a"), cache.getMembers("project:strict-delete"));
     }
 
     @Test
@@ -434,6 +514,17 @@ class MultiLevelSetCacheTest {
      */
     private CacheConfig<String, String> strictReadConfig() {
         return strongReadConfig(CacheReadFailurePolicy.FAIL_CLOSED);
+    }
+
+    /** 创建仅约束 Redis 变更结果的严格写配置。 */
+    private CacheConfig<String, String> strictWriteConfig() {
+        return CacheConfig.<String, String>builder("rule:index")
+                .l1Ttl(Duration.ofMinutes(10))
+                .l2Ttl(Duration.ofHours(1))
+                .redisKeyPrefix("test:cache:")
+                .strongConsistency(false)
+                .writeFailurePolicy(CacheWriteFailurePolicy.FAIL_CLOSED)
+                .build();
     }
 
     /**

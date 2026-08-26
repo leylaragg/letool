@@ -501,6 +501,27 @@ DURABLE 下主要 Redis key 形态如下，其中 Hash Tag 经过框架转义并
 
 需要判断结果来源时调用 `getMembersWithStatus`；`getMembers` 保持旧 API，并返回可修改的成员快照。
 
+### Redis 写失败策略
+
+普通缓存无需新增配置，默认 `BEST_EFFORT` 保持原有的本地降级行为。只有业务不能接受“共享 Redis
+变更未确认但调用正常返回”时，才对相应缓存启用严格策略：
+
+```yaml
+letool:
+  cache:
+    instances:
+      - name: critical-index
+        write-failure-policy: FAIL_CLOSED
+```
+
+`FAIL_CLOSED` 覆盖 KV、Set、List、Hash 和 ZSet 的公开写入、删除操作。Redis 命令抛错、返回
+`null` 或 TTL 未确认时，框架会将 L2 标记为降级并抛出 `CACHE_006`，同时保留异常原因；未确认前
+不会先修改 L1 或广播成功。幂等删除返回 0/`false` 仍视为已确认成功，未使用 Redis 的 L1-only
+缓存不受影响。
+
+该策略用于暴露缓存基础设施写失败，不提供跨 Key 事务、数据库 Outbox 或业务索引重建协议。
+KV `putAll` 仍是分批非原子操作：失败前已经由 Redis 确认的批次不会回滚。
+
 ## KV 批量访问与泛型值
 
 `MultiLevelCache#getAllPresent`、`putAll(Map)` 和 `putAll(Map, Duration)` 使用有界 Redis
@@ -684,6 +705,7 @@ CacheInvalidationBacklog backlog = cacheMonitor.outboxBacklog(Instant.now());
 | `letool.cache.consistency.read-validation` | `VERSIONED` | L1 读取校验策略：`VERSIONED`/`NONE` |
 | `letool.cache.consistency.write-policy` | `INVALIDATE` | 提交后失效或显式更新：`INVALIDATE`/`UPDATE` |
 | `letool.cache.consistency.read-failure-policy` | `STALE_IF_AVAILABLE` | Redis 读取失败策略 |
+| `letool.cache.consistency.write-failure-policy` | `BEST_EFFORT` | Redis 变更失败策略：`BEST_EFFORT`/`FAIL_CLOSED` |
 | `letool.cache.consistency.outbox-table` | `letool_cache_outbox` | DURABLE JDBC Outbox 表名 |
 | `letool.cache.consistency.fence-ttl` | `2m` | Redis 写围栏最大存活时间 |
 | `letool.cache.consistency.recovery-interval` | `5s` | Outbox 恢复扫描间隔 |
@@ -707,6 +729,7 @@ CacheInvalidationBacklog backlog = cacheMonitor.outboxBacklog(Instant.now());
 | `letool.cache.instances[].read-validation` | 继承全局 | 当前实例读取校验策略 |
 | `letool.cache.instances[].write-policy` | 继承全局 | 当前实例提交后写策略 |
 | `letool.cache.instances[].read-failure-policy` | 继承全局 | 当前实例 Redis 读取失败策略 |
+| `letool.cache.instances[].write-failure-policy` | 继承全局 | 当前实例 Redis 变更失败策略 |
 | `letool.cache.instances[].version-metadata-retention` | 继承全局 | 当前实例版本元数据保留期 |
 | `letool.cache.instances[].null-value-cache` | `true` | 是否缓存 null 结果 |
 | `letool.cache.instances[].null-value-ttl` | `5m` | null 哨兵 TTL |

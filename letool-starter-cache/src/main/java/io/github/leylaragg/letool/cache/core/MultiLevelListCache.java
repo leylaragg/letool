@@ -45,6 +45,8 @@ public class MultiLevelListCache<K, V> {
     private final boolean l2Enabled;
     /** 是否启用强一致读取。 */
     private final boolean strongConsistency;
+    /** Redis L2 变更失败后的处理策略。 */
+    private final CacheWriteFailurePolicy writeFailurePolicy;
     /** 业务 key 到 Redis key 后缀的转换函数。 */
     private final Function<K, String> keySerializer;
     /** Redis List 元素反序列化后的目标类型。 */
@@ -97,6 +99,7 @@ public class MultiLevelListCache<K, V> {
         this.l1Enabled = config.isL1Enabled();
         this.l2Enabled = redisUtil != null && config.isL2Enabled();
         this.strongConsistency = config.isStrongConsistency();
+        this.writeFailurePolicy = config.getWriteFailurePolicy();
         this.keySerializer = keySerializer == null ? String::valueOf : keySerializer;
         this.elementType = resolveElementType(
                 elementType,
@@ -133,6 +136,7 @@ public class MultiLevelListCache<K, V> {
      *
      * @param key 业务 key；为 {@code null} 时忽略
      * @param value 待推入元素；为 {@code null} 时忽略
+     * @throws CacheException 严格写策略下 Redis 变更无法确认时抛出
      */
     public void leftPush(K key, V value) {
         push(key, value, true);
@@ -143,6 +147,7 @@ public class MultiLevelListCache<K, V> {
      *
      * @param key 业务 key；为 {@code null} 时忽略
      * @param value 待推入元素；为 {@code null} 时忽略
+     * @throws CacheException 严格写策略下 Redis 变更无法确认时抛出
      */
     public void rightPush(K key, V value) {
         push(key, value, false);
@@ -153,6 +158,7 @@ public class MultiLevelListCache<K, V> {
      *
      * @param key 业务 key
      * @return 弹出的元素；参数无效或列表为空时返回 {@code null}
+     * @throws CacheException 严格写策略下 Redis 变更无法确认时抛出
      */
     public V leftPop(K key) {
         return pop(key, true);
@@ -163,6 +169,7 @@ public class MultiLevelListCache<K, V> {
      *
      * @param key 业务 key
      * @return 弹出的元素；参数无效或列表为空时返回 {@code null}
+     * @throws CacheException 严格写策略下 Redis 变更无法确认时抛出
      */
     public V rightPop(K key) {
         return pop(key, false);
@@ -212,13 +219,19 @@ public class MultiLevelListCache<K, V> {
      * 删除整个列表。
      *
      * @param key 业务 key；为 {@code null} 时忽略
+     * @throws CacheException 严格写策略下 Redis 删除无法确认时抛出
      */
     public void removeKey(K key) {
         if (key == null) {
             return;
         }
-        evictLocal(key);
-        deleteFromRedis(key);
+        if (isStrictWriteFailurePolicy() && l2Enabled) {
+            deleteFromRedis(key);
+            evictLocal(key);
+        } else {
+            evictLocal(key);
+            deleteFromRedis(key);
+        }
         publishInvalidation(key);
     }
 
@@ -349,6 +362,7 @@ public class MultiLevelListCache<K, V> {
                 return value;
             }
         }
+        requireWritableL2IfStrict();
         List<V> local = l1Enabled ? l1Cache.getIfPresent(key) : null;
         if (local == null || local.isEmpty()) {
             return null;
@@ -375,20 +389,27 @@ public class MultiLevelListCache<K, V> {
     }
 
     private boolean pushToRedis(K key, V value, boolean left) {
-        if (!l2Enabled || l2Degraded) {
+        if (!l2Enabled) {
+            return false;
+        }
+        requireWritableL2IfStrict();
+        if (l2Degraded) {
             return false;
         }
         try {
+            Long size;
             if (left) {
-                redisUtil.boundListOps(redisKey(key)).leftPush(value);
+                size = redisUtil.boundListOps(redisKey(key)).leftPush(value);
             } else {
-                redisUtil.boundListOps(redisKey(key)).rightPush(value);
+                size = redisUtil.boundListOps(redisKey(key)).rightPush(value);
             }
-            return setTtl(key);
+            if (size == null) {
+                throw CacheWriteFailureSupport.unconfirmed(left ? "LPUSH" : "RPUSH");
+            }
         } catch (Exception e) {
-            markL2Degraded(e);
-            return false;
+            return handleWriteFailure(e);
         }
+        return setTtl(key);
     }
 
     private V popFromRedis(K key, boolean left) {
@@ -401,6 +422,7 @@ public class MultiLevelListCache<K, V> {
             return convert(raw);
         } catch (Exception e) {
             markL2Degraded(e);
+            CacheWriteFailureSupport.throwIfStrict(writeFailurePolicy, e);
             return null;
         }
     }
@@ -425,25 +447,47 @@ public class MultiLevelListCache<K, V> {
         }
     }
 
-    private void deleteFromRedis(K key) {
-        if (!l2Enabled || l2Degraded) {
-            return;
+    private boolean deleteFromRedis(K key) {
+        if (!l2Enabled) {
+            return true;
+        }
+        requireWritableL2IfStrict();
+        if (l2Degraded) {
+            return false;
         }
         try {
             redisUtil.delete(redisKey(key));
+            return true;
         } catch (Exception e) {
-            markL2Degraded(e);
+            return handleWriteFailure(e);
         }
     }
 
     private boolean setTtl(K key) {
         try {
-            redisUtil.expire(redisKey(key), l2Ttl.toMillis(), TimeUnit.MILLISECONDS);
+            if (!redisUtil.expire(redisKey(key), l2Ttl.toMillis(), TimeUnit.MILLISECONDS)) {
+                throw CacheWriteFailureSupport.unconfirmed("PEXPIRE");
+            }
             return true;
         } catch (Exception e) {
-            markL2Degraded(e);
-            return false;
+            return handleWriteFailure(e);
         }
+    }
+
+    private boolean handleWriteFailure(Exception cause) {
+        markL2Degraded(cause);
+        CacheWriteFailureSupport.throwIfStrict(writeFailurePolicy, cause);
+        return false;
+    }
+
+    private void requireWritableL2IfStrict() {
+        if (l2Enabled && l2Degraded) {
+            CacheWriteFailureSupport.throwIfStrict(writeFailurePolicy, lastL2Failure);
+        }
+    }
+
+    private boolean isStrictWriteFailurePolicy() {
+        return writeFailurePolicy == CacheWriteFailurePolicy.FAIL_CLOSED;
     }
 
     private List<V> slice(List<V> source, long start, long end) {

@@ -34,9 +34,34 @@ class CacheConfigTest {
         assertEquals(CacheConsistencyMode.TRANSACTIONAL, config.getConsistencyMode());
         assertEquals(CacheReadValidation.VERSIONED, config.getReadValidation());
         assertEquals(CacheWritePolicy.INVALIDATE, config.getWritePolicy());
+        assertEquals(CacheWriteFailurePolicy.BEST_EFFORT, config.getWriteFailurePolicy());
         assertTrue(config.isNullValueCache());
         assertEquals(Duration.ofMinutes(5), config.getNullValueTtl());
         assertEquals("letool:cache:", config.getRedisKeyPrefix());
+    }
+
+    @Test
+    @DisplayName("缓存写失败策略默认兼容降级并允许选择严格失败")
+    void writeFailurePolicyShouldDefaultToBestEffortAndAllowStrictOverride() {
+        CacheConfig<String, String> defaults =
+                CacheConfig.<String, String>builder("defaults").build();
+        CacheConfig<String, String> strict = CacheConfig.<String, String>builder("strict")
+                .writeFailurePolicy(CacheWriteFailurePolicy.FAIL_CLOSED)
+                .build();
+
+        assertEquals(CacheWriteFailurePolicy.BEST_EFFORT, defaults.getWriteFailurePolicy());
+        assertEquals(CacheWriteFailurePolicy.FAIL_CLOSED, strict.getWriteFailurePolicy());
+    }
+
+    @Test
+    @DisplayName("缓存写失败策略不能为空")
+    void nullWriteFailurePolicyShouldBeRejected() {
+        CacheException thrown = assertThrows(CacheException.class,
+                () -> CacheConfig.builder("invalid")
+                        .writeFailurePolicy(null)
+                        .build());
+
+        assertTrue(thrown.getMessage().contains("write-failure-policy"));
     }
 
     @Test

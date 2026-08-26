@@ -4,6 +4,7 @@ import io.github.leylaragg.letool.cache.consistency.CacheConsistencyMode;
 import io.github.leylaragg.letool.cache.consistency.CacheReadValidation;
 import io.github.leylaragg.letool.cache.consistency.CacheWritePolicy;
 import io.github.leylaragg.letool.cache.core.CacheReadFailurePolicy;
+import io.github.leylaragg.letool.cache.core.CacheWriteFailurePolicy;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -51,6 +52,8 @@ class CachePropertiesTest {
         assertEquals(CacheWritePolicy.INVALIDATE, properties.getConsistency().getWritePolicy());
         assertEquals(CacheReadFailurePolicy.STALE_IF_AVAILABLE,
                 properties.getConsistency().getReadFailurePolicy());
+        assertEquals(CacheWriteFailurePolicy.BEST_EFFORT,
+                properties.getConsistency().getWriteFailurePolicy());
         assertEquals(Duration.ofDays(7), properties.getConsistency().getCompletedRetention());
         assertEquals(Duration.ofHours(1), properties.getConsistency().getCleanupInterval());
         assertEquals(1000, properties.getConsistency().getCleanupBatchSize());
@@ -139,6 +142,7 @@ class CachePropertiesTest {
         assertNull(config.getReadValidation());
         assertNull(config.getWritePolicy());
         assertNull(config.getReadFailurePolicy());
+        assertNull(config.getWriteFailurePolicy());
         assertNull(config.getVersionMetadataRetention());
         assertNull(config.getName());
     }
@@ -158,6 +162,7 @@ class CachePropertiesTest {
         config.setReadValidation(CacheReadValidation.NONE);
         config.setWritePolicy(CacheWritePolicy.UPDATE);
         config.setReadFailurePolicy(CacheReadFailurePolicy.FAIL_CLOSED);
+        config.setWriteFailurePolicy(CacheWriteFailurePolicy.FAIL_CLOSED);
         config.setVersionMetadataRetention(Duration.ofDays(10));
 
         assertEquals("myCache", config.getName());
@@ -171,6 +176,7 @@ class CachePropertiesTest {
         assertEquals(CacheReadValidation.NONE, config.getReadValidation());
         assertEquals(CacheWritePolicy.UPDATE, config.getWritePolicy());
         assertEquals(CacheReadFailurePolicy.FAIL_CLOSED, config.getReadFailurePolicy());
+        assertEquals(CacheWriteFailurePolicy.FAIL_CLOSED, config.getWriteFailurePolicy());
         assertEquals(Duration.ofDays(10), config.getVersionMetadataRetention());
     }
 }

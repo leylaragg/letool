@@ -38,6 +38,8 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -49,6 +51,93 @@ import static org.mockito.Mockito.when;
  */
 @DisplayName("KV 缓存一致性故障边界")
 class MultiLevelCacheConsistencyTest {
+
+    @Test
+    @DisplayName("严格写策略下 Redis 写入失败必须保留旧 L1 并向调用方暴露")
+    void strictPutShouldExposeRedisFailureWithoutReplacingLocalValue() {
+        RedisUtil redisUtil = mock(RedisUtil.class);
+        @SuppressWarnings("unchecked")
+        BoundValueOperations<String, Object> data = mock(BoundValueOperations.class);
+        when(redisUtil.boundValueOps("test:critical:rule-1")).thenReturn(data);
+        MultiLevelCache<String, String> cache = new MultiLevelCache<>(
+                CacheConfig.<String, String>builder("critical")
+                        .redisKeyPrefix("test:")
+                        .strongConsistency(false)
+                        .writeFailurePolicy(CacheWriteFailurePolicy.FAIL_CLOSED)
+                        .build(),
+                redisUtil,
+                new JacksonCacheSerializer()
+        );
+        cache.put("rule-1", "old-value");
+        RuntimeException redisFailure = new RuntimeException("put failed");
+        doThrow(redisFailure).when(data).set(eq("new-value"), any(Duration.class));
+
+        CacheException thrown = assertThrows(CacheException.class,
+                () -> cache.put("rule-1", "new-value"));
+
+        assertEquals("CACHE_006", thrown.getCode());
+        assertSame(redisFailure, thrown.getCause());
+        assertEquals("old-value", cache.getIfPresent("rule-1"));
+    }
+
+    @Test
+    @DisplayName("严格写策略下 Redis 删除失败必须保留 L1 并向调用方暴露")
+    void strictEvictShouldExposeRedisFailureWithoutClearingLocalValue() {
+        RedisUtil redisUtil = mock(RedisUtil.class);
+        CacheInvalidationPublisher publisher = mock(CacheInvalidationPublisher.class);
+        @SuppressWarnings("unchecked")
+        BoundValueOperations<String, Object> data = mock(BoundValueOperations.class);
+        when(redisUtil.boundValueOps("test:critical:rule-1")).thenReturn(data);
+        MultiLevelCache<String, String> cache = new MultiLevelCache<>(
+                CacheConfig.<String, String>builder("critical")
+                        .redisKeyPrefix("test:")
+                        .strongConsistency(false)
+                        .writeFailurePolicy(CacheWriteFailurePolicy.FAIL_CLOSED)
+                        .build(),
+                redisUtil,
+                new JacksonCacheSerializer(),
+                publisher,
+                "node-a",
+                () -> { }
+        );
+        cache.put("rule-1", "old-value");
+        clearInvocations(publisher);
+        RuntimeException redisFailure = new RuntimeException("delete failed");
+        doThrow(redisFailure).when(redisUtil).delete("test:critical:rule-1");
+
+        CacheException thrown = assertThrows(CacheException.class,
+                () -> cache.evict("rule-1"));
+
+        assertEquals("CACHE_006", thrown.getCode());
+        assertSame(redisFailure, thrown.getCause());
+        assertEquals("old-value", cache.getIfPresent("rule-1"));
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
+    @DisplayName("兼容写策略下 Redis 删除失败仍保持原有本地降级行为")
+    void bestEffortEvictShouldKeepLegacyLocalDegradationBehavior() {
+        RedisUtil redisUtil = mock(RedisUtil.class);
+        @SuppressWarnings("unchecked")
+        BoundValueOperations<String, Object> data = mock(BoundValueOperations.class);
+        when(redisUtil.boundValueOps("test:ordinary:rule-1")).thenReturn(data);
+        MultiLevelCache<String, String> cache = new MultiLevelCache<>(
+                CacheConfig.<String, String>builder("ordinary")
+                        .redisKeyPrefix("test:")
+                        .strongConsistency(false)
+                        .build(),
+                redisUtil,
+                new JacksonCacheSerializer()
+        );
+        cache.put("rule-1", "old-value");
+        doThrow(new RuntimeException("delete failed"))
+                .when(redisUtil).delete("test:ordinary:rule-1");
+
+        cache.evict("rule-1");
+
+        assertNull(cache.getIfPresent("rule-1"));
+        assertTrue(cache.isL2Degraded());
+    }
 
     @Test
     @DisplayName("evictAll 的 Redis 区域清理失败时不得广播 ALL")

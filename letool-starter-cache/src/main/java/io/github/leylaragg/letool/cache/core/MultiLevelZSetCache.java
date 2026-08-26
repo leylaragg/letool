@@ -50,6 +50,8 @@ public class MultiLevelZSetCache<K, V> {
     private final boolean l2Enabled;
     /** 是否启用强一致读取；开启后读取优先走 Redis。 */
     private final boolean strongConsistency;
+    /** L2 写入无法确认时的处理策略。 */
+    private final CacheWriteFailurePolicy writeFailurePolicy;
     /** 业务 key 到 Redis key 后缀的转换函数。 */
     private final Function<K, String> keySerializer;
     /** ZSet member 读取后的目标类型。 */
@@ -102,6 +104,7 @@ public class MultiLevelZSetCache<K, V> {
         this.l1Enabled = config.isL1Enabled();
         this.l2Enabled = redisUtil != null && config.isL2Enabled();
         this.strongConsistency = config.isStrongConsistency();
+        this.writeFailurePolicy = config.getWriteFailurePolicy();
         this.keySerializer = keySerializer == null ? String::valueOf : keySerializer;
         this.memberType = resolveMemberType(
                 memberType,
@@ -139,6 +142,7 @@ public class MultiLevelZSetCache<K, V> {
      * @param key 业务 key；为 {@code null} 时忽略
      * @param member ZSet 成员；为 {@code null} 时忽略
      * @param score 成员分数
+     * @throws CacheException 严格写策略下 Redis 变更无法确认时抛出
      */
     public void add(K key, V member, double score) {
         if (key == null || member == null) {
@@ -162,19 +166,20 @@ public class MultiLevelZSetCache<K, V> {
      *
      * @param key 业务 key；为 {@code null} 时忽略
      * @param member 待删除成员；为 {@code null} 时忽略
+     * @throws CacheException 严格写策略下 Redis 删除无法确认时抛出
      */
     public void remove(K key, V member) {
         if (key == null || member == null) {
             return;
         }
-        if (l1Enabled) {
-            Map<V, Double> local = l1Cache.getIfPresent(key);
-            if (local != null) {
-                local.remove(member);
-            }
+        if (isStrictWriteFailurePolicy()) {
+            removeFromRedis(key, member);
+            removeLocalMember(key, member);
+        } else {
+            removeLocalMember(key, member);
+            removeFromRedis(key, member);
         }
         removeCount.incrementAndGet();
-        removeFromRedis(key, member);
         publishInvalidation(key);
     }
 
@@ -266,13 +271,19 @@ public class MultiLevelZSetCache<K, V> {
      * 删除整个业务 key 对应的 ZSet。
      *
      * @param key 业务 key；为 {@code null} 时忽略
+     * @throws CacheException 严格写策略下 Redis 删除无法确认时抛出
      */
     public void removeKey(K key) {
         if (key == null) {
             return;
         }
-        evictLocal(key);
-        deleteFromRedis(key);
+        if (isStrictWriteFailurePolicy()) {
+            deleteFromRedis(key);
+            evictLocal(key);
+        } else {
+            evictLocal(key);
+            deleteFromRedis(key);
+        }
         publishInvalidation(key);
     }
 
@@ -367,26 +378,44 @@ public class MultiLevelZSetCache<K, V> {
     }
 
     private boolean addToRedis(K key, V member, double score) {
-        if (!l2Enabled || l2Degraded) {
+        if (!l2Enabled) {
             return false;
         }
+        requireWritableL2IfStrict();
+        if (l2Degraded) {
+            return false;
+        }
+        Boolean added;
         try {
-            redisUtil.boundZSetOps(redisKey(key)).add(member, score);
-            return setTtl(key);
+            added = redisUtil.boundZSetOps(redisKey(key)).add(member, score);
         } catch (Exception e) {
-            markL2Degraded(e);
+            handleWriteFailure(e);
             return false;
         }
+        if (added == null) {
+            handleWriteFailure(CacheWriteFailureSupport.unconfirmed("ZADD"));
+            return false;
+        }
+        return setTtl(key);
     }
 
     private void removeFromRedis(K key, V member) {
-        if (!l2Enabled || l2Degraded) {
+        if (!l2Enabled) {
             return;
         }
+        requireWritableL2IfStrict();
+        if (l2Degraded) {
+            return;
+        }
+        Long removed;
         try {
-            redisUtil.boundZSetOps(redisKey(key)).remove(member);
+            removed = redisUtil.boundZSetOps(redisKey(key)).remove(member);
         } catch (Exception e) {
-            markL2Degraded(e);
+            handleWriteFailure(e);
+            return;
+        }
+        if (removed == null) {
+            handleWriteFailure(CacheWriteFailureSupport.unconfirmed("ZREM"));
         }
     }
 
@@ -423,24 +452,60 @@ public class MultiLevelZSetCache<K, V> {
     }
 
     private void deleteFromRedis(K key) {
-        if (!l2Enabled || l2Degraded) {
+        if (!l2Enabled) {
+            return;
+        }
+        requireWritableL2IfStrict();
+        if (l2Degraded) {
             return;
         }
         try {
             redisUtil.delete(redisKey(key));
         } catch (Exception e) {
-            markL2Degraded(e);
+            handleWriteFailure(e);
         }
     }
 
     private boolean setTtl(K key) {
+        boolean ttlUpdated;
         try {
-            redisUtil.expire(redisKey(key), l2Ttl.toMillis(), TimeUnit.MILLISECONDS);
-            return true;
+            ttlUpdated = redisUtil.expire(redisKey(key), l2Ttl.toMillis(), TimeUnit.MILLISECONDS);
         } catch (Exception e) {
-            markL2Degraded(e);
+            handleWriteFailure(e);
             return false;
         }
+        if (!ttlUpdated) {
+            handleWriteFailure(CacheWriteFailureSupport.unconfirmed("EXPIRE"));
+            return false;
+        }
+        return true;
+    }
+
+    private void removeLocalMember(K key, V member) {
+        if (!l1Enabled) {
+            return;
+        }
+        Map<V, Double> local = l1Cache.getIfPresent(key);
+        if (local != null) {
+            local.remove(member);
+        }
+    }
+
+    /** 记录 L2 写失败，并在严格策略下向调用方暴露原始原因。 */
+    private void handleWriteFailure(Exception failure) {
+        markL2Degraded(failure);
+        CacheWriteFailureSupport.throwIfStrict(writeFailurePolicy, failure);
+    }
+
+    /** 严格策略不允许在 L2 已降级时继续把写入伪装为成功。 */
+    private void requireWritableL2IfStrict() {
+        if (l2Enabled && l2Degraded && isStrictWriteFailurePolicy()) {
+            CacheWriteFailureSupport.throwIfStrict(writeFailurePolicy, lastL2Failure);
+        }
+    }
+
+    private boolean isStrictWriteFailurePolicy() {
+        return writeFailurePolicy == CacheWriteFailurePolicy.FAIL_CLOSED;
     }
 
     private Set<V> rangeLocal(Map<V, Double> scores, long start, long end) {

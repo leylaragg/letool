@@ -58,6 +58,8 @@ public class CacheConfig<K, V> {
     private CacheWritePolicy writePolicy = CacheWritePolicy.INVALIDATE;
     /** Redis 权威读取失败时的返回策略。 */
     private CacheReadFailurePolicy readFailurePolicy = CacheReadFailurePolicy.STALE_IF_AVAILABLE;
+    /** Redis L2 变更失败时的处理策略。 */
+    private CacheWriteFailurePolicy writeFailurePolicy = CacheWriteFailurePolicy.BEST_EFFORT;
     /** 是否缓存 loader 返回的 null，防止不存在的数据频繁穿透到数据库。 */
     private boolean nullValueCache = true;
     /** null 哨兵 TTL，通常应短于正常业务值 TTL。 */
@@ -235,6 +237,17 @@ public class CacheConfig<K, V> {
     }
 
     /**
+     * 设置 Redis L2 变更失败时的处理策略。
+     *
+     * @param writeFailurePolicy Redis 写失败策略
+     * @return 当前配置对象
+     */
+    public CacheConfig<K, V> writeFailurePolicy(CacheWriteFailurePolicy writeFailurePolicy) {
+        this.writeFailurePolicy = writeFailurePolicy;
+        return this;
+    }
+
+    /**
      * 设置是否缓存 null 值。
      *
      * @param nullValueCache {@code true} 表示缓存 null 哨兵
@@ -377,6 +390,9 @@ public class CacheConfig<K, V> {
         if (readFailurePolicy == null) {
             throw CacheException.configurationInvalid("read-failure-policy");
         }
+        if (writeFailurePolicy == null) {
+            throw CacheException.configurationInvalid("write-failure-policy");
+        }
         if (keySerializer == null) {
             throw CacheException.configurationInvalid("key-serializer");
         }
@@ -442,6 +458,9 @@ public class CacheConfig<K, V> {
 
     /** @return Redis 权威读取失败时的返回策略 */
     public CacheReadFailurePolicy getReadFailurePolicy() { return readFailurePolicy; }
+
+    /** @return Redis L2 变更失败时的处理策略 */
+    public CacheWriteFailurePolicy getWriteFailurePolicy() { return writeFailurePolicy; }
 
     /** @return 是否缓存 null 哨兵 */
     public boolean isNullValueCache() { return nullValueCache; }

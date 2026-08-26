@@ -22,6 +22,11 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
@@ -51,6 +56,86 @@ class MultiLevelZSetCacheTest {
                 .redisKeyPrefix("test:cache:")
                 .strongConsistency(false)
                 .build();
+        lenient().when(boundZSetOperations.add(any(), anyDouble())).thenReturn(true);
+        lenient().when(boundZSetOperations.remove(any())).thenReturn(0L);
+        lenient().when(redisUtil.expire(any(), anyLong(), any())).thenReturn(true);
+    }
+
+    @Test
+    @DisplayName("严格写策略下 ZADD 失败必须保留已有 L1")
+    void strictAddShouldExposeFailureWithoutChangingLocalZSet() {
+        String redisKey = "test:cache:ranking:game:strict-add";
+        when(redisUtil.boundZSetOps(redisKey)).thenReturn(boundZSetOperations);
+        when(boundZSetOperations.rangeWithScores(0, -1))
+                .thenReturn(Set.of(tuple("alice", 100.0)));
+        MultiLevelZSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateZSetCache(strictWriteConfig(), Function.identity(), String.class);
+        assertEquals(Set.of("alice"), cache.range("game:strict-add", 0, -1));
+        RuntimeException redisFailure = new RuntimeException("zadd failed");
+        when(boundZSetOperations.add("bob", 200.0)).thenThrow(redisFailure);
+
+        CacheException thrown = assertThrows(CacheException.class,
+                () -> cache.add("game:strict-add", "bob", 200.0));
+
+        assertSame(redisFailure, thrown.getCause());
+        assertEquals(Set.of("alice"), cache.range("game:strict-add", 0, -1));
+    }
+
+    @Test
+    @DisplayName("严格写策略下 ZREM 失败必须保留已有成员")
+    void strictRemoveShouldExposeFailureWithoutChangingLocalZSet() {
+        String redisKey = "test:cache:ranking:game:strict-remove";
+        when(redisUtil.boundZSetOps(redisKey)).thenReturn(boundZSetOperations);
+        when(boundZSetOperations.rangeWithScores(0, -1))
+                .thenReturn(Set.of(tuple("alice", 100.0)));
+        MultiLevelZSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateZSetCache(strictWriteConfig(), Function.identity(), String.class);
+        assertEquals(Set.of("alice"), cache.range("game:strict-remove", 0, -1));
+        RuntimeException redisFailure = new RuntimeException("zrem failed");
+        when(boundZSetOperations.remove("alice")).thenThrow(redisFailure);
+
+        CacheException thrown = assertThrows(CacheException.class,
+                () -> cache.remove("game:strict-remove", "alice"));
+
+        assertSame(redisFailure, thrown.getCause());
+        assertEquals(Set.of("alice"), cache.range("game:strict-remove", 0, -1));
+    }
+
+    @Test
+    @DisplayName("严格写策略下删除整个 ZSet 失败必须保留已有 L1")
+    void strictRemoveKeyShouldExposeFailureWithoutChangingLocalZSet() {
+        String redisKey = "test:cache:ranking:game:strict-remove-key";
+        when(redisUtil.boundZSetOps(redisKey)).thenReturn(boundZSetOperations);
+        when(boundZSetOperations.rangeWithScores(0, -1))
+                .thenReturn(Set.of(tuple("alice", 100.0)));
+        MultiLevelZSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateZSetCache(strictWriteConfig(), Function.identity(), String.class);
+        assertEquals(Set.of("alice"), cache.range("game:strict-remove-key", 0, -1));
+        RuntimeException redisFailure = new RuntimeException("del failed");
+        when(redisUtil.delete(redisKey)).thenThrow(redisFailure);
+
+        CacheException thrown = assertThrows(CacheException.class,
+                () -> cache.removeKey("game:strict-remove-key"));
+
+        assertSame(redisFailure, thrown.getCause());
+        assertEquals(Set.of("alice"), cache.range("game:strict-remove-key", 0, -1));
+    }
+
+    @Test
+    @DisplayName("严格写策略下 ZSet TTL 失败必须暴露")
+    void strictAddShouldRejectFailedTtl() {
+        String redisKey = "test:cache:ranking:game:strict-ttl";
+        when(redisUtil.boundZSetOps(redisKey)).thenReturn(boundZSetOperations);
+        when(redisUtil.expire(redisKey, Duration.ofHours(1).toMillis(),
+                java.util.concurrent.TimeUnit.MILLISECONDS)).thenReturn(false);
+        MultiLevelZSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateZSetCache(strictWriteConfig(), Function.identity(), String.class);
+
+        CacheException thrown = assertThrows(CacheException.class,
+                () -> cache.add("game:strict-ttl", "alice", 100.0));
+
+        assertEquals("CACHE_006", thrown.getCode());
+        assertTrue(cache.range("game:strict-ttl", 0, -1).isEmpty());
     }
 
     @Test
@@ -289,5 +374,16 @@ class MultiLevelZSetCacheTest {
             T value,
             double score) {
         return ZSetOperations.TypedTuple.of(value, score);
+    }
+
+    /** 创建只要求 Redis 变更可确认的 ZSet 配置。 */
+    private CacheConfig<String, String> strictWriteConfig() {
+        return CacheConfig.<String, String>builder("ranking")
+                .l1Ttl(Duration.ofMinutes(10))
+                .l2Ttl(Duration.ofHours(1))
+                .redisKeyPrefix("test:cache:")
+                .strongConsistency(false)
+                .writeFailurePolicy(CacheWriteFailurePolicy.FAIL_CLOSED)
+                .build();
     }
 }

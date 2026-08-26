@@ -381,6 +381,9 @@ public class CacheAutoConfiguration {
                     .readFailurePolicy(ic.getReadFailurePolicy() == null
                             ? properties.getConsistency().getReadFailurePolicy()
                             : ic.getReadFailurePolicy())
+                    .writeFailurePolicy(ic.getWriteFailurePolicy() == null
+                            ? properties.getConsistency().getWriteFailurePolicy()
+                            : ic.getWriteFailurePolicy())
                     .nullValueCache(ic.isNullValueCache())
                     .nullValueTtl(ic.getNullValueTtl())
                     .redisKeyPrefix(properties.getRedisPrefix());

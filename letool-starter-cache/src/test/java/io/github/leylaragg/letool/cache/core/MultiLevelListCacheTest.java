@@ -21,6 +21,10 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -49,6 +53,67 @@ class MultiLevelListCacheTest {
                 .redisKeyPrefix("test:cache:")
                 .strongConsistency(false)
                 .build();
+        lenient().when(boundListOperations.leftPush(any())).thenReturn(1L);
+        lenient().when(boundListOperations.rightPush(any())).thenReturn(1L);
+        lenient().when(redisUtil.expire(any(), anyLong(), any())).thenReturn(true);
+    }
+
+    @Test
+    @DisplayName("严格写策略下 push 失败必须保留 L1，后续 pop 也不得本地伪成功")
+    void strictPushAndPopShouldExposeRedisFailureWithoutMutatingLocalList() {
+        String redisKey = "test:cache:events:user:strict";
+        when(redisUtil.boundListOps(redisKey)).thenReturn(boundListOperations);
+        when(boundListOperations.range(0, -1)).thenReturn(List.of("old"));
+        MultiLevelListCache<String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateListCache(strictWriteConfig(), Function.identity(), String.class);
+        assertEquals(List.of("old"), cache.range("user:strict", 0, -1));
+        RuntimeException redisFailure = new RuntimeException("rpush failed");
+        when(boundListOperations.rightPush("new")).thenThrow(redisFailure);
+
+        CacheException pushFailure = assertThrows(CacheException.class,
+                () -> cache.rightPush("user:strict", "new"));
+        CacheException popFailure = assertThrows(CacheException.class,
+                () -> cache.leftPop("user:strict"));
+
+        assertSame(redisFailure, pushFailure.getCause());
+        assertSame(redisFailure, popFailure.getCause());
+        assertEquals(List.of("old"), cache.range("user:strict", 0, -1));
+    }
+
+    @Test
+    @DisplayName("严格写策略下 push 的 TTL 失败必须暴露")
+    void strictPushShouldRejectFailedTtl() {
+        String redisKey = "test:cache:events:user:strict-ttl";
+        when(redisUtil.boundListOps(redisKey)).thenReturn(boundListOperations);
+        when(redisUtil.expire(redisKey, Duration.ofHours(1).toMillis(),
+                java.util.concurrent.TimeUnit.MILLISECONDS)).thenReturn(false);
+        MultiLevelListCache<String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateListCache(strictWriteConfig(), Function.identity(), String.class);
+
+        CacheException thrown = assertThrows(CacheException.class,
+                () -> cache.rightPush("user:strict-ttl", "new"));
+
+        assertEquals("CACHE_006", thrown.getCode());
+        assertTrue(cache.range("user:strict-ttl", 0, -1).isEmpty());
+    }
+
+    @Test
+    @DisplayName("严格写策略下 removeKey 失败必须保留 L1")
+    void strictRemoveKeyShouldExposeFailureWithoutClearingLocalList() {
+        String redisKey = "test:cache:events:user:strict-delete";
+        when(redisUtil.boundListOps(redisKey)).thenReturn(boundListOperations);
+        when(boundListOperations.range(0, -1)).thenReturn(List.of("old"));
+        MultiLevelListCache<String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateListCache(strictWriteConfig(), Function.identity(), String.class);
+        assertEquals(List.of("old"), cache.range("user:strict-delete", 0, -1));
+        RuntimeException redisFailure = new RuntimeException("del failed");
+        doThrow(redisFailure).when(redisUtil).delete(redisKey);
+
+        CacheException thrown = assertThrows(CacheException.class,
+                () -> cache.removeKey("user:strict-delete"));
+
+        assertSame(redisFailure, thrown.getCause());
+        assertEquals(List.of("old"), cache.range("user:strict-delete", 0, -1));
     }
 
     @Test
@@ -261,5 +326,16 @@ class MultiLevelListCacheTest {
         assertSame(cleanupFailure, exception.getCause());
         assertTrue(cache.isL2Degraded());
         verifyNoInteractions(publisher);
+    }
+
+    /** 创建只要求 Redis 变更可确认的 List 配置。 */
+    private CacheConfig<String, String> strictWriteConfig() {
+        return CacheConfig.<String, String>builder("events")
+                .l1Ttl(Duration.ofMinutes(10))
+                .l2Ttl(Duration.ofHours(1))
+                .redisKeyPrefix("test:cache:")
+                .strongConsistency(false)
+                .writeFailurePolicy(CacheWriteFailurePolicy.FAIL_CLOSED)
+                .build();
     }
 }

@@ -21,6 +21,10 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.never;
@@ -51,6 +55,100 @@ class MultiLevelHashCacheTest {
                 .redisKeyPrefix("test:cache:")
                 .strongConsistency(false)
                 .build();
+        lenient().when(redisUtil.expire(any(), anyLong(), any())).thenReturn(true);
+    }
+
+    @Test
+    @DisplayName("严格写策略下 Hash put 失败必须保留已有 L1")
+    void strictPutShouldExposeFailureWithoutChangingLocalHash() {
+        String redisKey = "test:cache:profiles:user:strict-put";
+        when(redisUtil.boundHashOps(redisKey)).thenReturn(boundHashOperations);
+        when(boundHashOperations.entries()).thenReturn(Map.of("name", "old"));
+        MultiLevelHashCache<String, String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateHashCache(strictWriteConfig(), Function.identity(), String.class, String.class);
+        assertEquals(Map.of("name", "old"), cache.entries("user:strict-put"));
+        RuntimeException redisFailure = new RuntimeException("hset failed");
+        doThrow(redisFailure).when(boundHashOperations).put("name", "new");
+
+        CacheException thrown = assertThrows(CacheException.class,
+                () -> cache.put("user:strict-put", "name", "new"));
+
+        assertSame(redisFailure, thrown.getCause());
+        assertEquals(Map.of("name", "old"), cache.entries("user:strict-put"));
+    }
+
+    @Test
+    @DisplayName("严格写策略下 Hash putAll 失败必须保留已有 L1")
+    void strictPutAllShouldExposeFailureWithoutChangingLocalHash() {
+        String redisKey = "test:cache:profiles:user:strict-put-all";
+        when(redisUtil.boundHashOps(redisKey)).thenReturn(boundHashOperations);
+        when(boundHashOperations.entries()).thenReturn(Map.of("name", "old"));
+        MultiLevelHashCache<String, String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateHashCache(strictWriteConfig(), Function.identity(), String.class, String.class);
+        assertEquals(Map.of("name", "old"), cache.entries("user:strict-put-all"));
+        RuntimeException redisFailure = new RuntimeException("hmset failed");
+        doThrow(redisFailure).when(boundHashOperations).putAll(Map.of("name", "new", "role", "admin"));
+
+        CacheException thrown = assertThrows(CacheException.class,
+                () -> cache.putAll("user:strict-put-all", Map.of("name", "new", "role", "admin")));
+
+        assertSame(redisFailure, thrown.getCause());
+        assertEquals(Map.of("name", "old"), cache.entries("user:strict-put-all"));
+    }
+
+    @Test
+    @DisplayName("严格写策略下 Hash delete 失败必须保留已有字段")
+    void strictDeleteShouldExposeFailureWithoutChangingLocalHash() {
+        String redisKey = "test:cache:profiles:user:strict-delete";
+        when(redisUtil.boundHashOps(redisKey)).thenReturn(boundHashOperations);
+        when(boundHashOperations.entries()).thenReturn(Map.of("name", "old"));
+        MultiLevelHashCache<String, String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateHashCache(strictWriteConfig(), Function.identity(), String.class, String.class);
+        assertEquals(Map.of("name", "old"), cache.entries("user:strict-delete"));
+        RuntimeException redisFailure = new RuntimeException("hdel failed");
+        when(boundHashOperations.delete("name")).thenThrow(redisFailure);
+
+        CacheException thrown = assertThrows(CacheException.class,
+                () -> cache.delete("user:strict-delete", "name"));
+
+        assertSame(redisFailure, thrown.getCause());
+        assertEquals(Map.of("name", "old"), cache.entries("user:strict-delete"));
+    }
+
+    @Test
+    @DisplayName("严格写策略下删除整个 Hash 失败必须保留已有 L1")
+    void strictRemoveKeyShouldExposeFailureWithoutChangingLocalHash() {
+        String redisKey = "test:cache:profiles:user:strict-remove-key";
+        when(redisUtil.boundHashOps(redisKey)).thenReturn(boundHashOperations);
+        when(boundHashOperations.entries()).thenReturn(Map.of("name", "old"));
+        MultiLevelHashCache<String, String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateHashCache(strictWriteConfig(), Function.identity(), String.class, String.class);
+        assertEquals(Map.of("name", "old"), cache.entries("user:strict-remove-key"));
+        RuntimeException redisFailure = new RuntimeException("del failed");
+        when(redisUtil.delete(redisKey)).thenThrow(redisFailure);
+
+        CacheException thrown = assertThrows(CacheException.class,
+                () -> cache.removeKey("user:strict-remove-key"));
+
+        assertSame(redisFailure, thrown.getCause());
+        assertEquals(Map.of("name", "old"), cache.entries("user:strict-remove-key"));
+    }
+
+    @Test
+    @DisplayName("严格写策略下 Hash TTL 失败必须暴露")
+    void strictPutShouldRejectFailedTtl() {
+        String redisKey = "test:cache:profiles:user:strict-ttl";
+        when(redisUtil.boundHashOps(redisKey)).thenReturn(boundHashOperations);
+        when(redisUtil.expire(redisKey, Duration.ofHours(1).toMillis(),
+                java.util.concurrent.TimeUnit.MILLISECONDS)).thenReturn(false);
+        MultiLevelHashCache<String, String, String> cache = new CacheManager(redisUtil, serializer)
+                .getOrCreateHashCache(strictWriteConfig(), Function.identity(), String.class, String.class);
+
+        CacheException thrown = assertThrows(CacheException.class,
+                () -> cache.put("user:strict-ttl", "name", "new"));
+
+        assertEquals("CACHE_006", thrown.getCode());
+        assertTrue(cache.entries("user:strict-ttl").isEmpty());
     }
 
     @Test
@@ -273,5 +371,16 @@ class MultiLevelHashCacheTest {
         assertSame(cleanupFailure, degradedException.getCause());
         verify(redisUtil, never()).getTemplate();
         verifyNoInteractions(publisher);
+    }
+
+    /** 创建只要求 Redis 变更可确认的 Hash 配置。 */
+    private CacheConfig<String, String> strictWriteConfig() {
+        return CacheConfig.<String, String>builder("profiles")
+                .l1Ttl(Duration.ofMinutes(10))
+                .l2Ttl(Duration.ofHours(1))
+                .redisKeyPrefix("test:cache:")
+                .strongConsistency(false)
+                .writeFailurePolicy(CacheWriteFailurePolicy.FAIL_CLOSED)
+                .build();
     }
 }
