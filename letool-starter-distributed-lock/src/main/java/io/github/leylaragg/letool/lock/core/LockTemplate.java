@@ -1,150 +1,81 @@
 package io.github.leylaragg.letool.lock.core;
 
 import io.github.leylaragg.letool.lock.exception.LockException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.TimeUnit;
+import java.time.Duration;
+import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
- * 分布式锁操作模板 —— 提供函数式编程风格的锁操作 API。
+ * 在分布式锁保护下执行业务回调的统一入口。
  *
- * <p>这是用户使用分布式锁的<b>推荐入口</b>。相较于直接使用 {@link DistributedLock}
- * 接口手动管理 tryLock/unlock，本模板自动处理以下细节：</p>
- *
- * <ul>
- *   <li><b>自动释放锁</b>：通过 try-finally 保证锁一定被释放，避免死锁</li>
- *   <li><b>超时异常</b>：获取锁失败时抛出统一的 {@link LockException}</li>
- *   <li><b>简洁 API</b>：提供多个重载方法，支持 Lambda 表达式、默认超时参数等</li>
- * </ul>
- *
- * <h3>使用示例</h3>
- *
- * <p><b>1. 有返回值 + 自定义超时：</b></p>
- * <pre>{@code
- * String result = lockTemplate.execute("order:123", 5, 30, TimeUnit.SECONDS, () -> {
- *     // 业务逻辑
- *     return processOrder(123);
- * });
- * }</pre>
- *
- * <p><b>2. 无返回值 + 默认超时（3s 等待 / 30s 持锁）：</b></p>
- * <pre>{@code
- * lockTemplate.execute("order:123", () -> {
- *     // 业务逻辑
- *     processOrder(123);
- * });
- * }</pre>
- *
- * @author leyland
- * @since 1.0.0
- * @see DistributedLock
- * @see LockException
+ * <p>模板通过一次获取返回的句柄释放锁，因此不需要按 key 重新定位后端状态。</p>
  */
 public class LockTemplate {
 
-    // ======================== 日志 ========================
+    private static final Duration DEFAULT_WAIT_TIME = Duration.ofSeconds(3);
 
-    private static final Logger log = LoggerFactory.getLogger(LockTemplate.class);
-
-    // ======================== 依赖 ========================
-
-    /** 底层分布式锁实现 */
     private final DistributedLock lock;
 
-    // ======================== 构造方法 ========================
-
     /**
-     * 构造锁操作模板。
-     *
-     * @param lock 分布式锁实现实例（不可为 null）
+     * @param lock 具体的分布式锁后端
      */
     public LockTemplate(DistributedLock lock) {
-        this.lock = lock;
+        this.lock = Objects.requireNonNull(lock, "lock must not be null");
     }
 
-    // ======================== 核心方法：有返回值 + 完整参数 ========================
-
     /**
-     * 在分布式锁保护下执行带返回值的操作（完整参数版本）。
+     * 获取锁后执行带返回值的业务回调。
      *
-     * <p>这是最底层的模板方法，其他重载均委托至此。执行流程：</p>
-     * <ol>
-     *   <li>尝试获取锁（在 waitTime 内等待）</li>
-     *   <li>获取失败 → 抛出 {@link LockException}</li>
-     *   <li>获取成功 → 执行 {@code supplier.get()}</li>
-     *   <li>无论成功或失败，finally 中释放锁</li>
-     * </ol>
-     *
-     * @param <T>       返回值类型
-     * @param key       锁的唯一标识（业务 key）
-     * @param waitTime  等待获取锁的最长时间，超时抛异常
-     * @param leaseTime 持锁租约时间（到期自动释放，防止死锁）
-     * @param unit      时间单位
-     * @param supplier  需要加锁执行的业务逻辑
-     * @return 业务逻辑的返回值
-     * @throws LockException 获取锁超时
+     * @param request 锁请求
+     * @param supplier 仅在成功获取锁后执行的业务回调
+     * @param <T> 业务返回类型
+     * @return 业务回调结果
+     * @throws LockException 等待超时，没有获得锁
      */
-    public <T> T execute(String key, long waitTime, long leaseTime, TimeUnit unit, Supplier<T> supplier) {
-        boolean locked = lock.tryLock(key, waitTime, leaseTime, unit);
-        if (!locked) {
-            throw new LockException("Failed to acquire lock: " + key);
-        }
-        try {
+    public <T> T execute(LockRequest request, Supplier<T> supplier) {
+        Objects.requireNonNull(request, "request must not be null");
+        Objects.requireNonNull(supplier, "supplier must not be null");
+        LockHandle handle = lock.tryAcquire(request)
+                .orElseThrow(() -> new LockException("Failed to acquire lock: " + request.key()));
+        try (handle) {
             return supplier.get();
-        } finally {
-            lock.unlock(key);
         }
     }
 
-    // ======================== 便捷方法：无返回值 + 完整参数 ========================
-
     /**
-     * 在分布式锁保护下执行无返回值的操作（完整参数版本）。
+     * 获取锁后执行无返回值业务回调。
      *
-     * <p>内部将 {@link Runnable} 适配为 {@link Supplier} 后委托至核心方法。</p>
-     *
-     * @param key       锁的唯一标识（业务 key）
-     * @param waitTime  等待获取锁的最长时间
-     * @param leaseTime 持锁租约时间
-     * @param unit      时间单位
-     * @param runnable  需要加锁执行的业务逻辑
-     * @throws LockException 获取锁超时
+     * @param request 锁请求
+     * @param runnable 业务回调
      */
-    public void execute(String key, long waitTime, long leaseTime, TimeUnit unit, Runnable runnable) {
-        execute(key, waitTime, leaseTime, unit, () -> { runnable.run(); return null; });
+    public void execute(LockRequest request, Runnable runnable) {
+        Objects.requireNonNull(runnable, "runnable must not be null");
+        execute(request, () -> {
+            runnable.run();
+            return null;
+        });
     }
 
-    // ======================== 便捷方法：有返回值 + 默认超时 ========================
-
     /**
-     * 在分布式锁保护下执行带返回值的操作（使用默认超时：等待 3 秒，持锁 30 秒）。
+     * 使用默认等待时间和后端看门狗执行回调。
      *
-     * <p>适用于大多数常规场景，无需每次指定超时参数。</p>
-     *
-     * @param <T>      返回值类型
-     * @param key      锁的唯一标识（业务 key）
-     * @param supplier 需要加锁执行的业务逻辑
-     * @return 业务逻辑的返回值
-     * @throws LockException 获取锁超时
+     * @param key 业务锁 key
+     * @param supplier 业务回调
+     * @param <T> 业务返回类型
+     * @return 业务回调结果
      */
     public <T> T execute(String key, Supplier<T> supplier) {
-        return execute(key, 3, 30, TimeUnit.SECONDS, supplier);
+        return execute(LockRequest.watchdog(key, DEFAULT_WAIT_TIME), supplier);
     }
 
-    // ======================== 便捷方法：无返回值 + 默认超时 ========================
-
     /**
-     * 在分布式锁保护下执行无返回值的操作（使用默认超时：等待 3 秒，持锁 30 秒）。
+     * 使用默认等待时间和后端看门狗执行无返回值回调。
      *
-     * <p>这是最简洁的调用方式，适合仅需锁保护、无返回值的场景。</p>
-     *
-     * @param key      锁的唯一标识（业务 key）
-     * @param runnable 需要加锁执行的业务逻辑
-     * @throws LockException 获取锁超时
+     * @param key 业务锁 key
+     * @param runnable 业务回调
      */
     public void execute(String key, Runnable runnable) {
-        execute(key, 3, 30, TimeUnit.SECONDS, () -> { runnable.run(); return null; });
+        execute(LockRequest.watchdog(key, DEFAULT_WAIT_TIME), runnable);
     }
 }

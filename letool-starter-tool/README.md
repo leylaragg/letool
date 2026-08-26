@@ -3,7 +3,7 @@
 ## 模块简介
 
 `letool-starter-tool` 是 letool 的通用工具模块，为其他模块提供 JSON 序列化、HTTP 请求、
-Redis 操作、分布式 ID、文件与流、摘要、字符串、集合、业务枚举、常用校验、日期时间、Bean 拷贝、反射访问、类扫描、
+分布式 ID、文件与流、摘要、字符串、集合、业务枚举、常用校验、日期时间、Bean 拷贝、反射访问、类扫描、
 Lambda 属性解析、统一响应体、分页模型及 Spring 容器辅助能力。统一异常和国际化由独立的
 [`letool-starter-exception`](../letool-starter-exception/README.md) 模块提供；tool 模块依赖该基础模块，
 但不再自行维护异常体系。
@@ -187,9 +187,9 @@ class JsonConfiguration {
 若使用 Jackson、Gson 或公司内部序列化组件，只需实现 provider-neutral 的 `JsonCodec` 接口。
 实现类构造完成后必须线程安全，并遵守接口定义的空值和 UTF-8 语义。
 
-通用 codec 会拒绝 Fastjson2 已废弃的 `JSONReader.Feature.SupportAutoType`。需要恢复 Redis
-多态对象时，应使用下文带 `AutoTypeBeforeHandler` allow-list 的 Redis serializer，不要在
-普通 JSON 入口全局开启 AutoType。
+通用 codec 会拒绝 Fastjson2 已废弃的 `JSONReader.Feature.SupportAutoType`。Redis 多态值应使用
+[`letool-starter-redis`](../letool-starter-redis/README.md) 中带类型白名单的专用序列化器，不要在普通
+JSON 入口全局开启 AutoType。
 
 默认实现的技术失败统一抛出 `JsonCodecException`：
 
@@ -352,38 +352,9 @@ POST、PATCH 不会被静默重放。只有调用方确认业务具有幂等保�
 - `HttpResponse` 改为不可变对象，响应头类型改为 `Map<String, List<String>>`，不再提供 setter。
 - 查询参数和请求头 getter 返回不可修改的多值快照，同名查询参数不会再被覆盖。
 
-### 6. Redis 工具 RedisUtil
+### 6. ID、随机数与编码工具组
 
-> 自动检测 classpath：仅在引入 `spring-boot-starter-data-redis` 后生效。
-
-`RedisUtil` 会在 Spring Boot Redis 自动配置完成后绑定名为 `redisTemplate` 的对象模板，不会覆盖
-业务自定义模板或改写其序列化器。业务已经提前提供唯一 `RedisConnectionFactory`、但没有对象模板时，
-Letool 会在 Boot 默认模板之前创建兼容的 Fastjson2 模板；标准 Boot 场景则直接复用 Boot 默认模板。
-
-```java
-@Autowired
-private RedisUtil redisUtil;
-
-// String
-redisUtil.set("user:1", "张三", Duration.ofHours(1));
-String name = redisUtil.get("user:1");
-
-// 对象存取（具体格式由 redisTemplate 的序列化器决定）
-redisUtil.setObject("user:1", user, Duration.ofHours(1));
-User user = redisUtil.getObject("user:1", User.class);
-
-// Hash
-redisUtil.hset("user:1", "name", "张三");
-Map<String, String> all = redisUtil.hgetAll("user:1");
-
-// Lua 脚本
-String result = redisUtil.executeScript("return redis.call('GET', KEYS[1])",
-    List.of("key1"));
-```
-
-### 7. ID、随机数与编码工具组
-
-#### 7.1 ID 生成 IdUtil
+#### 6.1 ID 生成 IdUtil
 
 ```java
 // 默认 Snowflake：适合单实例或已经配置唯一节点号的应用
@@ -418,7 +389,7 @@ String shortNano = IdUtil.nanoId(12);
 Snowflake 默认容忍 5 毫秒时钟回拨：容忍范围内使用逻辑时间继续递增，超过范围以
 `TOOL_ID_003` 快速失败。NanoId 长度必须位于 1 到 1024 之间。
 
-#### 7.2 安全随机 RandomUtil
+#### 6.2 安全随机 RandomUtil
 
 ```java
 int codeNumber = RandomUtil.nextInt(100000, 999999); // 闭区间
@@ -431,7 +402,7 @@ String custom = RandomUtil.randomString("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 8);
 整数和长整数使用闭区间，浮点数使用左闭右开区间。反向范围、非有限浮点边界、负长度或空字符表
 都会抛出稳定的 `RandomOperationException`；零长度字符串返回空字符串。
 
-#### 7.3 Base64 与 Hex 编解码
+#### 6.3 Base64 与 Hex 编解码
 
 ```java
 String standard = Base64Util.encode("Letool");
@@ -471,7 +442,7 @@ Base64 和 Hex 非法文本统一抛出 `EncodingOperationException`，公开消
 - Snowflake 节点越界、时钟回拨和时间戳越界统一转换为 `IdGenerationException`。
 - 多实例生产环境必须显式分配 Snowflake 节点号，不能依赖 PID/MAC 自动推导保证唯一性。
 
-### 8. 字符串工具 StrUtil
+### 7. 字符串工具 StrUtil
 
 ```java
 StrUtil.isBlank(str);
@@ -489,7 +460,7 @@ StrUtil.left("A😀B", 2);                    // "A😀"
 `join` 和 `split` 的空分隔符会统一抛出 `ValueOperationException`，避免错误配置
 被静默转换成不可靠结果。
 
-### 9. 集合工具 CollUtil
+### 8. 集合工具 CollUtil
 
 ```java
 CollUtil.isEmpty(list);
@@ -505,7 +476,7 @@ List<List<User>> chunks = CollUtil.partition(users, 100);
 使用首次出现顺序并执行集合语义去重；`toMap` 使用 `LinkedHashMap`，键重复时保留第一个值。
 分片大小始终必须大于零，即使源列表为空也会先校验配置。
 
-#### 9.1 业务枚举 EnumUtil
+#### 8.1 业务枚举 EnumUtil
 
 新业务枚举推荐实现轻量的 `CodeEnum<C>` 和 `DescribedEnum` 契约：
 
@@ -531,7 +502,7 @@ Map<String, Object> options = EnumUtil.toMap(OrderStatus.class);
 不再被静默吞掉。新代码优先使用返回 `Optional` 的 `findByName`、`findByCode` 和 `findBy`，必须命中
 编码时使用 `requireByCode`。`toMap` 保持枚举声明顺序，重复描述会直接拒绝，避免选项被覆盖。
 
-#### 9.2 常用校验 ValidatorUtil
+#### 8.2 常用校验 ValidatorUtil
 
 ```java
 ValidatorUtil.isPhone("13812345678");
@@ -566,7 +537,7 @@ ValidatorUtil.isIpV4("192.168.1.1");
   `findBy*` 或 `requireByCode`。
 - 身份证、URL、邮箱和 IPv4 校验规则已经收紧，旧版仅通过正则外形的无效输入现在会返回 `false`。
 
-### 10. 日期工具 DateUtil
+### 9. 日期工具 DateUtil
 
 日期工具直接封装 JDK 17 `java.time` 的高频组合，不引入额外日期框架。公共格式器不可变且线程安全；
 严格入口不会再把空值转换为 `null` 或 `0`，需要容错时应显式使用 `tryParse`。
@@ -662,7 +633,7 @@ ZonedDateTime endExclusive = DateUtil.startOfNextDay(date, zoneId);
   `[startOfDay(date), startOfNextDay(date))`。
 - 无时区的 Date、时间戳转换仍使用系统默认时区；跨系统业务应迁移到带 `ZoneId` 的重载。
 
-### 11. Bean 与反射工具组
+### 10. Bean 与反射工具组
 
 #### BeanUtil
 
@@ -772,7 +743,7 @@ String recordName = LambdaUtil.getPropertyName(UserRecord::name);
 - Class 扫描结果改为不可修改、稳定排序的完整快照，且不再触发候选类静态初始化。
 - 非 Getter Lambda 不再返回错误字符串，而是通过稳定错误码明确拒绝。
 
-### 12. Spring 容器工具 SpringUtil
+### 11. Spring 容器工具 SpringUtil
 
 ```java
 UserService service = SpringUtil.getBean(UserService.class);
@@ -784,7 +755,7 @@ boolean exists = SpringUtil.containsBean("dataSource");
 String profile = SpringUtil.getActiveProfile();  // "dev" / "prod"
 ```
 
-### 13. Spring 表达式工具 SpelUtil
+### 12. Spring 表达式工具 SpelUtil
 
 ```java
 // 普通表达式与显式返回类型
@@ -820,7 +791,7 @@ String name = SpelUtil.evalSafe("name", user, String.class);
 模板现在遵循 Spring 原生 `#{...}` 语法；旧版 Map 变量占位符 `#{name}` 需要迁移为
 `#{#name}`。
 
-### 14. 重试工具 RetryUtil
+### 13. 重试工具 RetryUtil
 
 `RetryUtil` 使用 Resilience4j Retry 执行同步重试，Letool 负责提供类型安全的策略、便捷入口、
 参数校验和统一异常。常用的固定等待可以直接调用：
@@ -879,7 +850,7 @@ JobStatus status = RetryUtil.execute(
 - 工具不再记录可能包含业务数据的任务结果和异常消息。需要观测时，应由业务层按脱敏规则记录。
 - Hutool 已从本模块依赖中移除；业务若直接使用 Hutool API，需要在业务项目中显式声明依赖。
 
-### 15. 分页结果 PageResult
+### 14. 分页结果 PageResult
 
 ```java
 PageResult<User> page = PageResult.of(users, totalCount, 1, 20);
@@ -893,25 +864,9 @@ int totalPages = page.getTotalPages();
 
 ## 配置属性
 
-通用 `JsonCodec` 不依赖 YAML；通过应用 Bean 或
-`Fastjson2JsonCodec.builder()` 配置。业务提前提供唯一 Redis 连接工厂、且没有定义对象模板时，
-Starter 创建的兼容 `RedisTemplate` 可以通过以下配置收紧 Fastjson2 多态反序列化允许的包名：
-
-```yaml
-letool:
-  tool:
-    redis:
-      auto-type-accept-prefixes:
-        - org.springframework
-        - com.example.order
-```
-
-Redis value serializer 会写入类型信息，因此其 allow-list 是独立的安全边界，不会复用通用
-`JsonCodec` 的普通序列化策略。包名应尽量精确，不应配置为空字符串或过宽的公共包。
-序列化器会自动补齐包分隔符，例如 `com.example` 只允许 `com.example.*`，不会放行
-`com.exampleevil.*`；遇到未授权的类型信息会直接拒绝反序列化。
-业务自行提供或 Spring Boot 创建的 `redisTemplate` 不会被 Letool 修改；这时序列化策略及兼容迁移
-由模板所有者负责，以上 allow-list 不会作用于该模板。
+通用 `JsonCodec` 不依赖 YAML，通过应用 Bean 或 `Fastjson2JsonCodec.builder()` 配置。
+Redis 连接、对象序列化和 `RedisUtil` 配置已经迁至
+[`letool-starter-redis`](../letool-starter-redis/README.md)。
 
 传递依赖的异常模块配置参阅
 [`letool-starter-exception`](../letool-starter-exception/README.md)。

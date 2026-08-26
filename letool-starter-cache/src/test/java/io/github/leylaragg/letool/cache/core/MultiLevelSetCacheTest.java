@@ -2,7 +2,7 @@ package io.github.leylaragg.letool.cache.core;
 
 import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
 import io.github.leylaragg.letool.cache.exception.CacheException;
-import io.github.leylaragg.letool.tool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

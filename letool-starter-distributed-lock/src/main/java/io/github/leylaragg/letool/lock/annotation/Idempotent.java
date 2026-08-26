@@ -5,11 +5,11 @@ import java.lang.annotation.*;
 /**
  * 声明式幂等性注解 —— 通过 AOP 自动防止重复请求。
  *
- * <p>将此注解标注在需要幂等性保证的方法上，框架会基于 Redis 缓存请求状态：
+ * <p>将此注解标注在需要幂等性保证的方法上，框架会基于已注册的原子占位存储维护请求状态：
  * 首次请求正常执行业务逻辑并缓存结果标记；在 TTL 时间内，相同 key 的重复请求
  * 将直接返回 {@code null} 而不执行方法体。</p>
  *
- * <h3>使用示例</h3>
+ * <h2>使用示例</h2>
  * <pre>{@code
  * @Idempotent(key = "pay:#{#orderId}", ttl = 3600)
  * public PaymentResult pay(Long orderId) {
@@ -18,12 +18,12 @@ import java.lang.annotation.*;
  * }
  * }</pre>
  *
- * <h3>注意事项</h3>
+ * <h2>注意事项</h2>
  * <ul>
  *   <li>{@code key} 支持 SpEL 表达式，可动态拼接方法参数</li>
  *   <li>该注解依赖 Spring AOP，仅对 Spring 管理的 Bean 的 public 方法生效</li>
  *   <li>重复请求返回 {@code null}，调用方需自行判空处理</li>
- *   <li>底层通过 Redis SET NX EX 命令实现标记的原子存储</li>
+ *   <li>具体存储由实现 {@code IdempotentStore} 的后端 Starter 提供</li>
  * </ul>
  *
  * @author leyland

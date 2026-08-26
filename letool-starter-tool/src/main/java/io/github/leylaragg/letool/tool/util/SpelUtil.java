@@ -212,6 +212,37 @@ public final class SpelUtil {
     }
 
     /**
+     * 在方法调用上下文中计算字符串模板。
+     *
+     * <p>该入口适合注解 key，例如 {@code order:#{#orderId}:#{#p1}}。参数名、
+     * {@code #p0}/{@code #a0}、目标对象和方法元数据与 {@link #evalMethod} 保持一致。</p>
+     *
+     * @param template 模板表达式
+     * @param target 方法所属对象
+     * @param method 被调用的具体方法
+     * @param arguments 实际方法参数
+     * @return 模板求值后的字符串
+     * @throws SpelException 方法上下文无效或模板求值失败时抛出
+     */
+    public static String evalMethodTemplate(
+            String template, Object target, Method method, Object[] arguments) {
+        if (method == null) {
+            throw SpelException.evaluationFailed(new IllegalArgumentException("方法不能为空"));
+        }
+        Object[] actualArguments = arguments == null ? new Object[0] : arguments;
+        if (method.getParameterCount() != actualArguments.length) {
+            throw SpelException.evaluationFailed(
+                    new IllegalArgumentException("方法参数数量与实际参数数量不一致"));
+        }
+        MethodBasedEvaluationContext context = new MethodBasedEvaluationContext(
+                target, method, actualArguments, PARAMETER_NAME_DISCOVERER);
+        context.setVariable("target", target);
+        context.setVariable("method", method);
+        context.setVariable("args", actualArguments);
+        return evaluate(getTemplate(template), context, String.class);
+    }
+
+    /**
      * 使用只读数据绑定上下文计算表达式。
      *
      * <p>安全模式仅支持读取属性、集合索引及变量等常用能力，

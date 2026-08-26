@@ -81,10 +81,10 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-aop</artifactId>
         </dependency>
-        <!-- 示例同时启用缓存 starter，需显式选择其可选的 Redis 基础设施 -->
+        <!-- 示例显式选择完整 Redis Starter，缓存模块不会被动引入 Redis/Redisson。 -->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-redis</artifactId>
+            <groupId>io.github.leylaragg</groupId>
+            <artifactId>letool-starter-redis</artifactId>
         </dependency>
 
         <!-- 测试 -->

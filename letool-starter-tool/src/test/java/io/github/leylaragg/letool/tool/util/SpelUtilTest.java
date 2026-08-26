@@ -83,6 +83,24 @@ class SpelUtilTest {
     }
 
     /**
+     * 验证注解常用的模板形式可以同时解析参数名和索引参数。
+     *
+     * @throws NoSuchMethodException 测试方法不存在时抛出
+     */
+    @Test
+    void evalMethodTemplateResolvesNamedAndIndexedArguments() throws NoSuchMethodException {
+        Method method = GreetingService.class.getDeclaredMethod("greet", String.class, int.class);
+
+        String result = SpelUtil.evalMethodTemplate(
+                "greeting:#{#name}:#{#p1}",
+                new GreetingService("hello"),
+                method,
+                new Object[]{"leyland", 2});
+
+        assertEquals("greeting:leyland:2", result);
+    }
+
+    /**
      * 验证受限求值允许读取数据，但拒绝 Java 类型引用。
      */
     @Test

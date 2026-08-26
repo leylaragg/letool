@@ -41,7 +41,8 @@
 |------|------|------|
 | **letool-exception-core** | 异常基础契约 —— 不依赖 Spring 的错误码、异常基类与消息格式化 | 无 letool 内部依赖 |
 | **letool-starter-exception** | 统一异常 —— 错误码、业务/系统异常、MessageSource 国际化解析 | exception-core |
-| **letool-starter-tool** | 核心工具 —— 可替换 JsonCodec、HTTP、ID 生成、字符串、集合、树工具；Spring/Redis helper 为可选适配器 | exception |
+| **letool-starter-tool** | 核心工具 —— 可替换 JsonCodec、HTTP、ID 生成、字符串、集合、反射与 Spring 容器工具 | exception |
+| [**letool-starter-redis**](letool-starter-redis/README.md) | Redis 基础设施 —— RedisUtil、Redisson 分布式锁、幂等存储与防击穿缓存回源 | tool, distributed-lock, Spring Data Redis, Redisson |
 | [**letool-starter-sensitive**](letool-starter-sensitive/README.md) | 数据脱敏工具 —— 常用策略、字段注解、可扩展注册表与 Jackson 自动脱敏 | exception, Jackson |
 | **letool-starter-log** | 日志封装 —— 请求链路追踪、审计日志、方法日志；异步 MDC 传播可直接搭配 thread | tool, sensitive |
 | [**letool-starter-cache**](letool-starter-cache/README.md) | 二级缓存 —— KV 与 Redis 原生 List/Hash/Set/ZSet，严格故障策略、批量访问与跨节点失效 | tool, exception |
@@ -58,7 +59,7 @@
 | [**letool-starter-print-expression-spel**](letool-starter-print-expression-spel/README.md) | 可选受限 SpEL 条件表达式，仅在可信 Java 代码显式注册后启用 | print-xml, Spring Expression |
 | **letool-starter-excel** | Excel 操作 —— EasyExcel 原生能力薄封装、批量读取与轻量校验 | exception |
 | **letool-starter-mail** | 邮件发送 —— 显式启用的 Jakarta Mail、多账户、附件与同步/异步投递 | exception |
-| **letool-starter-distributed-lock** | 分布式锁 —— Redis 后端、`LockTemplate`、`@Lock`/`@Idempotent`；可替换 `DistributedLock` | tool |
+| [**letool-starter-distributed-lock**](letool-starter-distributed-lock/README.md) | 后端无关的分布式锁与幂等契约 —— `LockTemplate`、`@Lock`/`@Idempotent`、可替换 SPI | tool |
 | [**letool-rule-engine-core**](letool-rule-engine-core/README.md) | 纯 Java 强类型 DSL 表达式内核 —— 事实快照、先编译后求值、结构化诊断与有界追踪 | exception-core |
 | [**letool-starter-rule-engine**](letool-starter-rule-engine/README.md) | 通用规则表达式引擎 Spring Boot 自动配置 —— 限制绑定、函数 Bean 收集与诊断国际化 | rule-engine-core, exception starter, Spring Boot |
 | [**letool-starter-rule-liteflow**](letool-starter-rule-liteflow/README.md) | LiteFlow 规则链执行 —— 原生能力薄封装、便捷执行与统一异常 | exception, LiteFlow, Spring Boot |
@@ -238,8 +239,8 @@ String result = chain.execute(amount);
 
 ```yaml
 letool:
-  tool:
-    redis:
+  redis:
+    serialization:
         # Redis 多态 value 的反序列化白名单；填写尽可能精确的业务包名
         auto-type-accept-prefixes:
           - org.springframework

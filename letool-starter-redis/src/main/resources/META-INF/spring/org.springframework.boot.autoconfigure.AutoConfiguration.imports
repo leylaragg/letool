@@ -1,0 +1,3 @@
+io.github.leylaragg.letool.redis.config.LetoolRedisTemplateAutoConfiguration
+io.github.leylaragg.letool.redis.config.LetoolRedisBackendAutoConfiguration
+io.github.leylaragg.letool.redis.config.LetoolRedisAutoConfiguration

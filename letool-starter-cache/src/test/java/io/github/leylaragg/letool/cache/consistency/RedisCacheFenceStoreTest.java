@@ -1,6 +1,6 @@
 package io.github.leylaragg.letool.cache.consistency;
 
-import io.github.leylaragg.letool.tool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisUtil;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.stubbing.OngoingStubbing;

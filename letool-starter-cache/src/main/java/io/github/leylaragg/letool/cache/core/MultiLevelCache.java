@@ -9,7 +9,7 @@ import io.github.leylaragg.letool.cache.exception.CacheErrorCode;
 import io.github.leylaragg.letool.cache.exception.CacheException;
 import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
 import io.github.leylaragg.letool.cache.support.RedisCacheScriptExecutor;
-import io.github.leylaragg.letool.tool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.connection.ReturnType;

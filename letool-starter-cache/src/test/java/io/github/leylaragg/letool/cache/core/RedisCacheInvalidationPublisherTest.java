@@ -1,7 +1,7 @@
 package io.github.leylaragg.letool.cache.core;
 
-import io.github.leylaragg.letool.tool.redis.FastJson2JsonRedisSerializer;
-import io.github.leylaragg.letool.tool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.serializer.FastJson2JsonRedisSerializer;
+import io.github.leylaragg.letool.redis.RedisUtil;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.redis.connection.RedisConnection;

@@ -1,0 +1,57 @@
+{
+  "properties": [
+    {
+      "name": "letool.redis.serialization.auto-type-accept-prefixes",
+      "type": "java.util.List<java.lang.String>",
+      "description": "Fastjson2 Redis 多态值允许反序列化的包名前缀；应配置为尽可能精确的业务包。"
+    },
+    {
+      "name": "letool.redis.lock.key-prefix",
+      "type": "java.lang.String",
+      "description": "Redisson 锁写入 Redis 时使用的统一 Key 前缀。",
+      "defaultValue": "letool:lock:"
+    },
+    {
+      "name": "letool.redis.lock.fair",
+      "type": "java.lang.Boolean",
+      "description": "是否使用 Redisson 公平锁；默认使用吞吐量更高的非公平锁。",
+      "defaultValue": false
+    },
+    {
+      "name": "letool.redis.idempotent.key-prefix",
+      "type": "java.lang.String",
+      "description": "Redis 幂等标记的统一 Key 前缀。",
+      "defaultValue": "letool:idempotent:"
+    },
+    {
+      "name": "letool.redis.cache.cache-null",
+      "type": "java.lang.Boolean",
+      "description": "数据源返回空值时是否写入短期哨兵，防止不存在数据被反复查询。",
+      "defaultValue": true
+    },
+    {
+      "name": "letool.redis.cache.null-ttl",
+      "type": "java.time.Duration",
+      "description": "空值哨兵的存活时间，必须大于零。",
+      "defaultValue": "2m"
+    },
+    {
+      "name": "letool.redis.cache.ttl-jitter",
+      "type": "java.time.Duration",
+      "description": "追加到正常缓存 TTL 的最大随机抖动，用于分散集中失效。",
+      "defaultValue": "30s"
+    },
+    {
+      "name": "letool.redis.cache.lock-wait",
+      "type": "java.time.Duration",
+      "description": "缓存重建和便捷锁方法等待分布式锁的最长时间。",
+      "defaultValue": "3s"
+    },
+    {
+      "name": "letool.redis.cache.lock-key-prefix",
+      "type": "java.lang.String",
+      "description": "缓存回源锁在通用 Redisson 锁前缀之后追加的业务前缀。",
+      "defaultValue": "cache:"
+    }
+  ]
+}

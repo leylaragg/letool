@@ -19,6 +19,8 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
 
 ### Added
 
+- 新增 `letool-starter-redis`：集中提供 `RedisUtil`、Redisson 锁后端、Redis 幂等存储、
+  锁内双检缓存回源、空值短 TTL、TTL 抖动，以及可选的真实 Redis/Testcontainers 集成门禁。
 - `letool-starter-cache` 新增 KV 有界 Pipeline 批量读写、Set 安全前缀失效、
   Redis 读取故障策略、带状态集合读取结果、泛型 `Type` 反序列化及真实 Redis Profile。
 - `letool-starter-cache` 新增默认兼容的 `BEST_EFFORT`/`FAIL_CLOSED` Redis 写失败策略，
@@ -94,6 +96,11 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
 
 ### Changed
 
+- **BREAKING** `letool-starter-distributed-lock` 改为后端无关契约模块；默认 Redisson/Redis 实现
+  由 `letool-starter-redis` 提供。原 `letool.lock.backend` 与 `letool.lock.pessimistic.*` 配置已移除，
+  分别迁移到 `letool.lock.*` 功能开关和 `letool.redis.lock.*` 后端配置。
+- 分布式锁改为一次获取返回所有权句柄；默认 `@Lock` 使用看门狗租约，方法模板 Key 会在包含
+  参数名、`#p0`、`#a0`、`#target`、`#method` 和 `#args` 的 SpEL 上下文中求值。
 - **BREAKING — `io.github.leylaragg:letool-starter-rule` Maven coordinate:**
   LiteFlow 薄封装模块重命名为
   `io.github.leylaragg:letool-starter-rule-liteflow`，以区别于新的通用规则决策框架。
@@ -264,6 +271,9 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
 
 ### Removed
 
+- **BREAKING** `letool-starter-tool` 不再包含 Redis 类、Redis 自动配置或 Spring Data Redis 依赖。
+  `io.github.leylaragg.letool.tool.redis.RedisUtil` 迁移为
+  `io.github.leylaragg.letool.redis.RedisUtil`，使用方需显式引入 `letool-starter-redis`。
 - **BREAKING — `io.github.leylaragg:letool-starter-oss` Stub Provider：** 删除
   `MinioProvider`、`AliyunOssProvider`、`TencentCosProvider` 三个模拟实现及
   `letool.oss.stub-enabled`。启用 OSS 后必须存在官方 SDK Provider 模块或业务自定义

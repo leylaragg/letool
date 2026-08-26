@@ -11,7 +11,7 @@
 
     <artifactId>letool-starter-tool</artifactId>
     <name>letool-starter-tool</name>
-    <description>letool 基石模块 —— 提供 JSON、HTTP、Redis、集合、字符串、日期、ID 生成等通用工具类</description>
+    <description>letool 基石模块 —— 提供 JSON、HTTP、集合、字符串、日期、ID 生成等通用工具类</description>
     <packaging>jar</packaging>
 
     <dependencies>
@@ -62,13 +62,6 @@
         <dependency>
             <groupId>io.github.resilience4j</groupId>
             <artifactId>resilience4j-retry</artifactId>
-        </dependency>
-
-        <!-- Redis（可选依赖） -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-redis</artifactId>
-            <optional>true</optional>
         </dependency>
 
         <!-- SLF4J 日志门面 -->

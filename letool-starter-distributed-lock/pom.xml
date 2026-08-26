@@ -11,7 +11,7 @@
 
     <artifactId>letool-starter-distributed-lock</artifactId>
     <name>letool-starter-distributed-lock</name>
-    <description>letool 分布式锁 &amp; 幂等性 —— 悲观锁/乐观锁（Redis/ZK/DB）、幂等性注解、自动续期</description>
+    <description>letool 分布式锁与幂等性契约 —— 后端无关句柄、函数式模板、注解切面与幂等存储 SPI</description>
     <packaging>jar</packaging>
 
     <dependencies>
@@ -22,10 +22,6 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-aop</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

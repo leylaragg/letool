@@ -91,11 +91,11 @@ class LockAnnotationTest {
         }
 
         @Test
-        @DisplayName("leaseTime 默认应为 30")
-        void leaseTimeDefaultShouldBe30() throws NoSuchMethodException {
+        @DisplayName("leaseTime 默认应为 -1，交给后端看门狗续期")
+        void leaseTimeDefaultShouldUseWatchdog() throws NoSuchMethodException {
             Method method = TestService.class.getMethod("defaultLockMethod", Long.class);
             Lock lock = method.getAnnotation(Lock.class);
-            assertEquals(30L, lock.leaseTime(), "leaseTime 默认值应为 30");
+            assertEquals(-1L, lock.leaseTime(), "leaseTime 默认值应为 -1");
         }
 
         @Test

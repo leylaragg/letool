@@ -10,6 +10,7 @@
 | Spring Boot | `3.5.x` | Parent POM currently manages `3.5.16`. |
 | Spring Framework | `6.2.x` | Managed by Spring Boot `3.5.x`. |
 | Spring Cloud | `2025.0.x` | Parent POM currently imports `2025.0.3`. |
+| Redisson | `3.40.2` | Managed by the parent POM; Redis starter contexts cover Spring wiring, and the real Redis profile is the runtime compatibility gate. |
 | Netty | Boot-managed | `letool-starter-net` follows the Netty version supplied by the Spring Boot BOM. |
 | Jakarta EE APIs | Jakarta namespace | Spring Boot 3 baseline; `javax.*` integrations are not targeted. |
 
@@ -25,7 +26,7 @@
 | Module Area | Compatibility Risk |
 |---|---|
 | Servlet/web/security/swagger | Must stay aligned with Spring Boot 3 and Spring Framework 6 Servlet stack. |
-| Cache/distributed-lock | Redis and Redisson versions must be verified with Spring Boot dependency management before stable release. |
+| Redis/cache/distributed-lock | Redis Starter owns Redisson and Spring Data Redis integration; Cache keeps Redis optional, while distributed-lock remains client-neutral. Re-run the real Redis profile for target Redis topologies and every Redisson/Spring Boot upgrade. |
 | Mail | Uses Jakarta Mail runtime; no `javax.mail` compatibility guarantee. |
 | Excel/rule | EasyExcel 4.0.3、Commons Compress 1.28.0 与 Commons IO 2.20.0 在父 POM 统一收敛；规则引擎版本同样由父 POM 管理。 |
 | Net | Netty is managed by the Boot BOM; TCP behavior additionally depends on the remote protocol framing and request-correlation contract. |

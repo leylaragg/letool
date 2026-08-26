@@ -10,7 +10,8 @@ import io.github.leylaragg.letool.cache.core.RedisCacheInvalidationSubscriber;
 import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
 import io.github.leylaragg.letool.cache.serializer.JacksonCacheSerializer;
 import io.github.leylaragg.letool.cache.support.CacheMonitor;
-import io.github.leylaragg.letool.tool.config.LetoolRedisTemplateAutoConfiguration;
+import io.github.leylaragg.letool.redis.config.LetoolRedisAutoConfiguration;
+import io.github.leylaragg.letool.redis.config.LetoolRedisTemplateAutoConfiguration;
 import io.github.leylaragg.letool.tool.config.LetoolToolAutoConfiguration;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
@@ -39,7 +40,7 @@ import io.github.leylaragg.letool.cache.consistency.CacheInvalidationEventStore;
 import io.github.leylaragg.letool.cache.consistency.CacheInvalidationRecovery;
 import io.github.leylaragg.letool.cache.consistency.CacheInvalidationRecoveryScheduler;
 import io.github.leylaragg.letool.cache.consistency.CacheMutationCoordinator;
-import io.github.leylaragg.letool.tool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisUtil;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -131,6 +132,7 @@ class CacheAutoConfigurationTest {
                 .withConfiguration(AutoConfigurations.of(
                         LetoolRedisTemplateAutoConfiguration.class,
                         RedisAutoConfiguration.class,
+                        LetoolRedisAutoConfiguration.class,
                         LetoolToolAutoConfiguration.class,
                         CacheAutoConfiguration.class))
                 .withUserConfiguration(ListenerContainerTakeoverOnlyConfiguration.class)

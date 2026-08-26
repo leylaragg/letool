@@ -1,7 +1,7 @@
 package io.github.leylaragg.letool.cache.consistency;
 
 import io.github.leylaragg.letool.cache.support.RedisCacheScriptExecutor;
-import io.github.leylaragg.letool.tool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisUtil;
 
 import java.time.Duration;
 import java.time.Instant;
