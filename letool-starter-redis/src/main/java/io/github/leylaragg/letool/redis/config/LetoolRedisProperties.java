@@ -11,7 +11,7 @@ import java.util.List;
  * Redis Starter 的统一配置。
  *
  * <p>序列化、锁命名和缓存回源策略在此集中管理，业务代码只需要注入
- * {@code RedisUtil}，无需了解内部组件的装配关系。</p>
+ * {@code RedisFacade}，无需了解内部组件的装配关系。</p>
  */
 @ConfigurationProperties(prefix = "letool.redis")
 public class LetoolRedisProperties implements InitializingBean {

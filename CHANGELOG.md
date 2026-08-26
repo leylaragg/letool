@@ -19,7 +19,7 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
 
 ### Added
 
-- 新增 `letool-starter-redis`：集中提供 `RedisUtil`、Redisson 锁后端、Redis 幂等存储、
+- 新增 `letool-starter-redis`：集中提供 `RedisFacade`、Redisson 锁后端、Redis 幂等存储、
   锁内双检缓存回源、空值短 TTL、TTL 抖动，以及可选的真实 Redis/Testcontainers 集成门禁。
 - `letool-starter-cache` 新增 KV 有界 Pipeline 批量读写、Set 安全前缀失效、
   Redis 读取故障策略、带状态集合读取结果、泛型 `Type` 反序列化及真实 Redis Profile。
@@ -273,7 +273,9 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
 
 - **BREAKING** `letool-starter-tool` 不再包含 Redis 类、Redis 自动配置或 Spring Data Redis 依赖。
   `io.github.leylaragg.letool.tool.redis.RedisUtil` 迁移为
-  `io.github.leylaragg.letool.redis.RedisUtil`，使用方需显式引入 `letool-starter-redis`。
+  `io.github.leylaragg.letool.redis.RedisFacade`；原 `RedisMessageQueueUtil` 迁移为
+  `io.github.leylaragg.letool.redis.queue.RedisMessageQueueTemplate`。使用方需显式引入
+  `letool-starter-redis`。
 - **BREAKING — `io.github.leylaragg:letool-starter-oss` Stub Provider：** 删除
   `MinioProvider`、`AliyunOssProvider`、`TencentCosProvider` 三个模拟实现及
   `letool.oss.stub-enabled`。启用 OSS 后必须存在官方 SDK Provider 模块或业务自定义

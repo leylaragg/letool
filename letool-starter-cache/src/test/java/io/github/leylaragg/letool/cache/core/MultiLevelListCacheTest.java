@@ -2,7 +2,7 @@ package io.github.leylaragg.letool.cache.core;
 
 import io.github.leylaragg.letool.cache.exception.CacheException;
 import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
-import io.github.leylaragg.letool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisFacade;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -35,7 +35,7 @@ import static org.mockito.Mockito.when;
 class MultiLevelListCacheTest {
 
     @Mock
-    private RedisUtil redisUtil;
+    private RedisFacade redisFacade;
 
     @Mock
     private CacheSerializer serializer;
@@ -55,16 +55,16 @@ class MultiLevelListCacheTest {
                 .build();
         lenient().when(boundListOperations.leftPush(any())).thenReturn(1L);
         lenient().when(boundListOperations.rightPush(any())).thenReturn(1L);
-        lenient().when(redisUtil.expire(any(), anyLong(), any())).thenReturn(true);
+        lenient().when(redisFacade.expire(any(), anyLong(), any())).thenReturn(true);
     }
 
     @Test
     @DisplayName("严格写策略下 push 失败必须保留 L1，后续 pop 也不得本地伪成功")
     void strictPushAndPopShouldExposeRedisFailureWithoutMutatingLocalList() {
         String redisKey = "test:cache:events:user:strict";
-        when(redisUtil.boundListOps(redisKey)).thenReturn(boundListOperations);
+        when(redisFacade.boundListOps(redisKey)).thenReturn(boundListOperations);
         when(boundListOperations.range(0, -1)).thenReturn(List.of("old"));
-        MultiLevelListCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelListCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateListCache(strictWriteConfig(), Function.identity(), String.class);
         assertEquals(List.of("old"), cache.range("user:strict", 0, -1));
         RuntimeException redisFailure = new RuntimeException("rpush failed");
@@ -84,10 +84,10 @@ class MultiLevelListCacheTest {
     @DisplayName("严格写策略下 push 的 TTL 失败必须暴露")
     void strictPushShouldRejectFailedTtl() {
         String redisKey = "test:cache:events:user:strict-ttl";
-        when(redisUtil.boundListOps(redisKey)).thenReturn(boundListOperations);
-        when(redisUtil.expire(redisKey, Duration.ofHours(1).toMillis(),
+        when(redisFacade.boundListOps(redisKey)).thenReturn(boundListOperations);
+        when(redisFacade.expire(redisKey, Duration.ofHours(1).toMillis(),
                 java.util.concurrent.TimeUnit.MILLISECONDS)).thenReturn(false);
-        MultiLevelListCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelListCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateListCache(strictWriteConfig(), Function.identity(), String.class);
 
         CacheException thrown = assertThrows(CacheException.class,
@@ -101,13 +101,13 @@ class MultiLevelListCacheTest {
     @DisplayName("严格写策略下 removeKey 失败必须保留 L1")
     void strictRemoveKeyShouldExposeFailureWithoutClearingLocalList() {
         String redisKey = "test:cache:events:user:strict-delete";
-        when(redisUtil.boundListOps(redisKey)).thenReturn(boundListOperations);
+        when(redisFacade.boundListOps(redisKey)).thenReturn(boundListOperations);
         when(boundListOperations.range(0, -1)).thenReturn(List.of("old"));
-        MultiLevelListCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelListCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateListCache(strictWriteConfig(), Function.identity(), String.class);
         assertEquals(List.of("old"), cache.range("user:strict-delete", 0, -1));
         RuntimeException redisFailure = new RuntimeException("del failed");
-        doThrow(redisFailure).when(redisUtil).delete(redisKey);
+        doThrow(redisFailure).when(redisFacade).delete(redisKey);
 
         CacheException thrown = assertThrows(CacheException.class,
                 () -> cache.removeKey("user:strict-delete"));
@@ -119,17 +119,17 @@ class MultiLevelListCacheTest {
     @Test
     @DisplayName("rightPush 写入 L1 和 Redis List")
     void rightPushWritesLocalAndRedisList() {
-        when(redisUtil.boundListOps("test:cache:events:user:1")).thenReturn(boundListOperations);
+        when(redisFacade.boundListOps("test:cache:events:user:1")).thenReturn(boundListOperations);
         when(boundListOperations.range(0, -1))
                 .thenReturn(List.of("login"));
-        MultiLevelListCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelListCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateListCache(config, Function.identity(), String.class);
 
         cache.rightPush("user:1", "login");
 
         assertEquals(List.of("login"), cache.range("user:1", 0, -1));
         verify(boundListOperations).rightPush("login");
-        verify(redisUtil).expire("test:cache:events:user:1", Duration.ofHours(1).toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+        verify(redisFacade).expire("test:cache:events:user:1", Duration.ofHours(1).toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
     }
 
     @Test
@@ -149,9 +149,9 @@ class MultiLevelListCacheTest {
     @Test
     @DisplayName("L1 miss 时从 Redis List 读取并回填")
     void l1MissReadsRedisListAndRefillsLocal() {
-        when(redisUtil.boundListOps("test:cache:events:user:2")).thenReturn(boundListOperations);
+        when(redisFacade.boundListOps("test:cache:events:user:2")).thenReturn(boundListOperations);
         when(boundListOperations.range(0, -1)).thenReturn(List.of("a", "b"));
-        MultiLevelListCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelListCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateListCache(config, Function.identity(), String.class);
 
         assertEquals(List.of("a", "b"), cache.range("user:2", 0, -1));
@@ -163,9 +163,9 @@ class MultiLevelListCacheTest {
     @Test
     @DisplayName("pop 从 Redis List 弹出元素并清理本地副本")
     void popUsesRedisListAndEvictsLocalSnapshot() {
-        when(redisUtil.boundListOps("test:cache:events:user:3")).thenReturn(boundListOperations);
+        when(redisFacade.boundListOps("test:cache:events:user:3")).thenReturn(boundListOperations);
         when(boundListOperations.leftPop()).thenReturn("first");
-        MultiLevelListCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelListCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateListCache(config, Function.identity(), String.class);
 
         cache.rightPush("user:3", "first");
@@ -179,9 +179,9 @@ class MultiLevelListCacheTest {
     @Test
     @DisplayName("Redis 异常后 List 缓存进入 L2 降级")
     void redisFailureMarksListCacheDegraded() {
-        when(redisUtil.boundListOps("test:cache:events:user:4")).thenReturn(boundListOperations);
+        when(redisFacade.boundListOps("test:cache:events:user:4")).thenReturn(boundListOperations);
         when(boundListOperations.range(0, -1)).thenThrow(new RuntimeException("redis down"));
-        CacheManager manager = new CacheManager(redisUtil, serializer);
+        CacheManager manager = new CacheManager(redisFacade, serializer);
         MultiLevelListCache<String, String> cache = manager.getOrCreateListCache(config, Function.identity(), String.class);
 
         assertTrue(cache.range("user:4", 0, -1).isEmpty());
@@ -193,12 +193,12 @@ class MultiLevelListCacheTest {
     @Test
     @DisplayName("局部推入不能让 L1 冒充完整 Redis List 快照")
     void partialPushShouldNotHideExistingRedisElements() {
-        when(redisUtil.boundListOps("test:cache:events:user:5"))
+        when(redisFacade.boundListOps("test:cache:events:user:5"))
                 .thenReturn(boundListOperations);
         when(boundListOperations.range(0, -1))
                 .thenReturn(List.of("existing", "new"));
         MultiLevelListCache<String, String> cache =
-                new CacheManager(redisUtil, serializer)
+                new CacheManager(redisFacade, serializer)
                         .getOrCreateListCache(
                                 config,
                                 Function.identity(),
@@ -224,12 +224,12 @@ class MultiLevelListCacheTest {
                         .redisKeyPrefix("test:cache:")
                         .strongConsistency(true)
                         .build();
-        when(redisUtil.boundListOps("test:cache:events:user:6"))
+        when(redisFacade.boundListOps("test:cache:events:user:6"))
                 .thenReturn(boundListOperations);
         when(boundListOperations.range(0, -1))
                 .thenReturn(List.of("old"), List.of());
         MultiLevelListCache<String, String> cache =
-                new CacheManager(redisUtil, serializer)
+                new CacheManager(redisFacade, serializer)
                         .getOrCreateListCache(
                                 strongConfig,
                                 Function.identity(),
@@ -270,11 +270,11 @@ class MultiLevelListCacheTest {
                         .strongConsistency(false)
                         .valueType(String.class)
                         .build();
-        when(redisUtil.boundListOps("test:cache:typed-list:key"))
+        when(redisFacade.boundListOps("test:cache:typed-list:key"))
                 .thenReturn(boundListOperations);
         when(boundListOperations.range(0, -1)).thenReturn(List.of(42));
         MultiLevelListCache<String, String> cache =
-                new CacheManager(redisUtil, serializer)
+                new CacheManager(redisFacade, serializer)
                         .getOrCreateListCache(typedConfig);
 
         assertTrue(cache.range("key", 0, -1).isEmpty());
@@ -310,9 +310,9 @@ class MultiLevelListCacheTest {
     void evictAllShouldNotPublishWhenRedisCleanupFails() {
         CacheInvalidationPublisher publisher = mock(CacheInvalidationPublisher.class);
         RuntimeException cleanupFailure = new RuntimeException("scan failed");
-        when(redisUtil.getTemplate()).thenThrow(cleanupFailure);
+        when(redisFacade.getTemplate()).thenThrow(cleanupFailure);
         MultiLevelListCache<String, String> cache = new CacheManager(
-                redisUtil,
+                redisFacade,
                 serializer,
                 true,
                 true,

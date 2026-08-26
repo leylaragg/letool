@@ -9,7 +9,7 @@ import io.github.leylaragg.letool.cache.exception.CacheErrorCode;
 import io.github.leylaragg.letool.cache.exception.CacheException;
 import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
 import io.github.leylaragg.letool.cache.support.RedisCacheScriptExecutor;
-import io.github.leylaragg.letool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisFacade;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.connection.ReturnType;
@@ -111,7 +111,7 @@ public class MultiLevelCache<K, V> {
     /** L1 条目写入时看到的区域纪元，用于感知离线期间发生的 evictAll。 */
     private final Cache<K, Long> l1RegionVersions;
     /** Redis 操作工具。为 null 时缓存自动退化为 L1-only。 */
-    private final RedisUtil redisUtil;
+    private final RedisFacade redisFacade;
     /** 业务值序列化器，用于写入 Redis 字符串值。 */
     private final CacheSerializer serializer;
     /** 当前缓存区域的最终配置，已经由 CacheManager 合并全局开关后传入。 */
@@ -142,11 +142,11 @@ public class MultiLevelCache<K, V> {
      * <p>该构造器主要用于测试或手动创建缓存；跨 JVM L1 失效广播默认使用 no-op。</p>
      *
      * @param config 缓存区域配置
-     * @param redisUtil Redis 操作入口；为 null 时只启用 L1
+     * @param redisFacade Redis 操作入口；为 null 时只启用 L1
      * @param serializer 业务值序列化器
      */
-    public MultiLevelCache(CacheConfig<K, V> config, RedisUtil redisUtil, CacheSerializer serializer) {
-        this(config, redisUtil, serializer, CacheInvalidationPublisher.noop(), "local", () -> { });
+    public MultiLevelCache(CacheConfig<K, V> config, RedisFacade redisFacade, CacheSerializer serializer) {
+        this(config, redisFacade, serializer, CacheInvalidationPublisher.noop(), "local", () -> { });
     }
 
     /**
@@ -155,7 +155,7 @@ public class MultiLevelCache<K, V> {
      * <p>该构造器由 {@link CacheManager} 使用，会注入失效广播发布器、当前 JVM 实例 ID 和 L2 降级回调。</p>
      *
      * @param config 缓存区域配置
-     * @param redisUtil Redis 操作入口；为 null 时只启用 L1
+     * @param redisFacade Redis 操作入口；为 null 时只启用 L1
      * @param serializer 业务值序列化器
      * @param invalidationPublisher 跨 JVM L1 失效广播发布器
      * @param instanceId 当前 JVM 缓存节点 ID
@@ -163,13 +163,13 @@ public class MultiLevelCache<K, V> {
      */
     @SuppressWarnings("unchecked")
     public MultiLevelCache(CacheConfig<K, V> config,
-                           RedisUtil redisUtil,
+                           RedisFacade redisFacade,
                            CacheSerializer serializer,
                            CacheInvalidationPublisher invalidationPublisher,
                            String instanceId,
                            Runnable degradationListener) {
         this.name = config.getName();
-        this.redisUtil = redisUtil;
+        this.redisFacade = redisFacade;
         this.serializer = serializer;
         this.config = config;
         this.keyspace = new RedisCacheKeyspace(config.getRedisKeyPrefix(), name);
@@ -489,7 +489,7 @@ public class MultiLevelCache<K, V> {
             }
             try {
                 // 使用 SCAN + UNLINK 分批清理当前区域，避免 KEYS 阻塞 Redis 主线程。
-                keyspace.scanAndUnlink(redisUtil.getTemplate());
+                keyspace.scanAndUnlink(redisFacade.getTemplate());
                 bumpConsistencyVersion();
             } catch (Exception e) {
                 markL2Degraded(e);
@@ -584,7 +584,7 @@ public class MultiLevelCache<K, V> {
             return true;
         }
         try {
-            redisUtil.hasKey(keyspace.healthCheckKey());
+            redisFacade.hasKey(keyspace.healthCheckKey());
             l2Degraded = false;
             lastL2Failure = null;
             return true;
@@ -794,7 +794,7 @@ public class MultiLevelCache<K, V> {
         try {
             boolean versioned = config.isStrongConsistency();
             boolean durable = config.getConsistencyMode() == CacheConsistencyMode.DURABLE;
-            List<Object> responses = redisUtil.pipeline(operations -> {
+            List<Object> responses = redisFacade.pipeline(operations -> {
                 if (versioned) {
                     operations.opsForValue().get(keyspace.regionVersionKey());
                 }
@@ -889,7 +889,7 @@ public class MultiLevelCache<K, V> {
     private boolean writeRedisBatch(List<BatchWrite<K>> writes, List<K> publishedKeys) {
         try {
             if (!config.isStrongConsistency()) {
-                redisUtil.pipeline(operations -> {
+                redisFacade.pipeline(operations -> {
                     for (BatchWrite<K> write : writes) {
                         operations.opsForValue().set(
                                 redisKey(write.key()), write.redisValue(), write.ttl());
@@ -916,7 +916,7 @@ public class MultiLevelCache<K, V> {
     /** 强一致批量写仍按业务 Key 执行独立同槽 Lua，只把网络等待合并到 pipeline。 */
     @SuppressWarnings("unchecked")
     private boolean writeVersionedRedisBatch(List<BatchWrite<K>> writes, List<K> publishedKeys) {
-        RedisTemplate<String, Object> template = redisUtil.getTemplate();
+        RedisTemplate<String, Object> template = redisFacade.getTemplate();
         RedisSerializer<String> keySerializer =
                 (RedisSerializer<String>) template.getKeySerializer();
         if (keySerializer == null) {
@@ -941,7 +941,7 @@ public class MultiLevelCache<K, V> {
                             "Redis Key 序列化结果不能为空"
                     );
                 }
-                keysAndArgs[scriptKeys.size()] = redisUtil.serializeValue(write.redisValue());
+                keysAndArgs[scriptKeys.size()] = redisFacade.serializeValue(write.redisValue());
                 keysAndArgs[scriptKeys.size() + 1] = String.valueOf(write.ttl().toMillis())
                         .getBytes(StandardCharsets.UTF_8);
                 keysAndArgs[scriptKeys.size() + 2] = versionMetadataRetentionMillis()
@@ -1055,7 +1055,7 @@ public class MultiLevelCache<K, V> {
             return CacheLookup.miss();
         }
         try {
-            Object cachedValue = redisUtil.boundValueOps(redisKey(key)).get();
+            Object cachedValue = redisFacade.boundValueOps(redisKey(key)).get();
             if (cachedValue == null) {
                 return CacheLookup.miss();
             }
@@ -1109,7 +1109,7 @@ public class MultiLevelCache<K, V> {
 
     private Duration l1TtlForL2Hit(K key) {
         try {
-            long ttlMillis = redisUtil.getExpire(redisKey(key), TimeUnit.MILLISECONDS);
+            long ttlMillis = redisFacade.getExpire(redisKey(key), TimeUnit.MILLISECONDS);
             if (ttlMillis < 0) {
                 return config.getL1Ttl();
             }
@@ -1139,7 +1139,7 @@ public class MultiLevelCache<K, V> {
                 // 使用缓存模块的原始脚本执行器：TTL 作为纯数字字符串传递，避免被 Fastjson2
                 // 的 WriteClassName 包装成 {"@type":"java.lang.Long","value":259200000}，
                 // 导致 Redis PSETEX 无法解析 TTL。
-                byte[] rawValue = redisUtil.serializeValue(value);
+                byte[] rawValue = redisFacade.serializeValue(value);
                 String script = config.getConsistencyMode() == CacheConsistencyMode.DURABLE
                         ? DURABLE_ATOMIC_PUT_SCRIPT
                         : ATOMIC_PUT_SCRIPT;
@@ -1153,13 +1153,13 @@ public class MultiLevelCache<K, V> {
                         : new Object[]{rawValue, String.valueOf(ttl.toMillis()),
                         versionMetadataRetentionMillis()};
                 Long version = RedisCacheScriptExecutor.executeRaw(
-                        redisUtil, script, Long.class, keys, arguments);
+                        redisFacade, script, Long.class, keys, arguments);
                 if (version == null || version < 0) {
                     throw CacheWriteFailureSupport.unconfirmed("KV PUT");
                 }
                 return version;
             }
-            redisUtil.boundValueOps(redisKey(key)).set(value, ttl);
+            redisFacade.boundValueOps(redisKey(key)).set(value, ttl);
             return LOCAL_ONLY_VERSION;
         } catch (Exception e) {
             markL2Degraded(e);
@@ -1180,7 +1180,7 @@ public class MultiLevelCache<K, V> {
             if (config.isStrongConsistency()) {
                 // 删除也要推进版本，否则其它 JVM 可能继续命中旧 L1。
                 Long version = toLong(RedisCacheScriptExecutor.executeRaw(
-                        redisUtil,
+                        redisFacade,
                         ATOMIC_DELETE_SCRIPT,
                         Long.class,
                         List.of(redisKey(key), versionKey(key)),
@@ -1190,7 +1190,7 @@ public class MultiLevelCache<K, V> {
                 }
                 return version;
             }
-            redisUtil.delete(redisKey(key));
+            redisFacade.delete(redisKey(key));
             return LOCAL_ONLY_VERSION;
         } catch (Exception e) {
             markL2Degraded(e);
@@ -1224,7 +1224,7 @@ public class MultiLevelCache<K, V> {
             return LOCAL_ONLY_VERSION;
         }
         try {
-            Object raw = redisUtil.boundValueOps(versionKey(key)).get();
+            Object raw = redisFacade.boundValueOps(versionKey(key)).get();
             if (raw == null || raw instanceof String stringValue && stringValue.isBlank()) {
                 return 0L;
             }
@@ -1239,7 +1239,7 @@ public class MultiLevelCache<K, V> {
         if (!config.isStrongConsistency() || !isL2Enabled()) {
             return;
         }
-        Long version = redisUtil.increment(keyspace.regionVersionKey(), 1);
+        Long version = redisFacade.increment(keyspace.regionVersionKey(), 1);
         if (version == null) {
             throw new IllegalStateException("Redis 缓存区域版本推进未返回结果");
         }
@@ -1250,7 +1250,7 @@ public class MultiLevelCache<K, V> {
             return LOCAL_ONLY_VERSION;
         }
         try {
-            Object raw = redisUtil.boundValueOps(keyspace.regionVersionKey()).get();
+            Object raw = redisFacade.boundValueOps(keyspace.regionVersionKey()).get();
             if (raw == null || raw instanceof String stringValue && stringValue.isBlank()) {
                 return 0L;
             }
@@ -1298,7 +1298,7 @@ public class MultiLevelCache<K, V> {
      * @return 配置了 Redis L2 时返回 {@code true}
      */
     private boolean isL2Configured() {
-        return redisUtil != null && config.isL2Enabled();
+        return redisFacade != null && config.isL2Enabled();
     }
 
     private boolean isCollectionOfRawJson(Object value) {
@@ -1344,7 +1344,7 @@ public class MultiLevelCache<K, V> {
             return false;
         }
         try {
-            return !redisUtil.hasKey(fenceKey(key));
+            return !redisFacade.hasKey(fenceKey(key));
         } catch (Exception exception) {
             markL2Degraded(exception);
             return false;

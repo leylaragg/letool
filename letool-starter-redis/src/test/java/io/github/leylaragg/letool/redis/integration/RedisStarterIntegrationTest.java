@@ -3,7 +3,7 @@ package io.github.leylaragg.letool.redis.integration;
 import io.github.leylaragg.letool.lock.core.LockHandle;
 import io.github.leylaragg.letool.lock.core.LockRequest;
 import io.github.leylaragg.letool.lock.core.LockTemplate;
-import io.github.leylaragg.letool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisFacade;
 import io.github.leylaragg.letool.redis.cache.RedisCachePolicy;
 import io.github.leylaragg.letool.redis.cache.RedisCacheTemplate;
 import io.github.leylaragg.letool.redis.config.LetoolRedisProperties;
@@ -65,7 +65,7 @@ class RedisStarterIntegrationTest {
     private static RedissonClient secondClient;
     private static RedissonDistributedLock firstLock;
     private static RedissonDistributedLock secondLock;
-    private static RedisUtil redisUtil;
+    private static RedisFacade redisFacade;
     private static String keyPrefix;
 
     /** 建立 Lettuce 与两个独立 Redisson 客户端，模拟跨进程锁竞争。 */
@@ -107,7 +107,7 @@ class RedisStarterIntegrationTest {
         LockTemplate lockTemplate = new LockTemplate(firstLock);
         RedisCacheTemplate cacheTemplate = new RedisCacheTemplate(
                 redisTemplate, lockTemplate, properties.getCache().getLockKeyPrefix());
-        redisUtil = new RedisUtil(
+        redisFacade = new RedisFacade(
                 redisTemplate, firstClient, lockTemplate, cacheTemplate, properties);
     }
 
@@ -148,7 +148,7 @@ class RedisStarterIntegrationTest {
             List<Future<User>> futures = IntStream.range(0, 32)
                     .mapToObj(index -> pool.submit(() -> {
                         start.await();
-                        return redisUtil.getOrLoad(
+                        return redisFacade.getOrLoad(
                                 key,
                                 User.class,
                                 Duration.ofMinutes(5),
@@ -180,12 +180,12 @@ class RedisStarterIntegrationTest {
                 .cacheNull(Duration.ofSeconds(2))
                 .build();
 
-        assertNull(redisUtil.getOrLoad(
+        assertNull(redisFacade.getOrLoad(
                 protectedKey, User.class, protectedPolicy, () -> {
                     protectedLoads.incrementAndGet();
                     return null;
                 }));
-        assertNull(redisUtil.getOrLoad(
+        assertNull(redisFacade.getOrLoad(
                 protectedKey, User.class, protectedPolicy, () -> {
                     protectedLoads.incrementAndGet();
                     return null;
@@ -201,12 +201,12 @@ class RedisStarterIntegrationTest {
                         Duration.ofMinutes(5))
                 .doNotCacheNull()
                 .build();
-        assertNull(redisUtil.getOrLoad(
+        assertNull(redisFacade.getOrLoad(
                 unprotectedKey, User.class, unprotectedPolicy, () -> {
                     unprotectedLoads.incrementAndGet();
                     return null;
                 }));
-        assertNull(redisUtil.getOrLoad(
+        assertNull(redisFacade.getOrLoad(
                 unprotectedKey, User.class, unprotectedPolicy, () -> {
                     unprotectedLoads.incrementAndGet();
                     return null;

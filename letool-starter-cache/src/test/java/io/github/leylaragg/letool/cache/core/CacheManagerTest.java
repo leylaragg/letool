@@ -2,7 +2,7 @@ package io.github.leylaragg.letool.cache.core;
 
 import io.github.leylaragg.letool.cache.exception.CacheException;
 import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
-import io.github.leylaragg.letool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisFacade;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class CacheManagerTest {
 
     @Mock
-    private RedisUtil redisUtil;
+    private RedisFacade redisFacade;
 
     @Mock
     private CacheSerializer serializer;
@@ -30,7 +30,7 @@ class CacheManagerTest {
 
     @BeforeEach
     void setUp() {
-        manager = new CacheManager(redisUtil, serializer);
+        manager = new CacheManager(redisFacade, serializer);
     }
 
     @Test
@@ -46,7 +46,7 @@ class CacheManagerTest {
     @DisplayName("未显式设置前缀时应继承管理器全局前缀")
     void shouldInheritManagerRedisKeyPrefixWhenCachePrefixIsNotExplicit() {
         CacheManager prefixedManager = new CacheManager(
-                redisUtil,
+                redisFacade,
                 serializer,
                 true,
                 true,

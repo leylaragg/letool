@@ -20,8 +20,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** 验证 RedisUtil 将业务入口委托给独立锁与缓存组件。 */
-class RedisUtilFacadeTest {
+/** 验证 RedisFacade 将业务入口委托给独立锁与缓存组件。 */
+class RedisFacadeTest {
 
     /** 原生锁入口应统一应用配置的公平性和 key 前缀。 */
     @Test
@@ -35,7 +35,7 @@ class RedisUtilFacadeTest {
         properties.getLock().setKeyPrefix("biz:lock:");
         when(client.getFairLock("biz:lock:order:7")).thenReturn(expected);
 
-        RedisUtil util = new RedisUtil(
+        RedisFacade util = new RedisFacade(
                 redisTemplate, client, null, null, properties);
 
         assertSame(expected, util.getLock("order:7"));
@@ -50,7 +50,7 @@ class RedisUtilFacadeTest {
         LetoolRedisProperties properties = new LetoolRedisProperties();
         properties.getCache().setLockWait(Duration.ofSeconds(5));
         when(lockTemplate.execute(any(LockRequest.class), any(Supplier.class))).thenReturn("ok");
-        RedisUtil util = new RedisUtil(
+        RedisFacade util = new RedisFacade(
                 redisTemplate, null, lockTemplate, null, properties);
 
         assertEquals("ok", util.executeWithLock("order:7", () -> "ok"));
@@ -70,7 +70,7 @@ class RedisUtilFacadeTest {
         Supplier<String> loader = () -> "db";
         when(cacheTemplate.getOrLoad(
                 eq("user:7"), eq(String.class), any(), eq(loader))).thenReturn("cached");
-        RedisUtil util = new RedisUtil(
+        RedisFacade util = new RedisFacade(
                 redisTemplate, null, null, cacheTemplate, properties);
 
         assertEquals("cached", util.getOrLoad(

@@ -38,15 +38,15 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 /**
- * Redis 操作工具类，底层基于 {@link RedisTemplate}。
+ * 面向业务的 Redis 操作门面，底层基于 {@link RedisTemplate}。
  *
  * <h2>设计说明</h2>
- * <p>本工具类不内置 JSON 序列化器，也不强制创建默认 {@code RedisTemplate}。
+ * <p>本门面不内置 JSON 序列化器，也不强制创建默认 {@code RedisTemplate}。
  * 应用侧通常会配置自己的 key/value/hash 序列化方案，例如 Fastjson2、Jackson 或 JDK 序列化。
- * {@code RedisUtil} 只负责把值交给 {@code RedisTemplate}，从而复用应用已有的序列化配置。</p>
+ * {@code RedisFacade} 只负责把值交给 {@code RedisTemplate}，从而复用应用已有的序列化配置。</p>
  *
  * <h2>自动装配</h2>
- * <p>starter 只在应用上下文中存在名为 {@code redisTemplate} 的对象模板时创建本工具类。
+ * <p>starter 只在应用上下文中存在名为 {@code redisTemplate} 的对象模板时创建本门面。
  * 只有 {@code StringRedisTemplate} 时不会自动创建，避免误以为对象序列化可用。</p>
  *
  * <h2>支持的操作类型</h2>
@@ -66,27 +66,27 @@ import java.util.function.Supplier;
  * <h2>使用示例</h2>
  * <pre>{@code
  * // 字符串：RedisTemplate 反序列化后按调用方声明类型返回
- * redisUtil.set("user:name", "张三", Duration.ofHours(1));
- * String name = redisUtil.get("user:name");
+ * redisFacade.set("user:name", "张三", Duration.ofHours(1));
+ * String name = redisFacade.get("user:name");
  *
  * // 对象：由应用配置的 RedisTemplate 序列化器负责序列化和反序列化
- * redisUtil.set("user:1", user, Duration.ofHours(1));
- * User cachedUser = redisUtil.get("user:1", User.class);
+ * redisFacade.set("user:1", user, Duration.ofHours(1));
+ * User cachedUser = redisFacade.get("user:1", User.class);
  *
  * // 兼容旧对象方法名
- * redisUtil.setObject("user:2", user, Duration.ofHours(1));
- * User user2 = redisUtil.getObject("user:2", User.class);
+ * redisFacade.setObject("user:2", user, Duration.ofHours(1));
+ * User user2 = redisFacade.getObject("user:2", User.class);
  *
  * // Hash
- * redisUtil.hset("user:1", "name", "张三");
- * Map<String, String> all = redisUtil.hgetAll("user:1");
+ * redisFacade.hset("user:1", "name", "张三");
+ * Map<String, String> all = redisFacade.hgetAll("user:1");
  *
  * // Lua 脚本
  * String script = "return redis.call('GET', KEYS[1])";
- * String result = redisUtil.executeScript(script, List.of("key1"));
+ * String result = redisFacade.executeScript(script, List.of("key1"));
  * }</pre>
  */
-public class RedisUtil {
+public class RedisFacade {
 
     /**
      * Lua ARGV 序列化器：预序列化业务值保持原字节，其它元数据统一写成 UTF-8 字符串。
@@ -123,11 +123,11 @@ public class RedisUtil {
     private final LetoolRedisProperties redisProperties;
 
     /**
-     * 创建 Redis 工具类。
+     * 创建只提供基础命令的 Redis 门面。
      *
      * @param redisTemplate 应用侧对象 RedisTemplate
      */
-    public RedisUtil(RedisTemplate<String, Object> redisTemplate) {
+    public RedisFacade(RedisTemplate<String, Object> redisTemplate) {
         this(redisTemplate, null, null, null, new LetoolRedisProperties());
     }
 
@@ -140,7 +140,7 @@ public class RedisUtil {
      * @param cacheTemplate 缓存回源模板；没有锁后端时允许为空
      * @param redisProperties Redis Starter 默认策略
      */
-    public RedisUtil(
+    public RedisFacade(
             RedisTemplate<String, Object> redisTemplate,
             RedissonClient redissonClient,
             LockTemplate lockTemplate,
@@ -155,7 +155,7 @@ public class RedisUtil {
     }
 
     /**
-     * 获取底层 RedisTemplate，用于调用工具类未封装的原生 Redis 操作。
+     * 获取底层 RedisTemplate，用于调用门面未封装的原生 Redis 操作。
      *
      * @return RedisTemplate 实例
      */
@@ -518,7 +518,7 @@ public class RedisUtil {
     /**
      * 写入对象值的兼容方法。
      *
-     * <p>旧版本方法名保留为 {@code setObject}，但不再在工具类内部强制 JSON 序列化，
+     * <p>旧版本方法名保留为 {@code setObject}，但不再在门面内部强制 JSON 序列化，
      * 而是直接交给 RedisTemplate 的序列化器处理。</p>
      *
      * @param key      Redis key

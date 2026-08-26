@@ -6,7 +6,9 @@ import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.data.redis.core.RedisTemplate;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Redis Starter 的依赖边界测试。
@@ -25,5 +27,20 @@ class RedisModuleBoundaryTest {
         assertNotNull(RedissonClient.class);
         assertNotNull(RLock.class);
         assertNotNull(DistributedLock.class);
+    }
+
+    /**
+     * 有状态 Spring Bean 使用职责名称，避免被误解为静态工具类。
+     */
+    @Test
+    void statefulBeansShouldUseRoleBasedNames() {
+        assertDoesNotThrow(() -> Class.forName(
+                "io.github.leylaragg.letool.redis.RedisFacade"));
+        assertDoesNotThrow(() -> Class.forName(
+                "io.github.leylaragg.letool.redis.queue.RedisMessageQueueTemplate"));
+        assertThrows(ClassNotFoundException.class, () -> Class.forName(
+                "io.github.leylaragg.letool.redis.RedisUtil"));
+        assertThrows(ClassNotFoundException.class, () -> Class.forName(
+                "io.github.leylaragg.letool.redis.queue.RedisMessageQueueUtil"));
     }
 }

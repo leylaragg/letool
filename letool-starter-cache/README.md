@@ -34,8 +34,8 @@
 </dependency>
 ```
 
-如果项目需要 L2 Redis，请确保业务工程已经引入并配置 `spring-boot-starter-data-redis`。
-Letool Tool 会在 Boot 创建连接工厂和对象模板后注册 `RedisUtil`，Cache 随后注册 L2 与失效广播组件；
+如果项目需要 L2 Redis，请引入 `letool-starter-redis` 并配置 Spring Boot Redis 连接。
+Redis Starter 会在 Boot 创建连接工厂和对象模板后注册 `RedisFacade`，Cache 随后注册 L2 与失效广播组件；
 业务自定义的 `redisTemplate` 保持优先，框架不会覆盖或改写其序列化器。CacheManager 会在内部创建
 String Key/Hash Key 私有视图；业务值继续使用原 Value 协议，框架版本计数器则兼容 Redis 产生的
 纯数字字节，确保区域扫描和强一致元数据都可直接工作。

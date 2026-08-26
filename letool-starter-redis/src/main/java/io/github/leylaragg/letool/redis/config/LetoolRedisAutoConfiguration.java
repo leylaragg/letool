@@ -2,9 +2,9 @@ package io.github.leylaragg.letool.redis.config;
 
 import io.github.leylaragg.letool.lock.config.LockAutoConfiguration;
 import io.github.leylaragg.letool.lock.core.LockTemplate;
-import io.github.leylaragg.letool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisFacade;
 import io.github.leylaragg.letool.redis.cache.RedisCacheTemplate;
-import io.github.leylaragg.letool.redis.queue.RedisMessageQueueUtil;
+import io.github.leylaragg.letool.redis.queue.RedisMessageQueueTemplate;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -20,7 +20,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 /**
  * Redis 业务门面的自动配置。
  *
- * <p>只有应用上下文存在名为 {@code redisTemplate} 的对象模板时才创建工具 Bean，
+ * <p>只有应用上下文存在名为 {@code redisTemplate} 的对象模板时才创建门面 Bean，
  * 这样不会把仅配置字符串模板的应用误判为支持对象缓存。</p>
  */
 @AutoConfiguration(after = {
@@ -40,18 +40,18 @@ public class LetoolRedisAutoConfiguration {
      * @param lockTemplate 可选的分布式锁模板
      * @param cacheTemplate 可选的缓存回源模板
      * @param properties Redis Starter 配置
-     * @return 可注入业务服务的 Redis 工具
+     * @return 可注入业务服务的 Redis 门面
      */
     @Bean
     @ConditionalOnBean(name = "redisTemplate")
-    @ConditionalOnMissingBean(RedisUtil.class)
-    public RedisUtil redisUtil(
+    @ConditionalOnMissingBean(RedisFacade.class)
+    public RedisFacade redisFacade(
             @Qualifier("redisTemplate") RedisTemplate<?, ?> redisTemplate,
             ObjectProvider<RedissonClient> redissonClient,
             ObjectProvider<LockTemplate> lockTemplate,
             ObjectProvider<RedisCacheTemplate> cacheTemplate,
             LetoolRedisProperties properties) {
-        return new RedisUtil(
+        return new RedisFacade(
                 asObjectRedisTemplate(redisTemplate),
                 redissonClient.getIfAvailable(),
                 lockTemplate.getIfAvailable(),
@@ -81,17 +81,17 @@ public class LetoolRedisAutoConfiguration {
     }
 
     /**
-     * 创建 Redis List/Stream 消息工具。
+     * 创建 Redis List/Stream 消息操作模板。
      *
      * @param redisTemplate 应用拥有的对象模板
-     * @return Redis 消息队列工具
+     * @return Redis 消息操作模板
      */
     @Bean
     @ConditionalOnBean(name = "redisTemplate")
-    @ConditionalOnMissingBean(RedisMessageQueueUtil.class)
-    public RedisMessageQueueUtil redisMessageQueueUtil(
+    @ConditionalOnMissingBean(RedisMessageQueueTemplate.class)
+    public RedisMessageQueueTemplate redisMessageQueueTemplate(
             @Qualifier("redisTemplate") RedisTemplate<?, ?> redisTemplate) {
-        return new RedisMessageQueueUtil(asObjectRedisTemplate(redisTemplate));
+        return new RedisMessageQueueTemplate(asObjectRedisTemplate(redisTemplate));
     }
 
     /**

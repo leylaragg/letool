@@ -2,7 +2,7 @@ package io.github.leylaragg.letool.cache.core;
 
 import io.github.leylaragg.letool.cache.exception.CacheException;
 import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
-import io.github.leylaragg.letool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisFacade;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -38,7 +38,7 @@ import static org.mockito.Mockito.when;
 class MultiLevelZSetCacheTest {
 
     @Mock
-    private RedisUtil redisUtil;
+    private RedisFacade redisFacade;
 
     @Mock
     private CacheSerializer serializer;
@@ -58,17 +58,17 @@ class MultiLevelZSetCacheTest {
                 .build();
         lenient().when(boundZSetOperations.add(any(), anyDouble())).thenReturn(true);
         lenient().when(boundZSetOperations.remove(any())).thenReturn(0L);
-        lenient().when(redisUtil.expire(any(), anyLong(), any())).thenReturn(true);
+        lenient().when(redisFacade.expire(any(), anyLong(), any())).thenReturn(true);
     }
 
     @Test
     @DisplayName("严格写策略下 ZADD 失败必须保留已有 L1")
     void strictAddShouldExposeFailureWithoutChangingLocalZSet() {
         String redisKey = "test:cache:ranking:game:strict-add";
-        when(redisUtil.boundZSetOps(redisKey)).thenReturn(boundZSetOperations);
+        when(redisFacade.boundZSetOps(redisKey)).thenReturn(boundZSetOperations);
         when(boundZSetOperations.rangeWithScores(0, -1))
                 .thenReturn(Set.of(tuple("alice", 100.0)));
-        MultiLevelZSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelZSetCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateZSetCache(strictWriteConfig(), Function.identity(), String.class);
         assertEquals(Set.of("alice"), cache.range("game:strict-add", 0, -1));
         RuntimeException redisFailure = new RuntimeException("zadd failed");
@@ -85,10 +85,10 @@ class MultiLevelZSetCacheTest {
     @DisplayName("严格写策略下 ZREM 失败必须保留已有成员")
     void strictRemoveShouldExposeFailureWithoutChangingLocalZSet() {
         String redisKey = "test:cache:ranking:game:strict-remove";
-        when(redisUtil.boundZSetOps(redisKey)).thenReturn(boundZSetOperations);
+        when(redisFacade.boundZSetOps(redisKey)).thenReturn(boundZSetOperations);
         when(boundZSetOperations.rangeWithScores(0, -1))
                 .thenReturn(Set.of(tuple("alice", 100.0)));
-        MultiLevelZSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelZSetCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateZSetCache(strictWriteConfig(), Function.identity(), String.class);
         assertEquals(Set.of("alice"), cache.range("game:strict-remove", 0, -1));
         RuntimeException redisFailure = new RuntimeException("zrem failed");
@@ -105,14 +105,14 @@ class MultiLevelZSetCacheTest {
     @DisplayName("严格写策略下删除整个 ZSet 失败必须保留已有 L1")
     void strictRemoveKeyShouldExposeFailureWithoutChangingLocalZSet() {
         String redisKey = "test:cache:ranking:game:strict-remove-key";
-        when(redisUtil.boundZSetOps(redisKey)).thenReturn(boundZSetOperations);
+        when(redisFacade.boundZSetOps(redisKey)).thenReturn(boundZSetOperations);
         when(boundZSetOperations.rangeWithScores(0, -1))
                 .thenReturn(Set.of(tuple("alice", 100.0)));
-        MultiLevelZSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelZSetCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateZSetCache(strictWriteConfig(), Function.identity(), String.class);
         assertEquals(Set.of("alice"), cache.range("game:strict-remove-key", 0, -1));
         RuntimeException redisFailure = new RuntimeException("del failed");
-        when(redisUtil.delete(redisKey)).thenThrow(redisFailure);
+        when(redisFacade.delete(redisKey)).thenThrow(redisFailure);
 
         CacheException thrown = assertThrows(CacheException.class,
                 () -> cache.removeKey("game:strict-remove-key"));
@@ -125,10 +125,10 @@ class MultiLevelZSetCacheTest {
     @DisplayName("严格写策略下 ZSet TTL 失败必须暴露")
     void strictAddShouldRejectFailedTtl() {
         String redisKey = "test:cache:ranking:game:strict-ttl";
-        when(redisUtil.boundZSetOps(redisKey)).thenReturn(boundZSetOperations);
-        when(redisUtil.expire(redisKey, Duration.ofHours(1).toMillis(),
+        when(redisFacade.boundZSetOps(redisKey)).thenReturn(boundZSetOperations);
+        when(redisFacade.expire(redisKey, Duration.ofHours(1).toMillis(),
                 java.util.concurrent.TimeUnit.MILLISECONDS)).thenReturn(false);
-        MultiLevelZSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelZSetCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateZSetCache(strictWriteConfig(), Function.identity(), String.class);
 
         CacheException thrown = assertThrows(CacheException.class,
@@ -141,10 +141,10 @@ class MultiLevelZSetCacheTest {
     @Test
     @DisplayName("add 写入 L1 和 Redis ZSet")
     void addWritesLocalAndRedisZSet() {
-        when(redisUtil.boundZSetOps("test:cache:ranking:game:1")).thenReturn(boundZSetOperations);
+        when(redisFacade.boundZSetOps("test:cache:ranking:game:1")).thenReturn(boundZSetOperations);
         when(boundZSetOperations.rangeWithScores(0, -1))
                 .thenReturn(Set.of(tuple("alice", 100.0)));
-        MultiLevelZSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelZSetCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateZSetCache(config, Function.identity(), String.class);
 
         cache.add("game:1", "alice", 100.0);
@@ -152,7 +152,7 @@ class MultiLevelZSetCacheTest {
         assertEquals(Set.of("alice"), cache.range("game:1", 0, -1));
         assertEquals(100.0, cache.score("game:1", "alice"));
         verify(boundZSetOperations).add("alice", 100.0);
-        verify(redisUtil).expire("test:cache:ranking:game:1", Duration.ofHours(1).toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+        verify(redisFacade).expire("test:cache:ranking:game:1", Duration.ofHours(1).toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
     }
 
     @Test
@@ -171,13 +171,13 @@ class MultiLevelZSetCacheTest {
     @Test
     @DisplayName("L1 miss 时从 Redis ZSet 读取并回填")
     void l1MissReadsRedisZSetAndRefillsLocal() {
-        when(redisUtil.boundZSetOps("test:cache:ranking:game:2")).thenReturn(boundZSetOperations);
+        when(redisFacade.boundZSetOps("test:cache:ranking:game:2")).thenReturn(boundZSetOperations);
         when(boundZSetOperations.rangeWithScores(0, -1))
                 .thenReturn(Set.of(
                         tuple("alice", 100.0),
                         tuple("bob", 200.0)
                 ));
-        MultiLevelZSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelZSetCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateZSetCache(config, Function.identity(), String.class);
 
         assertEquals(Set.of("alice", "bob"), cache.range("game:2", 0, -1));
@@ -190,9 +190,9 @@ class MultiLevelZSetCacheTest {
     @Test
     @DisplayName("remove 删除 Redis ZSet 成员并清理本地副本")
     void removeDeletesMemberAndEvictsLocalSnapshot() {
-        when(redisUtil.boundZSetOps("test:cache:ranking:game:3")).thenReturn(boundZSetOperations);
+        when(redisFacade.boundZSetOps("test:cache:ranking:game:3")).thenReturn(boundZSetOperations);
         when(boundZSetOperations.score("alice")).thenReturn(null);
-        MultiLevelZSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelZSetCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateZSetCache(config, Function.identity(), String.class);
 
         cache.add("game:3", "alice", 100.0);
@@ -205,10 +205,10 @@ class MultiLevelZSetCacheTest {
     @Test
     @DisplayName("Redis 异常后 ZSet 缓存进入 L2 降级")
     void redisFailureMarksZSetCacheDegraded() {
-        when(redisUtil.boundZSetOps("test:cache:ranking:game:4")).thenReturn(boundZSetOperations);
+        when(redisFacade.boundZSetOps("test:cache:ranking:game:4")).thenReturn(boundZSetOperations);
         when(boundZSetOperations.rangeWithScores(0, -1))
                 .thenThrow(new RuntimeException("redis down"));
-        CacheManager manager = new CacheManager(redisUtil, serializer);
+        CacheManager manager = new CacheManager(redisFacade, serializer);
         MultiLevelZSetCache<String, String> cache = manager.getOrCreateZSetCache(config, Function.identity(), String.class);
 
         assertTrue(cache.range("game:4", 0, -1).isEmpty());
@@ -220,7 +220,7 @@ class MultiLevelZSetCacheTest {
     @Test
     @DisplayName("局部写入不能让 L1 冒充完整 Redis ZSet 快照")
     void partialAddShouldNotHideExistingRedisMembers() {
-        when(redisUtil.boundZSetOps("test:cache:ranking:game:5"))
+        when(redisFacade.boundZSetOps("test:cache:ranking:game:5"))
                 .thenReturn(boundZSetOperations);
         when(boundZSetOperations.rangeWithScores(0, -1))
                 .thenReturn(Set.of(
@@ -228,7 +228,7 @@ class MultiLevelZSetCacheTest {
                         tuple("bob", 200.0)
                 ));
         MultiLevelZSetCache<String, String> cache =
-                new CacheManager(redisUtil, serializer)
+                new CacheManager(redisFacade, serializer)
                         .getOrCreateZSetCache(
                                 config,
                                 Function.identity(),
@@ -254,7 +254,7 @@ class MultiLevelZSetCacheTest {
                         .redisKeyPrefix("test:cache:")
                         .strongConsistency(true)
                         .build();
-        when(redisUtil.boundZSetOps("test:cache:ranking:game:6"))
+        when(redisFacade.boundZSetOps("test:cache:ranking:game:6"))
                 .thenReturn(boundZSetOperations);
         when(boundZSetOperations.rangeWithScores(0, -1))
                 .thenReturn(
@@ -262,7 +262,7 @@ class MultiLevelZSetCacheTest {
                         Set.of()
                 );
         MultiLevelZSetCache<String, String> cache =
-                new CacheManager(redisUtil, serializer)
+                new CacheManager(redisFacade, serializer)
                         .getOrCreateZSetCache(
                                 strongConfig,
                                 Function.identity(),
@@ -303,12 +303,12 @@ class MultiLevelZSetCacheTest {
                         .strongConsistency(false)
                         .valueType(String.class)
                         .build();
-        when(redisUtil.boundZSetOps("test:cache:typed-zset:key"))
+        when(redisFacade.boundZSetOps("test:cache:typed-zset:key"))
                 .thenReturn(boundZSetOperations);
         when(boundZSetOperations.rangeWithScores(0, -1))
                 .thenReturn(Set.of(tuple(42, 100.0)));
         MultiLevelZSetCache<String, String> cache =
-                new CacheManager(redisUtil, serializer)
+                new CacheManager(redisFacade, serializer)
                         .getOrCreateZSetCache(typedConfig);
 
         assertTrue(cache.range("key", 0, -1).isEmpty());
@@ -344,9 +344,9 @@ class MultiLevelZSetCacheTest {
     void evictAllShouldNotPublishWhenRedisCleanupFails() {
         CacheInvalidationPublisher publisher = mock(CacheInvalidationPublisher.class);
         RuntimeException cleanupFailure = new RuntimeException("scan failed");
-        when(redisUtil.getTemplate()).thenThrow(cleanupFailure);
+        when(redisFacade.getTemplate()).thenThrow(cleanupFailure);
         MultiLevelZSetCache<String, String> cache = new CacheManager(
-                redisUtil,
+                redisFacade,
                 serializer,
                 true,
                 true,

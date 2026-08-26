@@ -3,7 +3,7 @@ package io.github.leylaragg.letool.cache.core;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import io.github.leylaragg.letool.cache.exception.CacheException;
-import io.github.leylaragg.letool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisFacade;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,7 +34,7 @@ public class MultiLevelHashCache<K, HK, HV> {
     /** L1 本地 Hash 缓存，key -> field/value 快照。 */
     private final Cache<K, Map<HK, HV>> l1Cache;
     /** Redis 操作工具。为 null 时退化为 L1-only。 */
-    private final RedisUtil redisUtil;
+    private final RedisFacade redisFacade;
     /** 当前 Hash 缓存区域的 Redis 键空间。 */
     private final RedisCacheKeyspace keyspace;
     /** Redis Hash 的过期时间，每次写入后都会补充 TTL。 */
@@ -80,7 +80,7 @@ public class MultiLevelHashCache<K, HK, HV> {
      * 创建 Hash 二级缓存实例。
      *
      * @param config 缓存区域配置
-     * @param redisUtil Redis 操作入口
+     * @param redisFacade Redis 操作入口
      * @param keySerializer 业务 key 序列化函数
      * @param hashKeyType Redis Hash field 预期类型
      * @param hashValueType Redis Hash value 预期类型
@@ -89,7 +89,7 @@ public class MultiLevelHashCache<K, HK, HV> {
      * @param degradationListener 首次降级回调
      */
     MultiLevelHashCache(CacheConfig<K, HV> config,
-                        RedisUtil redisUtil,
+                        RedisFacade redisFacade,
                         Function<K, String> keySerializer,
                         Class<HK> hashKeyType,
                         Class<HV> hashValueType,
@@ -97,11 +97,11 @@ public class MultiLevelHashCache<K, HK, HV> {
                         String instanceId,
                         Runnable degradationListener) {
         this.name = config.getName();
-        this.redisUtil = redisUtil;
+        this.redisFacade = redisFacade;
         this.keyspace = new RedisCacheKeyspace(config.getRedisKeyPrefix(), name);
         this.l2Ttl = config.getL2Ttl();
         this.l1Enabled = config.isL1Enabled();
-        this.l2Enabled = redisUtil != null && config.isL2Enabled();
+        this.l2Enabled = redisFacade != null && config.isL2Enabled();
         this.strongConsistency = config.isStrongConsistency();
         this.writeFailurePolicy = config.getWriteFailurePolicy();
         this.keySerializer = keySerializer == null ? String::valueOf : keySerializer;
@@ -330,7 +330,7 @@ public class MultiLevelHashCache<K, HK, HV> {
                 throw CacheException.l2Unavailable(lastL2Failure);
             }
             try {
-                keyspace.scanAndUnlink(redisUtil.getTemplate());
+                keyspace.scanAndUnlink(redisFacade.getTemplate());
             } catch (Exception e) {
                 markL2Degraded(e);
                 throw CacheException.l2Unavailable(e);
@@ -385,7 +385,7 @@ public class MultiLevelHashCache<K, HK, HV> {
             return true;
         }
         try {
-            redisUtil.hasKey(keyspace.healthCheckKey());
+            redisFacade.hasKey(keyspace.healthCheckKey());
             evictLocalAll();
             l2Degraded = false;
             lastL2Failure = null;
@@ -414,7 +414,7 @@ public class MultiLevelHashCache<K, HK, HV> {
             return false;
         }
         try {
-            redisUtil.boundHashOps(redisKey(key)).put(field, value);
+            redisFacade.boundHashOps(redisKey(key)).put(field, value);
         } catch (Exception e) {
             handleWriteFailure(e);
             return false;
@@ -431,7 +431,7 @@ public class MultiLevelHashCache<K, HK, HV> {
             return false;
         }
         try {
-            redisUtil.boundHashOps(redisKey(key)).putAll(values);
+            redisFacade.boundHashOps(redisKey(key)).putAll(values);
         } catch (Exception e) {
             handleWriteFailure(e);
             return false;
@@ -441,7 +441,7 @@ public class MultiLevelHashCache<K, HK, HV> {
 
     private HV getFromRedis(K key, HK field) {
         try {
-            Object raw = redisUtil.boundHashOps(redisKey(key)).get(field);
+            Object raw = redisFacade.boundHashOps(redisKey(key)).get(field);
             return convertValue(raw);
         } catch (Exception e) {
             markL2Degraded(e);
@@ -451,7 +451,7 @@ public class MultiLevelHashCache<K, HK, HV> {
 
     private Map<HK, HV> entriesFromRedis(K key) {
         try {
-            Map<Object, Object> raw = redisUtil.boundHashOps(redisKey(key)).entries();
+            Map<Object, Object> raw = redisFacade.boundHashOps(redisKey(key)).entries();
             if (raw == null || raw.isEmpty()) {
                 return Map.of();
             }
@@ -480,7 +480,7 @@ public class MultiLevelHashCache<K, HK, HV> {
         }
         Long deleted;
         try {
-            deleted = redisUtil.boundHashOps(redisKey(key)).delete(field);
+            deleted = redisFacade.boundHashOps(redisKey(key)).delete(field);
         } catch (Exception e) {
             handleWriteFailure(e);
             return;
@@ -499,7 +499,7 @@ public class MultiLevelHashCache<K, HK, HV> {
             return;
         }
         try {
-            redisUtil.delete(redisKey(key));
+            redisFacade.delete(redisKey(key));
         } catch (Exception e) {
             handleWriteFailure(e);
         }
@@ -508,7 +508,7 @@ public class MultiLevelHashCache<K, HK, HV> {
     private boolean setTtl(K key) {
         boolean ttlUpdated;
         try {
-            ttlUpdated = redisUtil.expire(redisKey(key), l2Ttl.toMillis(), TimeUnit.MILLISECONDS);
+            ttlUpdated = redisFacade.expire(redisKey(key), l2Ttl.toMillis(), TimeUnit.MILLISECONDS);
         } catch (Exception e) {
             handleWriteFailure(e);
             return false;

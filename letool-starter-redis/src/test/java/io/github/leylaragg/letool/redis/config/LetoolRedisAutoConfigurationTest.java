@@ -1,7 +1,7 @@
 package io.github.leylaragg.letool.redis.config;
 
-import io.github.leylaragg.letool.redis.RedisUtil;
-import io.github.leylaragg.letool.redis.queue.RedisMessageQueueUtil;
+import io.github.leylaragg.letool.redis.RedisFacade;
+import io.github.leylaragg.letool.redis.queue.RedisMessageQueueTemplate;
 import io.github.leylaragg.letool.redis.serializer.FastJson2JsonRedisSerializer;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -33,8 +33,8 @@ class LetoolRedisAutoConfigurationTest {
         contextRunner.withUserConfiguration(StringTemplateConfiguration.class)
                 .run(context -> {
                     assertThat(context).hasNotFailed();
-                    assertThat(context).doesNotHaveBean(RedisUtil.class);
-                    assertThat(context).doesNotHaveBean(RedisMessageQueueUtil.class);
+                    assertThat(context).doesNotHaveBean(RedisFacade.class);
+                    assertThat(context).doesNotHaveBean(RedisMessageQueueTemplate.class);
                 });
     }
 
@@ -45,10 +45,10 @@ class LetoolRedisAutoConfigurationTest {
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     RedisTemplate<?, ?> template = context.getBean("redisTemplate", RedisTemplate.class);
-                    assertThat(context).hasSingleBean(RedisUtil.class);
-                    assertThat(context).hasSingleBean(RedisMessageQueueUtil.class);
-                    assertThat(context.getBean(RedisUtil.class).getTemplate()).isSameAs(template);
-                    assertThat(context.getBean(RedisMessageQueueUtil.class).getTemplate()).isSameAs(template);
+                    assertThat(context).hasSingleBean(RedisFacade.class);
+                    assertThat(context).hasSingleBean(RedisMessageQueueTemplate.class);
+                    assertThat(context.getBean(RedisFacade.class).getTemplate()).isSameAs(template);
+                    assertThat(context.getBean(RedisMessageQueueTemplate.class).getTemplate()).isSameAs(template);
                 });
     }
 
@@ -69,7 +69,7 @@ class LetoolRedisAutoConfigurationTest {
                     assertThat(template.getKeySerializer()).isInstanceOf(StringRedisSerializer.class);
                     assertThat(template.getHashKeySerializer()).isInstanceOf(StringRedisSerializer.class);
                     assertThat(template.getValueSerializer()).isInstanceOf(FastJson2JsonRedisSerializer.class);
-                    assertThat(context.getBean(RedisUtil.class).getTemplate()).isSameAs(template);
+                    assertThat(context.getBean(RedisFacade.class).getTemplate()).isSameAs(template);
                 });
     }
 
@@ -77,8 +77,8 @@ class LetoolRedisAutoConfigurationTest {
     @Test
     void shouldBackOffForUserFacade() {
         contextRunner.withUserConfiguration(UserFacadeConfiguration.class)
-                .run(context -> assertThat(context.getBean(RedisUtil.class))
-                        .isSameAs(context.getBean("userRedisUtil")));
+                .run(context -> assertThat(context.getBean(RedisFacade.class))
+                        .isSameAs(context.getBean("userRedisFacade")));
     }
 
     @Configuration(proxyBeanMethods = false)
@@ -112,9 +112,9 @@ class LetoolRedisAutoConfigurationTest {
             return mock(RedisTemplate.class);
         }
 
-        @Bean({"redisUtil", "userRedisUtil"})
-        RedisUtil redisUtil(RedisTemplate<String, Object> redisTemplate) {
-            return new RedisUtil(redisTemplate);
+        @Bean({"redisFacade", "userRedisFacade"})
+        RedisFacade redisFacade(RedisTemplate<String, Object> redisTemplate) {
+            return new RedisFacade(redisTemplate);
         }
     }
 }

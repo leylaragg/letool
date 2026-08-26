@@ -2,7 +2,7 @@ package io.github.leylaragg.letool.cache.core;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import io.github.leylaragg.letool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisFacade;
 import io.github.leylaragg.letool.cache.exception.CacheException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,7 +51,7 @@ public class MultiLevelSetCache<K, V> {
     /** L1 本地 Set 缓存，key -> 并发安全的成员集合。 */
     private final Cache<K, Set<V>> l1Cache;
     /** Redis 操作工具。为 null 时该缓存退化为 L1-only。 */
-    private final RedisUtil redisUtil;
+    private final RedisFacade redisFacade;
     /** 当前 Set 缓存区域的 Redis 键空间。 */
     private final RedisCacheKeyspace keyspace;
     /** Redis Set 的过期时间。每次写入后都会补充 TTL，防止新 key 永不过期。 */
@@ -103,7 +103,7 @@ public class MultiLevelSetCache<K, V> {
      * 创建 Set 二级缓存实例。
      *
      * @param config 缓存区域配置
-     * @param redisUtil Redis 操作入口
+     * @param redisFacade Redis 操作入口
      * @param keySerializer 业务 key 序列化函数
      * @param memberType Redis 成员预期类型
      * @param invalidationPublisher L1 失效广播发布器
@@ -111,18 +111,18 @@ public class MultiLevelSetCache<K, V> {
      * @param degradationListener 首次降级回调
      */
     MultiLevelSetCache(CacheConfig<K, V> config,
-                       RedisUtil redisUtil,
+                       RedisFacade redisFacade,
                        Function<K, String> keySerializer,
                        Class<V> memberType,
                        CacheInvalidationPublisher invalidationPublisher,
                        String instanceId,
                        Runnable degradationListener) {
         this.name = config.getName();
-        this.redisUtil = redisUtil;
+        this.redisFacade = redisFacade;
         this.keyspace = new RedisCacheKeyspace(config.getRedisKeyPrefix(), name);
         this.l2Ttl = config.getL2Ttl();
         this.l1Enabled = config.isL1Enabled();
-        this.l2Enabled = redisUtil != null && config.isL2Enabled();
+        this.l2Enabled = redisFacade != null && config.isL2Enabled();
         this.strongConsistency = config.isStrongConsistency();
         this.readFailurePolicy = config.getReadFailurePolicy();
         this.writeFailurePolicy = config.getWriteFailurePolicy();
@@ -385,7 +385,7 @@ public class MultiLevelSetCache<K, V> {
                 throw CacheException.l2Unavailable(lastL2Failure);
             }
             try {
-                keyspace.scanAndUnlink(redisUtil.getTemplate());
+                keyspace.scanAndUnlink(redisFacade.getTemplate());
             } catch (Exception e) {
                 markL2Degraded(e);
                 throw CacheException.l2Unavailable(e);
@@ -415,7 +415,7 @@ public class MultiLevelSetCache<K, V> {
             }
             try {
                 keyspace.scanAndUnlink(
-                        redisUtil.getTemplate(), serializedBusinessKeyPrefix);
+                        redisFacade.getTemplate(), serializedBusinessKeyPrefix);
             } catch (Exception exception) {
                 markL2Degraded(exception);
                 throw CacheException.l2Unavailable(exception);
@@ -475,7 +475,7 @@ public class MultiLevelSetCache<K, V> {
             return true;
         }
         try {
-            redisUtil.hasKey(keyspace.healthCheckKey());
+            redisFacade.hasKey(keyspace.healthCheckKey());
             evictLocalAll();
             l2Degraded = false;
             lastL2Failure = null;
@@ -530,7 +530,7 @@ public class MultiLevelSetCache<K, V> {
             return false;
         }
         try {
-            Long added = redisUtil.boundSetOps(redisKey(key)).add(member);
+            Long added = redisFacade.boundSetOps(redisKey(key)).add(member);
             if (added == null) {
                 throw CacheWriteFailureSupport.unconfirmed("SADD");
             }
@@ -553,7 +553,7 @@ public class MultiLevelSetCache<K, V> {
                     .filter(member -> member != null)
                     .toArray();
             if (values.length > 0) {
-                Long added = redisUtil.boundSetOps(redisKey(key)).add(values);
+                Long added = redisFacade.boundSetOps(redisKey(key)).add(values);
                 if (added == null) {
                     throw CacheWriteFailureSupport.unconfirmed("SADD");
                 }
@@ -575,7 +575,7 @@ public class MultiLevelSetCache<K, V> {
             return false;
         }
         try {
-            Long removed = redisUtil.boundSetOps(redisKey(key)).remove(member);
+            Long removed = redisFacade.boundSetOps(redisKey(key)).remove(member);
             if (removed == null) {
                 throw CacheWriteFailureSupport.unconfirmed("SREM");
             }
@@ -586,7 +586,7 @@ public class MultiLevelSetCache<K, V> {
     }
 
     private Set<V> readMembersFromRedis(K key) {
-        Set<Object> raw = redisUtil.boundSetOps(redisKey(key)).members();
+        Set<Object> raw = redisFacade.boundSetOps(redisKey(key)).members();
         if (raw == null || raw.isEmpty()) {
             return Collections.emptySet();
         }
@@ -614,7 +614,7 @@ public class MultiLevelSetCache<K, V> {
     }
 
     private boolean readMembershipFromRedis(K key, V member) {
-        return Boolean.TRUE.equals(redisUtil.boundSetOps(redisKey(key)).isMember(member));
+        return Boolean.TRUE.equals(redisFacade.boundSetOps(redisKey(key)).isMember(member));
     }
 
     private boolean deleteFromRedis(K key) {
@@ -626,7 +626,7 @@ public class MultiLevelSetCache<K, V> {
             return false;
         }
         try {
-            redisUtil.delete(redisKey(key));
+            redisFacade.delete(redisKey(key));
             return true;
         } catch (Exception e) {
             return handleWriteFailure(e);
@@ -636,7 +636,7 @@ public class MultiLevelSetCache<K, V> {
     private boolean setTtl(K key) {
         try {
             // Redis SADD 不会自动设置过期时间，因此每次写入后补充 TTL。
-            if (!redisUtil.expire(redisKey(key), l2Ttl.toMillis(), TimeUnit.MILLISECONDS)) {
+            if (!redisFacade.expire(redisKey(key), l2Ttl.toMillis(), TimeUnit.MILLISECONDS)) {
                 throw CacheWriteFailureSupport.unconfirmed("PEXPIRE");
             }
             return true;

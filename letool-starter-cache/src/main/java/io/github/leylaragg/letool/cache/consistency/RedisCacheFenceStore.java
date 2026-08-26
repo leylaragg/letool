@@ -1,7 +1,7 @@
 package io.github.leylaragg.letool.cache.consistency;
 
 import io.github.leylaragg.letool.cache.support.RedisCacheScriptExecutor;
-import io.github.leylaragg.letool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisFacade;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -47,7 +47,7 @@ public class RedisCacheFenceStore {
             """;
 
     /** Redis 操作入口。 */
-    private final RedisUtil redisUtil;
+    private final RedisFacade redisFacade;
     /** 全局 Redis Key 前缀。 */
     private final String redisPrefix;
     /** 围栏最大存活时间。 */
@@ -56,12 +56,12 @@ public class RedisCacheFenceStore {
     /**
      * 创建 Redis 围栏存储。
      *
-     * @param redisUtil Redis 操作入口
+     * @param redisFacade Redis 操作入口
      * @param redisPrefix Redis 全局 Key 前缀
      * @param staleAfter 围栏最大存活时间
      */
-    public RedisCacheFenceStore(RedisUtil redisUtil, String redisPrefix, Duration staleAfter) {
-        this.redisUtil = Objects.requireNonNull(redisUtil, "Redis 操作入口不能为空");
+    public RedisCacheFenceStore(RedisFacade redisFacade, String redisPrefix, Duration staleAfter) {
+        this.redisFacade = Objects.requireNonNull(redisFacade, "Redis 操作入口不能为空");
         this.redisPrefix = Objects.requireNonNull(redisPrefix, "Redis Key 前缀不能为空");
         this.staleAfter = Objects.requireNonNull(staleAfter, "围栏超时时间不能为空");
         if (staleAfter.isZero() || staleAfter.isNegative()) {
@@ -83,7 +83,7 @@ public class RedisCacheFenceStore {
         Instant createdAt = Instant.now();
         try {
             Long acquired = toLong(RedisCacheScriptExecutor.executeRaw(
-                    redisUtil,
+                    redisFacade,
                     ACQUIRE_SCRIPT,
                     Long.class,
                     List.of(identity.dataKey(), identity.versionKey(), identity.fenceKey()),
@@ -110,7 +110,7 @@ public class RedisCacheFenceStore {
         CacheKeyIdentity identity = CacheKeyIdentity.of(redisPrefix, cacheName, serializedKey);
         try {
             Long fenced = RedisCacheScriptExecutor.executeRaw(
-                    redisUtil, STATE_SCRIPT, Long.class, List.of(identity.fenceKey()));
+                    redisFacade, STATE_SCRIPT, Long.class, List.of(identity.fenceKey()));
             return Long.valueOf(1L).equals(fenced) ? CacheFenceState.FENCED : CacheFenceState.CLEAR;
         } catch (Exception exception) {
             return CacheFenceState.UNKNOWN;
@@ -129,7 +129,7 @@ public class RedisCacheFenceStore {
                 redisPrefix, fence.cacheName(), fence.serializedKey());
         try {
             Long result = toLong(RedisCacheScriptExecutor.executeRaw(
-                    redisUtil,
+                    redisFacade,
                     COMPLETE_SCRIPT,
                     Long.class,
                     List.of(identity.dataKey(), identity.versionKey(),

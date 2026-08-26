@@ -1,6 +1,6 @@
 package io.github.leylaragg.letool.cache.core;
 
-import io.github.leylaragg.letool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisFacade;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -32,20 +32,20 @@ public class RedisCacheInvalidationPublisher implements CacheInvalidationPublish
     /**
      * 使用默认频道创建 Redis 失效消息发布器。
      *
-     * @param redisUtil Redis 操作入口
+     * @param redisFacade Redis 操作入口
      */
-    public RedisCacheInvalidationPublisher(RedisUtil redisUtil) {
-        this(redisUtil, DEFAULT_CHANNEL);
+    public RedisCacheInvalidationPublisher(RedisFacade redisFacade) {
+        this(redisFacade, DEFAULT_CHANNEL);
     }
 
     /**
      * 使用指定频道创建 Redis 失效消息发布器。
      *
-     * @param redisUtil Redis 操作入口
+     * @param redisFacade Redis 操作入口
      * @param channel Redis Pub/Sub 频道
      */
-    public RedisCacheInvalidationPublisher(RedisUtil redisUtil, String channel) {
-        this(createStringTemplate(redisUtil), channel);
+    public RedisCacheInvalidationPublisher(RedisFacade redisFacade, String channel) {
+        this(createStringTemplate(redisFacade), channel);
     }
 
     /**
@@ -90,9 +90,9 @@ public class RedisCacheInvalidationPublisher implements CacheInvalidationPublish
         return channel;
     }
 
-    private static StringRedisTemplate createStringTemplate(RedisUtil redisUtil) {
-        Objects.requireNonNull(redisUtil, "Redis 操作入口不能为空");
-        RedisConnectionFactory connectionFactory = redisUtil.getTemplate().getConnectionFactory();
+    private static StringRedisTemplate createStringTemplate(RedisFacade redisFacade) {
+        Objects.requireNonNull(redisFacade, "Redis 操作入口不能为空");
+        RedisConnectionFactory connectionFactory = redisFacade.getTemplate().getConnectionFactory();
         if (connectionFactory == null) {
             throw new IllegalArgumentException("RedisTemplate 必须配置连接工厂");
         }

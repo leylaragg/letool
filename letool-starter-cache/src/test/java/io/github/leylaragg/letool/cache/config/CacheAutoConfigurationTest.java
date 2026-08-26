@@ -40,7 +40,7 @@ import io.github.leylaragg.letool.cache.consistency.CacheInvalidationEventStore;
 import io.github.leylaragg.letool.cache.consistency.CacheInvalidationRecovery;
 import io.github.leylaragg.letool.cache.consistency.CacheInvalidationRecoveryScheduler;
 import io.github.leylaragg.letool.cache.consistency.CacheMutationCoordinator;
-import io.github.leylaragg.letool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisFacade;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -116,7 +116,7 @@ class CacheAutoConfigurationTest {
                     assertThat(context).hasNotFailed();
                     assertThat(context).hasSingleBean(CacheManager.class);
                     assertThat(context).hasSingleBean(CacheMonitor.class);
-                    assertThat(context).doesNotHaveBean(RedisUtil.class);
+                    assertThat(context).doesNotHaveBean(RedisFacade.class);
                     assertThat(context).doesNotHaveBean(
                             "letoolCacheInvalidationStringRedisTemplate");
                 });
@@ -124,7 +124,7 @@ class CacheAutoConfigurationTest {
 
     /**
      * 标准业务应用只引入 Redis Starter 时，连接工厂由 Spring Boot 自动配置提供。
-     * Letool 必须在它之后注册 RedisUtil 和失效广播组件，不能因条件判断过早静默退化为 L1-only。
+     * Letool 必须在它之后注册 RedisFacade 和失效广播组件，不能因条件判断过早静默退化为 L1-only。
      */
     @Test
     void shouldCreateL2AndInvalidationInfrastructureAfterBootRedisAutoConfiguration() {
@@ -139,49 +139,49 @@ class CacheAutoConfigurationTest {
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context).hasSingleBean(RedisConnectionFactory.class);
-                    assertThat(context).hasSingleBean(RedisUtil.class);
+                    assertThat(context).hasSingleBean(RedisFacade.class);
                     assertThat(context).doesNotHaveBean("letoolCacheInvalidationStringRedisTemplate");
                     assertThat(context).hasBean("letoolCacheInvalidationPublisher");
                     assertThat(context).hasSingleBean(RedisCacheInvalidationSubscriber.class);
-                    RedisUtil businessRedisUtil = context.getBean(RedisUtil.class);
-                    RedisUtil cacheRedisUtil = (RedisUtil) extractField(
-                            context.getBean(CacheManager.class), "redisUtil");
-                    assertThat(cacheRedisUtil).isNotSameAs(businessRedisUtil);
-                    assertThat(cacheRedisUtil.getTemplate().getKeySerializer())
+                    RedisFacade businessRedisFacade = context.getBean(RedisFacade.class);
+                    RedisFacade cacheRedisFacade = (RedisFacade) extractField(
+                            context.getBean(CacheManager.class), "redisFacade");
+                    assertThat(cacheRedisFacade).isNotSameAs(businessRedisFacade);
+                    assertThat(cacheRedisFacade.getTemplate().getKeySerializer())
                             .isInstanceOf(StringRedisSerializer.class);
-                    assertThat(cacheRedisUtil.getTemplate().getHashKeySerializer())
+                    assertThat(cacheRedisFacade.getTemplate().getHashKeySerializer())
                             .isInstanceOf(StringRedisSerializer.class);
                     @SuppressWarnings("unchecked")
                     RedisSerializer<Object> cacheValueSerializer =
-                            (RedisSerializer<Object>) cacheRedisUtil.getTemplate().getValueSerializer();
+                            (RedisSerializer<Object>) cacheRedisFacade.getTemplate().getValueSerializer();
                     @SuppressWarnings("unchecked")
                     RedisSerializer<Object> businessValueSerializer =
-                            (RedisSerializer<Object>) businessRedisUtil.getTemplate().getValueSerializer();
+                            (RedisSerializer<Object>) businessRedisFacade.getTemplate().getValueSerializer();
                     byte[] businessValue = businessValueSerializer.serialize("rule-value");
                     assertThat(cacheValueSerializer.deserialize(businessValue))
                             .isEqualTo("rule-value");
                     assertThat(cacheValueSerializer.deserialize(
                             "7".getBytes(StandardCharsets.UTF_8))).isEqualTo("7");
-                    assertThat(businessRedisUtil.getTemplate().getKeySerializer())
+                    assertThat(businessRedisFacade.getTemplate().getKeySerializer())
                             .isNotInstanceOf(StringRedisSerializer.class);
                 });
     }
 
     /** 已使用字符串 Key 的业务模板仍应保持不变，由私有视图兼容框架版本元数据。 */
     @Test
-    void shouldKeepStringKeyBusinessRedisUtilUnchanged() {
+    void shouldKeepStringKeyBusinessRedisFacadeUnchanged() {
         contextRunner
-                .withUserConfiguration(StringKeyRedisUtilConfiguration.class)
+                .withUserConfiguration(StringKeyRedisFacadeConfiguration.class)
                 .withPropertyValues("letool.cache.invalidation.enabled=false")
                 .run(context -> {
                     assertThat(context).hasNotFailed();
-                    RedisUtil businessRedisUtil = context.getBean(RedisUtil.class);
-                    RedisUtil cacheRedisUtil = (RedisUtil) extractField(
-                            context.getBean(CacheManager.class), "redisUtil");
-                    assertThat(cacheRedisUtil).isNotSameAs(businessRedisUtil);
-                    assertThat(cacheRedisUtil.getTemplate().getValueSerializer())
+                    RedisFacade businessRedisFacade = context.getBean(RedisFacade.class);
+                    RedisFacade cacheRedisFacade = (RedisFacade) extractField(
+                            context.getBean(CacheManager.class), "redisFacade");
+                    assertThat(cacheRedisFacade).isNotSameAs(businessRedisFacade);
+                    assertThat(cacheRedisFacade.getTemplate().getValueSerializer())
                             .isInstanceOf(CacheRedisValueSerializer.class);
-                    assertThat(businessRedisUtil.getTemplate().getValueSerializer())
+                    assertThat(businessRedisFacade.getTemplate().getValueSerializer())
                             .isNotInstanceOf(CacheRedisValueSerializer.class);
                 });
     }
@@ -674,8 +674,8 @@ class CacheAutoConfigurationTest {
     static class DurableInfrastructureConfiguration {
 
         @Bean
-        RedisUtil redisUtil() {
-            return org.mockito.Mockito.mock(RedisUtil.class);
+        RedisFacade redisFacade() {
+            return org.mockito.Mockito.mock(RedisFacade.class);
         }
 
         @Bean
@@ -689,9 +689,9 @@ class CacheAutoConfigurationTest {
         }
     }
 
-    /** 提供已符合缓存键空间契约的业务 RedisUtil。 */
+    /** 提供已符合缓存键空间契约的业务 RedisFacade。 */
     @Configuration(proxyBeanMethods = false)
-    static class StringKeyRedisUtilConfiguration {
+    static class StringKeyRedisFacadeConfiguration {
 
         @Bean
         RedisConnectionFactory redisConnectionFactory() {
@@ -699,13 +699,13 @@ class CacheAutoConfigurationTest {
         }
 
         @Bean
-        RedisUtil redisUtil(RedisConnectionFactory connectionFactory) {
+        RedisFacade redisFacade(RedisConnectionFactory connectionFactory) {
             RedisTemplate<String, Object> redisTemplate = new RedisTemplate<>();
             redisTemplate.setConnectionFactory(connectionFactory);
             redisTemplate.setKeySerializer(StringRedisSerializer.UTF_8);
             redisTemplate.setHashKeySerializer(StringRedisSerializer.UTF_8);
             redisTemplate.afterPropertiesSet();
-            return new RedisUtil(redisTemplate);
+            return new RedisFacade(redisTemplate);
         }
     }
 
@@ -848,8 +848,8 @@ class CacheAutoConfigurationTest {
     static class MultipleTransactionManagersConfiguration {
 
         @Bean
-        RedisUtil redisUtil() {
-            return org.mockito.Mockito.mock(RedisUtil.class);
+        RedisFacade redisFacade() {
+            return org.mockito.Mockito.mock(RedisFacade.class);
         }
 
         @Bean
@@ -872,8 +872,8 @@ class CacheAutoConfigurationTest {
     static class PrimaryMultipleInfrastructureConfiguration {
 
         @Bean
-        RedisUtil redisUtil() {
-            return org.mockito.Mockito.mock(RedisUtil.class);
+        RedisFacade redisFacade() {
+            return org.mockito.Mockito.mock(RedisFacade.class);
         }
 
         @Bean

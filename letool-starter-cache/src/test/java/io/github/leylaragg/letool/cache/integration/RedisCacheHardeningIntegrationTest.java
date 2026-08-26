@@ -10,7 +10,7 @@ import io.github.leylaragg.letool.cache.config.CacheAutoConfiguration;
 import io.github.leylaragg.letool.cache.config.CacheProperties;
 import io.github.leylaragg.letool.cache.serializer.JacksonCacheSerializer;
 import io.github.leylaragg.letool.redis.serializer.FastJson2JsonRedisSerializer;
-import io.github.leylaragg.letool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisFacade;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -50,7 +50,7 @@ class RedisCacheHardeningIntegrationTest {
     private static LettuceConnectionFactory connectionFactory;
     private static RedisTemplate<String, Object> redisTemplate;
     private static StringRedisTemplate stringRedisTemplate;
-    private static RedisUtil redisUtil;
+    private static RedisFacade redisFacade;
     private static String redisPrefix;
 
     @BeforeAll
@@ -90,7 +90,7 @@ class RedisCacheHardeningIntegrationTest {
         redisTemplate.setHashValueSerializer(valueSerializer);
         redisTemplate.afterPropertiesSet();
         stringRedisTemplate = new StringRedisTemplate(connectionFactory);
-        redisUtil = new RedisUtil(redisTemplate);
+        redisFacade = new RedisFacade(redisTemplate);
         redisPrefix = "letool:audit:" + UUID.randomUUID().toString().replace("-", "") + ":";
     }
 
@@ -124,7 +124,7 @@ class RedisCacheHardeningIntegrationTest {
                 .versionMetadataRetention(Duration.ofDays(7))
                 .build();
         MultiLevelCache<String, String> cache = new MultiLevelCache<>(
-                config, redisUtil, new JacksonCacheSerializer());
+                config, redisFacade, new JacksonCacheSerializer());
         Map<String, String> entries = new LinkedHashMap<>();
         for (int index = 0; index < 600; index++) {
             entries.put("key-" + index, "value-" + index);
@@ -163,11 +163,11 @@ class RedisCacheHardeningIntegrationTest {
         bootDefaultTemplate.setConnectionFactory(connectionFactory);
         bootDefaultTemplate.afterPropertiesSet();
         assertFalse(bootDefaultTemplate.getKeySerializer() instanceof StringRedisSerializer);
-        RedisUtil businessRedisUtil = new RedisUtil(bootDefaultTemplate);
+        RedisFacade businessRedisFacade = new RedisFacade(bootDefaultTemplate);
         CacheProperties properties = new CacheProperties();
         properties.setRedisPrefix(redisPrefix);
         CacheManager cacheManager = new CacheAutoConfiguration().cacheManager(
-                new JacksonCacheSerializer(), properties, businessRedisUtil, null);
+                new JacksonCacheSerializer(), properties, businessRedisFacade, null);
         MultiLevelCache<String, String> cache = cacheManager.getOrCreate(
                 CacheConfig.<String, String>builder("boot-default")
                         .redisKeyPrefix(redisPrefix)
@@ -180,7 +180,7 @@ class RedisCacheHardeningIntegrationTest {
 
         assertNull(cache.getIfPresent("rule:1"));
         assertFalse(cache.isL2Degraded());
-        assertFalse(businessRedisUtil.getTemplate().getKeySerializer()
+        assertFalse(businessRedisFacade.getTemplate().getKeySerializer()
                 instanceof StringRedisSerializer);
     }
 
@@ -192,7 +192,7 @@ class RedisCacheHardeningIntegrationTest {
                 .strongConsistency(false)
                 .build();
         MultiLevelSetCache<String, String> cache = new CacheManager(
-                redisUtil, new JacksonCacheSerializer())
+                redisFacade, new JacksonCacheSerializer())
                 .getOrCreateSetCache(config, java.util.function.Function.identity(), String.class);
         cache.add("project:1", "R1");
         cache.add("project:2", "R2");
@@ -212,9 +212,9 @@ class RedisCacheHardeningIntegrationTest {
         RedisCacheInvalidationPublisher publisher =
                 new RedisCacheInvalidationPublisher(stringRedisTemplate, channel);
         CacheManager writerManager = new CacheManager(
-                redisUtil, new JacksonCacheSerializer(), true, true, redisPrefix, publisher);
+                redisFacade, new JacksonCacheSerializer(), true, true, redisPrefix, publisher);
         CacheManager readerManager = new CacheManager(
-                redisUtil, new JacksonCacheSerializer(), true, true, redisPrefix,
+                redisFacade, new JacksonCacheSerializer(), true, true, redisPrefix,
                 io.github.leylaragg.letool.cache.core.CacheInvalidationPublisher.noop());
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
         container.setConnectionFactory(connectionFactory);

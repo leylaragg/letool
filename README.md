@@ -42,7 +42,7 @@
 | **letool-exception-core** | 异常基础契约 —— 不依赖 Spring 的错误码、异常基类与消息格式化 | 无 letool 内部依赖 |
 | **letool-starter-exception** | 统一异常 —— 错误码、业务/系统异常、MessageSource 国际化解析 | exception-core |
 | **letool-starter-tool** | 核心工具 —— 可替换 JsonCodec、HTTP、ID 生成、字符串、集合、反射与 Spring 容器工具 | exception |
-| [**letool-starter-redis**](letool-starter-redis/README.md) | Redis 基础设施 —— RedisUtil、Redisson 分布式锁、幂等存储与防击穿缓存回源 | tool, distributed-lock, Spring Data Redis, Redisson |
+| [**letool-starter-redis**](letool-starter-redis/README.md) | Redis 基础设施 —— RedisFacade、Redisson 分布式锁、幂等存储与防击穿缓存回源 | tool, distributed-lock, Spring Data Redis, Redisson |
 | [**letool-starter-sensitive**](letool-starter-sensitive/README.md) | 数据脱敏工具 —— 常用策略、字段注解、可扩展注册表与 Jackson 自动脱敏 | exception, Jackson |
 | **letool-starter-log** | 日志封装 —— 请求链路追踪、审计日志、方法日志；异步 MDC 传播可直接搭配 thread | tool, sensitive |
 | [**letool-starter-cache**](letool-starter-cache/README.md) | 二级缓存 —— KV 与 Redis 原生 List/Hash/Set/ZSet，严格故障策略、批量访问与跨节点失效 | tool, exception |

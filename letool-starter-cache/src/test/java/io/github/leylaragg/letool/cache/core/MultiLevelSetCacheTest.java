@@ -2,7 +2,7 @@ package io.github.leylaragg.letool.cache.core;
 
 import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
 import io.github.leylaragg.letool.cache.exception.CacheException;
-import io.github.leylaragg.letool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisFacade;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -24,7 +24,7 @@ import static org.mockito.Mockito.*;
 class MultiLevelSetCacheTest {
 
     @Mock
-    private RedisUtil redisUtil;
+    private RedisFacade redisFacade;
 
     @Mock
     private CacheSerializer serializer;
@@ -45,16 +45,16 @@ class MultiLevelSetCacheTest {
         lenient().when(boundSetOperations.add(any())).thenReturn(1L);
         lenient().when(boundSetOperations.add(any(Object[].class))).thenReturn(1L);
         lenient().when(boundSetOperations.remove(any())).thenReturn(0L);
-        lenient().when(redisUtil.expire(any(), anyLong(), any())).thenReturn(true);
+        lenient().when(redisFacade.expire(any(), anyLong(), any())).thenReturn(true);
     }
 
     @Test
     @DisplayName("严格写策略下 SADD 异常必须暴露且不污染已有 L1")
     void strictAddShouldExposeRedisFailureWithoutChangingLocalSnapshot() {
         String redisKey = "test:cache:rule%3Aindex:project:strict-add";
-        when(redisUtil.boundSetOps(redisKey)).thenReturn(boundSetOperations);
+        when(redisFacade.boundSetOps(redisKey)).thenReturn(boundSetOperations);
         when(boundSetOperations.members()).thenReturn(Set.of("rule-a"));
-        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateSetCache(strictWriteConfig(), Function.identity(), String.class);
         assertEquals(Set.of("rule-a"), cache.getMembers("project:strict-add"));
         RuntimeException redisFailure = new RuntimeException("sadd failed");
@@ -72,11 +72,11 @@ class MultiLevelSetCacheTest {
     @DisplayName("严格写策略下 SADD 成功但 TTL 失败仍必须暴露")
     void strictAddShouldRejectFailedTtl() {
         String redisKey = "test:cache:rule%3Aindex:project:strict-ttl";
-        when(redisUtil.boundSetOps(redisKey)).thenReturn(boundSetOperations);
+        when(redisFacade.boundSetOps(redisKey)).thenReturn(boundSetOperations);
         when(boundSetOperations.add("rule-a")).thenReturn(1L);
-        when(redisUtil.expire(redisKey, Duration.ofHours(1).toMillis(),
+        when(redisFacade.expire(redisKey, Duration.ofHours(1).toMillis(),
                 java.util.concurrent.TimeUnit.MILLISECONDS)).thenReturn(false);
-        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateSetCache(strictWriteConfig(), Function.identity(), String.class);
 
         CacheException thrown = assertThrows(CacheException.class,
@@ -90,9 +90,9 @@ class MultiLevelSetCacheTest {
     @DisplayName("严格写策略下 SREM 异常必须保留已有 L1 成员")
     void strictRemoveShouldExposeRedisFailureWithoutChangingLocalSnapshot() {
         String redisKey = "test:cache:rule%3Aindex:project:strict-remove";
-        when(redisUtil.boundSetOps(redisKey)).thenReturn(boundSetOperations);
+        when(redisFacade.boundSetOps(redisKey)).thenReturn(boundSetOperations);
         when(boundSetOperations.members()).thenReturn(Set.of("rule-a"));
-        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateSetCache(strictWriteConfig(), Function.identity(), String.class);
         assertEquals(Set.of("rule-a"), cache.getMembers("project:strict-remove"));
         RuntimeException redisFailure = new RuntimeException("srem failed");
@@ -109,13 +109,13 @@ class MultiLevelSetCacheTest {
     @DisplayName("严格写策略下 DEL 异常必须保留已有 L1 集合")
     void strictRemoveKeyShouldExposeRedisFailureWithoutClearingLocalSnapshot() {
         String redisKey = "test:cache:rule%3Aindex:project:strict-delete";
-        when(redisUtil.boundSetOps(redisKey)).thenReturn(boundSetOperations);
+        when(redisFacade.boundSetOps(redisKey)).thenReturn(boundSetOperations);
         when(boundSetOperations.members()).thenReturn(Set.of("rule-a"));
-        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateSetCache(strictWriteConfig(), Function.identity(), String.class);
         assertEquals(Set.of("rule-a"), cache.getMembers("project:strict-delete"));
         RuntimeException redisFailure = new RuntimeException("del failed");
-        doThrow(redisFailure).when(redisUtil).delete(redisKey);
+        doThrow(redisFailure).when(redisFacade).delete(redisKey);
 
         CacheException thrown = assertThrows(CacheException.class,
                 () -> cache.removeKey("project:strict-delete"));
@@ -127,16 +127,16 @@ class MultiLevelSetCacheTest {
     @Test
     @DisplayName("add 写入 L1 和 Redis Set")
     void addWritesLocalAndRedisSet() {
-        when(redisUtil.boundSetOps("test:cache:rule%3Aindex:project:1")).thenReturn(boundSetOperations);
+        when(redisFacade.boundSetOps("test:cache:rule%3Aindex:project:1")).thenReturn(boundSetOperations);
         when(boundSetOperations.isMember("rule-a")).thenReturn(true);
-        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateSetCache(config, Function.identity(), String.class);
 
         cache.add("project:1", "rule-a");
 
         assertTrue(cache.contains("project:1", "rule-a"));
         verify(boundSetOperations).add("rule-a");
-        verify(redisUtil).expire("test:cache:rule%3Aindex:project:1", Duration.ofHours(1).toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+        verify(redisFacade).expire("test:cache:rule%3Aindex:project:1", Duration.ofHours(1).toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
     }
 
     @Test
@@ -155,10 +155,10 @@ class MultiLevelSetCacheTest {
     @Test
     @DisplayName("remove 删除成员并广播为本地失效语义")
     void removeDeletesMember() {
-        when(redisUtil.boundSetOps("test:cache:rule%3Aindex:project:1")).thenReturn(boundSetOperations);
+        when(redisFacade.boundSetOps("test:cache:rule%3Aindex:project:1")).thenReturn(boundSetOperations);
         when(boundSetOperations.isMember("rule-a")).thenReturn(false);
         when(boundSetOperations.isMember("rule-b")).thenReturn(true);
-        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateSetCache(config, Function.identity(), String.class);
 
         cache.addAll("project:1", Set.of("rule-a", "rule-b"));
@@ -173,9 +173,9 @@ class MultiLevelSetCacheTest {
     @Test
     @DisplayName("L1 miss 时从 Redis Set 读取并回填")
     void l1MissReadsRedisSetAndRefillsLocal() {
-        when(redisUtil.boundSetOps("test:cache:rule%3Aindex:project:2")).thenReturn(boundSetOperations);
+        when(redisFacade.boundSetOps("test:cache:rule%3Aindex:project:2")).thenReturn(boundSetOperations);
         when(boundSetOperations.members()).thenReturn(Set.of("rule-c", "rule-d"));
-        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateSetCache(config, Function.identity(), String.class);
 
         assertEquals(Set.of("rule-c", "rule-d"), cache.getMembers("project:2"));
@@ -187,9 +187,9 @@ class MultiLevelSetCacheTest {
     @Test
     @DisplayName("Redis 异常后 Set 缓存进入 L2 降级")
     void redisFailureMarksSetCacheDegraded() {
-        when(redisUtil.boundSetOps("test:cache:rule%3Aindex:project:3")).thenReturn(boundSetOperations);
+        when(redisFacade.boundSetOps("test:cache:rule%3Aindex:project:3")).thenReturn(boundSetOperations);
         when(boundSetOperations.members()).thenThrow(new RuntimeException("redis down"));
-        CacheManager manager = new CacheManager(redisUtil, serializer);
+        CacheManager manager = new CacheManager(redisFacade, serializer);
         MultiLevelSetCache<String, String> cache = manager.getOrCreateSetCache(config, Function.identity(), String.class);
 
         assertTrue(cache.getMembers("project:3").isEmpty());
@@ -202,11 +202,11 @@ class MultiLevelSetCacheTest {
     @DisplayName("FAIL_CLOSED 在 Redis 读取失败时抛出稳定缓存异常")
     void failClosedShouldThrowWhenRedisReadFails() {
         CacheConfig<String, String> strictConfig = strictReadConfig();
-        when(redisUtil.boundSetOps("test:cache:rule%3Aindex:project:strict"))
+        when(redisFacade.boundSetOps("test:cache:rule%3Aindex:project:strict"))
                 .thenReturn(boundSetOperations);
         when(boundSetOperations.members())
                 .thenThrow(new RuntimeException("redis down"));
-        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateSetCache(strictConfig, Function.identity(), String.class);
 
         CacheException exception = assertThrows(
@@ -222,12 +222,12 @@ class MultiLevelSetCacheTest {
     @DisplayName("FAIL_CLOSED 不得把已有 L1 快照伪装成权威结果")
     void failClosedShouldNotReturnStaleLocalSnapshot() {
         CacheConfig<String, String> strictConfig = strictReadConfig();
-        when(redisUtil.boundSetOps("test:cache:rule%3Aindex:project:stale"))
+        when(redisFacade.boundSetOps("test:cache:rule%3Aindex:project:stale"))
                 .thenReturn(boundSetOperations);
         when(boundSetOperations.members())
                 .thenReturn(Set.of("rule-a"))
                 .thenThrow(new RuntimeException("redis down"));
-        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateSetCache(strictConfig, Function.identity(), String.class);
         assertEquals(Set.of("rule-a"), cache.getMembers("project:stale"));
 
@@ -243,11 +243,11 @@ class MultiLevelSetCacheTest {
     @DisplayName("FAIL_CLOSED 同样约束 contains 的 Redis 读取失败")
     void failClosedContainsShouldThrowWhenRedisReadFails() {
         CacheConfig<String, String> strictConfig = strictReadConfig();
-        when(redisUtil.boundSetOps("test:cache:rule%3Aindex:project:contains"))
+        when(redisFacade.boundSetOps("test:cache:rule%3Aindex:project:contains"))
                 .thenReturn(boundSetOperations);
         when(boundSetOperations.isMember("rule-a"))
                 .thenThrow(new RuntimeException("redis down"));
-        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateSetCache(strictConfig, Function.identity(), String.class);
 
         CacheException exception = assertThrows(
@@ -264,10 +264,10 @@ class MultiLevelSetCacheTest {
         CacheConfig<String, String> strongConfig = strongReadConfig(
                 CacheReadFailurePolicy.STALE_IF_AVAILABLE
         );
-        when(redisUtil.boundSetOps("test:cache:rule%3Aindex:project:empty"))
+        when(redisFacade.boundSetOps("test:cache:rule%3Aindex:project:empty"))
                 .thenReturn(boundSetOperations);
         when(boundSetOperations.members()).thenReturn(Set.of());
-        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateSetCache(strongConfig, Function.identity(), String.class);
 
         SetCacheReadResult<String> result = cache.getMembersWithStatus("project:empty");
@@ -282,12 +282,12 @@ class MultiLevelSetCacheTest {
         CacheConfig<String, String> strongConfig = strongReadConfig(
                 CacheReadFailurePolicy.STALE_IF_AVAILABLE
         );
-        when(redisUtil.boundSetOps("test:cache:rule%3Aindex:project:fallback"))
+        when(redisFacade.boundSetOps("test:cache:rule%3Aindex:project:fallback"))
                 .thenReturn(boundSetOperations);
         when(boundSetOperations.members())
                 .thenReturn(Set.of("rule-a"))
                 .thenThrow(new RuntimeException("redis down"));
-        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateSetCache(strongConfig, Function.identity(), String.class);
         cache.getMembers("project:fallback");
 
@@ -304,12 +304,12 @@ class MultiLevelSetCacheTest {
         CacheConfig<String, String> emptyConfig = strongReadConfig(
                 CacheReadFailurePolicy.EMPTY_ON_FAILURE
         );
-        when(redisUtil.boundSetOps("test:cache:rule%3Aindex:project:empty-fallback"))
+        when(redisFacade.boundSetOps("test:cache:rule%3Aindex:project:empty-fallback"))
                 .thenReturn(boundSetOperations);
         when(boundSetOperations.members())
                 .thenReturn(Set.of("rule-a"))
                 .thenThrow(new RuntimeException("redis down"));
-        MultiLevelSetCache<String, String> cache = new CacheManager(redisUtil, serializer)
+        MultiLevelSetCache<String, String> cache = new CacheManager(redisFacade, serializer)
                 .getOrCreateSetCache(emptyConfig, Function.identity(), String.class);
         cache.getMembers("project:empty-fallback");
 
@@ -323,12 +323,12 @@ class MultiLevelSetCacheTest {
     @Test
     @DisplayName("局部新增不能让 L1 冒充完整 Redis Set 快照")
     void partialAddShouldNotHideExistingRedisMembers() {
-        when(redisUtil.boundSetOps("test:cache:rule%3Aindex:project:5"))
+        when(redisFacade.boundSetOps("test:cache:rule%3Aindex:project:5"))
                 .thenReturn(boundSetOperations);
         when(boundSetOperations.members())
                 .thenReturn(Set.of("rule-a", "rule-b"));
         MultiLevelSetCache<String, String> cache =
-                new CacheManager(redisUtil, serializer)
+                new CacheManager(redisFacade, serializer)
                         .getOrCreateSetCache(
                                 config,
                                 Function.identity(),
@@ -347,10 +347,10 @@ class MultiLevelSetCacheTest {
     @Test
     @DisplayName("本地已存在成员时仍应保证 Redis 收到幂等写入")
     void repeatedAddShouldStillWriteRedis() {
-        when(redisUtil.boundSetOps("test:cache:rule%3Aindex:project:6"))
+        when(redisFacade.boundSetOps("test:cache:rule%3Aindex:project:6"))
                 .thenReturn(boundSetOperations);
         MultiLevelSetCache<String, String> cache =
-                new CacheManager(redisUtil, serializer)
+                new CacheManager(redisFacade, serializer)
                         .getOrCreateSetCache(
                                 config,
                                 Function.identity(),
@@ -373,12 +373,12 @@ class MultiLevelSetCacheTest {
                         .redisKeyPrefix("test:cache:")
                         .strongConsistency(true)
                         .build();
-        when(redisUtil.boundSetOps("test:cache:rule%3Aindex:project:7"))
+        when(redisFacade.boundSetOps("test:cache:rule%3Aindex:project:7"))
                 .thenReturn(boundSetOperations);
         when(boundSetOperations.members())
                 .thenReturn(Set.of("rule-a"), Set.of());
         MultiLevelSetCache<String, String> cache =
-                new CacheManager(redisUtil, serializer)
+                new CacheManager(redisFacade, serializer)
                         .getOrCreateSetCache(
                                 strongConfig,
                                 Function.identity(),
@@ -392,15 +392,15 @@ class MultiLevelSetCacheTest {
     @Test
     @DisplayName("Redis 恢复后应清理降级期间产生的本地集合")
     void recoveryShouldDiscardLocalDegradedSnapshot() {
-        when(redisUtil.boundSetOps("test:cache:rule%3Aindex:project:8"))
+        when(redisFacade.boundSetOps("test:cache:rule%3Aindex:project:8"))
                 .thenReturn(boundSetOperations);
         when(boundSetOperations.members())
                 .thenThrow(new RuntimeException("redis down"))
                 .thenReturn(Set.of("remote"));
-        when(redisUtil.hasKey("test:cache:%META%:rule%3Aindex:health"))
+        when(redisFacade.hasKey("test:cache:%META%:rule%3Aindex:health"))
                 .thenReturn(true);
         MultiLevelSetCache<String, String> cache =
-                new CacheManager(redisUtil, serializer)
+                new CacheManager(redisFacade, serializer)
                         .getOrCreateSetCache(
                                 config,
                                 Function.identity(),
@@ -423,11 +423,11 @@ class MultiLevelSetCacheTest {
                         .strongConsistency(false)
                         .valueType(String.class)
                         .build();
-        when(redisUtil.boundSetOps("test:cache:typed-set:key"))
+        when(redisFacade.boundSetOps("test:cache:typed-set:key"))
                 .thenReturn(boundSetOperations);
         when(boundSetOperations.members()).thenReturn(Set.of("member"));
         MultiLevelSetCache<String, String> cache =
-                new CacheManager(redisUtil, serializer)
+                new CacheManager(redisFacade, serializer)
                         .getOrCreateSetCache(typedConfig);
 
         assertEquals(Set.of("member"), cache.getMembers("key"));
@@ -463,9 +463,9 @@ class MultiLevelSetCacheTest {
     void evictAllShouldNotPublishWhenRedisCleanupFails() {
         CacheInvalidationPublisher publisher = mock(CacheInvalidationPublisher.class);
         RuntimeException cleanupFailure = new RuntimeException("scan failed");
-        when(redisUtil.getTemplate()).thenThrow(cleanupFailure);
+        when(redisFacade.getTemplate()).thenThrow(cleanupFailure);
         MultiLevelSetCache<String, String> cache = new CacheManager(
-                redisUtil,
+                redisFacade,
                 serializer,
                 true,
                 true,

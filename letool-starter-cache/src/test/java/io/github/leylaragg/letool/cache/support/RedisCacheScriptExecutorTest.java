@@ -1,6 +1,6 @@
 package io.github.leylaragg.letool.cache.support;
 
-import io.github.leylaragg.letool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisFacade;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -24,8 +24,8 @@ class RedisCacheScriptExecutorTest {
     void shouldDeclareLongResultAndPreserveBinaryArgument() {
         @SuppressWarnings("unchecked")
         RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
-        RedisUtil redisUtil = mock(RedisUtil.class);
-        when(redisUtil.getTemplate()).thenReturn(redisTemplate);
+        RedisFacade redisFacade = mock(RedisFacade.class);
+        when(redisFacade.getTemplate()).thenReturn(redisTemplate);
         when(redisTemplate.execute(
                 any(RedisScript.class),
                 any(RedisSerializer.class),
@@ -35,7 +35,7 @@ class RedisCacheScriptExecutorTest {
         byte[] serializedValue = new byte[]{(byte) 0xAC, (byte) 0xED, 0x00, 0x05};
 
         Long result = RedisCacheScriptExecutor.executeRaw(
-                redisUtil, "return 1", Long.class,
+                redisFacade, "return 1", Long.class,
                 List.of("cache:key"), serializedValue);
 
         ArgumentCaptor<RedisScript<?>> scriptCaptor = ArgumentCaptor.forClass(RedisScript.class);

@@ -6,7 +6,7 @@ import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
 import io.github.leylaragg.letool.cache.support.CacheMonitor;
 import io.github.leylaragg.letool.cache.support.CacheTemplate;
 import io.github.leylaragg.letool.cache.support.RedisKeySerializer;
-import io.github.leylaragg.letool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisFacade;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -428,7 +428,7 @@ class MultiLevelCacheTest {
         @BeforeEach
         void setUp() {
             serializer = new SimpleCacheSerializer();
-            // 不传 RedisUtil 模拟 L1-only 环境
+            // 不传 RedisFacade 模拟 L1-only 环境
             cacheManager = new CacheManager(null, serializer);
         }
 
@@ -523,7 +523,7 @@ class MultiLevelCacheTest {
                     .l1MaxSize(100)
                     .l1Ttl(Duration.ofSeconds(10))
                     .nullValueCache(true);
-            // redisUtil = null 表示仅 L1
+            // redisFacade = null 表示仅 L1
             cache = new MultiLevelCache<>(config, null, new SimpleCacheSerializer());
         }
 
@@ -720,7 +720,7 @@ class MultiLevelCacheTest {
     class MultiLevelCacheL2Tests {
 
         @Mock
-        private RedisUtil redisUtil;
+        private RedisFacade redisFacade;
 
         @Mock
         private BoundValueOperations<String, Object> boundValueOperations;
@@ -739,8 +739,8 @@ class MultiLevelCacheTest {
                     .valueType(String.class)
                     .strongConsistency(false)
                     .nullValueCache(true);
-            cache = new MultiLevelCache<>(config, redisUtil, serializer);
-            lenient().when(redisUtil.boundValueOps(anyString())).thenReturn(boundValueOperations);
+            cache = new MultiLevelCache<>(config, redisFacade, serializer);
+            lenient().when(redisFacade.boundValueOps(anyString())).thenReturn(boundValueOperations);
         }
 
         @Test
@@ -749,12 +749,12 @@ class MultiLevelCacheTest {
             // 预先写入（put 会写 L1 + L2）
             cache.put(100, "cached-value");
             // 清除 Redis 调用记录
-            reset(redisUtil);
+            reset(redisFacade);
 
             String result = cache.getOrLoad(100, k -> "should-not-load");
             assertEquals("cached-value", result);
             // L1 命中，不应该查询 Redis
-            verify(redisUtil, never()).boundValueOps(anyString());
+            verify(redisFacade, never()).boundValueOps(anyString());
         }
 
         @Test
@@ -770,7 +770,7 @@ class MultiLevelCacheTest {
             assertEquals(1, cache.stats().getL2HitCount());
 
             // 确认 L2 命中后回填了 L1（再次查询不再访问 Redis）
-            verify(redisUtil, times(1)).boundValueOps(redisKey);
+            verify(redisFacade, times(1)).boundValueOps(redisKey);
             verify(boundValueOperations, times(1)).get();
         }
 
@@ -824,11 +824,11 @@ class MultiLevelCacheTest {
         void l2HitReadsRedisRemainingTtlBeforeRefillL1() {
             String redisKey = "test:l2-cache:250";
             when(boundValueOperations.get()).thenReturn("redis-ttl-value");
-            when(redisUtil.getExpire(redisKey, TimeUnit.MILLISECONDS)).thenReturn(1_000L);
+            when(redisFacade.getExpire(redisKey, TimeUnit.MILLISECONDS)).thenReturn(1_000L);
 
             assertEquals("redis-ttl-value", cache.getOrLoad(250, k -> "fallback"));
 
-            verify(redisUtil).getExpire(redisKey, TimeUnit.MILLISECONDS);
+            verify(redisFacade).getExpire(redisKey, TimeUnit.MILLISECONDS);
         }
 
         @Test
@@ -850,7 +850,7 @@ class MultiLevelCacheTest {
         void l2CollectionWithRawJsonElementsFallsBackToLoader(
                 CapturedOutput output) {
             @SuppressWarnings("unchecked")
-            RedisUtil redisUtil = mock(RedisUtil.class);
+            RedisFacade redisFacade = mock(RedisFacade.class);
             CacheConfig<Integer, List<String>> config = CacheConfig.<Integer, List<String>>builder("list-cache")
                     .l1MaxSize(100)
                     .l1Ttl(Duration.ofSeconds(10))
@@ -860,9 +860,9 @@ class MultiLevelCacheTest {
                     .strongConsistency(false)
                     .nullValueCache(true);
             MultiLevelCache<Integer, List<String>> listCache =
-                    new MultiLevelCache<>(config, redisUtil, serializer);
+                    new MultiLevelCache<>(config, redisFacade, serializer);
             String redisKey = "test:list-cache:270";
-            when(redisUtil.boundValueOps(redisKey)).thenReturn(boundValueOperations);
+            when(redisFacade.boundValueOps(redisKey)).thenReturn(boundValueOperations);
             when(boundValueOperations.get()).thenReturn(List.of(Map.of("name", "raw")));
 
             List<String> result = listCache.getOrLoad(270, key -> List.of("loaded"));
@@ -892,7 +892,7 @@ class MultiLevelCacheTest {
             cache.evict(700);
 
             // L1 删除后，查询走 L2（返回 null 说明 L2 也被清理）
-            verify(redisUtil).delete(redisKey);
+            verify(redisFacade).delete(redisKey);
             assertEquals(1, cache.stats().getEvictionCount());
         }
 
@@ -936,7 +936,7 @@ class MultiLevelCacheTest {
             cache.put(1, "s1");
             cache.put(2, "s2");
             // reset to clear put side effects
-            reset(redisUtil);
+            reset(redisFacade);
 
             cache.getOrLoad(1, k -> "x");
             cache.getOrLoad(2, k -> "x");

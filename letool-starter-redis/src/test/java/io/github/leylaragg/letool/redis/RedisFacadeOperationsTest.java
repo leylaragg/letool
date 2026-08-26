@@ -32,26 +32,26 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit tests for {@link RedisUtil}.
+ * Unit tests for {@link RedisFacade}.
  */
-class RedisUtilTest {
+class RedisFacadeOperationsTest {
 
     /**
-     * RedisUtil should expose the application RedisTemplate so callers can rely on
+     * RedisFacade should expose the application RedisTemplate so callers can rely on
      * the application's configured serializers.
      */
     @Test
     void shouldWrapObjectRedisTemplate() {
         RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
 
-        RedisUtil redisUtil = new RedisUtil(redisTemplate);
+        RedisFacade redisFacade = new RedisFacade(redisTemplate);
 
-        assertThat(redisUtil.getTemplate()).isSameAs(redisTemplate);
+        assertThat(redisFacade.getTemplate()).isSameAs(redisTemplate);
     }
 
     /**
      * String-value operations should use RedisTemplate directly instead of forcing
-     * JSON conversion inside RedisUtil.
+     * JSON conversion inside RedisFacade.
      */
     @Test
     void shouldSetAndGetSerializedObjectsThroughRedisTemplate() {
@@ -61,10 +61,10 @@ class RedisUtilTest {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get("user:1")).thenReturn(user);
 
-        RedisUtil redisUtil = new RedisUtil(redisTemplate);
+        RedisFacade redisFacade = new RedisFacade(redisTemplate);
 
-        redisUtil.set("user:1", user, Duration.ofMinutes(5));
-        TestUser actual = redisUtil.get("user:1", TestUser.class);
+        redisFacade.set("user:1", user, Duration.ofMinutes(5));
+        TestUser actual = redisFacade.get("user:1", TestUser.class);
 
         verify(valueOperations).set("user:1", user, Duration.ofMinutes(5));
         assertThat(actual).isSameAs(user);
@@ -82,9 +82,9 @@ class RedisUtilTest {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get("user:1")).thenReturn(user);
 
-        RedisUtil redisUtil = new RedisUtil(redisTemplate);
+        RedisFacade redisFacade = new RedisFacade(redisTemplate);
 
-        TestUser actual = redisUtil.get("user:1");
+        TestUser actual = redisFacade.get("user:1");
 
         assertThat(actual).isSameAs(user);
     }
@@ -101,15 +101,15 @@ class RedisUtilTest {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get("user:1")).thenReturn(user);
 
-        RedisUtil redisUtil = new RedisUtil(redisTemplate);
+        RedisFacade redisFacade = new RedisFacade(redisTemplate);
 
-        TestUser actual = redisUtil.get("user:1", TestUser.class);
+        TestUser actual = redisFacade.get("user:1", TestUser.class);
 
         assertThat(actual).isSameAs(user);
     }
 
     /**
-     * RedisUtil should expose native RedisTemplate operation views so callers can
+     * RedisFacade should expose native RedisTemplate operation views so callers can
      * choose the Redis data structure explicitly.
      */
     @Test
@@ -136,18 +136,18 @@ class RedisUtilTest {
         when(redisTemplate.opsForHash()).thenReturn(hashOperations);
         when(redisTemplate.boundHashOps("k")).thenReturn(boundHashOperations);
 
-        RedisUtil redisUtil = new RedisUtil(redisTemplate);
+        RedisFacade redisFacade = new RedisFacade(redisTemplate);
 
-        assertThat(redisUtil.opsForValue()).isSameAs(valueOperations);
-        assertThat(redisUtil.boundValueOps("k")).isSameAs(boundValueOperations);
-        assertThat(redisUtil.opsForList()).isSameAs(listOperations);
-        assertThat(redisUtil.boundListOps("k")).isSameAs(boundListOperations);
-        assertThat(redisUtil.opsForSet()).isSameAs(setOperations);
-        assertThat(redisUtil.boundSetOps("k")).isSameAs(boundSetOperations);
-        assertThat(redisUtil.opsForZSet()).isSameAs(zSetOperations);
-        assertThat(redisUtil.boundZSetOps("k")).isSameAs(boundZSetOperations);
-        assertThat(redisUtil.opsForHash()).isSameAs(hashOperations);
-        assertThat(redisUtil.boundHashOps("k")).isSameAs(boundHashOperations);
+        assertThat(redisFacade.opsForValue()).isSameAs(valueOperations);
+        assertThat(redisFacade.boundValueOps("k")).isSameAs(boundValueOperations);
+        assertThat(redisFacade.opsForList()).isSameAs(listOperations);
+        assertThat(redisFacade.boundListOps("k")).isSameAs(boundListOperations);
+        assertThat(redisFacade.opsForSet()).isSameAs(setOperations);
+        assertThat(redisFacade.boundSetOps("k")).isSameAs(boundSetOperations);
+        assertThat(redisFacade.opsForZSet()).isSameAs(zSetOperations);
+        assertThat(redisFacade.boundZSetOps("k")).isSameAs(boundZSetOperations);
+        assertThat(redisFacade.opsForHash()).isSameAs(hashOperations);
+        assertThat(redisFacade.boundHashOps("k")).isSameAs(boundHashOperations);
     }
 
     /**
@@ -164,11 +164,11 @@ class RedisUtilTest {
         when(listOperations.leftPop("users")).thenReturn(user);
         when(listOperations.range("users", 0, -1)).thenReturn(List.of(user));
 
-        RedisUtil redisUtil = new RedisUtil(redisTemplate);
+        RedisFacade redisFacade = new RedisFacade(redisTemplate);
 
-        assertThat(redisUtil.rpush("users", user)).isEqualTo(1L);
-        TestUser popped = redisUtil.lpop("users");
-        List<TestUser> users = redisUtil.lrange("users", 0, -1);
+        assertThat(redisFacade.rpush("users", user)).isEqualTo(1L);
+        TestUser popped = redisFacade.lpop("users");
+        List<TestUser> users = redisFacade.lrange("users", 0, -1);
 
         assertThat(popped).isSameAs(user);
         assertThat(users).containsExactly(user);
@@ -196,16 +196,16 @@ class RedisUtilTest {
         when(zSetOperations.add("rank", user, 10.0)).thenReturn(true);
         when(zSetOperations.range("rank", 0, -1)).thenReturn(Set.of(user));
 
-        RedisUtil redisUtil = new RedisUtil(redisTemplate);
+        RedisFacade redisFacade = new RedisFacade(redisTemplate);
 
-        redisUtil.hset("users", "u1", user);
-        TestUser hashUser = redisUtil.hget("users", "u1");
-        Map<String, TestUser> allUsers = redisUtil.hgetAll("users");
-        assertThat(redisUtil.sadd("online-users", user)).isEqualTo(1L);
-        Set<TestUser> members = redisUtil.smembers("online-users");
-        assertThat(redisUtil.sismember("online-users", user)).isTrue();
-        assertThat(redisUtil.zadd("rank", user, 10.0)).isTrue();
-        Set<TestUser> ranking = redisUtil.zrange("rank", 0, -1);
+        redisFacade.hset("users", "u1", user);
+        TestUser hashUser = redisFacade.hget("users", "u1");
+        Map<String, TestUser> allUsers = redisFacade.hgetAll("users");
+        assertThat(redisFacade.sadd("online-users", user)).isEqualTo(1L);
+        Set<TestUser> members = redisFacade.smembers("online-users");
+        assertThat(redisFacade.sismember("online-users", user)).isTrue();
+        assertThat(redisFacade.zadd("rank", user, 10.0)).isTrue();
+        Set<TestUser> ranking = redisFacade.zrange("rank", 0, -1);
 
         verify(hashOperations).put("users", "u1", user);
         assertThat(hashUser).isSameAs(user);
@@ -227,10 +227,10 @@ class RedisUtilTest {
             return expected;
         });
 
-        RedisUtil redisUtil = new RedisUtil(redisTemplate);
+        RedisFacade redisFacade = new RedisFacade(redisTemplate);
         AtomicReference<RedisOperations<String, Object>> operationsRef = new AtomicReference<>();
 
-        List<Object> actual = redisUtil.pipeline(operationsRef::set);
+        List<Object> actual = redisFacade.pipeline(operationsRef::set);
 
         assertThat(actual).isSameAs(expected);
         assertThat(operationsRef.get()).isSameAs(redisTemplate);
@@ -246,10 +246,10 @@ class RedisUtilTest {
                 any(RedisSerializer.class),
                 anyList(),
                 any(Object[].class))).thenReturn(1L);
-        RedisUtil redisUtil = new RedisUtil(redisTemplate);
+        RedisFacade redisFacade = new RedisFacade(redisTemplate);
         byte[] serializedValue = new byte[]{(byte) 0xAC, (byte) 0xED, 0x00, 0x05};
 
-        Long result = redisUtil.executeScriptRaw(
+        Long result = redisFacade.executeScriptRaw(
                 "return 1", Long.class, List.of("cache:key"), serializedValue);
 
         ArgumentCaptor<RedisScript<?>> scriptCaptor = ArgumentCaptor.forClass(RedisScript.class);

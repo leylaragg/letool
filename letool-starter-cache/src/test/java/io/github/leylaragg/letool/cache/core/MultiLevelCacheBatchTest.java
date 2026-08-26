@@ -3,7 +3,7 @@ package io.github.leylaragg.letool.cache.core;
 import io.github.leylaragg.letool.cache.consistency.CacheReadValidation;
 import io.github.leylaragg.letool.cache.exception.CacheException;
 import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
-import io.github.leylaragg.letool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisFacade;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.RedisOperations;
@@ -37,14 +37,14 @@ class MultiLevelCacheBatchTest {
     @DisplayName("严格写策略下批量分块失败必须暴露且不回填未确认条目")
     @SuppressWarnings("unchecked")
     void strictPutAllShouldExposeFailedChunkWithoutCachingUnconfirmedEntry() {
-        RedisUtil redisUtil = mock(RedisUtil.class);
+        RedisFacade redisFacade = mock(RedisFacade.class);
         RedisOperations<String, Object> operations = mock(RedisOperations.class);
         ValueOperations<String, Object> valueOperations = mock(ValueOperations.class);
         when(operations.opsForValue()).thenReturn(valueOperations);
         RuntimeException redisFailure = new RuntimeException("second chunk failed");
         java.util.concurrent.atomic.AtomicInteger invocation =
                 new java.util.concurrent.atomic.AtomicInteger();
-        when(redisUtil.pipeline(any())).thenAnswer(answer -> {
+        when(redisFacade.pipeline(any())).thenAnswer(answer -> {
             Consumer<RedisOperations<String, Object>> callback = answer.getArgument(0);
             callback.accept(operations);
             if (invocation.getAndIncrement() == 0) {
@@ -59,7 +59,7 @@ class MultiLevelCacheBatchTest {
                         .redisBatchSize(1)
                         .writeFailurePolicy(CacheWriteFailurePolicy.FAIL_CLOSED)
                         .build(),
-                redisUtil,
+                redisFacade,
                 mock(CacheSerializer.class),
                 publisher,
                 "node-a",
@@ -83,16 +83,16 @@ class MultiLevelCacheBatchTest {
     @DisplayName("严格写策略下强一致 pipeline 空结果必须视为无法确认")
     @SuppressWarnings({"unchecked", "rawtypes"})
     void strictVersionedPutAllShouldRejectNullScriptResult() {
-        RedisUtil redisUtil = mock(RedisUtil.class);
+        RedisFacade redisFacade = mock(RedisFacade.class);
         RedisTemplate<String, Object> template = mock(RedisTemplate.class);
         RedisConnection connection = mock(RedisConnection.class);
         RedisScriptingCommands scriptingCommands = mock(RedisScriptingCommands.class);
         BoundValueOperations<String, Object> regionVersion = mock(BoundValueOperations.class);
-        when(redisUtil.getTemplate()).thenReturn(template);
+        when(redisFacade.getTemplate()).thenReturn(template);
         doReturn(new StringRedisSerializer()).when(template).getKeySerializer();
         when(connection.scriptingCommands()).thenReturn(scriptingCommands);
-        when(redisUtil.serializeValue(any())).thenReturn("1".getBytes());
-        when(redisUtil.boundValueOps("letool:cache:%META%:strict-versioned:region-version"))
+        when(redisFacade.serializeValue(any())).thenReturn("1".getBytes());
+        when(redisFacade.boundValueOps("letool:cache:%META%:strict-versioned:region-version"))
                 .thenReturn(regionVersion);
         when(regionVersion.get()).thenReturn(0L);
         when(template.executePipelined(any(RedisCallback.class))).thenAnswer(answer -> {
@@ -106,7 +106,7 @@ class MultiLevelCacheBatchTest {
                         .strongConsistency(true)
                         .writeFailurePolicy(CacheWriteFailurePolicy.FAIL_CLOSED)
                         .build(),
-                redisUtil,
+                redisFacade,
                 mock(CacheSerializer.class),
                 publisher,
                 "node-a",
@@ -151,7 +151,7 @@ class MultiLevelCacheBatchTest {
     @DisplayName("600 个冷 Key 按 256 分块只产生 3 次 Redis pipeline")
     @SuppressWarnings("unchecked")
     void getAllPresentShouldUseBoundedRedisBatches() {
-        RedisUtil redisUtil = mock(RedisUtil.class);
+        RedisFacade redisFacade = mock(RedisFacade.class);
         RedisOperations<String, Object> operations = mock(RedisOperations.class);
         ValueOperations<String, Object> valueOperations = mock(ValueOperations.class);
         when(operations.opsForValue()).thenReturn(valueOperations);
@@ -162,7 +162,7 @@ class MultiLevelCacheBatchTest {
         );
         java.util.concurrent.atomic.AtomicInteger invocation =
                 new java.util.concurrent.atomic.AtomicInteger();
-        when(redisUtil.pipeline(any())).thenAnswer(answer -> {
+        when(redisFacade.pipeline(any())).thenAnswer(answer -> {
             Consumer<RedisOperations<String, Object>> callback = answer.getArgument(0);
             callback.accept(operations);
             return pipelineResults.get(invocation.getAndIncrement());
@@ -173,7 +173,7 @@ class MultiLevelCacheBatchTest {
                         .strongConsistency(false)
                         .redisBatchSize(256)
                         .build(),
-                redisUtil,
+                redisFacade,
                 mock(CacheSerializer.class)
         );
         Set<String> keys = new LinkedHashSet<>();
@@ -184,7 +184,7 @@ class MultiLevelCacheBatchTest {
         Map<String, String> result = cache.getAllPresent(keys);
 
         assertEquals(600, result.size());
-        verify(redisUtil, times(3)).pipeline(any());
+        verify(redisFacade, times(3)).pipeline(any());
         assertEquals(1, cache.stats().getBatchReadCount());
         assertEquals(600, cache.stats().getBatchHitKeyCount());
         assertEquals(3, cache.stats().getRedisBatchCount());
@@ -194,11 +194,11 @@ class MultiLevelCacheBatchTest {
     @DisplayName("putAll 使用 pipeline 分块写入且不会逐项发布失效")
     @SuppressWarnings("unchecked")
     void putAllShouldPipelineWritesAndPublishOneInvalidation() {
-        RedisUtil redisUtil = mock(RedisUtil.class);
+        RedisFacade redisFacade = mock(RedisFacade.class);
         RedisOperations<String, Object> operations = mock(RedisOperations.class);
         ValueOperations<String, Object> valueOperations = mock(ValueOperations.class);
         when(operations.opsForValue()).thenReturn(valueOperations);
-        when(redisUtil.pipeline(any())).thenAnswer(answer -> {
+        when(redisFacade.pipeline(any())).thenAnswer(answer -> {
             Consumer<RedisOperations<String, Object>> callback = answer.getArgument(0);
             callback.accept(operations);
             return List.of();
@@ -209,7 +209,7 @@ class MultiLevelCacheBatchTest {
                         .strongConsistency(false)
                         .redisBatchSize(2)
                         .build(),
-                redisUtil,
+                redisFacade,
                 mock(CacheSerializer.class),
                 publisher,
                 "node-a",
@@ -218,7 +218,7 @@ class MultiLevelCacheBatchTest {
 
         cache.putAll(Map.of("a", "1", "b", "2", "c", "3"), Duration.ofMinutes(5));
 
-        verify(redisUtil, times(2)).pipeline(any());
+        verify(redisFacade, times(2)).pipeline(any());
         verify(publisher, times(1)).publish(argThat(message ->
                 message.getKeys().size() == 3 && !message.isAll()));
         assertEquals("1", cache.getIfPresent("a"));
@@ -232,11 +232,11 @@ class MultiLevelCacheBatchTest {
     @DisplayName("强一致批量读只接受版本和区域纪元均稳定的命中")
     @SuppressWarnings("unchecked")
     void versionedBatchReadShouldRejectUnstableEntries() {
-        RedisUtil redisUtil = mock(RedisUtil.class);
+        RedisFacade redisFacade = mock(RedisFacade.class);
         RedisOperations<String, Object> operations = mock(RedisOperations.class);
         ValueOperations<String, Object> valueOperations = mock(ValueOperations.class);
         when(operations.opsForValue()).thenReturn(valueOperations);
-        when(redisUtil.pipeline(any())).thenAnswer(answer -> {
+        when(redisFacade.pipeline(any())).thenAnswer(answer -> {
             Consumer<RedisOperations<String, Object>> callback = answer.getArgument(0);
             callback.accept(operations);
             return List.of(
@@ -251,7 +251,7 @@ class MultiLevelCacheBatchTest {
                         .l1Enabled(false)
                         .strongConsistency(true)
                         .build(),
-                redisUtil,
+                redisFacade,
                 mock(CacheSerializer.class)
         );
 
@@ -260,32 +260,32 @@ class MultiLevelCacheBatchTest {
         );
 
         assertEquals(Map.of("stable-key", "stable"), result);
-        verify(redisUtil, times(1)).pipeline(any());
+        verify(redisFacade, times(1)).pipeline(any());
     }
 
     @Test
     @DisplayName("强一致批量读将缺失的区域版本按初始纪元 0 回填 L1")
     @SuppressWarnings("unchecked")
     void versionedBatchReadShouldUseInitialEpochWhenRegionVersionIsMissing() {
-        RedisUtil redisUtil = mock(RedisUtil.class);
+        RedisFacade redisFacade = mock(RedisFacade.class);
         RedisOperations<String, Object> operations = mock(RedisOperations.class);
         ValueOperations<String, Object> valueOperations = mock(ValueOperations.class);
         BoundValueOperations<String, Object> versionOperations = mock(BoundValueOperations.class);
         BoundValueOperations<String, Object> regionVersionOperations = mock(BoundValueOperations.class);
         BoundValueOperations<String, Object> dataOperations = mock(BoundValueOperations.class);
         when(operations.opsForValue()).thenReturn(valueOperations);
-        when(redisUtil.pipeline(any())).thenAnswer(answer -> {
+        when(redisFacade.pipeline(any())).thenAnswer(answer -> {
             Consumer<RedisOperations<String, Object>> callback = answer.getArgument(0);
             callback.accept(operations);
             return Arrays.asList(null, 1L, "cached", 300_000L, 1L, null);
         });
-        when(redisUtil.boundValueOps(argThat(key -> key != null
+        when(redisFacade.boundValueOps(argThat(key -> key != null
                 && key.endsWith(":region-version"))))
                 .thenReturn(regionVersionOperations);
-        when(redisUtil.boundValueOps(argThat(key -> key != null && key.endsWith(":version")
+        when(redisFacade.boundValueOps(argThat(key -> key != null && key.endsWith(":version")
                 && !key.endsWith(":region-version"))))
                 .thenReturn(versionOperations);
-        when(redisUtil.boundValueOps(argThat(key -> key != null
+        when(redisFacade.boundValueOps(argThat(key -> key != null
                 && key.endsWith(":missing-key"))))
                 .thenReturn(dataOperations);
         when(versionOperations.get()).thenReturn(1L);
@@ -294,7 +294,7 @@ class MultiLevelCacheBatchTest {
                 CacheConfig.<String, String>builder("empty-versioned-batch")
                         .readValidation(CacheReadValidation.VERSIONED)
                         .build(),
-                redisUtil,
+                redisFacade,
                 mock(CacheSerializer.class)
         );
 
@@ -311,19 +311,19 @@ class MultiLevelCacheBatchTest {
     @DisplayName("强一致 putAll 在一个 pipeline 中排入多个单 Key Lua")
     @SuppressWarnings({"unchecked", "rawtypes"})
     void versionedPutAllShouldPipelinePerKeyLuaScripts() {
-        RedisUtil redisUtil = mock(RedisUtil.class);
+        RedisFacade redisFacade = mock(RedisFacade.class);
         RedisTemplate<String, Object> template = mock(RedisTemplate.class);
         RedisConnection connection = mock(RedisConnection.class);
         RedisScriptingCommands scriptingCommands = mock(RedisScriptingCommands.class);
         BoundValueOperations<String, Object> regionVersion = mock(BoundValueOperations.class);
-        when(redisUtil.getTemplate()).thenReturn(template);
+        when(redisFacade.getTemplate()).thenReturn(template);
         doReturn(new StringRedisSerializer()).when(template).getKeySerializer();
         when(connection.scriptingCommands()).thenReturn(scriptingCommands);
-        when(redisUtil.serializeValue(any())).thenAnswer(answer -> {
+        when(redisFacade.serializeValue(any())).thenAnswer(answer -> {
             Object value = answer.getArgument(0);
             return String.valueOf(value).getBytes(java.nio.charset.StandardCharsets.UTF_8);
         });
-        when(redisUtil.boundValueOps("letool:cache:%META%:versioned-write:region-version"))
+        when(redisFacade.boundValueOps("letool:cache:%META%:versioned-write:region-version"))
                 .thenReturn(regionVersion);
         when(regionVersion.get()).thenReturn(0L);
         when(template.executePipelined(any(RedisCallback.class))).thenAnswer(answer -> {
@@ -336,7 +336,7 @@ class MultiLevelCacheBatchTest {
                 CacheConfig.<String, String>builder("versioned-write")
                         .strongConsistency(true)
                         .build(),
-                redisUtil,
+                redisFacade,
                 mock(CacheSerializer.class),
                 publisher,
                 "node-a",

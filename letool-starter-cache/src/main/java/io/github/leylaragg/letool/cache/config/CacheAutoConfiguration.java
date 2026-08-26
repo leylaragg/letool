@@ -21,7 +21,7 @@ import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
 import io.github.leylaragg.letool.cache.serializer.JacksonCacheSerializer;
 import io.github.leylaragg.letool.cache.support.CacheMonitor;
 import io.github.leylaragg.letool.tool.config.LetoolToolAutoConfiguration;
-import io.github.leylaragg.letool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisFacade;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -56,7 +56,7 @@ import java.util.UUID;
  *
  * <p>默认情况下 {@code letool.cache.enabled=true}，项目引入 starter 后即可自动启用。
  * 如果业务系统没有引入 Redis，框架会自动退化为本地 L1 缓存；如果存在
- * {@link RedisUtil}，则会同时启用 Redis L2 缓存。</p>
+ * {@link RedisFacade}，则会同时启用 Redis L2 缓存。</p>
  */
 @AutoConfiguration(after = {RedisAutoConfiguration.class, LetoolToolAutoConfiguration.class})
 @EnableConfigurationProperties(CacheProperties.class)
@@ -86,13 +86,13 @@ public class CacheAutoConfiguration {
 
     /** 注册 Redis 单 Key 写入围栏。 */
     @Bean
-    @ConditionalOnBean(RedisUtil.class)
+    @ConditionalOnBean(RedisFacade.class)
     @ConditionalOnMissingBean(RedisCacheFenceStore.class)
     @Conditional(DurableCacheConfiguredCondition.class)
     public RedisCacheFenceStore redisCacheFenceStore(
-            RedisUtil redisUtil, CacheProperties properties) {
+            RedisFacade redisFacade, CacheProperties properties) {
         return new RedisCacheFenceStore(
-                redisUtil, properties.getRedisPrefix(), properties.getConsistency().getFenceTtl());
+                redisFacade, properties.getRedisPrefix(), properties.getConsistency().getFenceTtl());
     }
 
     /** 注册 DURABLE Outbox 单批恢复处理器。 */
@@ -138,7 +138,7 @@ public class CacheAutoConfiguration {
     @ConditionalOnMissingBean(name = "cacheConsistencyInfrastructureValidator")
     public Object cacheConsistencyInfrastructureValidator(
             CacheProperties properties,
-            ObjectProvider<RedisUtil> redisProvider,
+            ObjectProvider<RedisFacade> redisProvider,
             ObjectProvider<CacheMutationCoordinator> coordinatorProvider,
             ObjectProvider<CacheInvalidationEventStore> eventStoreProvider) {
         boolean durableConfigured = properties.getConsistency().getMode() == CacheConsistencyMode.DURABLE
@@ -172,24 +172,24 @@ public class CacheAutoConfiguration {
      *
      * <p>{@link CacheManager} 是所有缓存实例的统一入口，负责按名称创建、复用和查询缓存。
      * 这里会把全局开关、Redis 前缀、序列化器以及失效消息发布器统一传入管理器。
-     * {@link RedisUtil} 是可选依赖：存在时启用 L2，不存在时只使用本地 Caffeine。</p>
+     * {@link RedisFacade} 是可选依赖：存在时启用 L2，不存在时只使用本地 Caffeine。</p>
      */
     @Bean
     @ConditionalOnMissingBean(CacheManager.class)
     public CacheManager cacheManager(CacheSerializer serializer,
                                      CacheProperties properties,
-                                     @Autowired(required = false) RedisUtil redisUtil,
+                                     @Autowired(required = false) RedisFacade redisFacade,
                                      @Autowired(required = false) CacheInvalidationPublisher invalidationPublisher) {
-        RedisUtil cacheRedisUtil = cacheRedisUtil(redisUtil);
+        RedisFacade cacheRedisFacade = cacheRedisFacade(redisFacade);
         CacheManager manager = new CacheManager(
-                cacheRedisUtil,
+                cacheRedisFacade,
                 serializer,
                 properties.isL1Enabled(),
                 properties.isL2Enabled(),
                 properties.getRedisPrefix(),
                 invalidationPublisher);
         log.info("CacheManager initialized, L2 Redis: {}",
-                cacheRedisUtil != null ? "enabled" : "disabled (Redis not available)");
+                cacheRedisFacade != null ? "enabled" : "disabled (Redis not available)");
         return manager;
     }
 
@@ -197,23 +197,23 @@ public class CacheAutoConfiguration {
      * 为缓存键空间创建字符串 Key 视图，同时兼容业务 Value 与框架版本元数据协议。
      *
      * <p>缓存区域清理依赖可预测的字符串前缀，版本计数器还需要读取 Redis 原生数字字节。
-     * 这里始终为 {@link CacheManager} 创建私有模板，不替换、不修改业务持有的 {@link RedisUtil}，
+     * 这里始终为 {@link CacheManager} 创建私有模板，不替换、不修改业务持有的 {@link RedisFacade}，
      * 因此业务 Redis Key/Value 协议和按类型注入都保持不变。</p>
      *
-     * @param applicationRedisUtil 业务项目提供或 Tool Starter 创建的 Redis 操作入口
+     * @param applicationRedisFacade 业务项目提供或 Tool Starter 创建的 Redis 操作入口
      * @return 满足缓存字符串 Key 契约的私有 Redis 操作入口；没有 Redis 时返回 {@code null}
      */
-    private RedisUtil cacheRedisUtil(RedisUtil applicationRedisUtil) {
-        if (applicationRedisUtil == null) {
+    private RedisFacade cacheRedisFacade(RedisFacade applicationRedisFacade) {
+        if (applicationRedisFacade == null) {
             return null;
         }
-        RedisTemplate<String, Object> applicationTemplate = applicationRedisUtil.getTemplate();
+        RedisTemplate<String, Object> applicationTemplate = applicationRedisFacade.getTemplate();
         if (applicationTemplate == null) {
-            return applicationRedisUtil;
+            return applicationRedisFacade;
         }
         RedisConnectionFactory connectionFactory = applicationTemplate.getConnectionFactory();
         if (connectionFactory == null) {
-            return applicationRedisUtil;
+            return applicationRedisFacade;
         }
 
         RedisTemplate<String, Object> cacheTemplate = new RedisTemplate<>();
@@ -225,7 +225,7 @@ public class CacheAutoConfiguration {
                 applicationTemplate.getValueSerializer()));
         cacheTemplate.setHashValueSerializer(applicationTemplate.getHashValueSerializer());
         cacheTemplate.afterPropertiesSet();
-        return new RedisUtil(cacheTemplate);
+        return new RedisFacade(cacheTemplate);
     }
 
     /**

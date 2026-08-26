@@ -1,7 +1,7 @@
 package io.github.leylaragg.letool.cache.core;
 
 import io.github.leylaragg.letool.redis.serializer.FastJson2JsonRedisSerializer;
-import io.github.leylaragg.letool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisFacade;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.redis.connection.RedisConnection;
@@ -37,7 +37,7 @@ class RedisCacheInvalidationPublisherTest {
         objectTemplate.afterPropertiesSet();
 
         RedisCacheInvalidationPublisher publisher = new RedisCacheInvalidationPublisher(
-                new RedisUtil(objectTemplate),
+                new RedisFacade(objectTemplate),
                 "letool:test:invalidation"
         );
         CacheInvalidationMessage message = CacheInvalidationMessage.keys(

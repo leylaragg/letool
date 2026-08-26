@@ -865,7 +865,7 @@ int totalPages = page.getTotalPages();
 ## 配置属性
 
 通用 `JsonCodec` 不依赖 YAML，通过应用 Bean 或 `Fastjson2JsonCodec.builder()` 配置。
-Redis 连接、对象序列化和 `RedisUtil` 配置已经迁至
+Redis 连接、对象序列化和 `RedisFacade` 配置已经迁至
 [`letool-starter-redis`](../letool-starter-redis/README.md)。
 
 传递依赖的异常模块配置参阅

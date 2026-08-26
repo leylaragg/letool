@@ -3,7 +3,7 @@ package io.github.leylaragg.letool.cache.core;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import io.github.leylaragg.letool.cache.exception.CacheException;
-import io.github.leylaragg.letool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisFacade;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.ZSetOperations;
@@ -39,7 +39,7 @@ public class MultiLevelZSetCache<K, V> {
     /** L1 本地 ZSet 快照，key -> member/score。 */
     private final Cache<K, Map<V, Double>> l1Cache;
     /** Redis 操作工具。为 null 时退化为 L1-only。 */
-    private final RedisUtil redisUtil;
+    private final RedisFacade redisFacade;
     /** 当前 ZSet 缓存区域的 Redis 键空间。 */
     private final RedisCacheKeyspace keyspace;
     /** Redis ZSet 的过期时间，每次写入后都会补充 TTL。 */
@@ -83,7 +83,7 @@ public class MultiLevelZSetCache<K, V> {
      * 创建 ZSet 二级缓存实例。
      *
      * @param config 缓存区域配置
-     * @param redisUtil Redis 操作入口
+     * @param redisFacade Redis 操作入口
      * @param keySerializer 业务 key 序列化函数
      * @param memberType Redis 成员预期类型
      * @param invalidationPublisher L1 失效广播发布器
@@ -91,18 +91,18 @@ public class MultiLevelZSetCache<K, V> {
      * @param degradationListener 首次降级回调
      */
     MultiLevelZSetCache(CacheConfig<K, V> config,
-                        RedisUtil redisUtil,
+                        RedisFacade redisFacade,
                         Function<K, String> keySerializer,
                         Class<V> memberType,
                         CacheInvalidationPublisher invalidationPublisher,
                         String instanceId,
                         Runnable degradationListener) {
         this.name = config.getName();
-        this.redisUtil = redisUtil;
+        this.redisFacade = redisFacade;
         this.keyspace = new RedisCacheKeyspace(config.getRedisKeyPrefix(), name);
         this.l2Ttl = config.getL2Ttl();
         this.l1Enabled = config.isL1Enabled();
-        this.l2Enabled = redisUtil != null && config.isL2Enabled();
+        this.l2Enabled = redisFacade != null && config.isL2Enabled();
         this.strongConsistency = config.isStrongConsistency();
         this.writeFailurePolicy = config.getWriteFailurePolicy();
         this.keySerializer = keySerializer == null ? String::valueOf : keySerializer;
@@ -302,7 +302,7 @@ public class MultiLevelZSetCache<K, V> {
                 throw CacheException.l2Unavailable(lastL2Failure);
             }
             try {
-                keyspace.scanAndUnlink(redisUtil.getTemplate());
+                keyspace.scanAndUnlink(redisFacade.getTemplate());
             } catch (Exception e) {
                 markL2Degraded(e);
                 throw CacheException.l2Unavailable(e);
@@ -357,7 +357,7 @@ public class MultiLevelZSetCache<K, V> {
             return true;
         }
         try {
-            redisUtil.hasKey(keyspace.healthCheckKey());
+            redisFacade.hasKey(keyspace.healthCheckKey());
             evictLocalAll();
             l2Degraded = false;
             lastL2Failure = null;
@@ -387,7 +387,7 @@ public class MultiLevelZSetCache<K, V> {
         }
         Boolean added;
         try {
-            added = redisUtil.boundZSetOps(redisKey(key)).add(member, score);
+            added = redisFacade.boundZSetOps(redisKey(key)).add(member, score);
         } catch (Exception e) {
             handleWriteFailure(e);
             return false;
@@ -409,7 +409,7 @@ public class MultiLevelZSetCache<K, V> {
         }
         Long removed;
         try {
-            removed = redisUtil.boundZSetOps(redisKey(key)).remove(member);
+            removed = redisFacade.boundZSetOps(redisKey(key)).remove(member);
         } catch (Exception e) {
             handleWriteFailure(e);
             return;
@@ -421,7 +421,7 @@ public class MultiLevelZSetCache<K, V> {
 
     private Double scoreFromRedis(K key, V member) {
         try {
-            return redisUtil.boundZSetOps(redisKey(key)).score(member);
+            return redisFacade.boundZSetOps(redisKey(key)).score(member);
         } catch (Exception e) {
             markL2Degraded(e);
             return null;
@@ -431,7 +431,7 @@ public class MultiLevelZSetCache<K, V> {
     private Map<V, Double> rangeFromRedis(K key, long start, long end) {
         try {
             Set<ZSetOperations.TypedTuple<Object>> tuples =
-                    redisUtil.boundZSetOps(redisKey(key))
+                    redisFacade.boundZSetOps(redisKey(key))
                             .rangeWithScores(start, end);
             if (tuples == null || tuples.isEmpty()) {
                 return Map.of();
@@ -460,7 +460,7 @@ public class MultiLevelZSetCache<K, V> {
             return;
         }
         try {
-            redisUtil.delete(redisKey(key));
+            redisFacade.delete(redisKey(key));
         } catch (Exception e) {
             handleWriteFailure(e);
         }
@@ -469,7 +469,7 @@ public class MultiLevelZSetCache<K, V> {
     private boolean setTtl(K key) {
         boolean ttlUpdated;
         try {
-            ttlUpdated = redisUtil.expire(redisKey(key), l2Ttl.toMillis(), TimeUnit.MILLISECONDS);
+            ttlUpdated = redisFacade.expire(redisKey(key), l2Ttl.toMillis(), TimeUnit.MILLISECONDS);
         } catch (Exception e) {
             handleWriteFailure(e);
             return false;

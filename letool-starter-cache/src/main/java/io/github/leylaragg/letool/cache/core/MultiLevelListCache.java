@@ -3,7 +3,7 @@ package io.github.leylaragg.letool.cache.core;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import io.github.leylaragg.letool.cache.exception.CacheException;
-import io.github.leylaragg.letool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisFacade;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,7 +34,7 @@ public class MultiLevelListCache<K, V> {
     /** L1 本地 List 缓存，key 对应一个线程安全的完整列表快照。 */
     private final Cache<K, List<V>> l1Cache;
     /** Redis 操作入口；为 {@code null} 时该缓存仅使用 L1。 */
-    private final RedisUtil redisUtil;
+    private final RedisFacade redisFacade;
     /** 当前 List 缓存区域的 Redis 键空间。 */
     private final RedisCacheKeyspace keyspace;
     /** Redis List 过期时间。 */
@@ -78,7 +78,7 @@ public class MultiLevelListCache<K, V> {
      * 创建 List 二级缓存实例。
      *
      * @param config 缓存区域配置
-     * @param redisUtil Redis 操作入口
+     * @param redisFacade Redis 操作入口
      * @param keySerializer 业务 key 序列化函数
      * @param elementType Redis 元素预期类型
      * @param invalidationPublisher L1 失效广播发布器
@@ -86,18 +86,18 @@ public class MultiLevelListCache<K, V> {
      * @param degradationListener 首次降级回调
      */
     MultiLevelListCache(CacheConfig<K, V> config,
-                        RedisUtil redisUtil,
+                        RedisFacade redisFacade,
                         Function<K, String> keySerializer,
                         Class<V> elementType,
                         CacheInvalidationPublisher invalidationPublisher,
                         String instanceId,
                         Runnable degradationListener) {
         this.name = config.getName();
-        this.redisUtil = redisUtil;
+        this.redisFacade = redisFacade;
         this.keyspace = new RedisCacheKeyspace(config.getRedisKeyPrefix(), name);
         this.l2Ttl = config.getL2Ttl();
         this.l1Enabled = config.isL1Enabled();
-        this.l2Enabled = redisUtil != null && config.isL2Enabled();
+        this.l2Enabled = redisFacade != null && config.isL2Enabled();
         this.strongConsistency = config.isStrongConsistency();
         this.writeFailurePolicy = config.getWriteFailurePolicy();
         this.keySerializer = keySerializer == null ? String::valueOf : keySerializer;
@@ -250,7 +250,7 @@ public class MultiLevelListCache<K, V> {
                 throw CacheException.l2Unavailable(lastL2Failure);
             }
             try {
-                keyspace.scanAndUnlink(redisUtil.getTemplate());
+                keyspace.scanAndUnlink(redisFacade.getTemplate());
             } catch (Exception e) {
                 markL2Degraded(e);
                 throw CacheException.l2Unavailable(e);
@@ -303,7 +303,7 @@ public class MultiLevelListCache<K, V> {
             return true;
         }
         try {
-            redisUtil.hasKey(keyspace.healthCheckKey());
+            redisFacade.hasKey(keyspace.healthCheckKey());
             evictLocalAll();
             l2Degraded = false;
             lastL2Failure = null;
@@ -399,9 +399,9 @@ public class MultiLevelListCache<K, V> {
         try {
             Long size;
             if (left) {
-                size = redisUtil.boundListOps(redisKey(key)).leftPush(value);
+                size = redisFacade.boundListOps(redisKey(key)).leftPush(value);
             } else {
-                size = redisUtil.boundListOps(redisKey(key)).rightPush(value);
+                size = redisFacade.boundListOps(redisKey(key)).rightPush(value);
             }
             if (size == null) {
                 throw CacheWriteFailureSupport.unconfirmed(left ? "LPUSH" : "RPUSH");
@@ -417,8 +417,8 @@ public class MultiLevelListCache<K, V> {
             return null;
         }
         try {
-            Object raw = left ? redisUtil.boundListOps(redisKey(key)).leftPop()
-                    : redisUtil.boundListOps(redisKey(key)).rightPop();
+            Object raw = left ? redisFacade.boundListOps(redisKey(key)).leftPop()
+                    : redisFacade.boundListOps(redisKey(key)).rightPop();
             return convert(raw);
         } catch (Exception e) {
             markL2Degraded(e);
@@ -429,7 +429,7 @@ public class MultiLevelListCache<K, V> {
 
     private List<V> rangeFromRedis(K key, long start, long end) {
         try {
-            List<Object> raw = redisUtil.boundListOps(redisKey(key)).range(start, end);
+            List<Object> raw = redisFacade.boundListOps(redisKey(key)).range(start, end);
             if (raw == null || raw.isEmpty()) {
                 return Collections.emptyList();
             }
@@ -456,7 +456,7 @@ public class MultiLevelListCache<K, V> {
             return false;
         }
         try {
-            redisUtil.delete(redisKey(key));
+            redisFacade.delete(redisKey(key));
             return true;
         } catch (Exception e) {
             return handleWriteFailure(e);
@@ -465,7 +465,7 @@ public class MultiLevelListCache<K, V> {
 
     private boolean setTtl(K key) {
         try {
-            if (!redisUtil.expire(redisKey(key), l2Ttl.toMillis(), TimeUnit.MILLISECONDS)) {
+            if (!redisFacade.expire(redisKey(key), l2Ttl.toMillis(), TimeUnit.MILLISECONDS)) {
                 throw CacheWriteFailureSupport.unconfirmed("PEXPIRE");
             }
             return true;

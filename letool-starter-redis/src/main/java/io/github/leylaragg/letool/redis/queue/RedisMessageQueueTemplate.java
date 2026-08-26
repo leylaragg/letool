@@ -16,9 +16,9 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Redis 消息队列工具类。
+ * Redis List 和 Stream 消息操作模板。
  *
- * <p>本工具类基于应用配置的 {@link RedisTemplate}，不内置 JSON 序列化，也不把消息强制转成字符串。
+ * <p>本模板基于应用配置的 {@link RedisTemplate}，不内置 JSON 序列化，也不把消息强制转成字符串。
  * List 队列的元素、Stream 队列的消息体都会交给 RedisTemplate 当前的 serializer 处理。</p>
  *
  * <p>第一版覆盖两类常用场景：</p>
@@ -27,22 +27,22 @@ import java.util.concurrent.TimeUnit;
  *     <li>Redis Stream：支持消费者组和 ACK 的可靠队列。</li>
  * </ul>
  */
-public class RedisMessageQueueUtil {
+public class RedisMessageQueueTemplate {
 
     /** 应用侧配置好的对象 RedisTemplate。 */
     private final RedisTemplate<String, Object> redisTemplate;
 
     /**
-     * 创建 Redis 消息队列工具类。
+     * 创建 Redis 消息操作模板。
      *
      * @param redisTemplate 应用侧对象 RedisTemplate
      */
-    public RedisMessageQueueUtil(RedisTemplate<String, Object> redisTemplate) {
+    public RedisMessageQueueTemplate(RedisTemplate<String, Object> redisTemplate) {
         this.redisTemplate = redisTemplate;
     }
 
     /**
-     * 获取底层 RedisTemplate，用于调用工具类未封装的原生 Redis 消息能力。
+     * 获取底层 RedisTemplate，用于调用模板未封装的原生 Redis 消息能力。
      *
      * @return RedisTemplate 实例
      */

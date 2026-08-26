@@ -6,7 +6,7 @@ import io.github.leylaragg.letool.cache.exception.CacheErrorCode;
 import io.github.leylaragg.letool.cache.exception.CacheException;
 import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
 import io.github.leylaragg.letool.cache.serializer.JacksonCacheSerializer;
-import io.github.leylaragg.letool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisFacade;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.stubbing.OngoingStubbing;
@@ -55,17 +55,17 @@ class MultiLevelCacheConsistencyTest {
     @Test
     @DisplayName("严格写策略下 Redis 写入失败必须保留旧 L1 并向调用方暴露")
     void strictPutShouldExposeRedisFailureWithoutReplacingLocalValue() {
-        RedisUtil redisUtil = mock(RedisUtil.class);
+        RedisFacade redisFacade = mock(RedisFacade.class);
         @SuppressWarnings("unchecked")
         BoundValueOperations<String, Object> data = mock(BoundValueOperations.class);
-        when(redisUtil.boundValueOps("test:critical:rule-1")).thenReturn(data);
+        when(redisFacade.boundValueOps("test:critical:rule-1")).thenReturn(data);
         MultiLevelCache<String, String> cache = new MultiLevelCache<>(
                 CacheConfig.<String, String>builder("critical")
                         .redisKeyPrefix("test:")
                         .strongConsistency(false)
                         .writeFailurePolicy(CacheWriteFailurePolicy.FAIL_CLOSED)
                         .build(),
-                redisUtil,
+                redisFacade,
                 new JacksonCacheSerializer()
         );
         cache.put("rule-1", "old-value");
@@ -83,18 +83,18 @@ class MultiLevelCacheConsistencyTest {
     @Test
     @DisplayName("严格写策略下 Redis 删除失败必须保留 L1 并向调用方暴露")
     void strictEvictShouldExposeRedisFailureWithoutClearingLocalValue() {
-        RedisUtil redisUtil = mock(RedisUtil.class);
+        RedisFacade redisFacade = mock(RedisFacade.class);
         CacheInvalidationPublisher publisher = mock(CacheInvalidationPublisher.class);
         @SuppressWarnings("unchecked")
         BoundValueOperations<String, Object> data = mock(BoundValueOperations.class);
-        when(redisUtil.boundValueOps("test:critical:rule-1")).thenReturn(data);
+        when(redisFacade.boundValueOps("test:critical:rule-1")).thenReturn(data);
         MultiLevelCache<String, String> cache = new MultiLevelCache<>(
                 CacheConfig.<String, String>builder("critical")
                         .redisKeyPrefix("test:")
                         .strongConsistency(false)
                         .writeFailurePolicy(CacheWriteFailurePolicy.FAIL_CLOSED)
                         .build(),
-                redisUtil,
+                redisFacade,
                 new JacksonCacheSerializer(),
                 publisher,
                 "node-a",
@@ -103,7 +103,7 @@ class MultiLevelCacheConsistencyTest {
         cache.put("rule-1", "old-value");
         clearInvocations(publisher);
         RuntimeException redisFailure = new RuntimeException("delete failed");
-        doThrow(redisFailure).when(redisUtil).delete("test:critical:rule-1");
+        doThrow(redisFailure).when(redisFacade).delete("test:critical:rule-1");
 
         CacheException thrown = assertThrows(CacheException.class,
                 () -> cache.evict("rule-1"));
@@ -117,21 +117,21 @@ class MultiLevelCacheConsistencyTest {
     @Test
     @DisplayName("兼容写策略下 Redis 删除失败仍保持原有本地降级行为")
     void bestEffortEvictShouldKeepLegacyLocalDegradationBehavior() {
-        RedisUtil redisUtil = mock(RedisUtil.class);
+        RedisFacade redisFacade = mock(RedisFacade.class);
         @SuppressWarnings("unchecked")
         BoundValueOperations<String, Object> data = mock(BoundValueOperations.class);
-        when(redisUtil.boundValueOps("test:ordinary:rule-1")).thenReturn(data);
+        when(redisFacade.boundValueOps("test:ordinary:rule-1")).thenReturn(data);
         MultiLevelCache<String, String> cache = new MultiLevelCache<>(
                 CacheConfig.<String, String>builder("ordinary")
                         .redisKeyPrefix("test:")
                         .strongConsistency(false)
                         .build(),
-                redisUtil,
+                redisFacade,
                 new JacksonCacheSerializer()
         );
         cache.put("rule-1", "old-value");
         doThrow(new RuntimeException("delete failed"))
-                .when(redisUtil).delete("test:ordinary:rule-1");
+                .when(redisFacade).delete("test:ordinary:rule-1");
 
         cache.evict("rule-1");
 
@@ -142,16 +142,16 @@ class MultiLevelCacheConsistencyTest {
     @Test
     @DisplayName("evictAll 的 Redis 区域清理失败时不得广播 ALL")
     void evictAllShouldFailClosedWithoutPublishingWhenRegionCleanupFails() {
-        RedisUtil redisUtil = mock(RedisUtil.class);
+        RedisFacade redisFacade = mock(RedisFacade.class);
         CacheInvalidationPublisher publisher = mock(CacheInvalidationPublisher.class);
         RuntimeException cleanupFailure = new RuntimeException("scan failed");
-        when(redisUtil.getTemplate()).thenThrow(cleanupFailure);
+        when(redisFacade.getTemplate()).thenThrow(cleanupFailure);
         MultiLevelCache<String, String> cache = new MultiLevelCache<>(
                 CacheConfig.<String, String>builder("critical")
                         .redisKeyPrefix("test:")
                         .strongConsistency(false)
                         .build(),
-                redisUtil,
+                redisFacade,
                 new JacksonCacheSerializer(),
                 publisher,
                 "node-a",
@@ -169,21 +169,21 @@ class MultiLevelCacheConsistencyTest {
     @Test
     @DisplayName("evictAll 的区域版本推进失败时不得广播 ALL")
     void evictAllShouldFailClosedWithoutPublishingWhenRegionVersionBumpFails() {
-        RedisUtil redisUtil = mock(RedisUtil.class);
+        RedisFacade redisFacade = mock(RedisFacade.class);
         CacheInvalidationPublisher publisher = mock(CacheInvalidationPublisher.class);
         @SuppressWarnings("unchecked")
         RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
         RuntimeException bumpFailure = new RuntimeException("region version bump failed");
-        when(redisUtil.getTemplate()).thenReturn(redisTemplate);
+        when(redisFacade.getTemplate()).thenReturn(redisTemplate);
         doReturn(StringRedisSerializer.UTF_8).when(redisTemplate).getKeySerializer();
         when(redisTemplate.execute(any(RedisCallback.class))).thenReturn(0L);
-        when(redisUtil.increment(any(), eq(1L))).thenThrow(bumpFailure);
+        when(redisFacade.increment(any(), eq(1L))).thenThrow(bumpFailure);
         MultiLevelCache<String, String> cache = new MultiLevelCache<>(
                 CacheConfig.<String, String>builder("critical")
                         .redisKeyPrefix("test:")
                         .strongConsistency(true)
                         .build(),
-                redisUtil,
+                redisFacade,
                 new JacksonCacheSerializer(),
                 publisher,
                 "node-a",
@@ -201,36 +201,36 @@ class MultiLevelCacheConsistencyTest {
     @Test
     @DisplayName("evictAll 在 L2 已降级时不得重试清理或广播 ALL")
     void evictAllShouldFailClosedWithoutRedisRetryWhenL2IsAlreadyDegraded() {
-        RedisUtil redisUtil = mock(RedisUtil.class);
+        RedisFacade redisFacade = mock(RedisFacade.class);
         CacheInvalidationPublisher publisher = mock(CacheInvalidationPublisher.class);
         RuntimeException failure = new RuntimeException("redis unavailable");
-        when(redisUtil.getTemplate()).thenThrow(failure);
+        when(redisFacade.getTemplate()).thenThrow(failure);
         MultiLevelCache<String, String> cache = new MultiLevelCache<>(
                 CacheConfig.<String, String>builder("critical")
                         .redisKeyPrefix("test:")
                         .strongConsistency(false)
                         .build(),
-                redisUtil,
+                redisFacade,
                 new JacksonCacheSerializer(),
                 publisher,
                 "node-a",
                 () -> { }
         );
         assertThrows(CacheException.class, cache::evictAll);
-        org.mockito.Mockito.clearInvocations(redisUtil, publisher);
+        org.mockito.Mockito.clearInvocations(redisFacade, publisher);
 
         CacheException exception = assertThrows(CacheException.class, cache::evictAll);
 
         assertEquals("CACHE_006", exception.getCode());
         assertSame(failure, exception.getCause());
-        verify(redisUtil, never()).getTemplate();
+        verify(redisFacade, never()).getTemplate();
         verifyNoInteractions(publisher);
     }
 
     @Test
     @DisplayName("区域清理推进纪元后不得把旧 Redis 命中重新标记为新纪元")
     void redisHitShouldKeepTheRegionEpochValidatedByTheRead() {
-        RedisUtil redisUtil = mock(RedisUtil.class);
+        RedisFacade redisFacade = mock(RedisFacade.class);
         @SuppressWarnings("unchecked")
         BoundValueOperations<String, Object> regionOperations = mock(BoundValueOperations.class);
         @SuppressWarnings("unchecked")
@@ -242,9 +242,9 @@ class MultiLevelCacheConsistencyTest {
                 regionReads.incrementAndGet() <= 2 ? 0L : 1L);
         when(versionOperations.get()).thenReturn(7L);
         when(dataOperations.get()).thenReturn("old-value").thenReturn((Object) null);
-        when(redisUtil.getExpire(anyString(), eq(java.util.concurrent.TimeUnit.MILLISECONDS)))
+        when(redisFacade.getExpire(anyString(), eq(java.util.concurrent.TimeUnit.MILLISECONDS)))
                 .thenReturn(60_000L);
-        when(redisUtil.boundValueOps(anyString())).thenAnswer(invocation -> {
+        when(redisFacade.boundValueOps(anyString())).thenAnswer(invocation -> {
             String redisKey = invocation.getArgument(0);
             if (redisKey.endsWith("region-version")) {
                 return regionOperations;
@@ -258,7 +258,7 @@ class MultiLevelCacheConsistencyTest {
                 CacheConfig.<String, String>builder("epoch-read")
                         .redisKeyPrefix("test:")
                         .readValidation(CacheReadValidation.VERSIONED),
-                redisUtil,
+                redisFacade,
                 new JacksonCacheSerializer());
 
         assertEquals("old-value", cache.getIfPresent("rule:1"));
@@ -269,14 +269,14 @@ class MultiLevelCacheConsistencyTest {
     @Test
     @DisplayName("区域清理跨越单 Key 写入时不得把已删除结果放入新纪元 L1")
     void singleWriteShouldNotPopulateL1AcrossRegionEpochChange() {
-        RedisUtil redisUtil = mock(RedisUtil.class);
+        RedisFacade redisFacade = mock(RedisFacade.class);
         AtomicLong regionEpoch = new AtomicLong();
         @SuppressWarnings("unchecked")
         BoundValueOperations<String, Object> regionOperations = mock(BoundValueOperations.class);
         when(regionOperations.get()).thenAnswer(invocation -> regionEpoch.get());
-        when(redisUtil.boundValueOps(anyString())).thenReturn(regionOperations);
-        when(redisUtil.serializeValue(any())).thenReturn("old-value".getBytes(StandardCharsets.UTF_8));
-        RedisTemplate<String, Object> scriptTemplate = scriptTemplate(redisUtil);
+        when(redisFacade.boundValueOps(anyString())).thenReturn(regionOperations);
+        when(redisFacade.serializeValue(any())).thenReturn("old-value".getBytes(StandardCharsets.UTF_8));
+        RedisTemplate<String, Object> scriptTemplate = scriptTemplate(redisFacade);
         whenScript(scriptTemplate)
                 .thenAnswer(invocation -> {
                     regionEpoch.set(1L);
@@ -286,7 +286,7 @@ class MultiLevelCacheConsistencyTest {
                 CacheConfig.<String, String>builder("epoch-write")
                         .redisKeyPrefix("test:")
                         .readValidation(CacheReadValidation.VERSIONED),
-                redisUtil,
+                redisFacade,
                 new JacksonCacheSerializer());
 
         cache.put("rule:1", "old-value");
@@ -297,16 +297,16 @@ class MultiLevelCacheConsistencyTest {
     @Test
     @DisplayName("区域清理跨越批量写入时不得把已删除结果放入新纪元 L1")
     void batchWriteShouldNotPopulateL1AcrossRegionEpochChange() {
-        RedisUtil redisUtil = mock(RedisUtil.class);
+        RedisFacade redisFacade = mock(RedisFacade.class);
         AtomicLong regionEpoch = new AtomicLong();
         @SuppressWarnings("unchecked")
         BoundValueOperations<String, Object> regionOperations = mock(BoundValueOperations.class);
         when(regionOperations.get()).thenAnswer(invocation -> regionEpoch.get());
-        when(redisUtil.boundValueOps(anyString())).thenReturn(regionOperations);
-        when(redisUtil.serializeValue(any())).thenReturn("old-value".getBytes(StandardCharsets.UTF_8));
+        when(redisFacade.boundValueOps(anyString())).thenReturn(regionOperations);
+        when(redisFacade.serializeValue(any())).thenReturn("old-value".getBytes(StandardCharsets.UTF_8));
         @SuppressWarnings("unchecked")
         RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
-        when(redisUtil.getTemplate()).thenReturn(redisTemplate);
+        when(redisFacade.getTemplate()).thenReturn(redisTemplate);
         doReturn(StringRedisSerializer.UTF_8).when(redisTemplate).getKeySerializer();
         when(redisTemplate.executePipelined(any(RedisCallback.class))).thenAnswer(invocation -> {
             regionEpoch.set(1L);
@@ -316,7 +316,7 @@ class MultiLevelCacheConsistencyTest {
                 CacheConfig.<String, String>builder("epoch-batch-write")
                         .redisKeyPrefix("test:")
                         .readValidation(CacheReadValidation.VERSIONED),
-                redisUtil,
+                redisFacade,
                 new JacksonCacheSerializer());
 
         cache.putAll(Map.of("rule:1", "old-value"));
@@ -327,19 +327,19 @@ class MultiLevelCacheConsistencyTest {
     @Test
     @DisplayName("VERSIONED 模式在 Redis 降级后不得信任或重新建立 L1")
     void versionedModeShouldBypassLocalCacheWhenRedisIsDegraded() {
-        RedisUtil redisUtil = mock(RedisUtil.class);
+        RedisFacade redisFacade = mock(RedisFacade.class);
         @SuppressWarnings("unchecked")
         BoundValueOperations<String, Object> versionOperations = mock(BoundValueOperations.class);
-        when(redisUtil.serializeValue(any())).thenReturn("old".getBytes(StandardCharsets.UTF_8));
-        whenScript(redisUtil).thenReturn(1L);
-        when(redisUtil.boundValueOps("test:%META%:critical:version")).thenReturn(versionOperations);
+        when(redisFacade.serializeValue(any())).thenReturn("old".getBytes(StandardCharsets.UTF_8));
+        whenScript(redisFacade).thenReturn(1L);
+        when(redisFacade.boundValueOps("test:%META%:critical:version")).thenReturn(versionOperations);
         when(versionOperations.get()).thenThrow(new IllegalStateException("redis unavailable"));
 
         MultiLevelCache<String, String> cache = new MultiLevelCache<>(
                 CacheConfig.<String, String>builder("critical")
                         .redisKeyPrefix("test:")
                         .readValidation(CacheReadValidation.VERSIONED),
-                redisUtil,
+                redisFacade,
                 new JacksonCacheSerializer());
         cache.put("u1", "old");
 
@@ -352,14 +352,14 @@ class MultiLevelCacheConsistencyTest {
     @Test
     @DisplayName("DURABLE 存在写围栏时必须绕过两级缓存且不回填")
     void durableModeShouldBypassCachesWhileFenceExists() {
-        RedisUtil redisUtil = mock(RedisUtil.class);
-        when(redisUtil.hasKey(any())).thenReturn(true);
+        RedisFacade redisFacade = mock(RedisFacade.class);
+        when(redisFacade.hasKey(any())).thenReturn(true);
         MultiLevelCache<String, String> cache = new MultiLevelCache<>(
                 CacheConfig.<String, String>builder("critical")
                         .redisKeyPrefix("test:")
                         .consistencyMode(CacheConsistencyMode.DURABLE)
                         .readValidation(CacheReadValidation.VERSIONED),
-                redisUtil,
+                redisFacade,
                 new JacksonCacheSerializer());
 
         AtomicInteger loads = new AtomicInteger();
@@ -371,14 +371,14 @@ class MultiLevelCacheConsistencyTest {
     @Test
     @DisplayName("DURABLE 批量读取在围栏存在时也必须失败关闭")
     void durableBatchReadShouldBypassFencedKey() {
-        RedisUtil redisUtil = mock(RedisUtil.class);
-        when(redisUtil.hasKey(any())).thenReturn(true);
+        RedisFacade redisFacade = mock(RedisFacade.class);
+        when(redisFacade.hasKey(any())).thenReturn(true);
         MultiLevelCache<String, String> cache = new MultiLevelCache<>(
                 CacheConfig.<String, String>builder("critical")
                         .redisKeyPrefix("test:")
                         .consistencyMode(CacheConsistencyMode.DURABLE)
                         .readValidation(CacheReadValidation.VERSIONED),
-                redisUtil,
+                redisFacade,
                 new JacksonCacheSerializer());
 
         assertEquals(0, cache.getAllPresent(Set.of("u1")).size());
@@ -387,15 +387,15 @@ class MultiLevelCacheConsistencyTest {
     @Test
     @DisplayName("单 Key 写入和删除 Lua 都刷新版本元数据 TTL")
     void writesAndDeletesShouldRefreshVersionMetadataTtl() {
-        RedisUtil redisUtil = mock(RedisUtil.class);
-        when(redisUtil.serializeValue(any()))
+        RedisFacade redisFacade = mock(RedisFacade.class);
+        when(redisFacade.serializeValue(any()))
                 .thenReturn("value".getBytes(StandardCharsets.UTF_8));
-        RedisTemplate<String, Object> scriptTemplate = scriptTemplate(redisUtil);
+        RedisTemplate<String, Object> scriptTemplate = scriptTemplate(redisFacade);
         whenScript(scriptTemplate).thenReturn(1L, 2L);
         @SuppressWarnings("unchecked")
         BoundValueOperations<String, Object> regionVersion =
                 mock(BoundValueOperations.class);
-        when(redisUtil.boundValueOps("test:%META%:metadata:region-version"))
+        when(redisFacade.boundValueOps("test:%META%:metadata:region-version"))
                 .thenReturn(regionVersion);
         when(regionVersion.get()).thenReturn(0L);
         MultiLevelCache<String, String> cache = new MultiLevelCache<>(
@@ -403,7 +403,7 @@ class MultiLevelCacheConsistencyTest {
                         .redisKeyPrefix("test:")
                         .versionMetadataRetention(Duration.ofDays(7))
                         .build(),
-                redisUtil,
+                redisFacade,
                 new JacksonCacheSerializer()
         );
 
@@ -426,13 +426,13 @@ class MultiLevelCacheConsistencyTest {
     @Test
     @DisplayName("泛型值从 Redis 原始 Map 集合恢复为声明的 DTO 集合")
     void genericValueTypeShouldRestoreCollectionElements() throws Exception {
-        RedisUtil redisUtil = mock(RedisUtil.class);
+        RedisFacade redisFacade = mock(RedisFacade.class);
         @SuppressWarnings("unchecked")
         BoundValueOperations<String, Object> data = mock(BoundValueOperations.class);
-        when(redisUtil.boundValueOps("test:generic:rules"))
+        when(redisFacade.boundValueOps("test:generic:rules"))
                 .thenReturn(data);
         when(data.get()).thenReturn(List.of(Map.of("code", "R1")));
-        when(redisUtil.getExpire("test:generic:rules", java.util.concurrent.TimeUnit.MILLISECONDS))
+        when(redisFacade.getExpire("test:generic:rules", java.util.concurrent.TimeUnit.MILLISECONDS))
                 .thenReturn(Duration.ofMinutes(5).toMillis());
         Type valueType = GenericTypes.class.getDeclaredField("rules").getGenericType();
         MultiLevelCache<String, List<RuleDto>> cache = new MultiLevelCache<>(
@@ -441,7 +441,7 @@ class MultiLevelCacheConsistencyTest {
                         .strongConsistency(false)
                         .valueType(valueType)
                         .build(),
-                redisUtil,
+                redisFacade,
                 new JacksonCacheSerializer()
         );
 
@@ -454,8 +454,8 @@ class MultiLevelCacheConsistencyTest {
     @DisplayName("旧序列化器不支持泛型单 Key 时暴露配置错误且不降级 L2")
     void genericTypeConfigurationFailureShouldEscapeSingleReadWithoutDegradation()
             throws NoSuchFieldException {
-        RedisUtil redisUtil = redisReturningRawRuleList();
-        MultiLevelCache<String, List<RuleDto>> cache = legacyGenericCache(redisUtil);
+        RedisFacade redisFacade = redisReturningRawRuleList();
+        MultiLevelCache<String, List<RuleDto>> cache = legacyGenericCache(redisFacade);
 
         CacheException exception = assertThrows(
                 CacheException.class,
@@ -470,12 +470,12 @@ class MultiLevelCacheConsistencyTest {
     @DisplayName("旧序列化器不支持泛型批量读取时暴露配置错误且不降级 L2")
     void genericTypeConfigurationFailureShouldEscapeBatchReadWithoutDegradation()
             throws NoSuchFieldException {
-        RedisUtil redisUtil = mock(RedisUtil.class);
-        when(redisUtil.pipeline(any())).thenReturn(List.of(
+        RedisFacade redisFacade = mock(RedisFacade.class);
+        when(redisFacade.pipeline(any())).thenReturn(List.of(
                 List.of(Map.of("code", "R1")),
                 Duration.ofMinutes(5).toMillis()
         ));
-        MultiLevelCache<String, List<RuleDto>> cache = legacyGenericCache(redisUtil);
+        MultiLevelCache<String, List<RuleDto>> cache = legacyGenericCache(redisFacade);
 
         CacheException exception = assertThrows(
                 CacheException.class,
@@ -490,10 +490,10 @@ class MultiLevelCacheConsistencyTest {
     @DisplayName("泛型配置错误直接抛出时保留原始异常实例")
     void directGenericTypeConfigurationFailureShouldPreserveOriginalInstance()
             throws NoSuchFieldException {
-        RedisUtil redisUtil = redisReturningRawRuleList();
+        RedisFacade redisFacade = redisReturningRawRuleList();
         CacheException expected = CacheException.genericTypeUnsupported(genericRuleListType());
         MultiLevelCache<String, List<RuleDto>> cache = genericCache(
-                redisUtil,
+                redisFacade,
                 genericTypeFailingSerializer(expected)
         );
 
@@ -510,10 +510,10 @@ class MultiLevelCacheConsistencyTest {
     @DisplayName("泛型配置错误被一层包装时保留原因链中的原始实例")
     void wrappedGenericTypeConfigurationFailureShouldPreserveOriginalCause()
             throws NoSuchFieldException {
-        RedisUtil redisUtil = redisReturningRawRuleList();
+        RedisFacade redisFacade = redisReturningRawRuleList();
         CacheException expected = CacheException.genericTypeUnsupported(genericRuleListType());
         MultiLevelCache<String, List<RuleDto>> cache = genericCache(
-                redisUtil,
+                redisFacade,
                 genericTypeFailingSerializer(new RuntimeException(expected))
         );
 
@@ -529,10 +529,10 @@ class MultiLevelCacheConsistencyTest {
     @Test
     @DisplayName("其他序列化异常仍按未命中处理")
     void nonGenericSerializerFailureShouldRemainCacheMiss() throws NoSuchFieldException {
-        RedisUtil redisUtil = redisReturningRawRuleList();
+        RedisFacade redisFacade = redisReturningRawRuleList();
         CacheException other = CacheException.loaderFailed(new IllegalStateException("loader"));
         MultiLevelCache<String, List<RuleDto>> cache = genericCache(
-                redisUtil,
+                redisFacade,
                 genericTypeFailingSerializer(other)
         );
 
@@ -543,13 +543,13 @@ class MultiLevelCacheConsistencyTest {
     @Test
     @DisplayName("其他 L2 读取异常仍触发降级且不向外传播")
     void nonGenericL2FailureShouldRemainDegradedMiss() throws NoSuchFieldException {
-        RedisUtil redisUtil = mock(RedisUtil.class);
+        RedisFacade redisFacade = mock(RedisFacade.class);
         @SuppressWarnings("unchecked")
         BoundValueOperations<String, Object> data = mock(BoundValueOperations.class);
-        when(redisUtil.boundValueOps("test:legacy-generic:rules"))
+        when(redisFacade.boundValueOps("test:legacy-generic:rules"))
                 .thenReturn(data);
         when(data.get()).thenThrow(CacheException.loaderFailed(new IllegalStateException("redis")));
-        MultiLevelCache<String, List<RuleDto>> cache = legacyGenericCache(redisUtil);
+        MultiLevelCache<String, List<RuleDto>> cache = legacyGenericCache(redisFacade);
 
         assertNull(cache.getIfPresent("rules"));
         assertTrue(cache.isL2Degraded());
@@ -558,25 +558,25 @@ class MultiLevelCacheConsistencyTest {
     /**
      * 创建声明泛型值、但序列化 SPI 仅支持旧 Class 方法的缓存。
      *
-     * @param redisUtil Redis 测试替身
+     * @param redisFacade Redis 测试替身
      * @return 用于验证 SPI 能力不匹配边界的缓存
      * @throws NoSuchFieldException 测试泛型类型字段不存在时抛出
      */
     private static MultiLevelCache<String, List<RuleDto>> legacyGenericCache(
-            RedisUtil redisUtil) throws NoSuchFieldException {
-        return genericCache(redisUtil, classOnlySerializer());
+            RedisFacade redisFacade) throws NoSuchFieldException {
+        return genericCache(redisFacade, classOnlySerializer());
     }
 
     /**
      * 创建声明泛型值并使用指定序列化器的缓存。
      *
-     * @param redisUtil Redis 测试替身
+     * @param redisFacade Redis 测试替身
      * @param serializer 待验证的序列化器
      * @return 泛型值缓存
      * @throws NoSuchFieldException 测试泛型类型字段不存在时抛出
      */
     private static MultiLevelCache<String, List<RuleDto>> genericCache(
-            RedisUtil redisUtil,
+            RedisFacade redisFacade,
             CacheSerializer serializer) throws NoSuchFieldException {
         return new MultiLevelCache<>(
                 CacheConfig.<String, List<RuleDto>>builder("legacy-generic")
@@ -584,7 +584,7 @@ class MultiLevelCacheConsistencyTest {
                         .strongConsistency(false)
                         .valueType(genericRuleListType())
                         .build(),
-                redisUtil,
+                redisFacade,
                 serializer
         );
     }
@@ -601,14 +601,14 @@ class MultiLevelCacheConsistencyTest {
 
     /** 创建缓存脚本使用的 RedisTemplate mock。 */
     @SuppressWarnings("unchecked")
-    private static RedisTemplate<String, Object> scriptTemplate(RedisUtil redisUtil) {
+    private static RedisTemplate<String, Object> scriptTemplate(RedisFacade redisFacade) {
         RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
-        when(redisUtil.getTemplate()).thenReturn(redisTemplate);
+        when(redisFacade.getTemplate()).thenReturn(redisTemplate);
         return redisTemplate;
     }
 
-    private static OngoingStubbing<Object> whenScript(RedisUtil redisUtil) {
-        return whenScript(scriptTemplate(redisUtil));
+    private static OngoingStubbing<Object> whenScript(RedisFacade redisFacade) {
+        return whenScript(scriptTemplate(redisFacade));
     }
 
     /** 对统一 Lua 执行入口配置返回值或异常。 */
@@ -624,14 +624,14 @@ class MultiLevelCacheConsistencyTest {
      *
      * @return 已配置原始缓存值的 Redis 测试替身
      */
-    private static RedisUtil redisReturningRawRuleList() {
-        RedisUtil redisUtil = mock(RedisUtil.class);
+    private static RedisFacade redisReturningRawRuleList() {
+        RedisFacade redisFacade = mock(RedisFacade.class);
         @SuppressWarnings("unchecked")
         BoundValueOperations<String, Object> data = mock(BoundValueOperations.class);
-        when(redisUtil.boundValueOps("test:legacy-generic:rules"))
+        when(redisFacade.boundValueOps("test:legacy-generic:rules"))
                 .thenReturn(data);
         when(data.get()).thenReturn(List.of(Map.of("code", "R1")));
-        return redisUtil;
+        return redisFacade;
     }
 
     /**

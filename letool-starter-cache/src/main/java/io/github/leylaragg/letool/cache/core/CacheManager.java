@@ -2,7 +2,7 @@ package io.github.leylaragg.letool.cache.core;
 
 import io.github.leylaragg.letool.cache.exception.CacheException;
 import io.github.leylaragg.letool.cache.serializer.CacheSerializer;
-import io.github.leylaragg.letool.redis.RedisUtil;
+import io.github.leylaragg.letool.redis.RedisFacade;
 
 import java.util.Collection;
 import java.util.Map;
@@ -42,12 +42,12 @@ public class CacheManager {
     /** 缓存名称 -> 数据结构类型；同时作为注册和移除操作的互斥锁。 */
     private final Map<String, CacheKind> cacheKinds = new ConcurrentHashMap<>();
     /** Redis 操作入口。为 null 时所有缓存都会退化为本地缓存。 */
-    private final RedisUtil redisUtil;
+    private final RedisFacade redisFacade;
     /** KV 缓存使用的序列化器。 */
     private final CacheSerializer serializer;
     /** 全局 L1 开关；最终会和单缓存配置做 AND 合并。 */
     private final boolean l1Enabled;
-    /** 全局 L2 开关；没有 RedisUtil 时强制为 false。 */
+    /** 全局 L2 开关；没有 RedisFacade 时强制为 false。 */
     private final boolean l2Enabled;
     /** 全局 Redis key 前缀。 */
     private final String globalKeyPrefix;
@@ -67,35 +67,35 @@ public class CacheManager {
     private final Set<String> degradedZSetCaches = ConcurrentHashMap.newKeySet();
 
     /**
-     * 兼容旧版本的构造器。只要传入 RedisUtil，就默认启用 L2；否则为 L1-only。
+     * 兼容旧版本的构造器。只要传入 RedisFacade，就默认启用 L2；否则为 L1-only。
      *
-     * @param redisUtil Redis 操作入口；为 {@code null} 时仅启用 L1
+     * @param redisFacade Redis 操作入口；为 {@code null} 时仅启用 L1
      * @param serializer KV 缓存值序列化器
      */
-    public CacheManager(RedisUtil redisUtil, CacheSerializer serializer) {
-        this(redisUtil, serializer, true, redisUtil != null, "letool:cache:", CacheInvalidationPublisher.noop());
+    public CacheManager(RedisFacade redisFacade, CacheSerializer serializer) {
+        this(redisFacade, serializer, true, redisFacade != null, "letool:cache:", CacheInvalidationPublisher.noop());
     }
 
     /**
      * 完整构造器，由自动配置使用。
      *
-     * @param redisUtil Redis 操作入口，为 null 时不启用 L2
+     * @param redisFacade Redis 操作入口，为 null 时不启用 L2
      * @param serializer KV 缓存值序列化器
      * @param l1Enabled 全局 L1 开关
-     * @param l2Enabled 全局 L2 开关，最终还会受 redisUtil 是否存在影响
+     * @param l2Enabled 全局 L2 开关，最终还会受 redisFacade 是否存在影响
      * @param globalKeyPrefix 全局 Redis key 前缀
      * @param invalidationPublisher 跨 JVM L1 失效广播发布器
      */
-    public CacheManager(RedisUtil redisUtil,
+    public CacheManager(RedisFacade redisFacade,
                         CacheSerializer serializer,
                         boolean l1Enabled,
                         boolean l2Enabled,
                         String globalKeyPrefix,
                         CacheInvalidationPublisher invalidationPublisher) {
-        this.redisUtil = redisUtil;
+        this.redisFacade = redisFacade;
         this.serializer = serializer;
         this.l1Enabled = l1Enabled;
-        this.l2Enabled = redisUtil != null && l2Enabled;
+        this.l2Enabled = redisFacade != null && l2Enabled;
         this.globalKeyPrefix = globalKeyPrefix == null || globalKeyPrefix.isBlank() ? "letool:cache:" : globalKeyPrefix;
         this.invalidationPublisher = invalidationPublisher == null ? CacheInvalidationPublisher.noop() : invalidationPublisher;
     }
@@ -129,7 +129,7 @@ public class CacheManager {
         CacheConfig<K, V> effectiveConfig = effectiveConfig(config);
         return new MultiLevelCache<>(
                 effectiveConfig,
-                redisUtil,
+                redisFacade,
                 serializer,
                 invalidationPublisher,
                 instanceId,
@@ -205,7 +205,7 @@ public class CacheManager {
         CacheConfig<K, V> effectiveConfig = effectiveConfig(config);
         return new MultiLevelSetCache<>(
                 effectiveConfig,
-                redisUtil,
+                redisFacade,
                 keySerializer,
                 memberType,
                 invalidationPublisher,
@@ -279,7 +279,7 @@ public class CacheManager {
         CacheConfig<K, V> effectiveConfig = effectiveConfig(config);
         return new MultiLevelListCache<>(
                 effectiveConfig,
-                redisUtil,
+                redisFacade,
                 keySerializer,
                 elementType,
                 invalidationPublisher,
@@ -329,7 +329,7 @@ public class CacheManager {
         CacheConfig<K, HV> effectiveConfig = effectiveConfig(config);
         return new MultiLevelHashCache<>(
                 effectiveConfig,
-                redisUtil,
+                redisFacade,
                 keySerializer,
                 hashKeyType,
                 hashValueType,
@@ -405,7 +405,7 @@ public class CacheManager {
         CacheConfig<K, V> effectiveConfig = effectiveConfig(config);
         return new MultiLevelZSetCache<>(
                 effectiveConfig,
-                redisUtil,
+                redisFacade,
                 keySerializer,
                 memberType,
                 invalidationPublisher,

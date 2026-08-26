@@ -33,19 +33,19 @@ Fastjson2 模板；业务自定义模板始终优先，Letool 不会改写其序
 @Service
 class UserRedisService {
 
-    private final RedisUtil redisUtil;
+    private final RedisFacade redisFacade;
 
-    UserRedisService(RedisUtil redisUtil) {
-        this.redisUtil = redisUtil;
+    UserRedisService(RedisFacade redisFacade) {
+        this.redisFacade = redisFacade;
     }
 
     void save(User user) {
-        redisUtil.set("user:" + user.id(), user, Duration.ofMinutes(30));
-        redisUtil.hset("user:profile:" + user.id(), "name", user.name());
+        redisFacade.set("user:" + user.id(), user, Duration.ofMinutes(30));
+        redisFacade.hset("user:profile:" + user.id(), "name", user.name());
     }
 
     User find(long userId) {
-        return redisUtil.get("user:" + userId, User.class);
+        return redisFacade.get("user:" + userId, User.class);
     }
 }
 ```
@@ -57,7 +57,7 @@ class UserRedisService {
 普通业务优先使用自动释放入口：
 
 ```java
-redisUtil.executeWithLock("order:" + orderId, () -> {
+redisFacade.executeWithLock("order:" + orderId, () -> {
     orderService.process(orderId);
 });
 ```
@@ -65,7 +65,7 @@ redisUtil.executeWithLock("order:" + orderId, () -> {
 需要 Redisson 原生高级能力时，可以直接取得已应用统一前缀和公平性配置的锁：
 
 ```java
-RLock lock = redisUtil.getLock("order:" + orderId);
+RLock lock = redisFacade.getLock("order:" + orderId);
 ```
 
 `executeWithLock` 使用 Redisson 看门狗模式。业务明确需要固定租约时，应注入 `LockTemplate`，
@@ -76,7 +76,7 @@ RLock lock = redisUtil.getLock("order:" + orderId);
 使用默认策略读取缓存，未命中时才调用数据库：
 
 ```java
-User user = redisUtil.getOrLoad(
+User user = redisFacade.getOrLoad(
         "user:" + userId,
         User.class,
         Duration.ofMinutes(30),
@@ -86,7 +86,7 @@ User user = redisUtil.getOrLoad(
 需要按业务控制空值、抖动和写入条件时，传入不可变策略：
 
 ```java
-User user = redisUtil.getOrLoad(
+User user = redisFacade.getOrLoad(
         "user:" + userId,
         User.class,
         RedisCachePolicy.<User>builder(Duration.ofMinutes(30))
@@ -170,10 +170,10 @@ Redis 能力已从通用工具模块迁出：
 
 ```text
 io.github.leylaragg.letool.tool.redis.RedisUtil
-    -> io.github.leylaragg.letool.redis.RedisUtil
+    -> io.github.leylaragg.letool.redis.RedisFacade
 
-io.github.leylaragg.letool.tool.redis.queue.RedisMessageQueueUtil
-    -> io.github.leylaragg.letool.redis.queue.RedisMessageQueueUtil
+io.github.leylaragg.letool.tool.redis.RedisMessageQueueUtil
+    -> io.github.leylaragg.letool.redis.queue.RedisMessageQueueTemplate
 
 io.github.leylaragg.letool.tool.redis.serializer.FastJson2JsonRedisSerializer
     -> io.github.leylaragg.letool.redis.serializer.FastJson2JsonRedisSerializer

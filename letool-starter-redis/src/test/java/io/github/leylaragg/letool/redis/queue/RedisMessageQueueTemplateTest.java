@@ -23,9 +23,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit tests for {@link RedisMessageQueueUtil}.
+ * Unit tests for {@link RedisMessageQueueTemplate}.
  */
-class RedisMessageQueueUtilTest {
+class RedisMessageQueueTemplateTest {
 
     /**
      * List queue helpers should use Redis List commands and preserve object values
@@ -42,15 +42,15 @@ class RedisMessageQueueUtilTest {
         when(listOperations.leftPop(2, TimeUnit.SECONDS)).thenReturn(message);
         when(listOperations.size()).thenReturn(3L);
 
-        RedisMessageQueueUtil queueUtil = new RedisMessageQueueUtil(redisTemplate);
+        RedisMessageQueueTemplate queueTemplate = new RedisMessageQueueTemplate(redisTemplate);
 
-        assertThat(queueUtil.offer("queue:orders", message)).isEqualTo(1L);
-        QueueMessage immediate = queueUtil.poll("queue:orders");
-        QueueMessage blocking = queueUtil.poll("queue:orders", 2, TimeUnit.SECONDS);
+        assertThat(queueTemplate.offer("queue:orders", message)).isEqualTo(1L);
+        QueueMessage immediate = queueTemplate.poll("queue:orders");
+        QueueMessage blocking = queueTemplate.poll("queue:orders", 2, TimeUnit.SECONDS);
 
         assertThat(immediate).isSameAs(message);
         assertThat(blocking).isSameAs(message);
-        assertThat(queueUtil.size("queue:orders")).isEqualTo(3L);
+        assertThat(queueTemplate.size("queue:orders")).isEqualTo(3L);
         verify(listOperations).rightPush(message);
     }
 
@@ -75,15 +75,15 @@ class RedisMessageQueueUtilTest {
                 any(StreamReadOptions.class), any(StreamOffset.class))).thenReturn(List.of(record));
         when(streamOperations.acknowledge("stream:orders", "order-workers", "1-0")).thenReturn(1L);
 
-        RedisMessageQueueUtil queueUtil = new RedisMessageQueueUtil(redisTemplate);
+        RedisMessageQueueTemplate queueTemplate = new RedisMessageQueueTemplate(redisTemplate);
 
-        assertThat(queueUtil.add("stream:orders", message)).isEqualTo(recordId);
-        assertThat(queueUtil.read("stream:orders", QueueMessage.class, "0-0", 10))
+        assertThat(queueTemplate.add("stream:orders", message)).isEqualTo(recordId);
+        assertThat(queueTemplate.read("stream:orders", QueueMessage.class, "0-0", 10))
                 .containsExactly(record);
-        assertThat(queueUtil.createGroup("stream:orders", "order-workers", "0-0")).isEqualTo("order-workers");
-        assertThat(queueUtil.readGroup("stream:orders", "order-workers", "c1", QueueMessage.class, 5, Duration.ofSeconds(1)))
+        assertThat(queueTemplate.createGroup("stream:orders", "order-workers", "0-0")).isEqualTo("order-workers");
+        assertThat(queueTemplate.readGroup("stream:orders", "order-workers", "c1", QueueMessage.class, 5, Duration.ofSeconds(1)))
                 .containsExactly(record);
-        assertThat(queueUtil.ack("stream:orders", "order-workers", "1-0")).isEqualTo(1L);
+        assertThat(queueTemplate.ack("stream:orders", "order-workers", "1-0")).isEqualTo(1L);
 
         verify(streamOperations).add(any(ObjectRecord.class));
     }
