@@ -594,6 +594,49 @@ query.ge("created_at", range.startInclusive())
      .lt("created_at", range.endExclusive());
 ```
 
+当前字段提供无参入口和 `Clock` 重载。月份整数采用自然月份 `1-12`；需要类型安全语义时可以直接
+获取 JDK `Month` 枚举：
+
+```java
+int year = DateUtil.currentYear();
+int month = DateUtil.currentMonth();
+Month monthEnum = DateUtil.currentMonthEnum();
+
+Clock businessClock = Clock.system(ZoneId.of("Asia/Shanghai"));
+String currentText = DateUtil.nowText(businessClock);
+int businessHour = DateUtil.currentHour(businessClock);
+```
+
+自定义格式支持常用 `yyyy` 和 JDK 推荐的 `uuuu`，但始终严格校验真实日期，不会把
+`2025-02-30` 自动修正到三月：
+
+```java
+String custom = DateUtil.format(
+        LocalDateTime.of(2025, 1, 15, 14, 30),
+        "yyyy/MM/dd HH:mm"
+);
+LocalDate parsed = DateUtil.parseDate("2025/01/15", "yyyy/MM/dd");
+LocalTime time = DateUtil.parseTime("14点30分", "HH点mm分");
+
+// 高频固定格式只创建一次，DateTimeFormatter 不可变且线程安全
+DateTimeFormatter formatter = DateUtil.formatter("yyyyMMddHHmmss");
+String reused = DateUtil.format(DateUtil.now(), formatter);
+```
+
+旧版 `Date` 表示绝对时刻，格式化或提取字段时应在跨系统场景显式提供时区：
+
+```java
+String legacyText = DateUtil.format(
+        legacyDate,
+        "yyyy-MM-dd HH:mm:ss XXX",
+        ZoneId.of("Asia/Shanghai")
+);
+int legacyDay = DateUtil.day(legacyDate, ZoneId.of("Asia/Shanghai"));
+```
+
+`parseDate`、`parseDateTime` 和 `parseTime` 不会自动猜测输入格式。外部输入需要容错时使用对应的
+`tryParse` 方法；格式来自配置时应先调用 `formatter(pattern)` 校验，并复用返回结果。
+
 带时区的日边界使用真实时区规则计算，不会把一天固定视为 24 小时：
 
 ```java

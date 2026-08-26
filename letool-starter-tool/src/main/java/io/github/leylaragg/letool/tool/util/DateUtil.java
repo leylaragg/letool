@@ -8,12 +8,17 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.Month;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.time.chrono.IsoChronology;
+import java.time.chrono.IsoEra;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.DateTimeParseException;
 import java.time.format.ResolverStyle;
+import java.time.temporal.ChronoField;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAccessor;
 import java.time.temporal.TemporalAdjusters;
@@ -35,22 +40,34 @@ import java.util.function.Supplier;
 public final class DateUtil {
 
     /** 标准日期格式：{@code uuuu-MM-dd}。 */
-    public static final DateTimeFormatter STD_DATE = strictFormatter("uuuu-MM-dd");
+    public static final DateTimeFormatter STD_DATE = formatter("uuuu-MM-dd");
 
     /** 标准日期时间格式：{@code uuuu-MM-dd HH:mm:ss}。 */
-    public static final DateTimeFormatter STD_DATETIME = strictFormatter("uuuu-MM-dd HH:mm:ss");
+    public static final DateTimeFormatter STD_DATETIME = formatter("uuuu-MM-dd HH:mm:ss");
 
     /** 日期分钟格式：{@code uuuu-MM-dd HH:mm}。 */
-    public static final DateTimeFormatter STD_DATE_MINUTE = strictFormatter("uuuu-MM-dd HH:mm");
+    public static final DateTimeFormatter STD_DATE_MINUTE = formatter("uuuu-MM-dd HH:mm");
+
+    /** 标准年月格式：{@code uuuu-MM}。 */
+    public static final DateTimeFormatter STD_MONTH = formatter("uuuu-MM");
+
+    /** 毫秒日期时间格式：{@code uuuu-MM-dd HH:mm:ss.SSS}。 */
+    public static final DateTimeFormatter STD_DATETIME_MILLI = formatter("uuuu-MM-dd HH:mm:ss.SSS");
 
     /** 紧凑日期格式：{@code uuuuMMdd}。 */
-    public static final DateTimeFormatter PURE_DATE = strictFormatter("uuuuMMdd");
+    public static final DateTimeFormatter PURE_DATE = formatter("uuuuMMdd");
 
     /** 紧凑日期时间格式：{@code uuuuMMddHHmmss}。 */
-    public static final DateTimeFormatter PURE_DATETIME = strictFormatter("uuuuMMddHHmmss");
+    public static final DateTimeFormatter PURE_DATETIME = formatter("uuuuMMddHHmmss");
+
+    /** 紧凑时间格式：{@code HHmmss}。 */
+    public static final DateTimeFormatter PURE_TIME = formatter("HHmmss");
+
+    /** 紧凑毫秒日期时间格式：{@code uuuuMMddHHmmssSSS}。 */
+    public static final DateTimeFormatter PURE_DATETIME_MILLI = formatter("uuuuMMddHHmmssSSS");
 
     /** 标准时间格式：{@code HH:mm:ss}。 */
-    public static final DateTimeFormatter STD_TIME = strictFormatter("HH:mm:ss");
+    public static final DateTimeFormatter STD_TIME = formatter("HH:mm:ss");
 
     /** 工具类不允许实例化。 */
     private DateUtil() {
@@ -97,6 +114,424 @@ public final class DateUtil {
     }
 
     /**
+     * 获取系统默认时区下的当前年份。
+     *
+     * @return 当前年份
+     */
+    public static int currentYear() {
+        return currentYear(Clock.systemDefaultZone());
+    }
+
+    /**
+     * 使用指定时钟获取当前年份。
+     *
+     * @param clock 提供当前时刻和时区的时钟
+     * @return 指定时钟下的当前年份
+     * @throws DateOperationException 时钟为空时抛出
+     */
+    public static int currentYear(Clock clock) {
+        return year(now(clock));
+    }
+
+    /**
+     * 获取系统默认时区下的当前月份。
+     *
+     * @return 当前月份，范围为 1 到 12
+     */
+    public static int currentMonth() {
+        return currentMonth(Clock.systemDefaultZone());
+    }
+
+    /**
+     * 使用指定时钟获取当前月份。
+     *
+     * @param clock 提供当前时刻和时区的时钟
+     * @return 指定时钟下的月份，范围为 1 到 12
+     * @throws DateOperationException 时钟为空时抛出
+     */
+    public static int currentMonth(Clock clock) {
+        return month(now(clock));
+    }
+
+    /**
+     * 获取系统默认时区下的当前月份枚举。
+     *
+     * @return 当前月份枚举
+     */
+    public static Month currentMonthEnum() {
+        return currentMonthEnum(Clock.systemDefaultZone());
+    }
+
+    /**
+     * 使用指定时钟获取当前月份枚举。
+     *
+     * @param clock 提供当前时刻和时区的时钟
+     * @return 指定时钟下的月份枚举
+     * @throws DateOperationException 时钟为空时抛出
+     */
+    public static Month currentMonthEnum(Clock clock) {
+        return now(clock).getMonth();
+    }
+
+    /**
+     * 获取系统默认时区下当前月份中的日期。
+     *
+     * @return 当前月份中的日期，范围为 1 到 31
+     */
+    public static int currentDay() {
+        return currentDay(Clock.systemDefaultZone());
+    }
+
+    /**
+     * 使用指定时钟获取当前月份中的日期。
+     *
+     * @param clock 提供当前时刻和时区的时钟
+     * @return 指定时钟下当前月份中的日期
+     * @throws DateOperationException 时钟为空时抛出
+     */
+    public static int currentDay(Clock clock) {
+        return day(now(clock));
+    }
+
+    /**
+     * 获取系统默认时区下的当前小时。
+     *
+     * @return 当前小时，范围为 0 到 23
+     */
+    public static int currentHour() {
+        return currentHour(Clock.systemDefaultZone());
+    }
+
+    /**
+     * 使用指定时钟获取当前小时。
+     *
+     * @param clock 提供当前时刻和时区的时钟
+     * @return 指定时钟下的小时，范围为 0 到 23
+     * @throws DateOperationException 时钟为空时抛出
+     */
+    public static int currentHour(Clock clock) {
+        return hour(now(clock));
+    }
+
+    /**
+     * 获取系统默认时区下的当前分钟。
+     *
+     * @return 当前分钟，范围为 0 到 59
+     */
+    public static int currentMinute() {
+        return currentMinute(Clock.systemDefaultZone());
+    }
+
+    /**
+     * 使用指定时钟获取当前分钟。
+     *
+     * @param clock 提供当前时刻和时区的时钟
+     * @return 指定时钟下的分钟，范围为 0 到 59
+     * @throws DateOperationException 时钟为空时抛出
+     */
+    public static int currentMinute(Clock clock) {
+        return minute(now(clock));
+    }
+
+    /**
+     * 获取系统默认时区下的当前秒数。
+     *
+     * @return 当前秒数，范围为 0 到 59
+     */
+    public static int currentSecond() {
+        return currentSecond(Clock.systemDefaultZone());
+    }
+
+    /**
+     * 使用指定时钟获取当前秒数。
+     *
+     * @param clock 提供当前时刻和时区的时钟
+     * @return 指定时钟下的秒数，范围为 0 到 59
+     * @throws DateOperationException 时钟为空时抛出
+     */
+    public static int currentSecond(Clock clock) {
+        return second(now(clock));
+    }
+
+    /**
+     * 获取系统默认时区下的标准当前日期文本。
+     *
+     * @return {@code uuuu-MM-dd} 格式的当前日期
+     */
+    public static String todayText() {
+        return todayText(Clock.systemDefaultZone());
+    }
+
+    /**
+     * 使用指定时钟获取标准当前日期文本。
+     *
+     * @param clock 提供当前时刻和时区的时钟
+     * @return {@code uuuu-MM-dd} 格式的当前日期
+     * @throws DateOperationException 时钟为空时抛出
+     */
+    public static String todayText(Clock clock) {
+        return formatDate(today(clock));
+    }
+
+    /**
+     * 获取系统默认时区下的标准当前日期时间文本。
+     *
+     * @return {@code uuuu-MM-dd HH:mm:ss} 格式的当前日期时间
+     */
+    public static String nowText() {
+        return nowText(Clock.systemDefaultZone());
+    }
+
+    /**
+     * 使用指定时钟获取标准当前日期时间文本。
+     *
+     * @param clock 提供当前时刻和时区的时钟
+     * @return {@code uuuu-MM-dd HH:mm:ss} 格式的当前日期时间
+     * @throws DateOperationException 时钟为空时抛出
+     */
+    public static String nowText(Clock clock) {
+        return formatDateTime(now(clock));
+    }
+
+    /**
+     * 获取日期时间对象的年份。
+     *
+     * @param temporal 支持年份字段的日期时间对象
+     * @return 年份
+     * @throws DateOperationException 参数为空或对象不支持年份字段时抛出
+     */
+    public static int year(TemporalAccessor temporal) {
+        return temporalField(temporal, ChronoField.YEAR, "year");
+    }
+
+    /**
+     * 获取日期时间对象的月份。
+     *
+     * @param temporal 支持月份字段的日期时间对象
+     * @return 月份，范围为 1 到 12
+     * @throws DateOperationException 参数为空或对象不支持月份字段时抛出
+     */
+    public static int month(TemporalAccessor temporal) {
+        return temporalField(temporal, ChronoField.MONTH_OF_YEAR, "month");
+    }
+
+    /**
+     * 获取日期时间对象的月份枚举。
+     *
+     * @param temporal 支持月份字段的日期时间对象
+     * @return 月份枚举
+     * @throws DateOperationException 参数为空或对象不支持月份字段时抛出
+     */
+    public static Month monthEnum(TemporalAccessor temporal) {
+        return Month.of(month(temporal));
+    }
+
+    /**
+     * 获取日期时间对象在当月中的日期。
+     *
+     * @param temporal 支持日字段的日期时间对象
+     * @return 当月中的日期
+     * @throws DateOperationException 参数为空或对象不支持日字段时抛出
+     */
+    public static int day(TemporalAccessor temporal) {
+        return temporalField(temporal, ChronoField.DAY_OF_MONTH, "day");
+    }
+
+    /**
+     * 获取日期时间对象的小时。
+     *
+     * @param temporal 支持小时字段的日期时间对象
+     * @return 小时，范围为 0 到 23
+     * @throws DateOperationException 参数为空或对象不支持小时字段时抛出
+     */
+    public static int hour(TemporalAccessor temporal) {
+        return temporalField(temporal, ChronoField.HOUR_OF_DAY, "hour");
+    }
+
+    /**
+     * 获取日期时间对象的分钟。
+     *
+     * @param temporal 支持分钟字段的日期时间对象
+     * @return 分钟，范围为 0 到 59
+     * @throws DateOperationException 参数为空或对象不支持分钟字段时抛出
+     */
+    public static int minute(TemporalAccessor temporal) {
+        return temporalField(temporal, ChronoField.MINUTE_OF_HOUR, "minute");
+    }
+
+    /**
+     * 获取日期时间对象的秒数。
+     *
+     * @param temporal 支持秒字段的日期时间对象
+     * @return 秒数，范围为 0 到 59
+     * @throws DateOperationException 参数为空或对象不支持秒字段时抛出
+     */
+    public static int second(TemporalAccessor temporal) {
+        return temporalField(temporal, ChronoField.SECOND_OF_MINUTE, "second");
+    }
+
+    /**
+     * 使用系统默认时区获取旧版 Date 的年份。
+     *
+     * @param date 旧版 Date 对象
+     * @return 系统默认时区下的年份
+     * @throws DateOperationException Date 为空或转换失败时抛出
+     */
+    public static int year(Date date) {
+        return year(date, ZoneId.systemDefault());
+    }
+
+    /**
+     * 使用指定时区获取旧版 Date 的年份。
+     *
+     * @param date 旧版 Date 对象
+     * @param zoneId 目标时区
+     * @return 指定时区下的年份
+     * @throws DateOperationException 参数为空或转换失败时抛出
+     */
+    public static int year(Date date, ZoneId zoneId) {
+        return year(toZonedDateTime(date, zoneId));
+    }
+
+    /**
+     * 使用系统默认时区获取旧版 Date 的月份。
+     *
+     * @param date 旧版 Date 对象
+     * @return 系统默认时区下的月份，范围为 1 到 12
+     * @throws DateOperationException Date 为空或转换失败时抛出
+     */
+    public static int month(Date date) {
+        return month(date, ZoneId.systemDefault());
+    }
+
+    /**
+     * 使用指定时区获取旧版 Date 的月份。
+     *
+     * @param date 旧版 Date 对象
+     * @param zoneId 目标时区
+     * @return 指定时区下的月份，范围为 1 到 12
+     * @throws DateOperationException 参数为空或转换失败时抛出
+     */
+    public static int month(Date date, ZoneId zoneId) {
+        return month(toZonedDateTime(date, zoneId));
+    }
+
+    /**
+     * 使用系统默认时区获取旧版 Date 的月份枚举。
+     *
+     * @param date 旧版 Date 对象
+     * @return 系统默认时区下的月份枚举
+     * @throws DateOperationException Date 为空或转换失败时抛出
+     */
+    public static Month monthEnum(Date date) {
+        return monthEnum(date, ZoneId.systemDefault());
+    }
+
+    /**
+     * 使用指定时区获取旧版 Date 的月份枚举。
+     *
+     * @param date 旧版 Date 对象
+     * @param zoneId 目标时区
+     * @return 指定时区下的月份枚举
+     * @throws DateOperationException 参数为空或转换失败时抛出
+     */
+    public static Month monthEnum(Date date, ZoneId zoneId) {
+        return monthEnum(toZonedDateTime(date, zoneId));
+    }
+
+    /**
+     * 使用系统默认时区获取旧版 Date 在当月中的日期。
+     *
+     * @param date 旧版 Date 对象
+     * @return 系统默认时区下当月中的日期
+     * @throws DateOperationException Date 为空或转换失败时抛出
+     */
+    public static int day(Date date) {
+        return day(date, ZoneId.systemDefault());
+    }
+
+    /**
+     * 使用指定时区获取旧版 Date 在当月中的日期。
+     *
+     * @param date 旧版 Date 对象
+     * @param zoneId 目标时区
+     * @return 指定时区下当月中的日期
+     * @throws DateOperationException 参数为空或转换失败时抛出
+     */
+    public static int day(Date date, ZoneId zoneId) {
+        return day(toZonedDateTime(date, zoneId));
+    }
+
+    /**
+     * 使用系统默认时区获取旧版 Date 的小时。
+     *
+     * @param date 旧版 Date 对象
+     * @return 系统默认时区下的小时
+     * @throws DateOperationException Date 为空或转换失败时抛出
+     */
+    public static int hour(Date date) {
+        return hour(date, ZoneId.systemDefault());
+    }
+
+    /**
+     * 使用指定时区获取旧版 Date 的小时。
+     *
+     * @param date 旧版 Date 对象
+     * @param zoneId 目标时区
+     * @return 指定时区下的小时
+     * @throws DateOperationException 参数为空或转换失败时抛出
+     */
+    public static int hour(Date date, ZoneId zoneId) {
+        return hour(toZonedDateTime(date, zoneId));
+    }
+
+    /**
+     * 使用系统默认时区获取旧版 Date 的分钟。
+     *
+     * @param date 旧版 Date 对象
+     * @return 系统默认时区下的分钟
+     * @throws DateOperationException Date 为空或转换失败时抛出
+     */
+    public static int minute(Date date) {
+        return minute(date, ZoneId.systemDefault());
+    }
+
+    /**
+     * 使用指定时区获取旧版 Date 的分钟。
+     *
+     * @param date 旧版 Date 对象
+     * @param zoneId 目标时区
+     * @return 指定时区下的分钟
+     * @throws DateOperationException 参数为空或转换失败时抛出
+     */
+    public static int minute(Date date, ZoneId zoneId) {
+        return minute(toZonedDateTime(date, zoneId));
+    }
+
+    /**
+     * 使用系统默认时区获取旧版 Date 的秒数。
+     *
+     * @param date 旧版 Date 对象
+     * @return 系统默认时区下的秒数
+     * @throws DateOperationException Date 为空或转换失败时抛出
+     */
+    public static int second(Date date) {
+        return second(date, ZoneId.systemDefault());
+    }
+
+    /**
+     * 使用指定时区获取旧版 Date 的秒数。
+     *
+     * @param date 旧版 Date 对象
+     * @param zoneId 目标时区
+     * @return 指定时区下的秒数
+     * @throws DateOperationException 参数为空或转换失败时抛出
+     */
+    public static int second(Date date, ZoneId zoneId) {
+        return second(toZonedDateTime(date, zoneId));
+    }
+
+    /**
      * 使用指定格式化器格式化日期。
      *
      * @param date 日期
@@ -118,6 +553,83 @@ public final class DateUtil {
      */
     public static String format(LocalDateTime dateTime, DateTimeFormatter formatter) {
         return formatTemporal(dateTime, formatter);
+    }
+
+    /**
+     * 使用指定格式化器输出任意受支持的日期时间对象。
+     *
+     * @param temporal 日期时间对象
+     * @param formatter 日期时间格式化器
+     * @return 格式化文本
+     * @throws DateOperationException 参数为空或对象不包含格式所需字段时抛出
+     */
+    public static String format(TemporalAccessor temporal, DateTimeFormatter formatter) {
+        return formatTemporal(temporal, formatter);
+    }
+
+    /**
+     * 使用自定义格式输出日期时间对象。
+     *
+     * @param temporal 日期时间对象
+     * @param pattern 日期时间格式
+     * @return 格式化文本
+     * @throws DateOperationException 参数为空、格式非法或对象不包含所需字段时抛出
+     */
+    public static String format(TemporalAccessor temporal, String pattern) {
+        return format(temporal, formatter(pattern));
+    }
+
+    /**
+     * 使用系统默认时区和指定格式化器输出旧版 Date。
+     *
+     * @param date 旧版 Date 对象
+     * @param formatter 日期时间格式化器
+     * @return 系统默认时区下的格式化文本
+     * @throws DateOperationException 参数为空或格式化失败时抛出
+     */
+    public static String format(Date date, DateTimeFormatter formatter) {
+        return format(date, formatter, ZoneId.systemDefault());
+    }
+
+    /**
+     * 使用指定时区和格式化器输出旧版 Date。
+     *
+     * @param date 旧版 Date 对象
+     * @param formatter 日期时间格式化器
+     * @param zoneId 目标时区
+     * @return 指定时区下的格式化文本
+     * @throws DateOperationException 参数为空、转换失败或格式化失败时抛出
+     */
+    public static String format(Date date, DateTimeFormatter formatter, ZoneId zoneId) {
+        ZonedDateTime dateTime = toZonedDateTime(date, zoneId);
+        DateTimeFormatter zonedFormatter = requireArgument(formatter, "formatter")
+                .withZone(dateTime.getZone());
+        return format(dateTime, zonedFormatter);
+    }
+
+    /**
+     * 使用系统默认时区和自定义格式输出旧版 Date。
+     *
+     * @param date 旧版 Date 对象
+     * @param pattern 日期时间格式
+     * @return 系统默认时区下的格式化文本
+     * @throws DateOperationException 参数为空、格式非法或格式化失败时抛出
+     */
+    public static String format(Date date, String pattern) {
+        return format(date, formatter(pattern), ZoneId.systemDefault());
+    }
+
+    /**
+     * 使用指定时区和自定义格式输出旧版 Date。
+     *
+     * @param date 旧版 Date 对象
+     * @param pattern 日期时间格式
+     * @param zoneId 目标时区
+     * @return 指定时区下的格式化文本
+     * @throws DateOperationException 参数为空、格式非法、转换失败或格式化失败时抛出
+     */
+    public static String format(Date date, String pattern, ZoneId zoneId) {
+        return format(date, formatter(pattern), zoneId);
     }
 
     /**
@@ -194,6 +706,18 @@ public final class DateUtil {
     }
 
     /**
+     * 使用自定义格式严格解析日期。
+     *
+     * @param text 日期文本
+     * @param pattern 日期格式
+     * @return 解析后的日期
+     * @throws DateOperationException 参数为空、格式非法或日期非法时抛出
+     */
+    public static LocalDate parseDate(String text, String pattern) {
+        return parseDate(text, formatter(pattern));
+    }
+
+    /**
      * 尝试使用标准格式严格解析日期。
      *
      * @param text 日期文本，空白或非法输入返回空结果
@@ -212,15 +736,27 @@ public final class DateUtil {
      * @throws DateOperationException 格式化器为空时抛出
      */
     public static Optional<LocalDate> tryParseDate(String text, DateTimeFormatter formatter) {
+        DateTimeFormatter requiredFormatter = requireStrictFormatter(formatter);
         if (text == null || text.isBlank()) {
             return Optional.empty();
         }
-        DateTimeFormatter requiredFormatter = requireStrictFormatter(formatter);
         try {
             return Optional.of(LocalDate.parse(text, requiredFormatter));
         } catch (DateTimeParseException exception) {
             return Optional.empty();
         }
+    }
+
+    /**
+     * 尝试使用自定义格式严格解析日期。
+     *
+     * @param text 日期文本，空白或非法输入返回空结果
+     * @param pattern 日期格式
+     * @return 解析成功时返回日期，否则返回空结果
+     * @throws DateOperationException pattern 为空或格式非法时抛出
+     */
+    public static Optional<LocalDate> tryParseDate(String text, String pattern) {
+        return tryParseDate(text, formatter(pattern));
     }
 
     /**
@@ -253,6 +789,18 @@ public final class DateUtil {
     }
 
     /**
+     * 使用自定义格式严格解析日期时间。
+     *
+     * @param text 日期时间文本
+     * @param pattern 日期时间格式
+     * @return 解析后的日期时间
+     * @throws DateOperationException 参数为空、格式非法或日期时间非法时抛出
+     */
+    public static LocalDateTime parseDateTime(String text, String pattern) {
+        return parseDateTime(text, formatter(pattern));
+    }
+
+    /**
      * 尝试使用标准格式严格解析日期时间。
      *
      * @param text 日期时间文本，空白或非法输入返回空结果
@@ -271,15 +819,110 @@ public final class DateUtil {
      * @throws DateOperationException 格式化器为空时抛出
      */
     public static Optional<LocalDateTime> tryParseDateTime(String text, DateTimeFormatter formatter) {
+        DateTimeFormatter requiredFormatter = requireStrictFormatter(formatter);
         if (text == null || text.isBlank()) {
             return Optional.empty();
         }
-        DateTimeFormatter requiredFormatter = requireStrictFormatter(formatter);
         try {
             return Optional.of(LocalDateTime.parse(text, requiredFormatter));
         } catch (DateTimeParseException exception) {
             return Optional.empty();
         }
+    }
+
+    /**
+     * 尝试使用自定义格式严格解析日期时间。
+     *
+     * @param text 日期时间文本，空白或非法输入返回空结果
+     * @param pattern 日期时间格式
+     * @return 解析成功时返回日期时间，否则返回空结果
+     * @throws DateOperationException pattern 为空或格式非法时抛出
+     */
+    public static Optional<LocalDateTime> tryParseDateTime(String text, String pattern) {
+        return tryParseDateTime(text, formatter(pattern));
+    }
+
+    /**
+     * 使用标准时间格式严格解析本地时间。
+     *
+     * @param text 时间文本
+     * @return 解析后的本地时间
+     * @throws DateOperationException 文本为空白或时间非法时抛出
+     */
+    public static LocalTime parseTime(String text) {
+        return parseTime(text, STD_TIME);
+    }
+
+    /**
+     * 使用指定格式化器严格解析本地时间。
+     *
+     * @param text 时间文本
+     * @param formatter 时间格式化器
+     * @return 解析后的本地时间
+     * @throws DateOperationException 参数为空或时间非法时抛出
+     */
+    public static LocalTime parseTime(String text, DateTimeFormatter formatter) {
+        requireText(text, "timeText");
+        DateTimeFormatter requiredFormatter = requireStrictFormatter(formatter);
+        try {
+            return LocalTime.parse(text, requiredFormatter);
+        } catch (DateTimeParseException exception) {
+            throw DateOperationException.parseFailed(exception);
+        }
+    }
+
+    /**
+     * 使用自定义格式严格解析本地时间。
+     *
+     * @param text 时间文本
+     * @param pattern 时间格式
+     * @return 解析后的本地时间
+     * @throws DateOperationException 参数为空、格式非法或时间非法时抛出
+     */
+    public static LocalTime parseTime(String text, String pattern) {
+        return parseTime(text, formatter(pattern));
+    }
+
+    /**
+     * 尝试使用标准时间格式严格解析本地时间。
+     *
+     * @param text 时间文本，空白或非法输入返回空结果
+     * @return 解析成功时返回本地时间，否则返回空结果
+     */
+    public static Optional<LocalTime> tryParseTime(String text) {
+        return tryParseTime(text, STD_TIME);
+    }
+
+    /**
+     * 尝试使用指定格式化器严格解析本地时间。
+     *
+     * @param text 时间文本，空白或非法输入返回空结果
+     * @param formatter 时间格式化器
+     * @return 解析成功时返回本地时间，否则返回空结果
+     * @throws DateOperationException 格式化器为空时抛出
+     */
+    public static Optional<LocalTime> tryParseTime(String text, DateTimeFormatter formatter) {
+        DateTimeFormatter requiredFormatter = requireStrictFormatter(formatter);
+        if (text == null || text.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(LocalTime.parse(text, requiredFormatter));
+        } catch (DateTimeParseException exception) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 尝试使用自定义格式严格解析本地时间。
+     *
+     * @param text 时间文本，空白或非法输入返回空结果
+     * @param pattern 时间格式
+     * @return 解析成功时返回本地时间，否则返回空结果
+     * @throws DateOperationException pattern 为空或格式非法时抛出
+     */
+    public static Optional<LocalTime> tryParseTime(String text, String pattern) {
+        return tryParseTime(text, formatter(pattern));
     }
 
     /**
@@ -431,6 +1074,57 @@ public final class DateUtil {
     }
 
     /**
+     * 计算两个日期时间之间的完整秒数。
+     *
+     * @param start 开始日期时间
+     * @param end 结束日期时间
+     * @return 从开始时刻到结束时刻的有符号秒数
+     * @throws DateOperationException 任一参数为空或计算失败时抛出
+     */
+    public static long betweenSeconds(LocalDateTime start, LocalDateTime end) {
+        return executeConversion(() -> ChronoUnit.SECONDS.between(
+                requireArgument(start, "start"),
+                requireArgument(end, "end")
+        ));
+    }
+
+    /**
+     * 对日期时间增加指定年数。
+     *
+     * @param dateTime 日期时间
+     * @param years 年数，允许为负数
+     * @return 偏移后的日期时间
+     * @throws DateOperationException 日期时间为空或计算溢出时抛出
+     */
+    public static LocalDateTime plusYears(LocalDateTime dateTime, long years) {
+        return executeConversion(() -> requireArgument(dateTime, "dateTime").plusYears(years));
+    }
+
+    /**
+     * 对日期时间增加指定月数。
+     *
+     * @param dateTime 日期时间
+     * @param months 月数，允许为负数
+     * @return 偏移后的日期时间
+     * @throws DateOperationException 日期时间为空或计算溢出时抛出
+     */
+    public static LocalDateTime plusMonths(LocalDateTime dateTime, long months) {
+        return executeConversion(() -> requireArgument(dateTime, "dateTime").plusMonths(months));
+    }
+
+    /**
+     * 对日期时间增加指定周数。
+     *
+     * @param dateTime 日期时间
+     * @param weeks 周数，允许为负数
+     * @return 偏移后的日期时间
+     * @throws DateOperationException 日期时间为空或计算溢出时抛出
+     */
+    public static LocalDateTime plusWeeks(LocalDateTime dateTime, long weeks) {
+        return executeConversion(() -> requireArgument(dateTime, "dateTime").plusWeeks(weeks));
+    }
+
+    /**
      * 对日期时间增加指定天数。
      *
      * @param dateTime 日期时间
@@ -464,6 +1158,18 @@ public final class DateUtil {
      */
     public static LocalDateTime plusMinutes(LocalDateTime dateTime, long minutes) {
         return executeConversion(() -> requireArgument(dateTime, "dateTime").plusMinutes(minutes));
+    }
+
+    /**
+     * 对日期时间增加指定秒数。
+     *
+     * @param dateTime 日期时间
+     * @param seconds 秒数，允许为负数
+     * @return 偏移后的日期时间
+     * @throws DateOperationException 日期时间为空或计算溢出时抛出
+     */
+    public static LocalDateTime plusSeconds(LocalDateTime dateTime, long seconds) {
+        return executeConversion(() -> requireArgument(dateTime, "dateTime").plusSeconds(seconds));
     }
 
     /**
@@ -686,10 +1392,60 @@ public final class DateUtil {
      *
      * @param pattern 日期时间格式
      * @return 严格格式化器
+     * @throws DateOperationException 格式为空或格式非法时抛出
      */
-    private static DateTimeFormatter strictFormatter(String pattern) {
-        return DateTimeFormatter.ofPattern(pattern, Locale.ROOT)
-                .withResolverStyle(ResolverStyle.STRICT);
+    public static DateTimeFormatter formatter(String pattern) {
+        requireText(pattern, "pattern");
+        try {
+            return new DateTimeFormatterBuilder()
+                    .parseCaseSensitive()
+                    .appendPattern(pattern)
+                    .parseDefaulting(ChronoField.ERA, IsoEra.CE.getValue())
+                    .toFormatter(Locale.ROOT)
+                    .withChronology(IsoChronology.INSTANCE)
+                    .withResolverStyle(ResolverStyle.STRICT);
+        } catch (IllegalArgumentException exception) {
+            throw DateOperationException.formatFailed(exception);
+        }
+    }
+
+    /**
+     * 将旧版 Date 转换为指定时区下的日期时间。
+     *
+     * @param date 旧版 Date 对象
+     * @param zoneId 目标时区
+     * @return 指定时区下表示同一绝对时刻的日期时间
+     * @throws DateOperationException 参数为空或转换失败时抛出
+     */
+    private static ZonedDateTime toZonedDateTime(Date date, ZoneId zoneId) {
+        return executeConversion(() -> requireArgument(date, "date")
+                .toInstant()
+                .atZone(requireArgument(zoneId, "zoneId")));
+    }
+
+    /**
+     * 从日期时间对象读取指定字段，并将不支持的字段转换为稳定参数异常。
+     *
+     * @param temporal 日期时间对象
+     * @param field 需要读取的标准字段
+     * @param fieldName 用于错误消息的安全字段名
+     * @return 字段整数值
+     */
+    private static int temporalField(
+            TemporalAccessor temporal,
+            ChronoField field,
+            String fieldName
+    ) {
+        TemporalAccessor requiredTemporal = requireArgument(temporal, "temporal");
+        ChronoField requiredField = requireArgument(field, "field");
+        if (!requiredTemporal.isSupported(requiredField)) {
+            throw DateOperationException.invalidArgument(fieldName);
+        }
+        try {
+            return requiredTemporal.get(requiredField);
+        } catch (RuntimeException exception) {
+            throw DateOperationException.conversionFailed(exception);
+        }
     }
 
     /**
