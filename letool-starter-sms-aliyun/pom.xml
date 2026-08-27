@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.github.leylaragg</groupId>
         <artifactId>letool</artifactId>
-        <version>2.1.0</version>
+        <version>3.0.1</version>
     </parent>
 
     <artifactId>letool-starter-sms-aliyun</artifactId>

@@ -7,11 +7,10 @@
     <parent>
         <groupId>io.github.leylaragg</groupId>
         <artifactId>letool</artifactId>
-        <version>2.1.0</version>
+        <version>3.0.1</version>
     </parent>
 
     <artifactId>letool-starter-print</artifactId>
-    <version>2.1.1</version>
     <name>letool-starter-print</name>
     <description>Letool 动态打印核心契约、只读上下文与通用文档模型</description>
     <packaging>jar</packaging>

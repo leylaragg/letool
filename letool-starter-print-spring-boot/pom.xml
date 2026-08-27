@@ -7,11 +7,10 @@
     <parent>
         <groupId>io.github.leylaragg</groupId>
         <artifactId>letool</artifactId>
-        <version>2.1.0</version>
+        <version>3.0.1</version>
     </parent>
 
     <artifactId>letool-starter-print-spring-boot</artifactId>
-    <version>2.1.1</version>
     <name>letool-starter-print-spring-boot</name>
     <description>Letool 动态打印 Spring Boot 自动配置与业务适配门面</description>
     <packaging>jar</packaging>

@@ -7,11 +7,10 @@
     <parent>
         <groupId>io.github.leylaragg</groupId>
         <artifactId>letool</artifactId>
-        <version>2.1.0</version>
+        <version>3.0.1</version>
     </parent>
 
     <artifactId>letool-rule-engine-core</artifactId>
-    <version>3.0.0</version>
     <name>letool-rule-engine-core</name>
     <description>Letool 编译型强类型规则决策核心</description>
     <packaging>jar</packaging>
