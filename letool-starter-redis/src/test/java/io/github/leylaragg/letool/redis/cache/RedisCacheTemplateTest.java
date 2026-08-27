@@ -1,17 +1,29 @@
 package io.github.leylaragg.letool.redis.cache;
 
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONWriter;
 import io.github.leylaragg.letool.lock.core.LockRequest;
 import io.github.leylaragg.letool.lock.core.LockTemplate;
 import io.github.leylaragg.letool.lock.exception.LockException;
 import io.github.leylaragg.letool.redis.exception.RedisOperationException;
+import io.github.leylaragg.letool.redis.serializer.FastJson2JsonRedisSerializer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.data.redis.connection.RedisConnection;
+import org.springframework.data.redis.connection.RedisStringCommands;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.types.Expiration;
+import org.springframework.data.redis.serializer.RedisSerializer;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -33,6 +45,10 @@ class RedisCacheTemplateTest {
 
     private RedisTemplate<String, Object> redisTemplate;
     private ValueOperations<String, Object> values;
+    private RedisSerializer<Object> valueSerializer;
+    private RedisConnection connection;
+    private RedisStringCommands stringCommands;
+    private Map<String, byte[]> rawValues;
     private LockTemplate lockTemplate;
     private RedisCacheTemplate template;
 
@@ -41,15 +57,43 @@ class RedisCacheTemplateTest {
     void setUp() {
         redisTemplate = mock(RedisTemplate.class);
         values = mock(ValueOperations.class);
+        valueSerializer = new FastJson2JsonRedisSerializer<>(Object.class);
+        connection = mock(RedisConnection.class);
+        stringCommands = mock(RedisStringCommands.class);
+        rawValues = new HashMap<>();
         lockTemplate = mock(LockTemplate.class);
         when(redisTemplate.opsForValue()).thenReturn(values);
+        org.mockito.Mockito.doReturn(RedisSerializer.string())
+                .when(redisTemplate).getKeySerializer();
+        org.mockito.Mockito.doReturn(valueSerializer)
+                .when(redisTemplate).getValueSerializer();
+        when(connection.stringCommands()).thenReturn(stringCommands);
+        when(stringCommands.get(any(byte[].class))).thenAnswer(invocation ->
+                rawValues.get(new String(invocation.getArgument(0), StandardCharsets.UTF_8)));
+        when(stringCommands.set(
+                any(byte[].class), any(byte[].class),
+                any(Expiration.class), eq(RedisStringCommands.SetOption.UPSERT)))
+                .thenAnswer(invocation -> {
+                    rawValues.put(
+                            new String(invocation.getArgument(0), StandardCharsets.UTF_8),
+                            invocation.getArgument(1));
+                    return true;
+                });
+        when(redisTemplate.execute(any(RedisCallback.class))).thenAnswer(invocation ->
+                invocation.<RedisCallback<Object>>getArgument(0).doInRedis(connection));
+        org.mockito.Mockito.doAnswer(invocation -> {
+            rawValues.put(
+                    invocation.getArgument(0),
+                    valueSerializer.serialize(invocation.getArgument(1)));
+            return null;
+        }).when(values).set(anyString(), any(), any(Duration.class));
         template = new RedisCacheTemplate(redisTemplate, lockTemplate, "cache:");
     }
 
     /** 命中缓存时不获取锁，也不调用数据源。 */
     @Test
     void hitShouldReturnCacheWithoutInvokingLoader() {
-        when(values.get("user:7")).thenReturn(new User(7L, "Leyla", true));
+        cacheValue("user:7", new User(7L, "Leyla", true));
 
         User actual = template.getOrLoad(
                 "user:7", User.class, policy(), () -> {
@@ -73,19 +117,72 @@ class RedisCacheTemplateTest {
         verify(values).set(eq("user:7"), eq(actual), any(Duration.class));
     }
 
-    /** 数据源空值应写入短 TTL 哨兵，后续命中哨兵直接返回空。 */
+    /** 数据源空值应写入短 TTL 协议标记，后续读取直接命中而不再回源。 */
     @Test
     void nullResultShouldUseNegativeCache() {
-        when(values.get("user:404")).thenReturn(null).thenReturn(null);
         executeLockCallback();
+        AtomicInteger loads = new AtomicInteger();
+        RedisCachePolicy<User> policy = RedisCachePolicy.<User>builder(Duration.ofMinutes(30))
+                .cacheNull(Duration.ofMinutes(2)).build();
 
-        assertNull(template.getOrLoad(
-                "user:404", User.class,
-                RedisCachePolicy.<User>builder(Duration.ofMinutes(30))
-                        .cacheNull(Duration.ofMinutes(2)).build(),
-                () -> null));
+        assertNull(template.getOrLoad("user:404", User.class, policy, () -> {
+            loads.incrementAndGet();
+            return null;
+        }));
+        assertNull(template.getOrLoad("user:404", User.class, policy, () -> {
+            loads.incrementAndGet();
+            return null;
+        }));
 
-        verify(values).set("user:404", RedisNullValue.INSTANCE, Duration.ofMinutes(2));
+        assertEquals(1, loads.get());
+        verify(stringCommands).set(
+                eq("user:404".getBytes(StandardCharsets.UTF_8)),
+                any(byte[].class),
+                eq(Expiration.from(Duration.ofMinutes(2))),
+                eq(RedisStringCommands.SetOption.UPSERT));
+    }
+
+    /** 业务序列化器不保留枚举类型时，空值缓存仍应在第二次读取时稳定命中。 */
+    @Test
+    @SuppressWarnings("unchecked")
+    void customSerializerShouldRecognizeCachedNullOnSecondRead() {
+        String key = "user:404";
+        AtomicReference<byte[]> storedValue = new AtomicReference<>();
+        RedisSerializer<Object> businessSerializer = new AiZyStyleSerializer();
+        RedisSerializer<String> keySerializer = RedisSerializer.string();
+        RedisConnection connection = mock(RedisConnection.class);
+        RedisStringCommands stringCommands = mock(RedisStringCommands.class);
+        org.mockito.Mockito.doReturn(keySerializer).when(redisTemplate).getKeySerializer();
+        org.mockito.Mockito.doReturn(businessSerializer).when(redisTemplate).getValueSerializer();
+        template = new RedisCacheTemplate(redisTemplate, lockTemplate, "cache:");
+        when(connection.stringCommands()).thenReturn(stringCommands);
+        when(stringCommands.get(any(byte[].class))).thenAnswer(invocation -> storedValue.get());
+        when(stringCommands.set(
+                any(byte[].class), any(byte[].class),
+                any(Expiration.class), eq(RedisStringCommands.SetOption.UPSERT)))
+                .thenAnswer(invocation -> {
+                    storedValue.set(invocation.getArgument(1));
+                    return true;
+                });
+        when(redisTemplate.execute(any(RedisCallback.class))).thenAnswer(invocation ->
+                invocation.<RedisCallback<Object>>getArgument(0).doInRedis(connection));
+        when(values.get(key)).thenAnswer(invocation ->
+                businessSerializer.deserialize(storedValue.get()));
+        org.mockito.Mockito.doAnswer(invocation -> {
+            storedValue.set(businessSerializer.serialize(invocation.getArgument(1)));
+            return null;
+        }).when(values).set(eq(key), any(), any(Duration.class));
+        executeLockCallback();
+        AtomicInteger loads = new AtomicInteger();
+        Supplier<User> loader = () -> {
+            loads.incrementAndGet();
+            return null;
+        };
+
+        assertNull(template.getOrLoad(key, User.class, policy(), loader));
+        assertNull(template.getOrLoad(key, User.class, policy(), loader));
+
+        assertEquals(1, loads.get());
     }
 
     /** 被业务谓词拒绝的非空结果仍应返回，但不能写入缓存。 */
@@ -165,6 +262,31 @@ class RedisCacheTemplateTest {
                 .thenAnswer(invocation -> invocation.<Supplier<User>>getArgument(1).get());
     }
 
+    private void cacheValue(String key, Object value) {
+        rawValues.put(key, valueSerializer.serialize(value));
+    }
+
     private record User(long id, String name, boolean active) {
+    }
+
+    /** 模拟 ai-zy 以 Object.class 读取 Fastjson2 数据的业务序列化器。 */
+    private static final class AiZyStyleSerializer implements RedisSerializer<Object> {
+
+        @Override
+        public byte[] serialize(Object value) {
+            if (value == null) {
+                return new byte[0];
+            }
+            return JSON.toJSONString(value, JSONWriter.Feature.WriteClassName)
+                    .getBytes(StandardCharsets.UTF_8);
+        }
+
+        @Override
+        public Object deserialize(byte[] bytes) {
+            if (bytes == null || bytes.length == 0) {
+                return null;
+            }
+            return JSON.parseObject(new String(bytes, StandardCharsets.UTF_8), Object.class);
+        }
     }
 }

@@ -48,7 +48,7 @@ public final class RedisCachePolicy<T> {
         return cacheNull;
     }
 
-    /** @return 空值哨兵 TTL */
+    /** @return 空值标记 TTL */
     public Duration nullTtl() {
         return nullTtl;
     }
@@ -83,9 +83,9 @@ public final class RedisCachePolicy<T> {
         }
 
         /**
-         * 启用空值缓存并设置哨兵 TTL。
+         * 启用空值缓存并设置标记 TTL。
          *
-         * @param nullTtl 空值哨兵 TTL
+         * @param nullTtl 空值标记 TTL
          * @return 当前构建器
          */
         public Builder<T> cacheNull(Duration nullTtl) {

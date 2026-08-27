@@ -22,6 +22,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -269,6 +270,45 @@ class RedisFacadeOperationsTest {
         RedisSerializer<Object> argumentSerializer =
                 (RedisSerializer<Object>) argumentSerializerCaptor.getValue();
         assertThat(argumentSerializer.serialize(serializedValue)).isSameAs(serializedValue);
+    }
+
+    /** Spring Data 未返回 TTL 时，门面应遵守文档约定并返回 -1。 */
+    @Test
+    void nullTtlShouldFollowDocumentedMinusOneContract() {
+        RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
+        when(redisTemplate.getExpire("missing", TimeUnit.SECONDS)).thenReturn(null);
+        RedisFacade redisFacade = new RedisFacade(redisTemplate);
+
+        assertThat(redisFacade.getExpire("missing", TimeUnit.SECONDS)).isEqualTo(-1L);
+    }
+
+    /** 可空布尔结果不得通过自动拆箱泄漏为空指针异常。 */
+    @Test
+    void nullBooleanResultsShouldBeNormalizedToFalse() {
+        RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
+        when(redisTemplate.hasKey("missing")).thenReturn(null);
+        when(redisTemplate.delete("missing")).thenReturn(null);
+        when(redisTemplate.expire("missing", 30, TimeUnit.SECONDS)).thenReturn(null);
+        RedisFacade redisFacade = new RedisFacade(redisTemplate);
+
+        assertThat(redisFacade.hasKey("missing")).isFalse();
+        assertThat(redisFacade.delete("missing")).isFalse();
+        assertThat(redisFacade.expire("missing", 30, TimeUnit.SECONDS)).isFalse();
+    }
+
+    /** 可空计数结果应统一收敛为零，便于调用方直接进行数值判断。 */
+    @Test
+    void nullCountResultsShouldBeNormalizedToZero() {
+        RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
+        HashOperations<String, Object, Object> hashOperations = mock(HashOperations.class);
+        List<String> keys = List.of("missing:1", "missing:2");
+        when(redisTemplate.delete(keys)).thenReturn(null);
+        when(redisTemplate.opsForHash()).thenReturn(hashOperations);
+        when(hashOperations.delete("users", "u1")).thenReturn(null);
+        RedisFacade redisFacade = new RedisFacade(redisTemplate);
+
+        assertThat(redisFacade.delete(keys)).isZero();
+        assertThat(redisFacade.hdel("users", "u1")).isZero();
     }
 
     record TestUser(String id, String name) {

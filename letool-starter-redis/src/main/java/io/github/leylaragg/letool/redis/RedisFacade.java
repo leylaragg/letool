@@ -60,7 +60,7 @@ import java.util.function.Supplier;
  *   <li><b>Lua 脚本</b>：executeScript</li>
  *   <li><b>管道</b>：pipeline 批量操作</li>
  *   <li><b>分布式锁</b>：获取 Redisson 原生锁，或在自动释放的锁内执行回调</li>
- *   <li><b>缓存回源</b>：分布式互斥、锁内双检、空值哨兵和 TTL 抖动</li>
+ *   <li><b>缓存回源</b>：分布式互斥、锁内双检、空值标记和 TTL 抖动</li>
  * </ul>
  *
  * <h2>使用示例</h2>
@@ -353,31 +353,31 @@ public class RedisFacade {
      * 判断 key 是否存在。
      *
      * @param key Redis key
-     * @return {@code true} 表示存在
+     * @return {@code true} 表示存在；Redis 未返回结果时为 {@code false}
      */
     public boolean hasKey(String key) {
-        return redisTemplate.hasKey(key);
+        return Boolean.TRUE.equals(redisTemplate.hasKey(key));
     }
 
     /**
      * 删除单个 key。
      *
      * @param key Redis key
-     * @return {@code true} 表示删除成功
+     * @return {@code true} 表示删除成功；Redis 未返回结果时为 {@code false}
      */
     public boolean delete(String key) {
-        return redisTemplate.delete(key);
+        return Boolean.TRUE.equals(redisTemplate.delete(key));
     }
 
     /**
      * 批量删除 key。
      *
      * @param keys Redis key 集合
-     * @return 实际删除的 key 数量
+     * @return 实际删除的 key 数量；Redis 未返回结果时为 0
      */
     public long delete(Collection<String> keys) {
         Long count = redisTemplate.delete(keys);
-        return count;
+        return count == null ? 0L : count;
     }
 
     /**
@@ -386,10 +386,10 @@ public class RedisFacade {
      * @param key     Redis key
      * @param timeout 过期时长
      * @param unit    时间单位
-     * @return {@code true} 表示设置成功
+     * @return {@code true} 表示设置成功；Redis 未返回结果时为 {@code false}
      */
     public boolean expire(String key, long timeout, TimeUnit unit) {
-        return redisTemplate.expire(key, timeout, unit);
+        return Boolean.TRUE.equals(redisTemplate.expire(key, timeout, unit));
     }
 
     /**
@@ -401,7 +401,7 @@ public class RedisFacade {
      */
     public long getExpire(String key, TimeUnit unit) {
         Long ttl = redisTemplate.getExpire(key, unit);
-        return ttl;
+        return ttl == null ? -1L : ttl;
     }
 
     // ======================== Value 操作 ========================
@@ -589,10 +589,11 @@ public class RedisFacade {
      *
      * @param key    Redis key
      * @param fields 字段名列表
-     * @return 实际删除的字段数量
+     * @return 实际删除的字段数量；Redis 未返回结果时为 0
      */
     public long hdel(String key, String... fields) {
-        return redisTemplate.opsForHash().delete(key, (Object[]) fields);
+        Long count = redisTemplate.opsForHash().delete(key, (Object[]) fields);
+        return count == null ? 0L : count;
     }
 
     // ======================== List 操作 ========================

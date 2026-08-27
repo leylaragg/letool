@@ -26,13 +26,13 @@
     {
       "name": "letool.redis.cache.cache-null",
       "type": "java.lang.Boolean",
-      "description": "数据源返回空值时是否写入短期哨兵，防止不存在数据被反复查询。",
+      "description": "数据源返回空值时是否写入短期标记，防止不存在数据被反复查询。",
       "defaultValue": true
     },
     {
       "name": "letool.redis.cache.null-ttl",
       "type": "java.time.Duration",
-      "description": "空值哨兵的存活时间，必须大于零。",
+      "description": "空值标记的存活时间，必须大于零。",
       "defaultValue": "2m"
     },
     {

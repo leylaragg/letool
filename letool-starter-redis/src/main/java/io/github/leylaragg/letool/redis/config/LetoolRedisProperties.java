@@ -129,7 +129,7 @@ public class LetoolRedisProperties implements InitializingBean {
         private Duration lockWait = Duration.ofSeconds(3);
         private String lockKeyPrefix = "cache:";
 
-        /** @return 数据源返回空值时是否写入短期哨兵 */
+        /** @return 数据源返回空值时是否写入短期标记 */
         public boolean isCacheNull() {
             return cacheNull;
         }
@@ -139,12 +139,12 @@ public class LetoolRedisProperties implements InitializingBean {
             this.cacheNull = cacheNull;
         }
 
-        /** @return 空值哨兵的存活时间 */
+        /** @return 空值标记的存活时间 */
         public Duration getNullTtl() {
             return nullTtl;
         }
 
-        /** @param nullTtl 空值哨兵的存活时间 */
+        /** @param nullTtl 空值标记的存活时间 */
         public void setNullTtl(Duration nullTtl) {
             this.nullTtl = nullTtl;
         }

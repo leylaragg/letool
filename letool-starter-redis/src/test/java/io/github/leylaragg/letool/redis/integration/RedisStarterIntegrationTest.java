@@ -191,9 +191,10 @@ class RedisStarterIntegrationTest {
                     return null;
                 }));
         assertEquals(1, protectedLoads.get());
-        Long ttlMillis = redisTemplate.getExpire(protectedKey, TimeUnit.MILLISECONDS);
-        assertNotNull(ttlMillis);
+        long ttlMillis = redisFacade.getExpire(protectedKey, TimeUnit.MILLISECONDS);
         assertTrue(ttlMillis > 0 && ttlMillis <= Duration.ofSeconds(2).toMillis());
+        assertTrue(redisFacade.delete(protectedKey));
+        assertFalse(redisTemplate.hasKey(protectedKey));
 
         String unprotectedKey = keyPrefix + "missing:unprotected";
         AtomicInteger unprotectedLoads = new AtomicInteger();

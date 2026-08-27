@@ -6,7 +6,7 @@
 
 - 基于 `RedisTemplate<String, Object>` 的 KV、Hash、List、Set、ZSet、Lua 和 Pipeline 便利 API；
 - Redisson 原生 `RLock` 与自动释放的 `executeWithLock`；
-- 带分布式锁、锁内双检、空值哨兵和 TTL 抖动的 `getOrLoad`；
+- 带分布式锁、锁内双检、空值标记和 TTL 抖动的 `getOrLoad`；
 - `letool-starter-distributed-lock` 所需的 Redisson 锁后端和 Redis 幂等存储；
 - Redis 消息队列便利门面与受白名单保护的 Fastjson2 对象序列化器。
 
@@ -100,11 +100,19 @@ User user = redisFacade.getOrLoad(
 三类保护解决的问题不同：
 
 - 分布式锁加锁后再次检查缓存，只允许一个调用方回源，解决热点 Key 缓存击穿；
-- 数据库返回空值时写入短 TTL 哨兵，避免不存在的 Key 反复访问数据库，缓解缓存穿透；
+- 数据库返回空值时写入短 TTL 标记，避免不存在的 Key 反复访问数据库，缓解缓存穿透；
 - 正常缓存 TTL 追加有界随机抖动，分散大量 Key 同时失效的时间，缓解缓存雪崩。
 
 锁等待超时后不会绕过互斥直接查询数据库；若最后一次缓存读取仍未命中，会抛出
 `RedisOperationException`。数据源回调抛出的运行时异常保持原样传播，也不会被误写成空值。
+
+空值标记直接写入业务缓存 key，并使用不经过业务 value 序列化器的固定字节协议，因而
+`delete`、`expire` 和 `getExpire` 仍操作同一个 key。正常业务值继续由应用配置的 value
+序列化器负责。
+
+从仍会写入 `RedisNullValue.INSTANCE` 的版本升级时，不要让新旧实例混合滚动运行；旧实例
+无法识别新的内部字节协议。应先停止旧实例并清理该版本 `getOrLoad` 管理的缓存 key，再启动
+新版本。不能把字符串 `"INSTANCE"` 通用识别为空值，因为它也可能是合法业务数据。
 
 ## 声明式锁与幂等
 
