@@ -16,9 +16,12 @@ import java.util.TreeMap;
 /**
  * 负责校验、排序并构造模板集合快照。
  *
+ * <p>外部模板来源可以使用标准工厂恢复持久化的模板定义，集合仍会经过与发布流程相同的
+ * 结构限制、版本检查和摘要计算。</p>
+ *
  * @author leyland
  */
-final class TemplateSetFactory {
+public final class TemplateSetFactory {
 
     /** 单个集合最多包含的模板数量。 */
     private static final int MAX_TEMPLATES = 10_000;
@@ -32,8 +35,12 @@ final class TemplateSetFactory {
     /** 当前工厂允许的正文总字节数。 */
     private final long maxTotalContentBytes;
 
-    /** 创建生产环境使用的固定限制工厂。 */
-    static TemplateSetFactory standard() {
+    /**
+     * 创建使用框架标准治理上限的工厂。
+     *
+     * @return 可供外部模板来源复用的标准工厂
+     */
+    public static TemplateSetFactory standard() {
         return new TemplateSetFactory(MAX_TEMPLATES, MAX_TOTAL_CONTENT_BYTES);
     }
 
@@ -54,11 +61,14 @@ final class TemplateSetFactory {
     /**
      * 将一批模板定义整理为不可变集合。
      *
+     * <p>数据库或远程模板来源应先恢复 {@link TemplateDefinition}，再由这里统一校验版本、
+     * 容量并计算摘要。</p>
+     *
      * @param version 集合版本
      * @param source 模板定义
      * @return 完整模板集合
      */
-    TemplateSet create(long version, Collection<TemplateDefinition> source) {
+    public TemplateSet create(long version, Collection<TemplateDefinition> source) {
         requirePositiveVersion(version);
         Objects.requireNonNull(source, "definitions 不能为空");
         if (source.isEmpty() || source.size() > maxTemplates) {
