@@ -63,20 +63,21 @@ final class PdfDocumentAssembler {
         Path finalFile = workspace.allocate();
         int pageCount;
         PDFMergerUtility merger = new PDFMergerUtility();
-        try (PDDocument target = new PDDocument()) {
-            pageCount = appendAll(target, merger, results, options);
-            Map<String, PdfNavigationWriter.GlobalPosition> targets = navigationWriter.write(
-                    target, document.document(), results, Map.copyOf(sourceTargets));
-            annotationWriter.writeMerged(
-                    target, annotationWriter.collect(document.document()), targets);
-            applyMetadata(target, document.metadata(), options);
-            try (OutputStream temporary = workspace.openOutput(
-                    finalFile, options.maxOutputBytes())) {
-                target.save(temporary);
+        try (PdfBoxStreamCache cache = workspace.openPdfBoxCache(options.maxOutputBytes())) {
+            try (PDDocument target = new PDDocument(cache.factory())) {
+                pageCount = appendAll(target, merger, results, options, workspace, cache);
+                Map<String, PdfNavigationWriter.GlobalPosition> targets = navigationWriter.write(
+                        target, document.document(), results, Map.copyOf(sourceTargets));
+                annotationWriter.writeMerged(
+                        target, annotationWriter.collect(document.document()), targets);
+                applyMetadata(target, document.metadata(), options);
+                try (OutputStream temporary = workspace.openOutput(
+                        finalFile, options.maxOutputBytes())) {
+                    target.save(temporary);
+                }
             }
+            validate(finalFile, pageCount, options, cache);
         }
-        discardResults(results, workspace);
-        validate(finalFile, pageCount, options);
         try (InputStream input = Files.newInputStream(finalFile)) {
             input.transferTo(output);
         }
@@ -102,16 +103,20 @@ final class PdfDocumentAssembler {
             PDDocument target,
             PDFMergerUtility merger,
             List<PdfUnitResult> results,
-            RenderOptions options) throws IOException {
+            RenderOptions options,
+            PdfRenderWorkspace workspace,
+            PdfBoxStreamCache cache) throws IOException {
         int pageCount = 0;
         for (PdfUnitResult result : results) {
-            try (PDDocument source = Loader.loadPDF(result.file().toFile())) {
+            try (PDDocument source = Loader.loadPDF(result.file().toFile(), cache.factory())) {
                 merger.appendDocument(target, source);
             }
             pageCount = Math.addExact(pageCount, result.pageCount());
             if (pageCount > options.maxPages()) {
                 throw PrintRenderingException.pageLimitExceeded(options.maxPages());
             }
+            // 追加完成后目标文档已经拥有独立对象，可以立即释放源文件空间。
+            workspace.discard(result.file());
         }
         return pageCount;
     }
@@ -133,29 +138,13 @@ final class PdfDocumentAssembler {
         }
     }
 
-    /** 清理已经合并的中间文件，多个失败都保留在首个异常上。 */
-    private void discardResults(
-            List<PdfUnitResult> results, PdfRenderWorkspace workspace) throws IOException {
-        IOException failure = null;
-        for (PdfUnitResult result : results) {
-            try {
-                workspace.discard(result.file());
-            } catch (IOException exception) {
-                if (failure == null) {
-                    failure = exception;
-                } else {
-                    failure.addSuppressed(exception);
-                }
-            }
-        }
-        if (failure != null) {
-            throw failure;
-        }
-    }
-
     /** 重新打开最终文件核对页数，避免把不完整 PDF 交给调用方。 */
-    private void validate(Path file, int expectedPages, RenderOptions options) throws IOException {
-        try (PDDocument pdf = Loader.loadPDF(file.toFile())) {
+    private void validate(
+            Path file,
+            int expectedPages,
+            RenderOptions options,
+            PdfBoxStreamCache cache) throws IOException {
+        try (PDDocument pdf = Loader.loadPDF(file.toFile(), cache.factory())) {
             int actualPages = pdf.getNumberOfPages();
             if (actualPages != expectedPages || actualPages > options.maxPages()) {
                 throw PrintRenderingException.renderFailed(

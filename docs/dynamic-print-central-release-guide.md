@@ -38,12 +38,9 @@ flowchart TD
 
 ## 2. 当前打印框架会发布哪些模块
 
-推荐从 `letool-starter-print-spring-boot` 出发，并使用 Maven 的 `-am` 参数构建它依赖的 Letool 模块。首次发布或所有模块统一升级版本时，共包含以下 9 个 Maven 组件：
+打印框架按独立版本发布，必须明确选择下面 6 个 Maven 组件：
 
 ```text
-letool
-letool-exception-core
-letool-starter-exception
 letool-starter-print
 letool-starter-print-pdf
 letool-starter-print-template
@@ -52,7 +49,7 @@ letool-starter-print-expression-spel
 letool-starter-print-spring-boot
 ```
 
-其中 `letool` 是聚合父 POM，其余模块是 JAR。不能只上传最外层 Starter，否则消费者解析它的同版本内部依赖时可能找不到对应组件。
+不要为这组命令追加 `-am`。打印模块依赖已经公开的 `letool-starter-exception:2.1.0`，根 POM和异常模块不属于本次 `2.1.1` 发布。也不能只上传最外层 Starter，否则消费者解析打印模块间的 `2.1.1` 依赖时会缺少对应组件。
 
 ## 3. 首次发布前只需配置一次
 
@@ -208,19 +205,20 @@ git status --short --branch
 
 ### 5.2 确认版本号
 
-根 `pom.xml` 至少要同步检查：
+打印框架使用独立版本线，根 POM 和其他模块不跟随打印版本递增。根 `pom.xml` 应同时保留仓库版本和打印版本：
 
 ```xml
 <version>2.1.0</version>
 <letool.version>2.1.0</letool.version>
+<letool.print.version>2.1.1</letool.print.version>
 ```
 
-所有子模块的 `<parent><version>` 也应与根版本一致。不要继续使用已经发布过的版本。
+六个打印模块继续继承 `2.1.0` 根 POM，并各自声明 `2.1.1` 项目版本。缓存、Redis、工具等非打印模块不需要修改版本。不要继续使用已经发布过的打印版本。
 
-可以先访问对应 POM 判断版本是否已经公开。下面以 `2.1.0` 为例：
+可以先访问对应 POM 判断版本是否已经公开。下面以 `2.1.1` 为例：
 
 ```powershell
-$releaseVersion = '2.1.0'
+$releaseVersion = '2.1.1'
 $pomUrl = "https://repo1.maven.org/maven2/io/github/leylaragg/letool-starter-print-spring-boot/$releaseVersion/letool-starter-print-spring-boot-$releaseVersion.pom"
 curl.exe -I $pomUrl
 ```
@@ -230,13 +228,13 @@ curl.exe -I $pomUrl
 
 ### 5.3 确认发布范围
 
-打印框架的推荐选择器是：
+打印框架使用明确的模块清单，避免 `-am` 把仍为 `2.1.0` 的异常模块带入发布：
 
-```text
--pl letool-starter-print-spring-boot -am
+```powershell
+$printModules = 'letool-starter-print,letool-starter-print-pdf,letool-starter-print-template,letool-starter-print-xml,letool-starter-print-expression-spel,letool-starter-print-spring-boot'
 ```
 
-`-pl` 选择最外层打印 Starter，`-am` 同时构建它依赖的本仓库模块。不要在首次发布时只进入某个子模块执行 `deploy`。
+六个模块全部交给同一个 Reactor 后，Maven 会按依赖顺序构建打印框架。基础异常模块继续从本地仓库或 Central 使用已经发布的 `2.1.0`。
 
 ### 5.4 确认敏感信息没有进入仓库
 
@@ -257,10 +255,11 @@ git status --short
 在 Letool 仓库根目录执行：
 
 ```powershell
-mvn --% -P release -pl letool-starter-print-spring-boot -am -Dgpg.keyname=8A40F93C7A6B1705E8F9C4CCB9D2FD1A0EBBAF61 clean verify
+$printModules = 'letool-starter-print,letool-starter-print-pdf,letool-starter-print-template,letool-starter-print-xml,letool-starter-print-expression-spel,letool-starter-print-spring-boot'
+mvn -P release -pl $printModules "-Dgpg.keyname=8A40F93C7A6B1705E8F9C4CCB9D2FD1A0EBBAF61" clean verify
 ```
 
-PowerShell 中的 `--%` 表示后续参数原样交给 Maven。CMD、Git Bash 或 IDEA Maven Run Configuration 中不要填写 `--%`。
+双引号可以防止 PowerShell 把带点号的 Maven 属性拆开。IDEA Maven Run Configuration 中可以直接填写相同参数，但需要把 `$printModules` 替换成完整模块清单。
 
 这一步应完成：
 
@@ -285,7 +284,7 @@ PowerShell 中的 `--%` 表示后续参数原样交给 Maven。CMD、Git Bash �
 可以抽查一个签名：
 
 ```powershell
-gpg --verify letool-starter-print-spring-boot\target\letool-starter-print-spring-boot-2.1.0.jar.asc letool-starter-print-spring-boot\target\letool-starter-print-spring-boot-2.1.0.jar
+gpg --verify letool-starter-print-spring-boot\target\letool-starter-print-spring-boot-2.1.1.jar.asc letool-starter-print-spring-boot\target\letool-starter-print-spring-boot-2.1.1.jar
 ```
 
 看到 `Good signature` 才表示签名验证成功。命令中的版本号要换成当次发布版本。
@@ -295,13 +294,14 @@ gpg --verify letool-starter-print-spring-boot\target\letool-starter-print-spring
 完成本地验证并确认版本可以公开后，在仓库根目录执行：
 
 ```powershell
-mvn --% -P release -pl letool-starter-print-spring-boot -am -Dgpg.keyname=8A40F93C7A6B1705E8F9C4CCB9D2FD1A0EBBAF61 clean deploy
+$printModules = 'letool-starter-print,letool-starter-print-pdf,letool-starter-print-template,letool-starter-print-xml,letool-starter-print-expression-spel,letool-starter-print-spring-boot'
+mvn -P release -pl $printModules "-Dgpg.keyname=8A40F93C7A6B1705E8F9C4CCB9D2FD1A0EBBAF61" clean deploy
 ```
 
-如果使用 CMD、Git Bash 或其他不会解析 Maven 参数的终端，去掉 `--%`：
+如果使用 CMD、Git Bash 或其他终端，可以直接展开模块清单：
 
 ```shell
-mvn -P release -pl letool-starter-print-spring-boot -am -Dgpg.keyname=8A40F93C7A6B1705E8F9C4CCB9D2FD1A0EBBAF61 clean deploy
+mvn -P release -pl letool-starter-print,letool-starter-print-pdf,letool-starter-print-template,letool-starter-print-xml,letool-starter-print-expression-spel,letool-starter-print-spring-boot -Dgpg.keyname=8A40F93C7A6B1705E8F9C4CCB9D2FD1A0EBBAF61 clean deploy
 ```
 
 不要为了省时间默认添加 `-DskipTests`。正式上传前重新跑完整测试，可以避免本地验证后代码又发生变化。
@@ -339,7 +339,7 @@ Get-Item .\target\central-publishing\central-bundle.zip
 
 ## 8. 使用 IDEA 完成 verify 和 deploy
 
-推荐为发布建立 Maven Run Configuration，不要只在某个子模块的 Lifecycle 下直接双击 `deploy`，因为那种方式不容易看出是否带上了 `-am` 和 `release` Profile。
+推荐为发布建立 Maven Run Configuration，不要只在某个子模块的 Lifecycle 下直接双击 `deploy`，因为那种方式不容易确认完整模块清单和 `release` Profile。
 
 ### 8.1 建立本地验证配置
 
@@ -357,7 +357,7 @@ Run
 ```text
 Name: Letool Print Release Verify
 Working directory: D:\Program Files\Ailind Projects\letool
-Command line: -P release -pl letool-starter-print-spring-boot -am -Dgpg.keyname=8A40F93C7A6B1705E8F9C4CCB9D2FD1A0EBBAF61 clean verify
+Command line: -P release -pl letool-starter-print,letool-starter-print-pdf,letool-starter-print-template,letool-starter-print-xml,letool-starter-print-expression-spel,letool-starter-print-spring-boot -Dgpg.keyname=8A40F93C7A6B1705E8F9C4CCB9D2FD1A0EBBAF61 clean verify
 ```
 
 运行后检查测试、Javadoc 和 GPG 签名。IDEA 配置中的 Command line 不需要写开头的 `mvn`，也不需要 PowerShell 的 `--%`。
@@ -369,7 +369,7 @@ Command line: -P release -pl letool-starter-print-spring-boot -am -Dgpg.keyname=
 ```text
 Name: Letool Print Central Deploy
 Working directory: D:\Program Files\Ailind Projects\letool
-Command line: -P release -pl letool-starter-print-spring-boot -am -Dgpg.keyname=8A40F93C7A6B1705E8F9C4CCB9D2FD1A0EBBAF61 clean deploy
+Command line: -P release -pl letool-starter-print,letool-starter-print-pdf,letool-starter-print-template,letool-starter-print-xml,letool-starter-print-expression-spel,letool-starter-print-spring-boot -Dgpg.keyname=8A40F93C7A6B1705E8F9C4CCB9D2FD1A0EBBAF61 clean deploy
 ```
 
 运行时可能出现 Kleopatra 或 pinentry 口令窗口。输入私钥口令后等待 Maven 输出 Deployment ID 和 `VALIDATED`。
@@ -387,7 +387,7 @@ IDEA Maven 工具窗口中的 Profiles 也可以勾选 `release`，但 Run Confi
 1. 使用 `deploymentId` 找到本次 Deployment。
 2. 确认状态为 `VALIDATED`。
 3. 核对 Namespace、版本号和组件数量。
-4. 检查父 POM、打印模块、源码包、Javadoc 包和签名均在本次 Deployment 中。
+4. 检查 6 个打印模块、源码包、Javadoc 包和签名均在本次 Deployment 中。
 5. 确认没有上传规则引擎或其他不属于当次范围的模块。
 6. 没有问题后点击 `Publish`。
 7. 等待状态从 `PUBLISHING` 变为 `PUBLISHED`。
@@ -398,10 +398,10 @@ IDEA Maven 工具窗口中的 Profiles 也可以勾选 `release`，但 Run Confi
 
 ### 10.1 检查 Maven Central 文件
 
-以 `2.1.0` 为例：
+以 `2.1.1` 为例：
 
 ```powershell
-$releaseVersion = '2.1.0'
+$releaseVersion = '2.1.1'
 $pomUrl = "https://repo1.maven.org/maven2/io/github/leylaragg/letool-starter-print-spring-boot/$releaseVersion/letool-starter-print-spring-boot-$releaseVersion.pom"
 curl.exe -I $pomUrl
 ```
@@ -411,7 +411,7 @@ curl.exe -I $pomUrl
 ### 10.2 使用干净的 Maven 解析验证
 
 ```powershell
-mvn -U dependency:get -Dartifact=io.github.leylaragg:letool-starter-print-spring-boot:2.1.0
+mvn -U dependency:get -Dartifact=io.github.leylaragg:letool-starter-print-spring-boot:2.1.1
 ```
 
 若要排除本地仓库缓存影响，可以在临时目录中创建一个最小 Spring Boot 消费项目，再声明：
@@ -420,7 +420,7 @@ mvn -U dependency:get -Dartifact=io.github.leylaragg:letool-starter-print-spring
 <dependency>
     <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-print-spring-boot</artifactId>
-    <version>2.1.0</version>
+    <version>2.1.1</version>
 </dependency>
 ```
 
@@ -508,7 +508,7 @@ Central Maven 插件负责打包和上传，但不会替项目自动补齐源码
 
 ### 11.8 构建成功，但 Portal 中出现了不该发布的模块
 
-检查 `-pl` 选择器、`-am` 依赖闭包和模块间依赖。上传之前可以查看 Reactor Build Order；其中出现的可部署模块就是本次构建范围。
+检查 `-pl` 是否完整列出 6 个打印模块，并确认命令中没有 `-am`。上传之前查看 Reactor Build Order；如果出现根 POM、异常模块或其他非打印模块，就不应继续上传。
 
 如果 Deployment 还没有 Publish，直接 Drop，修正范围后重新上传。
 
@@ -518,7 +518,7 @@ Central Maven 插件负责打包和上传，但不会替项目自动补齐源码
 
 ```text
 [ ] 1. 确认 main 工作区内容就是准备发布的代码
-[ ] 2. 修改根版本、letool.version 和子模块 parent 版本
+[ ] 2. 修改 letool.print.version 和 6 个打印模块的项目版本
 [ ] 3. 确认新版本未在 Maven Central 和 Portal 使用
 [ ] 4. 确认 settings.xml 中 central Token 可用
 [ ] 5. 确认主密钥 8A40...AF61 的私钥和公钥可用
@@ -526,7 +526,7 @@ Central Maven 插件负责打包和上传，但不会替项目自动补齐源码
 [ ] 7. 检查测试、sources、Javadoc、POM 和 .asc
 [ ] 8. 执行 clean deploy
 [ ] 9. 保存 deploymentId，确认状态为 VALIDATED
-[ ] 10. Portal 中核对 9 个组件并点击 Publish
+[ ] 10. Portal 中核对 6 个打印组件并点击 Publish
 [ ] 11. 等待 PUBLISHED，并从 repo1.maven.org 下载验证
 [ ] 12. 创建 Git Tag 和发布说明
 ```
@@ -534,8 +534,9 @@ Central Maven 插件负责打包和上传，但不会替项目自动补齐源码
 对应的两条核心命令是：
 
 ```powershell
-mvn --% -P release -pl letool-starter-print-spring-boot -am -Dgpg.keyname=8A40F93C7A6B1705E8F9C4CCB9D2FD1A0EBBAF61 clean verify
-mvn --% -P release -pl letool-starter-print-spring-boot -am -Dgpg.keyname=8A40F93C7A6B1705E8F9C4CCB9D2FD1A0EBBAF61 clean deploy
+$printModules = 'letool-starter-print,letool-starter-print-pdf,letool-starter-print-template,letool-starter-print-xml,letool-starter-print-expression-spel,letool-starter-print-spring-boot'
+mvn -P release -pl $printModules "-Dgpg.keyname=8A40F93C7A6B1705E8F9C4CCB9D2FD1A0EBBAF61" clean verify
+mvn -P release -pl $printModules "-Dgpg.keyname=8A40F93C7A6B1705E8F9C4CCB9D2FD1A0EBBAF61" clean deploy
 ```
 
 ## 13. 官方参考资料

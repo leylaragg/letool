@@ -115,6 +115,7 @@
 
         <!-- 内部版本 -->
         <letool.version>2.1.0</letool.version>
+        <letool.print.version>2.1.1</letool.print.version>
 
         <!-- 框架版本 -->
         <spring.boot.version>3.5.16</spring.boot.version>
@@ -300,32 +301,32 @@
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-print</artifactId>
-                <version>${letool.version}</version>
+                <version>${letool.print.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-print-pdf</artifactId>
-                <version>${letool.version}</version>
+                <version>${letool.print.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-print-template</artifactId>
-                <version>${letool.version}</version>
+                <version>${letool.print.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-print-xml</artifactId>
-                <version>${letool.version}</version>
+                <version>${letool.print.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-print-expression-spel</artifactId>
-                <version>${letool.version}</version>
+                <version>${letool.print.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-print-spring-boot</artifactId>
-                <version>${letool.version}</version>
+                <version>${letool.print.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
@@ -822,6 +823,7 @@
                         <artifactId>maven-surefire-plugin</artifactId>
                         <configuration combine.self="override">
                             <groups>print-capacity</groups>
+                            <argLine>@{argLine} -Xmx256m</argLine>
                             <systemPropertyVariables>
                                 <letool.print.capacity.enabled>true</letool.print.capacity.enabled>
                             </systemPropertyVariables>

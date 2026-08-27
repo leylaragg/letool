@@ -11,6 +11,7 @@
     </parent>
 
     <artifactId>letool-starter-print-expression-spel</artifactId>
+    <version>2.1.1</version>
     <name>letool-starter-print-expression-spel</name>
     <description>Letool 动态打印受限 SpEL 条件表达式扩展</description>
     <packaging>jar</packaging>

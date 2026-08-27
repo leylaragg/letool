@@ -1,5 +1,6 @@
 package io.github.leylaragg.letool.print.autoconfigure;
 
+import io.github.leylaragg.letool.exception.message.MessageBundleContributor;
 import io.github.leylaragg.letool.print.api.PrintEngine;
 import io.github.leylaragg.letool.print.pdf.OpenHtmlPdfRenderer;
 import io.github.leylaragg.letool.print.pdf.PdfFont;
@@ -64,6 +65,12 @@ import java.util.Optional;
         matchIfMissing = true)
 @EnableConfigurationProperties(PrintProperties.class)
 public class PrintAutoConfiguration {
+
+    /** @return 打印错误码的中英文消息资源描述 */
+    @Bean
+    public MessageBundleContributor printMessageBundle() {
+        return MessageBundleContributor.of("i18n/letool-print/messages");
+    }
 
     /**
      * @param properties 已完成 Spring 绑定的打印配置

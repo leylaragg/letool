@@ -582,7 +582,8 @@ public final class XmlTemplateBinder {
         }
         if (node.formatPlan() != null) {
             try {
-                String formatted = node.formatPlan().format(value);
+                // 格式化器属于公开扩展，交付独立副本，避免扩展改写本次绑定快照。
+                String formatted = node.formatPlan().format(value.deepCopy());
                 if (formatted == null) {
                     throw bindingError(templateCode, node, "格式化器返回了空文本");
                 }

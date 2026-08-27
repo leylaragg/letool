@@ -35,6 +35,9 @@ final class PdfRenderWorkspace implements AutoCloseable {
     /** 仍在写入的文件及其受控输出。 */
     private final Map<Path, WorkspaceOutput> openOutputs = new LinkedHashMap<>();
 
+    /** 已预留容量且尚未关闭的 PDFBox 文件缓存。 */
+    private final Set<PdfBoxStreamCache> openPdfBoxCaches = new LinkedHashSet<>();
+
     /** 下一个框架文件编号。 */
     private int nextFileNumber = 1;
 
@@ -110,6 +113,40 @@ final class PdfRenderWorkspace implements AutoCloseable {
     }
 
     /**
+     * 为最终组装创建受工作区总量约束的 PDFBox 文件缓存。
+     *
+     * @param maxCacheBytes 缓存最多可使用的临时字节数
+     * @return 与本次请求目录和预算绑定的缓存
+     * @throws IOException 缓存容量不足或无法创建时抛出
+     */
+    PdfBoxStreamCache openPdfBoxCache(long maxCacheBytes) throws IOException {
+        requireOpen();
+        if (maxCacheBytes < 1) {
+            throw new IllegalArgumentException("PDFBox 缓存容量上限必须为正数");
+        }
+        if (maxCacheBytes > maxBytes - activeBytes) {
+            throw new CapacityExceededException();
+        }
+        activeBytes += maxCacheBytes;
+        try {
+            PdfBoxStreamCache cache =
+                    new PdfBoxStreamCache(requestDirectory, maxCacheBytes, this);
+            openPdfBoxCaches.add(cache);
+            return cache;
+        } catch (IOException | RuntimeException exception) {
+            activeBytes -= maxCacheBytes;
+            throw exception;
+        }
+    }
+
+    /** 缓存关闭后解除登记并归还预留容量。 */
+    void releasePdfBoxCache(PdfBoxStreamCache cache, long reservedBytes) {
+        if (openPdfBoxCaches.remove(cache)) {
+            activeBytes -= reservedBytes;
+        }
+    }
+
+    /**
      * 删除不再使用的轮次文件并释放其活动容量。
      *
      * @param file 此工作区分配的文件
@@ -165,7 +202,14 @@ final class PdfRenderWorkspace implements AutoCloseable {
             return;
         }
         IOException failure = null;
-        // 先结束仍在写入的文件，Windows 下才能可靠删除本次请求目录。
+        // 先关闭 PDFBox 缓存和输出流，Windows 下才能可靠删除请求目录。
+        for (PdfBoxStreamCache cache : new ArrayList<>(openPdfBoxCaches)) {
+            try {
+                cache.close();
+            } catch (IOException exception) {
+                failure = append(failure, exception);
+            }
+        }
         for (WorkspaceOutput output : new ArrayList<>(openOutputs.values())) {
             try {
                 output.close();

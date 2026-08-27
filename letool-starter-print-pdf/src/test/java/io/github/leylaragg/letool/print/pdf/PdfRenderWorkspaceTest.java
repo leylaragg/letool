@@ -94,6 +94,32 @@ class PdfRenderWorkspaceTest {
         Files.delete(root);
     }
 
+    /** PDFBox 缓存预留和受控文件共同遵守单次请求的临时空间上限。 */
+    @Test
+    void shouldCountPdfBoxReservationInWorkspaceCapacity() throws IOException {
+        Path root = testRoot();
+        long cacheBytes = 64 * 1024L;
+        try (PdfRenderWorkspace workspace = PdfRenderWorkspace.open(root, cacheBytes + 4)) {
+            Path first = workspace.allocate();
+            try (OutputStream output = workspace.openOutput(first, 4)) {
+                output.write(new byte[]{1, 2, 3, 4});
+            }
+
+            try (PdfBoxStreamCache ignored = workspace.openPdfBoxCache(cacheBytes)) {
+                assertThat(workspace.activeBytes()).isEqualTo(cacheBytes + 4);
+                Path overflow = workspace.allocate();
+                assertThatThrownBy(() -> {
+                    try (OutputStream output = workspace.openOutput(overflow, 1)) {
+                        output.write(5);
+                    }
+                }).isInstanceOf(PdfRenderWorkspace.CapacityExceededException.class);
+            }
+
+            assertThat(workspace.activeBytes()).isEqualTo(4);
+        }
+        Files.delete(root);
+    }
+
     /** try-with-resources 会把清理错误挂到原始失败后，不覆盖主异常。 */
     @Test
     void shouldPreservePrimaryFailureWhenCleanupFails() throws IOException {

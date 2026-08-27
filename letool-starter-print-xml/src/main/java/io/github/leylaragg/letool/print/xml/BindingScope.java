@@ -14,7 +14,7 @@ import java.util.Map;
  */
 final class BindingScope {
 
-    /** 根 JSON 上下文快照。 */
+    /** 本次绑定独占的根 JSON 快照。 */
     private final JsonNode root;
 
     /** 当前可见循环变量。 */
@@ -26,15 +26,19 @@ final class BindingScope {
     /** 相对父作用域新增的变量名；根作用域为 {@code null}。 */
     private final String boundName;
 
-    /** 相对父作用域新增的变量快照；根作用域为 {@code null}。 */
+    /** 相对父作用域新增的变量值；根作用域为 {@code null}。 */
     private final JsonNode boundValue;
 
     /** 按需创建并复用的扩展数据视图。 */
     private PrintDataView dataView;
 
-    /** 创建根作用域。 */
+    /**
+     * 接管绑定器从 {@code PrintContext} 取得的独立快照。
+     *
+     * @param root 本次绑定独占且不会再被修改的根数据
+     */
     BindingScope(JsonNode root) {
-        this(root.deepCopy(), Map.of(), null, null, null);
+        this(root, Map.of(), null, null, null);
     }
 
     /** 创建不可变作用域。 */
@@ -57,9 +61,8 @@ final class BindingScope {
      */
     BindingScope child(String name, JsonNode value) {
         Map<String, JsonNode> childVariables = new LinkedHashMap<>(variables);
-        JsonNode valueSnapshot = value.deepCopy();
-        childVariables.put(name, valueSnapshot);
-        return new BindingScope(root, childVariables, this, name, valueSnapshot);
+        childVariables.put(name, value);
+        return new BindingScope(root, childVariables, this, name, value);
     }
 
     /**
@@ -113,7 +116,7 @@ final class BindingScope {
             }
             current = current.get(segment);
         }
-        return ResolvedValue.present(current.deepCopy());
+        return ResolvedValue.present(current);
     }
 
     /**
