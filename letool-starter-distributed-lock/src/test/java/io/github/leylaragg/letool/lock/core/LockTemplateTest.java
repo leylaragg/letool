@@ -1,6 +1,6 @@
 package io.github.leylaragg.letool.lock.core;
 
-import io.github.leylaragg.letool.lock.exception.LockException;
+import io.github.leylaragg.letool.lock.exception.LockAcquisitionException;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -53,7 +53,7 @@ class LockTemplateTest {
         LockRequest request = LockRequest.watchdog("order:1", Duration.ZERO);
         when(backend.tryAcquire(request)).thenReturn(Optional.empty());
 
-        LockException thrown = assertThrows(LockException.class,
+        LockAcquisitionException thrown = assertThrows(LockAcquisitionException.class,
                 () -> new LockTemplate(backend).execute(request, () -> "never"));
 
         assertTrue(thrown.getMessage().contains("order:1"));

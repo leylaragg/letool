@@ -1,5 +1,6 @@
 package io.github.leylaragg.letool.lock.core;
 
+import io.github.leylaragg.letool.lock.exception.LockAcquisitionException;
 import io.github.leylaragg.letool.lock.exception.LockException;
 
 import java.time.Duration;
@@ -31,13 +32,15 @@ public class LockTemplate {
      * @param supplier 仅在成功获取锁后执行的业务回调
      * @param <T> 业务返回类型
      * @return 业务回调结果
-     * @throws LockException 等待超时，没有获得锁
+     * @throws LockAcquisitionException 等待超时，没有获得锁
+     * @throws LockException 锁句柄释放失败
      */
     public <T> T execute(LockRequest request, Supplier<T> supplier) {
         Objects.requireNonNull(request, "request must not be null");
         Objects.requireNonNull(supplier, "supplier must not be null");
         LockHandle handle = lock.tryAcquire(request)
-                .orElseThrow(() -> new LockException("Failed to acquire lock: " + request.key()));
+                .orElseThrow(() -> new LockAcquisitionException(
+                        "Failed to acquire lock: " + request.key()));
         try (handle) {
             return supplier.get();
         }

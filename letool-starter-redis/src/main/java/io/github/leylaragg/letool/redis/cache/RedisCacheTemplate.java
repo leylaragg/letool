@@ -2,7 +2,7 @@ package io.github.leylaragg.letool.redis.cache;
 
 import io.github.leylaragg.letool.lock.core.LockRequest;
 import io.github.leylaragg.letool.lock.core.LockTemplate;
-import io.github.leylaragg.letool.lock.exception.LockException;
+import io.github.leylaragg.letool.lock.exception.LockAcquisitionException;
 import io.github.leylaragg.letool.redis.exception.RedisOperationException;
 import io.github.leylaragg.letool.tool.util.JsonUtil;
 import org.springframework.data.redis.connection.RedisStringCommands;
@@ -86,7 +86,7 @@ public final class RedisCacheTemplate {
         LockRequest request = LockRequest.watchdog(lockKeyPrefix + key, policy.lockWait());
         try {
             return lockTemplate.execute(request, () -> rebuild(key, type, policy, loader));
-        } catch (LockException lockFailure) {
+        } catch (LockAcquisitionException lockFailure) {
             CacheLookup<T> last = lookup(key, type);
             if (last.resolved()) {
                 return last.value();

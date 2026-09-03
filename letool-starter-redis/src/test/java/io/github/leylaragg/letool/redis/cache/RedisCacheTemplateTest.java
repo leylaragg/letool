@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONWriter;
 import io.github.leylaragg.letool.lock.core.LockRequest;
 import io.github.leylaragg.letool.lock.core.LockTemplate;
+import io.github.leylaragg.letool.lock.exception.LockAcquisitionException;
 import io.github.leylaragg.letool.lock.exception.LockException;
 import io.github.leylaragg.letool.redis.exception.RedisOperationException;
 import io.github.leylaragg.letool.redis.serializer.FastJson2JsonRedisSerializer;
@@ -223,7 +224,7 @@ class RedisCacheTemplateTest {
     void lockTimeoutShouldNotBypassProtection() {
         when(values.get("user:7")).thenReturn(null).thenReturn(null);
         when(lockTemplate.execute(any(LockRequest.class), any(Supplier.class)))
-                .thenThrow(new LockException("timeout"));
+                .thenThrow(new LockAcquisitionException("timeout"));
         AtomicInteger loads = new AtomicInteger();
 
         assertThrows(RedisOperationException.class,
@@ -247,6 +248,19 @@ class RedisCacheTemplateTest {
                     throw failure;
                 })));
         verify(values, never()).set(anyString(), any(), any(Duration.class));
+    }
+
+    /** 非获取阶段的锁异常必须原样传播，不能伪装成缓存重建超时。 */
+    @Test
+    void nonAcquisitionLockFailureShouldPropagate() {
+        LockException failure = new LockException("release failed");
+        when(lockTemplate.execute(any(LockRequest.class), any(Supplier.class)))
+                .thenThrow(failure);
+
+        assertSame(failure, assertThrows(LockException.class,
+                () -> template.getOrLoad(
+                        "user:7", User.class, policy(),
+                        () -> new User(7L, "Leyla", true))));
     }
 
     private RedisCachePolicy<User> policy() {
