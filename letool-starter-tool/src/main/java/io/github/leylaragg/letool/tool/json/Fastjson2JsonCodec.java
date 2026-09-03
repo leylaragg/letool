@@ -139,28 +139,6 @@ public final class Fastjson2JsonCodec implements JsonCodec {
     }
 
     /**
-     * 使用当前编解码器的读取特性反序列化 UTF-8 JSON 字节数组。
-     *
-     * @param json UTF-8 JSON 字节数组；空输入返回 {@code null}
-     * @param targetType 目标 Java 类型，不允许为 {@code null}
-     * @param <T> 返回值类型
-     * @return 反序列化结果；空输入返回 {@code null}
-     * @throws IllegalArgumentException {@code targetType} 为 {@code null} 时抛出
-     * @throws JsonCodecException Fastjson2 无法反序列化输入时抛出
-     */
-    @Override
-    public <T> T read(byte[] json, Type targetType) {
-        requireType(targetType, "targetType");
-        if (json == null || json.length == 0) {
-            return null;
-        }
-
-        // Fastjson2 2.0.53 没有 byte[] + Type + Context 重载，因此显式按 UTF-8
-        // 解码，保证读取特性和日期格式配置在字符串与字节数组入口保持一致。
-        return read(new String(json, StandardCharsets.UTF_8), targetType);
-    }
-
-    /**
      * 使用当前编解码器的读取特性反序列化 JSON 数组。
      *
      * @param json JSON 数组文本；空白输入返回 {@code null}

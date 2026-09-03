@@ -1,5 +1,6 @@
 package io.github.leylaragg.letool.tool.function;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -17,16 +18,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class RetryUtilTest {
 
     /**
+     * 清理测试线程的中断标记，避免中断场景污染后续用例。
+     */
+    @AfterEach
+    void clearInterruptedFlag() {
+        Thread.interrupted();
+    }
+
+    /**
      * 验证可重试异常在最大尝试次数内恢复时返回最终结果。
      */
     @Test
     void shouldRetryRetryableExceptionUntilSuccess() {
         AtomicInteger attempts = new AtomicInteger();
-        RetryPolicy<String> policy = RetryPolicy.<String>builder()
-                .maxAttempts(3)
-                .fixedDelay(Duration.ZERO)
-                .retryOnException(IOException.class::isInstance)
-                .build();
+        RetryPolicy<String> policy = ioRetryPolicy(Duration.ZERO);
 
         String result = RetryUtil.execute(() -> {
             if (attempts.incrementAndGet() < 3) {
@@ -80,11 +85,7 @@ class RetryUtilTest {
     void shouldStopImmediatelyForNonRetryableException() {
         AtomicInteger attempts = new AtomicInteger();
         IllegalStateException failure = new IllegalStateException("business failure");
-        RetryPolicy<String> policy = RetryPolicy.<String>builder()
-                .maxAttempts(3)
-                .fixedDelay(Duration.ZERO)
-                .retryOnException(IOException.class::isInstance)
-                .build();
+        RetryPolicy<String> policy = ioRetryPolicy(Duration.ZERO);
 
         RetryOperationException exception = assertThrows(
                 RetryOperationException.class,
@@ -106,11 +107,7 @@ class RetryUtilTest {
     void shouldReportExhaustionAfterMaximumAttempts() {
         AtomicInteger attempts = new AtomicInteger();
         IOException failure = new IOException("temporary failure");
-        RetryPolicy<String> policy = RetryPolicy.<String>builder()
-                .maxAttempts(3)
-                .fixedDelay(Duration.ZERO)
-                .retryOnException(IOException.class::isInstance)
-                .build();
+        RetryPolicy<String> policy = ioRetryPolicy(Duration.ZERO);
 
         RetryOperationException exception = assertThrows(
                 RetryOperationException.class,
@@ -209,21 +206,17 @@ class RetryUtilTest {
                 .fixedDelay(Duration.ZERO)
                 .build();
 
-        try {
-            RetryOperationException exception = assertThrows(
-                    RetryOperationException.class,
-                    () -> RetryUtil.execute(() -> {
-                        attempts.incrementAndGet();
-                        throw new InterruptedException("cancelled");
-                    }, policy)
-            );
+        RetryOperationException exception = assertThrows(
+                RetryOperationException.class,
+                () -> RetryUtil.execute(() -> {
+                    attempts.incrementAndGet();
+                    throw new InterruptedException("cancelled");
+                }, policy)
+        );
 
-            assertEquals(RetryErrorCode.INTERRUPTED.getCode(), exception.getCode());
-            assertEquals(1, attempts.get());
-            assertTrue(Thread.currentThread().isInterrupted());
-        } finally {
-            Thread.interrupted();
-        }
+        assertEquals(RetryErrorCode.INTERRUPTED.getCode(), exception.getCode());
+        assertEquals(1, attempts.get());
+        assertTrue(Thread.currentThread().isInterrupted());
     }
 
     /**
@@ -232,28 +225,20 @@ class RetryUtilTest {
     @Test
     void shouldStopWhenRetryDelayIsInterrupted() {
         AtomicInteger attempts = new AtomicInteger();
-        RetryPolicy<String> policy = RetryPolicy.<String>builder()
-                .maxAttempts(3)
-                .fixedDelay(Duration.ofMillis(10))
-                .retryOnException(IOException.class::isInstance)
-                .build();
+        RetryPolicy<String> policy = ioRetryPolicy(Duration.ofMillis(10));
 
-        try {
-            Thread.currentThread().interrupt();
-            RetryOperationException exception = assertThrows(
-                    RetryOperationException.class,
-                    () -> RetryUtil.execute(() -> {
-                        attempts.incrementAndGet();
-                        throw new IOException("temporary failure");
-                    }, policy)
-            );
+        Thread.currentThread().interrupt();
+        RetryOperationException exception = assertThrows(
+                RetryOperationException.class,
+                () -> RetryUtil.execute(() -> {
+                    attempts.incrementAndGet();
+                    throw new IOException("temporary failure");
+                }, policy)
+        );
 
-            assertEquals(RetryErrorCode.INTERRUPTED.getCode(), exception.getCode());
-            assertEquals(1, attempts.get());
-            assertTrue(Thread.currentThread().isInterrupted());
-        } finally {
-            Thread.interrupted();
-        }
+        assertEquals(RetryErrorCode.INTERRUPTED.getCode(), exception.getCode());
+        assertEquals(1, attempts.get());
+        assertTrue(Thread.currentThread().isInterrupted());
     }
 
     /**
@@ -298,5 +283,19 @@ class RetryUtilTest {
         assertEquals("exponential", exponential);
         assertEquals("DONE", result);
         assertEquals("random", RetryUtil.execute(() -> "random", randomPolicy));
+    }
+
+    /**
+     * 创建最多尝试三次、仅重试 IO 异常的固定延迟策略。
+     *
+     * @param delay 两次尝试之间的固定等待时间
+     * @return IO 异常重试策略
+     */
+    private static RetryPolicy<String> ioRetryPolicy(Duration delay) {
+        return RetryPolicy.<String>builder()
+                .maxAttempts(3)
+                .fixedDelay(delay)
+                .retryOnException(IOException.class::isInstance)
+                .build();
     }
 }

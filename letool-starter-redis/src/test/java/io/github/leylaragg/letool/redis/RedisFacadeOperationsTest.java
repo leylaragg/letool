@@ -1,5 +1,6 @@
 package io.github.leylaragg.letool.redis;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.redis.core.BoundHashOperations;
@@ -37,16 +38,28 @@ import static org.mockito.Mockito.when;
  */
 class RedisFacadeOperationsTest {
 
+    /** 每个用例独立使用的 RedisTemplate 模拟对象。 */
+    private RedisTemplate<String, Object> redisTemplate;
+
+    /** 基于当前模拟模板创建的 Redis 门面。 */
+    private RedisFacade redisFacade;
+
+    /**
+     * 为每个测试创建相互隔离的模板和门面实例。
+     */
+    @BeforeEach
+    @SuppressWarnings("unchecked")
+    void setUp() {
+        redisTemplate = mock(RedisTemplate.class);
+        redisFacade = new RedisFacade(redisTemplate);
+    }
+
     /**
      * RedisFacade should expose the application RedisTemplate so callers can rely on
      * the application's configured serializers.
      */
     @Test
     void shouldWrapObjectRedisTemplate() {
-        RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
-
-        RedisFacade redisFacade = new RedisFacade(redisTemplate);
-
         assertThat(redisFacade.getTemplate()).isSameAs(redisTemplate);
     }
 
@@ -56,13 +69,10 @@ class RedisFacadeOperationsTest {
      */
     @Test
     void shouldSetAndGetSerializedObjectsThroughRedisTemplate() {
-        RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
         ValueOperations<String, Object> valueOperations = mock(ValueOperations.class);
         TestUser user = new TestUser("u1", "Leyland");
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get("user:1")).thenReturn(user);
-
-        RedisFacade redisFacade = new RedisFacade(redisTemplate);
 
         redisFacade.set("user:1", user, Duration.ofMinutes(5));
         TestUser actual = redisFacade.get("user:1", TestUser.class);
@@ -77,13 +87,10 @@ class RedisFacadeOperationsTest {
      */
     @Test
     void shouldReturnTemplateDeserializedObjectFromGenericGet() {
-        RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
         ValueOperations<String, Object> valueOperations = mock(ValueOperations.class);
         TestUser user = new TestUser("u1", "Leyland");
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get("user:1")).thenReturn(user);
-
-        RedisFacade redisFacade = new RedisFacade(redisTemplate);
 
         TestUser actual = redisFacade.get("user:1");
 
@@ -96,13 +103,10 @@ class RedisFacadeOperationsTest {
      */
     @Test
     void shouldGetObjectByRequestedType() {
-        RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
         ValueOperations<String, Object> valueOperations = mock(ValueOperations.class);
         TestUser user = new TestUser("u1", "Leyland");
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get("user:1")).thenReturn(user);
-
-        RedisFacade redisFacade = new RedisFacade(redisTemplate);
 
         TestUser actual = redisFacade.get("user:1", TestUser.class);
 
@@ -115,7 +119,6 @@ class RedisFacadeOperationsTest {
      */
     @Test
     void shouldExposeNativeRedisOperations() {
-        RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
         ValueOperations<String, Object> valueOperations = mock(ValueOperations.class);
         BoundValueOperations<String, Object> boundValueOperations = mock(BoundValueOperations.class);
         ListOperations<String, Object> listOperations = mock(ListOperations.class);
@@ -137,8 +140,6 @@ class RedisFacadeOperationsTest {
         when(redisTemplate.opsForHash()).thenReturn(hashOperations);
         when(redisTemplate.boundHashOps("k")).thenReturn(boundHashOperations);
 
-        RedisFacade redisFacade = new RedisFacade(redisTemplate);
-
         assertThat(redisFacade.opsForValue()).isSameAs(valueOperations);
         assertThat(redisFacade.boundValueOps("k")).isSameAs(boundValueOperations);
         assertThat(redisFacade.opsForList()).isSameAs(listOperations);
@@ -157,15 +158,12 @@ class RedisFacadeOperationsTest {
      */
     @Test
     void shouldUseListOperationsWithObjectElements() {
-        RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
         ListOperations<String, Object> listOperations = mock(ListOperations.class);
         TestUser user = new TestUser("u1", "Leyland");
         when(redisTemplate.opsForList()).thenReturn(listOperations);
         when(listOperations.rightPush("users", user)).thenReturn(1L);
         when(listOperations.leftPop("users")).thenReturn(user);
         when(listOperations.range("users", 0, -1)).thenReturn(List.of(user));
-
-        RedisFacade redisFacade = new RedisFacade(redisTemplate);
 
         assertThat(redisFacade.rpush("users", user)).isEqualTo(1L);
         TestUser popped = redisFacade.lpop("users");
@@ -181,7 +179,6 @@ class RedisFacadeOperationsTest {
      */
     @Test
     void shouldUseStructuredOperationsWithObjectValues() {
-        RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
         HashOperations<String, Object, Object> hashOperations = mock(HashOperations.class);
         SetOperations<String, Object> setOperations = mock(SetOperations.class);
         ZSetOperations<String, Object> zSetOperations = mock(ZSetOperations.class);
@@ -196,8 +193,6 @@ class RedisFacadeOperationsTest {
         when(setOperations.isMember("online-users", user)).thenReturn(true);
         when(zSetOperations.add("rank", user, 10.0)).thenReturn(true);
         when(zSetOperations.range("rank", 0, -1)).thenReturn(Set.of(user));
-
-        RedisFacade redisFacade = new RedisFacade(redisTemplate);
 
         redisFacade.hset("users", "u1", user);
         TestUser hashUser = redisFacade.hget("users", "u1");
@@ -220,7 +215,6 @@ class RedisFacadeOperationsTest {
      */
     @Test
     void pipelineShouldExecuteConsumerWithRedisOperations() {
-        RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
         List<Object> expected = List.of("ok");
         when(redisTemplate.executePipelined(any(SessionCallback.class))).thenAnswer(invocation -> {
             SessionCallback<?> callback = invocation.getArgument(0);
@@ -228,7 +222,6 @@ class RedisFacadeOperationsTest {
             return expected;
         });
 
-        RedisFacade redisFacade = new RedisFacade(redisTemplate);
         AtomicReference<RedisOperations<String, Object>> operationsRef = new AtomicReference<>();
 
         List<Object> actual = redisFacade.pipeline(operationsRef::set);
@@ -240,14 +233,12 @@ class RedisFacadeOperationsTest {
     /** Lua 整数结果必须声明为 Long，避免 Lettuce 误用对象 Value 输出解码。 */
     @Test
     void rawScriptShouldUseDeclaredResultType() {
-        RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
         when(redisTemplate.execute(
                 any(RedisScript.class),
                 any(RedisSerializer.class),
                 any(RedisSerializer.class),
                 anyList(),
                 any(Object[].class))).thenReturn(1L);
-        RedisFacade redisFacade = new RedisFacade(redisTemplate);
         byte[] serializedValue = new byte[]{(byte) 0xAC, (byte) 0xED, 0x00, 0x05};
 
         Long result = redisFacade.executeScriptRaw(
@@ -275,9 +266,7 @@ class RedisFacadeOperationsTest {
     /** Spring Data 未返回 TTL 时，门面应遵守文档约定并返回 -1。 */
     @Test
     void nullTtlShouldFollowDocumentedMinusOneContract() {
-        RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
         when(redisTemplate.getExpire("missing", TimeUnit.SECONDS)).thenReturn(null);
-        RedisFacade redisFacade = new RedisFacade(redisTemplate);
 
         assertThat(redisFacade.getExpire("missing", TimeUnit.SECONDS)).isEqualTo(-1L);
     }
@@ -285,11 +274,9 @@ class RedisFacadeOperationsTest {
     /** 可空布尔结果不得通过自动拆箱泄漏为空指针异常。 */
     @Test
     void nullBooleanResultsShouldBeNormalizedToFalse() {
-        RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
         when(redisTemplate.hasKey("missing")).thenReturn(null);
         when(redisTemplate.delete("missing")).thenReturn(null);
         when(redisTemplate.expire("missing", 30, TimeUnit.SECONDS)).thenReturn(null);
-        RedisFacade redisFacade = new RedisFacade(redisTemplate);
 
         assertThat(redisFacade.hasKey("missing")).isFalse();
         assertThat(redisFacade.delete("missing")).isFalse();
@@ -299,7 +286,6 @@ class RedisFacadeOperationsTest {
     /** 可空计数结果应统一收敛为零，便于调用方直接进行数值判断。 */
     @Test
     void nullCountResultsShouldBeNormalizedToZero() {
-        RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
         HashOperations<String, Object, Object> hashOperations = mock(HashOperations.class);
         ListOperations<String, Object> listOperations = mock(ListOperations.class);
         SetOperations<String, Object> setOperations = mock(SetOperations.class);
@@ -312,7 +298,6 @@ class RedisFacadeOperationsTest {
         when(listOperations.rightPush("users", "u1")).thenReturn(null);
         when(redisTemplate.opsForSet()).thenReturn(setOperations);
         when(setOperations.add("users", "u1")).thenReturn(null);
-        RedisFacade redisFacade = new RedisFacade(redisTemplate);
 
         assertThat(redisFacade.delete(keys)).isZero();
         assertThat(redisFacade.hdel("users", "u1")).isZero();

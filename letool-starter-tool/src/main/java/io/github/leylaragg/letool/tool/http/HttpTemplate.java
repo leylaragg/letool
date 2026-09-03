@@ -21,6 +21,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 /**
  * 基于 JDK 17 {@link HttpClient} 的线程安全 HTTP 请求模板。
@@ -104,15 +105,7 @@ public final class HttpTemplate {
         Objects.requireNonNull(request, "request must not be null");
         List<HttpInterceptor> interceptors = request.interceptorSnapshot();
         long startedAt = System.nanoTime();
-        try {
-            for (HttpInterceptor interceptor : interceptors) {
-                interceptor.beforeRequest(request);
-            }
-        } catch (RuntimeException exception) {
-            HttpException wrapped = HttpException.interceptorFailed(exception);
-            notifyError(interceptors, request, wrapped);
-            throw wrapped;
-        }
+        invokeInterceptors(interceptors, request, interceptor -> interceptor.beforeRequest(request));
 
         HttpRequest.Snapshot snapshot;
         try {
@@ -139,21 +132,13 @@ public final class HttpTemplate {
                         response.headers(),
                         Duration.ofNanos(System.nanoTime() - startedAt),
                         attempts);
-                try {
-                    for (HttpInterceptor interceptor : interceptors) {
-                        interceptor.afterResponse(request, result);
-                    }
-                } catch (RuntimeException exception) {
-                    HttpException wrapped = HttpException.interceptorFailed(exception);
-                    notifyError(interceptors, request, wrapped);
-                    throw wrapped;
-                }
+                invokeInterceptors(
+                        interceptors,
+                        request,
+                        interceptor -> interceptor.afterResponse(request, result));
                 return result;
             } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-                HttpException wrapped = HttpException.requestInterrupted(exception);
-                notifyError(interceptors, request, wrapped);
-                throw wrapped;
+                throw interrupted(exception, interceptors, request);
             } catch (IOException exception) {
                 if (hasCause(exception, ResponseLimitExceededException.class)) {
                     HttpException wrapped = HttpException.responseTooLarge(exception);
@@ -309,11 +294,44 @@ public final class HttpTemplate {
         try {
             TimeUnit.NANOSECONDS.sleep(delay.toNanos());
         } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            HttpException wrapped = HttpException.requestInterrupted(exception);
+            throw interrupted(exception, interceptors, request);
+        }
+    }
+
+    /**
+     * 执行一组同阶段拦截器，并统一包装和通知拦截器自身的运行时异常。
+     *
+     * @param interceptors 拦截器快照
+     * @param request 原始请求构建器
+     * @param invocation 当前生命周期回调
+     */
+    private static void invokeInterceptors(List<HttpInterceptor> interceptors,
+                                           HttpRequest request,
+                                           Consumer<HttpInterceptor> invocation) {
+        try {
+            interceptors.forEach(invocation);
+        } catch (RuntimeException exception) {
+            HttpException wrapped = HttpException.interceptorFailed(exception);
             notifyError(interceptors, request, wrapped);
             throw wrapped;
         }
+    }
+
+    /**
+     * 恢复线程中断标记，并创建已完成错误通知的统一异常。
+     *
+     * @param exception 原始中断异常
+     * @param interceptors 拦截器快照
+     * @param request 原始请求构建器
+     * @return 请求中断异常
+     */
+    private static HttpException interrupted(InterruptedException exception,
+                                             List<HttpInterceptor> interceptors,
+                                             HttpRequest request) {
+        Thread.currentThread().interrupt();
+        HttpException wrapped = HttpException.requestInterrupted(exception);
+        notifyError(interceptors, request, wrapped);
+        return wrapped;
     }
 
     /**

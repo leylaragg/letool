@@ -5,8 +5,10 @@ import com.alibaba.fastjson2.JSONReader;
 import com.alibaba.fastjson2.JSONWriter;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -69,6 +71,35 @@ class Fastjson2JsonCodecTest {
         SmartMatchValue actual = codec.read("{\"user_name\":\"Leyland\"}", SmartMatchValue.class);
 
         assertThat(actual.getUserName()).isEqualTo("Leyland");
+    }
+
+    /**
+     * 验证字节数组入口的校验顺序、空输入和 UTF-8 参数化类型读取契约。
+     *
+     * @throws NoSuchFieldException 测试类型声明缺失时抛出
+     */
+    @Test
+    void shouldPreserveByteArrayReadContract() throws NoSuchFieldException {
+        Fastjson2JsonCodec codec = Fastjson2JsonCodec.builder()
+                .readerFeatures(JSONReader.Feature.SupportSmartMatch)
+                .build();
+        Type targetType = GenericTypes.class.getDeclaredField("values").getGenericType();
+        Object nullInputResult = codec.read((byte[]) null, targetType);
+        Object emptyInputResult = codec.read(new byte[0], targetType);
+
+        assertThatThrownBy(() -> codec.read((byte[]) null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("targetType must not be null");
+        assertThat(nullInputResult).isNull();
+        assertThat(emptyInputResult).isNull();
+
+        List<SmartMatchValue> actual = codec.read(
+                "[{\"user_name\":\"莱拉\"}]".getBytes(StandardCharsets.UTF_8),
+                targetType);
+
+        assertThat(actual)
+                .extracting(SmartMatchValue::getUserName)
+                .containsExactly("莱拉");
     }
 
     @Test
@@ -159,6 +190,11 @@ class Fastjson2JsonCodecTest {
         public void setUserName(String userName) {
             this.userName = userName;
         }
+    }
+
+    /** 提供包含参数化类型的字段声明，避免测试依赖 Fastjson2 专用类型令牌。 */
+    static class GenericTypes {
+        private List<SmartMatchValue> values;
     }
 
 }
