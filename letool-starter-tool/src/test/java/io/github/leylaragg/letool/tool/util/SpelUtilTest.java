@@ -3,6 +3,7 @@ package io.github.leylaragg.letool.tool.util;
 import io.github.leylaragg.letool.tool.spel.SpelErrorCode;
 import io.github.leylaragg.letool.tool.spel.SpelException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
 import java.lang.reflect.Method;
 import java.util.HashMap;
@@ -72,14 +73,15 @@ class SpelUtilTest {
         GreetingService target = new GreetingService("hello");
 
         String result = SpelUtil.evalMethod(
-                "#target.prefix + ':' + #name + ':' + #p1 + ':' + #a0 + ':' + #method.name",
+                "#target.prefix + ':' + #name + ':' + #p1 + ':' + #a0"
+                        + " + ':' + #args[1] + ':' + #method.name",
                 target,
                 method,
                 new Object[]{"leyland", 2},
                 String.class
         );
 
-        assertEquals("hello:leyland:2:leyland:greet", result);
+        assertEquals("hello:leyland:2:leyland:2:greet", result);
     }
 
     /**
@@ -92,12 +94,49 @@ class SpelUtilTest {
         Method method = GreetingService.class.getDeclaredMethod("greet", String.class, int.class);
 
         String result = SpelUtil.evalMethodTemplate(
-                "greeting:#{#name}:#{#p1}",
+                "greeting:#{#target.prefix}:#{#name}:#{#p1}:#{#args[0]}:#{#method.name}",
                 new GreetingService("hello"),
                 method,
                 new Object[]{"leyland", 2});
 
-        assertEquals("greeting:leyland:2", result);
+        assertEquals("greeting:hello:leyland:2:leyland:greet", result);
+    }
+
+    /**
+     * 验证两个方法求值入口都把空参数数组规范化为空数组。
+     *
+     * @throws NoSuchMethodException 测试方法不存在时抛出
+     */
+    @Test
+    void methodEvaluationEntriesTreatNullArgumentsAsEmpty() throws NoSuchMethodException {
+        Method method = GreetingService.class.getDeclaredMethod("noArguments");
+        GreetingService target = new GreetingService("hello");
+
+        assertEquals(0, SpelUtil.evalMethod(
+                "#args.length", target, method, null, Integer.class));
+        assertEquals("args:0", SpelUtil.evalMethodTemplate(
+                "args:#{#args.length}", target, method, null));
+    }
+
+    /**
+     * 验证两个方法求值入口保持相同的上下文参数校验协议。
+     *
+     * @throws NoSuchMethodException 测试方法不存在时抛出
+     */
+    @Test
+    void methodEvaluationEntriesRejectInvalidContextConsistently()
+            throws NoSuchMethodException {
+        Method method = GreetingService.class.getDeclaredMethod("greet", String.class, int.class);
+
+        assertMethodContextFailure("方法不能为空", () -> SpelUtil.evalMethod(
+                "1", null, null, null, Integer.class));
+        assertMethodContextFailure("方法不能为空", () -> SpelUtil.evalMethodTemplate(
+                "#{1}", null, null, null));
+        assertMethodContextFailure("方法参数数量与实际参数数量不一致", () -> SpelUtil.evalMethod(
+                "1", null, method, new Object[]{"leyland"}, Integer.class));
+        assertMethodContextFailure("方法参数数量与实际参数数量不一致",
+                () -> SpelUtil.evalMethodTemplate(
+                        "#{1}", null, method, new Object[]{"leyland"}));
     }
 
     /**
@@ -134,6 +173,19 @@ class SpelUtilTest {
     }
 
     /**
+     * 断言方法上下文校验使用统一错误码并保留稳定原因。
+     *
+     * @param message 期望的底层异常消息
+     * @param executable 待执行的方法求值入口
+     */
+    private static void assertMethodContextFailure(String message, Executable executable) {
+        SpelException exception = assertThrows(SpelException.class, executable);
+        assertEquals(SpelErrorCode.EVALUATION_FAILED, exception.getErrorCode());
+        assertInstanceOf(IllegalArgumentException.class, exception.getCause());
+        assertEquals(message, exception.getCause().getMessage());
+    }
+
+    /**
      * 表达式方法上下文测试对象。
      *
      * @param prefix 问候语前缀
@@ -150,6 +202,16 @@ class SpelUtilTest {
         @SuppressWarnings("unused")
         private String greet(String name, int times) {
             return prefix + name.repeat(times);
+        }
+
+        /**
+         * 用于验证无参数方法上下文，不参与实际执行。
+         *
+         * @return 问候语前缀
+         */
+        @SuppressWarnings("unused")
+        private String noArguments() {
+            return prefix;
         }
     }
 }

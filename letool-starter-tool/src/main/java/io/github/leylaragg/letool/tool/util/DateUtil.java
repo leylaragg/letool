@@ -25,6 +25,7 @@ import java.time.temporal.TemporalAdjusters;
 import java.util.Date;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.function.BiFunction;
 import java.util.function.Supplier;
 
 /**
@@ -696,13 +697,7 @@ public final class DateUtil {
      * @throws DateOperationException 参数为空或日期非法时抛出
      */
     public static LocalDate parseDate(String text, DateTimeFormatter formatter) {
-        requireText(text, "dateText");
-        DateTimeFormatter requiredFormatter = requireStrictFormatter(formatter);
-        try {
-            return LocalDate.parse(text, requiredFormatter);
-        } catch (DateTimeParseException exception) {
-            throw DateOperationException.parseFailed(exception);
-        }
+        return parseRequired(text, formatter, "dateText", LocalDate::parse);
     }
 
     /**
@@ -736,15 +731,7 @@ public final class DateUtil {
      * @throws DateOperationException 格式化器为空时抛出
      */
     public static Optional<LocalDate> tryParseDate(String text, DateTimeFormatter formatter) {
-        DateTimeFormatter requiredFormatter = requireStrictFormatter(formatter);
-        if (text == null || text.isBlank()) {
-            return Optional.empty();
-        }
-        try {
-            return Optional.of(LocalDate.parse(text, requiredFormatter));
-        } catch (DateTimeParseException exception) {
-            return Optional.empty();
-        }
+        return tryParse(text, formatter, LocalDate::parse);
     }
 
     /**
@@ -779,13 +766,7 @@ public final class DateUtil {
      * @throws DateOperationException 参数为空或日期时间非法时抛出
      */
     public static LocalDateTime parseDateTime(String text, DateTimeFormatter formatter) {
-        requireText(text, "dateTimeText");
-        DateTimeFormatter requiredFormatter = requireStrictFormatter(formatter);
-        try {
-            return LocalDateTime.parse(text, requiredFormatter);
-        } catch (DateTimeParseException exception) {
-            throw DateOperationException.parseFailed(exception);
-        }
+        return parseRequired(text, formatter, "dateTimeText", LocalDateTime::parse);
     }
 
     /**
@@ -819,15 +800,7 @@ public final class DateUtil {
      * @throws DateOperationException 格式化器为空时抛出
      */
     public static Optional<LocalDateTime> tryParseDateTime(String text, DateTimeFormatter formatter) {
-        DateTimeFormatter requiredFormatter = requireStrictFormatter(formatter);
-        if (text == null || text.isBlank()) {
-            return Optional.empty();
-        }
-        try {
-            return Optional.of(LocalDateTime.parse(text, requiredFormatter));
-        } catch (DateTimeParseException exception) {
-            return Optional.empty();
-        }
+        return tryParse(text, formatter, LocalDateTime::parse);
     }
 
     /**
@@ -862,13 +835,7 @@ public final class DateUtil {
      * @throws DateOperationException 参数为空或时间非法时抛出
      */
     public static LocalTime parseTime(String text, DateTimeFormatter formatter) {
-        requireText(text, "timeText");
-        DateTimeFormatter requiredFormatter = requireStrictFormatter(formatter);
-        try {
-            return LocalTime.parse(text, requiredFormatter);
-        } catch (DateTimeParseException exception) {
-            throw DateOperationException.parseFailed(exception);
-        }
+        return parseRequired(text, formatter, "timeText", LocalTime::parse);
     }
 
     /**
@@ -902,15 +869,7 @@ public final class DateUtil {
      * @throws DateOperationException 格式化器为空时抛出
      */
     public static Optional<LocalTime> tryParseTime(String text, DateTimeFormatter formatter) {
-        DateTimeFormatter requiredFormatter = requireStrictFormatter(formatter);
-        if (text == null || text.isBlank()) {
-            return Optional.empty();
-        }
-        try {
-            return Optional.of(LocalTime.parse(text, requiredFormatter));
-        } catch (DateTimeParseException exception) {
-            return Optional.empty();
-        }
+        return tryParse(text, formatter, LocalTime::parse);
     }
 
     /**
@@ -1459,6 +1418,54 @@ public final class DateUtil {
      */
     private static DateTimeFormatter requireStrictFormatter(DateTimeFormatter formatter) {
         return requireArgument(formatter, "formatter").withResolverStyle(ResolverStyle.STRICT);
+    }
+
+    /**
+     * 执行必选文本的严格解析，并统一转换解析异常。
+     *
+     * @param text 待解析文本
+     * @param formatter 日期时间格式化器
+     * @param parameterName 文本参数名称
+     * @param parser 具体类型的解析函数
+     * @param <T> 解析结果类型
+     * @return 解析结果
+     */
+    private static <T> T parseRequired(
+            String text,
+            DateTimeFormatter formatter,
+            String parameterName,
+            BiFunction<String, DateTimeFormatter, T> parser) {
+        requireText(text, parameterName);
+        DateTimeFormatter requiredFormatter = requireStrictFormatter(formatter);
+        try {
+            return parser.apply(text, requiredFormatter);
+        } catch (DateTimeParseException exception) {
+            throw DateOperationException.parseFailed(exception);
+        }
+    }
+
+    /**
+     * 执行容错严格解析，文本为空白或无法解析时返回空结果。
+     *
+     * @param text 待解析文本
+     * @param formatter 日期时间格式化器
+     * @param parser 具体类型的解析函数
+     * @param <T> 解析结果类型
+     * @return 解析成功时返回结果，否则返回空结果
+     */
+    private static <T> Optional<T> tryParse(
+            String text,
+            DateTimeFormatter formatter,
+            BiFunction<String, DateTimeFormatter, T> parser) {
+        DateTimeFormatter requiredFormatter = requireStrictFormatter(formatter);
+        if (text == null || text.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(parser.apply(text, requiredFormatter));
+        } catch (DateTimeParseException exception) {
+            return Optional.empty();
+        }
     }
 
     /**

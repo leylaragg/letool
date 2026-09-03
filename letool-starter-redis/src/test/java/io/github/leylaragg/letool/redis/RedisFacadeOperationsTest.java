@@ -301,14 +301,24 @@ class RedisFacadeOperationsTest {
     void nullCountResultsShouldBeNormalizedToZero() {
         RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
         HashOperations<String, Object, Object> hashOperations = mock(HashOperations.class);
+        ListOperations<String, Object> listOperations = mock(ListOperations.class);
+        SetOperations<String, Object> setOperations = mock(SetOperations.class);
         List<String> keys = List.of("missing:1", "missing:2");
         when(redisTemplate.delete(keys)).thenReturn(null);
         when(redisTemplate.opsForHash()).thenReturn(hashOperations);
         when(hashOperations.delete("users", "u1")).thenReturn(null);
+        when(redisTemplate.opsForList()).thenReturn(listOperations);
+        when(listOperations.leftPush("users", "u1")).thenReturn(null);
+        when(listOperations.rightPush("users", "u1")).thenReturn(null);
+        when(redisTemplate.opsForSet()).thenReturn(setOperations);
+        when(setOperations.add("users", "u1")).thenReturn(null);
         RedisFacade redisFacade = new RedisFacade(redisTemplate);
 
         assertThat(redisFacade.delete(keys)).isZero();
         assertThat(redisFacade.hdel("users", "u1")).isZero();
+        assertThat(redisFacade.lpush("users", "u1")).isZero();
+        assertThat(redisFacade.rpush("users", "u1")).isZero();
+        assertThat(redisFacade.sadd("users", "u1")).isZero();
     }
 
     record TestUser(String id, String name) {

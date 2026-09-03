@@ -9,6 +9,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Objects;
@@ -23,9 +24,6 @@ public final class DigestUtil {
 
     /** SHA-256 算法名称。 */
     private static final String SHA_256 = "SHA-256";
-
-    /** 默认摘要缓冲区大小。 */
-    private static final int BUFFER_SIZE = 16 * 1024;
 
     /** 禁止实例化工具类。 */
     private DigestUtil() {
@@ -63,7 +61,9 @@ public final class DigestUtil {
     public static String sha256(InputStream input) throws IOException {
         Objects.requireNonNull(input, "input 不能为空");
         MessageDigest digest = newSha256();
-        updateDigest(input, digest);
+        DigestInputStream digestInput = new DigestInputStream(input, digest);
+        // 包装流不主动关闭，调用方仍负责原输入流的生命周期。
+        IoUtil.copy(digestInput, OutputStream.nullOutputStream());
         return HexUtil.encodeHex(digest.digest());
     }
 
@@ -94,16 +94,8 @@ public final class DigestUtil {
         Objects.requireNonNull(input, "input 不能为空");
         Objects.requireNonNull(output, "output 不能为空");
         MessageDigest digest = newSha256();
-        byte[] buffer = new byte[BUFFER_SIZE];
-        long copied = 0;
-        int read;
-        while ((read = input.read(buffer)) != -1) {
-            if (read > 0) {
-                output.write(buffer, 0, read);
-                digest.update(buffer, 0, read);
-                copied += read;
-            }
-        }
+        DigestInputStream digestInput = new DigestInputStream(input, digest);
+        long copied = IoUtil.copy(digestInput, output);
         return new DigestCopyResult(copied, HexUtil.encodeHex(digest.digest()));
     }
 
@@ -126,23 +118,6 @@ public final class DigestUtil {
                     && MessageDigest.isEqual(expectedBytes, actualBytes);
         } catch (EncodingOperationException exception) {
             return false;
-        }
-    }
-
-    /**
-     * 从输入流更新摘要状态。
-     *
-     * @param input  输入流
-     * @param digest 摘要器
-     * @throws IOException 读取失败时抛出
-     */
-    private static void updateDigest(InputStream input, MessageDigest digest) throws IOException {
-        byte[] buffer = new byte[BUFFER_SIZE];
-        int read;
-        while ((read = input.read(buffer)) != -1) {
-            if (read > 0) {
-                digest.update(buffer, 0, read);
-            }
         }
     }
 

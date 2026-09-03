@@ -377,7 +377,7 @@ public class RedisFacade {
      */
     public long delete(Collection<String> keys) {
         Long count = redisTemplate.delete(keys);
-        return count == null ? 0L : count;
+        return longOrZero(count);
     }
 
     /**
@@ -593,7 +593,7 @@ public class RedisFacade {
      */
     public long hdel(String key, String... fields) {
         Long count = redisTemplate.opsForHash().delete(key, (Object[]) fields);
-        return count == null ? 0L : count;
+        return longOrZero(count);
     }
 
     // ======================== List 操作 ========================
@@ -607,7 +607,7 @@ public class RedisFacade {
      */
     public long lpush(String key, Object value) {
         Long size = redisTemplate.opsForList().leftPush(key, value);
-        return size == null ? 0 : size;
+        return longOrZero(size);
     }
 
     /**
@@ -619,7 +619,7 @@ public class RedisFacade {
      */
     public long rpush(String key, Object value) {
         Long size = redisTemplate.opsForList().rightPush(key, value);
-        return size == null ? 0 : size;
+        return longOrZero(size);
     }
 
     /**
@@ -675,7 +675,7 @@ public class RedisFacade {
      */
     public long sadd(String key, Object... values) {
         Long count = redisTemplate.opsForSet().add(key, values);
-        return count == null ? 0 : count;
+        return longOrZero(count);
     }
 
     /**
@@ -839,6 +839,16 @@ public class RedisFacade {
                 return null;
             }
         });
+    }
+
+    /**
+     * 将 Redis 可空计数结果规范化为基本类型。
+     *
+     * @param value Redis 返回的计数
+     * @return 原计数；为空时返回 0
+     */
+    private static long longOrZero(Long value) {
+        return value == null ? 0L : value;
     }
 
     /**

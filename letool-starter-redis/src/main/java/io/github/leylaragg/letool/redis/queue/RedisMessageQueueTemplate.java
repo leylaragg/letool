@@ -59,7 +59,7 @@ public class RedisMessageQueueTemplate {
      */
     public long offer(String queue, Object message) {
         Long size = boundListOps(queue).rightPush(message);
-        return size == null ? 0 : size;
+        return longOrZero(size);
     }
 
     /**
@@ -71,7 +71,7 @@ public class RedisMessageQueueTemplate {
      */
     public long offerFirst(String queue, Object message) {
         Long size = boundListOps(queue).leftPush(message);
-        return size == null ? 0 : size;
+        return longOrZero(size);
     }
 
     /**
@@ -121,7 +121,7 @@ public class RedisMessageQueueTemplate {
      */
     public long size(String queue) {
         Long size = boundListOps(queue).size();
-        return size == null ? 0 : size;
+        return longOrZero(size);
     }
 
     /**
@@ -241,7 +241,7 @@ public class RedisMessageQueueTemplate {
      */
     public long ack(String stream, String group, String... recordIds) {
         Long count = streamOps().acknowledge(stream, group, recordIds);
-        return count == null ? 0 : count;
+        return longOrZero(count);
     }
 
     /**
@@ -252,7 +252,17 @@ public class RedisMessageQueueTemplate {
      */
     public long streamSize(String stream) {
         Long size = streamOps().size(stream);
-        return size == null ? 0 : size;
+        return longOrZero(size);
+    }
+
+    /**
+     * 将 Redis 可空计数结果规范化为基本类型。
+     *
+     * @param value Redis 返回的计数
+     * @return 原计数；为空时返回 0
+     */
+    private static long longOrZero(Long value) {
+        return value == null ? 0L : value;
     }
 
     private BoundListOperations<String, Object> boundListOps(String queue) {

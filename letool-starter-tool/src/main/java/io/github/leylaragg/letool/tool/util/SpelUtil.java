@@ -118,11 +118,7 @@ public final class SpelUtil {
                              Object rootObject,
                              Map<String, ?> variables,
                              Class<T> resultType) {
-        StandardEvaluationContext context = new StandardEvaluationContext();
-        if (rootObject != null) {
-            context.setRootObject(rootObject);
-        }
-        setVariables(context, variables);
+        StandardEvaluationContext context = standardContext(rootObject, variables);
         return evaluate(getExpression(expression), context, resultType);
     }
 
@@ -165,11 +161,7 @@ public final class SpelUtil {
      * @throws SpelException 模板解析或计算失败时抛出
      */
     public static String evalTemplate(String template, Object rootObject, Map<String, ?> variables) {
-        StandardEvaluationContext context = new StandardEvaluationContext();
-        if (rootObject != null) {
-            context.setRootObject(rootObject);
-        }
-        setVariables(context, variables);
+        StandardEvaluationContext context = standardContext(rootObject, variables);
         return evaluate(getTemplate(template), context, String.class);
     }
 
@@ -193,21 +185,7 @@ public final class SpelUtil {
                                    Method method,
                                    Object[] arguments,
                                    Class<T> resultType) {
-        if (method == null) {
-            throw SpelException.evaluationFailed(
-                    new IllegalArgumentException("方法不能为空"));
-        }
-        Object[] actualArguments = arguments == null ? new Object[0] : arguments;
-        if (method.getParameterCount() != actualArguments.length) {
-            throw SpelException.evaluationFailed(
-                    new IllegalArgumentException("方法参数数量与实际参数数量不一致"));
-        }
-
-        MethodBasedEvaluationContext context = new MethodBasedEvaluationContext(
-                target, method, actualArguments, PARAMETER_NAME_DISCOVERER);
-        context.setVariable("target", target);
-        context.setVariable("method", method);
-        context.setVariable("args", actualArguments);
+        MethodBasedEvaluationContext context = methodContext(target, method, arguments);
         return evaluate(getExpression(expression), context, resultType);
     }
 
@@ -226,6 +204,37 @@ public final class SpelUtil {
      */
     public static String evalMethodTemplate(
             String template, Object target, Method method, Object[] arguments) {
+        MethodBasedEvaluationContext context = methodContext(target, method, arguments);
+        return evaluate(getTemplate(template), context, String.class);
+    }
+
+    /**
+     * 创建普通表达式和模板表达式共用的标准上下文。
+     *
+     * @param rootObject 根对象，可以为空
+     * @param variables 变量集合，可以为空
+     * @return 已设置根对象和变量的标准上下文
+     */
+    private static StandardEvaluationContext standardContext(
+            Object rootObject, Map<String, ?> variables) {
+        StandardEvaluationContext context = new StandardEvaluationContext();
+        if (rootObject != null) {
+            context.setRootObject(rootObject);
+        }
+        setVariables(context, variables);
+        return context;
+    }
+
+    /**
+     * 创建方法表达式和方法模板共用的求值上下文。
+     *
+     * @param target 方法所属对象
+     * @param method 被调用的方法
+     * @param arguments 实际方法参数，可以为空
+     * @return 已设置方法参数及元数据变量的上下文
+     */
+    private static MethodBasedEvaluationContext methodContext(
+            Object target, Method method, Object[] arguments) {
         if (method == null) {
             throw SpelException.evaluationFailed(new IllegalArgumentException("方法不能为空"));
         }
@@ -239,7 +248,7 @@ public final class SpelUtil {
         context.setVariable("target", target);
         context.setVariable("method", method);
         context.setVariable("args", actualArguments);
-        return evaluate(getTemplate(template), context, String.class);
+        return context;
     }
 
     /**

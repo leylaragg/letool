@@ -4,6 +4,7 @@ import io.github.leylaragg.letool.tool.date.DateErrorCode;
 import io.github.leylaragg.letool.tool.date.DateOperationException;
 import io.github.leylaragg.letool.tool.date.DateTimeRange;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -272,6 +273,32 @@ class DateUtilTest {
     }
 
     /**
+     * 验证必选解析优先报告文本参数，容错解析优先报告格式化器参数。
+     */
+    @Test
+    void shouldPreserveRequiredAndTolerantParseValidationOrder() {
+        assertInvalidArgument(
+                "dateText",
+                () -> DateUtil.parseDate(" ", (DateTimeFormatter) null));
+        assertInvalidArgument(
+                "dateTimeText",
+                () -> DateUtil.parseDateTime(" ", (DateTimeFormatter) null));
+        assertInvalidArgument(
+                "timeText",
+                () -> DateUtil.parseTime(" ", (DateTimeFormatter) null));
+
+        assertInvalidArgument(
+                "formatter",
+                () -> DateUtil.tryParseDate(" ", (DateTimeFormatter) null));
+        assertInvalidArgument(
+                "formatter",
+                () -> DateUtil.tryParseDateTime(" ", (DateTimeFormatter) null));
+        assertInvalidArgument(
+                "formatter",
+                () -> DateUtil.tryParseTime(" ", (DateTimeFormatter) null));
+    }
+
+    /**
      * 验证常用差值、偏移和月边界组合可直接服务业务计算。
      */
     @Test
@@ -338,5 +365,19 @@ class DateUtilTest {
                 () -> new DateTimeRange(range.endExclusive(), range.startInclusive())
         );
         assertEquals(DateErrorCode.INVALID_ARGUMENT.getCode(), exception.getCode());
+    }
+
+    /**
+     * 断言日期时间参数校验返回稳定错误码和安全参数名。
+     *
+     * @param parameterName 期望报告的参数名
+     * @param executable 待执行的日期时间操作
+     */
+    private static void assertInvalidArgument(String parameterName, Executable executable) {
+        DateOperationException exception = assertThrows(DateOperationException.class, executable);
+        assertEquals(DateErrorCode.INVALID_ARGUMENT.getCode(), exception.getCode());
+        assertEquals(
+                "Invalid date-time argument: " + parameterName,
+                exception.getCause().getMessage());
     }
 }

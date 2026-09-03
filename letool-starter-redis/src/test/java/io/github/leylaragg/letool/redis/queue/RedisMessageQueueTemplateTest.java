@@ -88,6 +88,32 @@ class RedisMessageQueueTemplateTest {
         verify(streamOperations).add(any(ObjectRecord.class));
     }
 
+    /**
+     * 验证 List 和 Stream 的可空计数结果统一收敛为零。
+     */
+    @Test
+    void nullCountResultsShouldBeNormalizedToZero() {
+        RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
+        BoundListOperations<String, Object> listOperations = mock(BoundListOperations.class);
+        StreamOperations<String, Object, Object> streamOperations = mock(StreamOperations.class);
+        QueueMessage message = new QueueMessage("m1", "created");
+        when(redisTemplate.boundListOps("queue:orders")).thenReturn(listOperations);
+        when(redisTemplate.opsForStream()).thenReturn(streamOperations);
+        when(listOperations.rightPush(message)).thenReturn(null);
+        when(listOperations.leftPush(message)).thenReturn(null);
+        when(listOperations.size()).thenReturn(null);
+        when(streamOperations.acknowledge("stream:orders", "order-workers", "1-0"))
+                .thenReturn(null);
+        when(streamOperations.size("stream:orders")).thenReturn(null);
+        RedisMessageQueueTemplate queueTemplate = new RedisMessageQueueTemplate(redisTemplate);
+
+        assertThat(queueTemplate.offer("queue:orders", message)).isZero();
+        assertThat(queueTemplate.offerFirst("queue:orders", message)).isZero();
+        assertThat(queueTemplate.size("queue:orders")).isZero();
+        assertThat(queueTemplate.ack("stream:orders", "order-workers", "1-0")).isZero();
+        assertThat(queueTemplate.streamSize("stream:orders")).isZero();
+    }
+
     record QueueMessage(String id, String type) {
     }
 }
