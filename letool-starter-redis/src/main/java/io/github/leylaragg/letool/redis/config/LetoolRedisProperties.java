@@ -58,7 +58,7 @@ public class LetoolRedisProperties implements InitializingBean {
     public static class Serialization {
 
         private List<String> autoTypeAcceptPrefixes = new ArrayList<>(
-                List.of("org.springframework", "io.github.leylaragg"));
+                List.of("io.github.leylaragg"));
 
         /** @return Fastjson2 自动类型允许的包名前缀 */
         public List<String> getAutoTypeAcceptPrefixes() {

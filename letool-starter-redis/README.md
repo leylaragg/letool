@@ -148,7 +148,6 @@ letool:
     serialization:
       # Redis 多态值白名单应尽量收窄到实际业务包。
       auto-type-accept-prefixes:
-        - org.springframework
         - io.github.leylaragg
         - com.example.order
     lock:
@@ -171,6 +170,9 @@ letool:
 
 序列化白名单是独立的安全边界，不会复用通用 `JsonCodec` 配置。业务自行提供对象模板时，
 序列化格式、类型白名单和历史数据兼容由该模板的所有者负责。
+
+默认白名单仅包含 `io.github.leylaragg`。若 Redis 中已有 Spring 类型缓存，应在升级前显式加入
+实际使用的最小 Spring 包前缀，或先迁移、过期对应缓存；不建议放行整个 `org.springframework`。
 
 ## 从 Tool 迁移
 

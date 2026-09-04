@@ -4,6 +4,7 @@ import io.github.leylaragg.letool.redis.serializer.allowed.AllowedValue;
 import io.github.leylaragg.letool.redis.serializer.allowedevil.LookalikeValue;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.serializer.SerializationException;
+import org.springframework.util.LinkedMultiValueMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -42,6 +43,36 @@ class FastJson2JsonRedisSerializerTest {
 
         assertThat(actual).isInstanceOf(TestUser.class);
         assertThat(((TestUser) actual).getName()).isEqualTo("Configured");
+    }
+
+    /** 默认白名单不得自动放行 Spring 框架类型。 */
+    @Test
+    void shouldRejectSpringTypeByDefault() {
+        FastJson2JsonRedisSerializer<Object> serializer =
+                new FastJson2JsonRedisSerializer<>(Object.class);
+        LinkedMultiValueMap<String, String> value = new LinkedMultiValueMap<>();
+        value.add("name", "default-rejected");
+        byte[] bytes = serializer.serialize(value);
+
+        assertThatThrownBy(() -> serializer.deserialize(bytes))
+                .isInstanceOf(SerializationException.class)
+                .hasMessageContaining("deserialize");
+    }
+
+    /** 应用显式配置 Spring 包后仍可读取已有框架类型缓存。 */
+    @Test
+    void shouldAcceptSpringTypeWhenExplicitlyConfigured() {
+        FastJson2JsonRedisSerializer<Object> serializer = new FastJson2JsonRedisSerializer<>(
+                Object.class,
+                "org.springframework.util"
+        );
+        LinkedMultiValueMap<String, String> value = new LinkedMultiValueMap<>();
+        value.add("name", "explicitly-allowed");
+
+        Object actual = serializer.deserialize(serializer.serialize(value));
+
+        assertThat(actual).isInstanceOf(LinkedMultiValueMap.class);
+        assertThat(actual).isEqualTo(value);
     }
 
     @Test

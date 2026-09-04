@@ -236,6 +236,7 @@ public final class HttpRequest {
      * @return 当前构建器
      */
     public HttpRequest bearerToken(String token) {
+        requireText(token, "token");
         return authorization("Bearer " + token);
     }
 

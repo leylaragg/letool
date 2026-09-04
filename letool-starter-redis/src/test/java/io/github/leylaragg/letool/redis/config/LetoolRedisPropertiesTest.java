@@ -16,6 +16,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class LetoolRedisPropertiesTest {
 
+    /** 默认自动类型范围只应包含 Letool，不应隐式放行整个 Spring 框架。 */
+    @Test
+    void shouldUseNarrowDefaultAutoTypePrefixes() {
+        LetoolRedisProperties properties = new LetoolRedisProperties();
+
+        assertThat(properties.getSerialization().getAutoTypeAcceptPrefixes())
+                .containsExactly("io.github.leylaragg");
+    }
+
     /** 元数据必须完整公开业务会直接配置的九个 Redis 能力开关和策略。 */
     @Test
     void shouldPublishRedisConfigurationMetadata() throws Exception {

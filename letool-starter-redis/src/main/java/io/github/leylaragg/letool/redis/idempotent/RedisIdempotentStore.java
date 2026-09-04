@@ -33,9 +33,7 @@ public final class RedisIdempotentStore implements IdempotentStore {
      */
     @Override
     public boolean putIfAbsent(String key, Duration ttl) {
-        if (key == null || key.isBlank()) {
-            throw new IllegalArgumentException("幂等 key 不能为空");
-        }
+        requireKey(key);
         if (ttl == null || ttl.isZero() || ttl.isNegative()) {
             throw new IllegalArgumentException("幂等 TTL 必须大于零");
         }
@@ -46,6 +44,18 @@ public final class RedisIdempotentStore implements IdempotentStore {
     /** @param key 需要撤销占位的业务幂等 key */
     @Override
     public void remove(String key) {
+        requireKey(key);
         redisTemplate.delete(keyPrefix + key);
+    }
+
+    /**
+     * 校验业务幂等 key，保证写入和撤销使用同一边界。
+     *
+     * @param key 业务幂等 key
+     */
+    private static void requireKey(String key) {
+        if (key == null || key.isBlank()) {
+            throw new IllegalArgumentException("幂等 key 不能为空");
+        }
     }
 }

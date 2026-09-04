@@ -32,7 +32,6 @@ public class FastJson2JsonRedisSerializer<T> implements RedisSerializer<T> {
     public static final Charset DEFAULT_CHARSET = StandardCharsets.UTF_8;
 
     private static final String[] DEFAULT_AUTO_TYPE_ACCEPT_PREFIXES = {
-            "org.springframework",
             "io.github.leylaragg"
     };
 
@@ -52,8 +51,8 @@ public class FastJson2JsonRedisSerializer<T> implements RedisSerializer<T> {
     /**
      * 使用显式指定的自动类型包白名单创建序列化器。
      *
-     * <p>空白配置项会被忽略。当没有有效配置项时，为保持兼容性，将使用内置的
-     * Letool 和 Spring 包。存储自定义多态类型的应用应尽量配置最小业务包范围。
+     * <p>空白配置项会被忽略。当没有有效配置项时，将仅使用内置的 Letool 包。
+     * 存储自定义多态类型或已有 Spring 类型缓存的应用应显式配置最小包范围。
      * 所有配置项传递给 Fastjson2 之前都会规范化为包边界。</p>
      *
      * @param clazz 声明的 Redis 值类型，不允许为 {@code null}
