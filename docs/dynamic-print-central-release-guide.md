@@ -210,16 +210,16 @@ git status --short --branch
 Letool 使用全仓统一版本。根 `pom.xml` 的项目版本和内部依赖版本必须保持一致：
 
 ```xml
-<version>3.0.1</version>
-<letool.version>3.0.1</letool.version>
+<version>3.0.2</version>
+<letool.version>3.0.2</letool.version>
 ```
 
 全部子模块继承同版本根 POM，打印和规则引擎不再声明独立项目版本。发布新版本时需要统一调整全仓版本，不能覆盖已经公开的坐标。
 
-可以先访问对应 POM 判断版本是否已经公开。下面以 `3.0.1` 为例：
+可以先访问对应 POM 判断版本是否已经公开。下面以 `3.0.2` 为例：
 
 ```powershell
-$releaseVersion = '3.0.1'
+$releaseVersion = '3.0.2'
 $pomUrl = "https://repo1.maven.org/maven2/io/github/leylaragg/letool-starter-print-spring-boot/$releaseVersion/letool-starter-print-spring-boot-$releaseVersion.pom"
 curl.exe -I $pomUrl
 ```
@@ -235,7 +235,7 @@ EDC 使用本地版本联调时，应从仓库根目录安装完整打印依赖�
 mvn -pl letool-starter-print-spring-boot -am clean install
 ```
 
-这里的 `-am` 只用于本地安装，它会同时安装同为 `3.0.1` 的根 POM、异常模块和打印模块。安装后再从独立消费者检查依赖树，不能只根据 Reactor 构建成功判断本地接入版本。
+这里的 `-am` 只用于本地安装，它会同时安装同为 `3.0.2` 的根 POM、异常模块和打印模块。安装后再从独立消费者检查依赖树，不能只根据 Reactor 构建成功判断本地接入版本。
 
 ### 5.4 确认发布范围
 
@@ -245,7 +245,7 @@ mvn -pl letool-starter-print-spring-boot -am clean install
 $printModules = 'letool-exception-core,letool-starter-exception,letool-starter-print,letool-starter-print-pdf,letool-starter-print-template,letool-starter-print-xml,letool-starter-print-expression-spel,letool-starter-print-spring-boot'
 ```
 
-8 个模块全部交给同一个 Reactor 后，Maven 会按依赖顺序构建异常基础设施和打印框架，生成的公开 POM会把内部依赖统一固化为 `3.0.1`。
+8 个模块全部交给同一个 Reactor 后，Maven 会按依赖顺序构建异常基础设施和打印框架，生成的公开 POM会把内部依赖统一固化为 `3.0.2`。
 
 ### 5.5 确认敏感信息没有进入仓库
 
@@ -295,7 +295,7 @@ mvn -P release -pl $printModules "-Dgpg.keyname=8A40F93C7A6B1705E8F9C4CCB9D2FD1A
 可以抽查一个签名：
 
 ```powershell
-gpg --verify letool-starter-print-spring-boot\target\letool-starter-print-spring-boot-3.0.1.jar.asc letool-starter-print-spring-boot\target\letool-starter-print-spring-boot-3.0.1.jar
+gpg --verify letool-starter-print-spring-boot\target\letool-starter-print-spring-boot-3.0.2.jar.asc letool-starter-print-spring-boot\target\letool-starter-print-spring-boot-3.0.2.jar
 ```
 
 看到 `Good signature` 才表示签名验证成功。命令中的版本号要换成当次发布版本。
@@ -409,10 +409,10 @@ IDEA Maven 工具窗口中的 Profiles 也可以勾选 `release`，但 Run Confi
 
 ### 10.1 检查 Maven Central 文件
 
-以 `3.0.1` 为例：
+以 `3.0.2` 为例：
 
 ```powershell
-$releaseVersion = '3.0.1'
+$releaseVersion = '3.0.2'
 $pomUrl = "https://repo1.maven.org/maven2/io/github/leylaragg/letool-starter-print-spring-boot/$releaseVersion/letool-starter-print-spring-boot-$releaseVersion.pom"
 curl.exe -I $pomUrl
 ```
@@ -422,7 +422,7 @@ curl.exe -I $pomUrl
 ### 10.2 使用干净的 Maven 解析验证
 
 ```powershell
-mvn -U dependency:get -Dartifact=io.github.leylaragg:letool-starter-print-spring-boot:3.0.1
+mvn -U dependency:get -Dartifact=io.github.leylaragg:letool-starter-print-spring-boot:3.0.2
 ```
 
 若要排除本地仓库缓存影响，可以在临时目录中创建一个最小 Spring Boot 消费项目，再声明：
@@ -431,7 +431,7 @@ mvn -U dependency:get -Dartifact=io.github.leylaragg:letool-starter-print-spring
 <dependency>
     <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-print-spring-boot</artifactId>
-    <version>3.0.1</version>
+    <version>3.0.2</version>
 </dependency>
 ```
 
