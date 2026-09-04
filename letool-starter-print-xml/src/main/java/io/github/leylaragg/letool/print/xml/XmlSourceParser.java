@@ -1,6 +1,7 @@
 package io.github.leylaragg.letool.print.xml;
 
 import io.github.leylaragg.letool.print.api.PrintTemplate;
+import io.github.leylaragg.letool.print.document.PageSize;
 import io.github.leylaragg.letool.print.template.TemplateDefinition;
 
 import javax.xml.stream.XMLInputFactory;
@@ -8,7 +9,6 @@ import javax.xml.stream.XMLResolver;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 import java.io.StringReader;
-import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
@@ -41,13 +41,17 @@ final class XmlSourceParser {
     /** 文档节点逻辑 ID 的稳定安全格式。 */
     private static final Pattern NODE_ID = Pattern.compile("[A-Za-z][A-Za-z0-9_.:-]{0,127}");
 
-    /** 页面尺寸只接受最多三位小数的非负毫米值。 */
-    private static final Pattern MILLIMETERS = Pattern.compile(
-            "(?:0|[1-9][0-9]{0,3})(?:\\.[0-9]{1,3})?mm");
+    /** 批注宽高最多为 500 mm。 */
+    private static final int MAX_ANNOTATION_SIZE_MICROMETERS = 500_000;
 
-    /** 批注偏移允许使用正负毫米值。 */
-    private static final Pattern SIGNED_MILLIMETERS = Pattern.compile(
-            "[+-]?(?:0|[1-9][0-9]{0,3})(?:\\.[0-9]{1,3})?mm");
+    /** 批注偏移绝对值最多为 2,000 mm。 */
+    private static final int MAX_ANNOTATION_OFFSET_MICROMETERS = 2_000_000;
+
+    /** 图片宽高最多为 2,000 mm。 */
+    private static final int MAX_IMAGE_SIZE_MICROMETERS = 2_000_000;
+
+    /** 单元格行列跨度最多为 1,000。 */
+    private static final int MAX_TABLE_SPAN = 1_000;
 
     /** 循环和片段参数名的稳定安全格式。 */
     private static final Pattern VARIABLE_NAME = Pattern.compile("[A-Za-z][A-Za-z0-9_]{0,63}");
@@ -156,9 +160,8 @@ final class XmlSourceParser {
                     ? 1 : Math.max(exception.getLocation().getLineNumber(), 1);
             int column = exception.getLocation() == null
                     ? 1 : Math.max(exception.getLocation().getColumnNumber(), 1);
-            throw PrintCompilationException.invalid(
-                    templateCode + "：第 " + line + " 行，第 " + column + " 列：XML 解析失败",
-                    exception);
+            throw XmlDiagnosticExceptions.source(
+                    templateCode, line, column, "XML 解析失败", exception);
         }
     }
 
@@ -298,17 +301,16 @@ final class XmlSourceParser {
         if (margin == null) {
             return;
         }
-        if (!MILLIMETERS.matcher(margin.toLowerCase(Locale.ROOT)).matches()) {
+        if (!StrictXmlMillimeterValue.isUnsigned(margin)) {
             throw located(templateCode, reader, "页面边距必须使用非负 mm 单位");
         }
-        int marginMicrometers = new BigDecimal(margin.substring(0, margin.length() - 2))
-                .movePointRight(3).intValueExact();
+        int marginMicrometers = StrictXmlMillimeterValue.toMicrometers(margin);
         boolean landscape = "landscape".equalsIgnoreCase(
                 attributes.getOrDefault("orientation", "portrait"));
-        int width = "LETTER".equalsIgnoreCase(attributes.getOrDefault("size", "A4"))
-                ? 215_900 : 210_000;
-        int height = "LETTER".equalsIgnoreCase(attributes.getOrDefault("size", "A4"))
-                ? 279_400 : 297_000;
+        PageSize pageSize = "LETTER".equalsIgnoreCase(attributes.getOrDefault("size", "A4"))
+                ? PageSize.LETTER : PageSize.A4;
+        int width = pageSize.widthMicrometers();
+        int height = pageSize.heightMicrometers();
         int effectiveWidth = landscape ? height : width;
         int effectiveHeight = landscape ? width : height;
         if ((long) marginMicrometers * 2 >= effectiveWidth
@@ -365,11 +367,11 @@ final class XmlSourceParser {
         if (value == null) {
             return;
         }
-        if (!MILLIMETERS.matcher(value.toLowerCase(Locale.ROOT)).matches()) {
+        if (!StrictXmlMillimeterValue.isUnsigned(value)) {
             throw located(templateCode, reader, "annotation." + name + " 必须使用正 mm 单位");
         }
         int micrometers = micrometers(templateCode, reader, value, "annotation." + name);
-        if (micrometers < 1 || micrometers > 500_000) {
+        if (micrometers < 1 || micrometers > MAX_ANNOTATION_SIZE_MICROMETERS) {
             throw located(templateCode, reader, "annotation." + name + " 超出支持范围");
         }
     }
@@ -382,11 +384,11 @@ final class XmlSourceParser {
         if (value == null) {
             return;
         }
-        if (!SIGNED_MILLIMETERS.matcher(value.toLowerCase(Locale.ROOT)).matches()) {
+        if (!StrictXmlMillimeterValue.isSigned(value)) {
             throw located(templateCode, reader, "annotation." + name + " 必须使用 mm 单位");
         }
         int micrometers = micrometers(templateCode, reader, value, "annotation." + name);
-        if (Math.abs((long) micrometers) > 2_000_000) {
+        if (Math.abs((long) micrometers) > MAX_ANNOTATION_OFFSET_MICROMETERS) {
             throw located(templateCode, reader, "annotation." + name + " 超出支持范围");
         }
     }
@@ -395,8 +397,7 @@ final class XmlSourceParser {
     private int micrometers(
             String templateCode, XMLStreamReader reader, String value, String name) {
         try {
-            return new BigDecimal(value.substring(0, value.length() - 2))
-                    .movePointRight(3).intValueExact();
+            return StrictXmlMillimeterValue.toMicrometers(value);
         } catch (ArithmeticException exception) {
             throw located(templateCode, reader, name + " 超出支持范围");
         }
@@ -433,7 +434,7 @@ final class XmlSourceParser {
         }
         try {
             int span = Integer.parseInt(value);
-            if (span < 1 || span > 1_000) {
+            if (span < 1 || span > MAX_TABLE_SPAN) {
                 throw new NumberFormatException("out of range");
             }
         } catch (NumberFormatException exception) {
@@ -447,13 +448,12 @@ final class XmlSourceParser {
             String templateCode, XMLStreamReader reader,
             Map<String, String> attributes, String name) {
         String value = attributes.get(name);
-        if (value == null || !MILLIMETERS.matcher(value.toLowerCase(Locale.ROOT)).matches()) {
+        if (!StrictXmlMillimeterValue.isUnsigned(value)) {
             throw located(templateCode, reader, "image." + name + " 必须使用正 mm 单位");
         }
         try {
-            int micrometers = new BigDecimal(value.substring(0, value.length() - 2))
-                    .movePointRight(3).intValueExact();
-            if (micrometers < 1 || micrometers > 2_000_000) {
+            int micrometers = StrictXmlMillimeterValue.toMicrometers(value);
+            if (micrometers < 1 || micrometers > MAX_IMAGE_SIZE_MICROMETERS) {
                 throw new ArithmeticException("out of range");
             }
         } catch (ArithmeticException exception) {
@@ -508,8 +508,7 @@ final class XmlSourceParser {
                 column++;
             }
         }
-        return PrintCompilationException.invalid(
-                templateCode + "：第 " + line + " 行，第 " + column + " 列：" + detail);
+        return XmlDiagnosticExceptions.source(templateCode, line, column, detail);
     }
 
     /** 配置无法静默降级的安全属性。 */
@@ -529,10 +528,11 @@ final class XmlSourceParser {
     /** 创建只带安全模板代码和当前位置的解析异常。 */
     private PrintCompilationException located(
             String templateCode, XMLStreamReader reader, String detail) {
-        return PrintCompilationException.invalid(
-                templateCode + "：第 " + Math.max(reader.getLocation().getLineNumber(), 1)
-                        + " 行，第 " + Math.max(reader.getLocation().getColumnNumber(), 1)
-                        + " 列：" + detail);
+        return XmlDiagnosticExceptions.source(
+                templateCode,
+                Math.max(reader.getLocation().getLineNumber(), 1),
+                Math.max(reader.getLocation().getColumnNumber(), 1),
+                detail);
     }
 
     /** 在解析期间构建一个节点，并在结束标签处冻结。 */

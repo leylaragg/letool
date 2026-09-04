@@ -197,15 +197,12 @@ final class CompiledCondition {
     /** 创建安全编译异常。 */
     private static PrintCompilationException invalid(
             String templateCode, String tagPath, int line, int column, String detail) {
-        return PrintCompilationException.invalid(templateCode + "：" + tagPath
-                + "，第 " + line + " 行，第 " + column + " 列：" + detail);
+        return XmlDiagnosticExceptions.path(templateCode, tagPath, line, column, detail);
     }
 
     /** 创建不包含业务值的安全绑定异常。 */
     private static io.github.leylaragg.letool.print.exception.PrintValidationException bindingError(
             CompiledXmlNode node, String templateCode, String detail) {
-        return io.github.leylaragg.letool.print.exception.PrintValidationException.invalidDocument(
-                templateCode + "：" + node.tagPath() + "，第 " + node.line()
-                        + " 行，第 " + node.column() + " 列：" + detail);
+        return XmlDiagnosticExceptions.binding(templateCode, node, detail);
     }
 }

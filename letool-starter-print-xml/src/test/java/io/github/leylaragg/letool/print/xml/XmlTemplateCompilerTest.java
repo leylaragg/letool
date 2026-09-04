@@ -4,6 +4,7 @@ import io.github.leylaragg.letool.print.api.PrintTemplate;
 import io.github.leylaragg.letool.print.api.TemplateFormat;
 import org.junit.jupiter.api.Test;
 
+import javax.xml.stream.XMLStreamException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -321,6 +322,23 @@ class XmlTemplateCompilerTest {
                     .hasMessageContaining("行")
                     .hasMessageContaining("列");
         }
+    }
+
+    /** 验证畸形 XML 只公开源码位置，并保留底层解析原因。 */
+    @Test
+    void shouldReportSafeSourceLocationForMalformedXml() {
+        String malformed = """
+                <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
+                    <page><page-body><paragraph>未闭合</page-body></page>
+                </document>
+                """;
+
+        assertThatThrownBy(() -> new XmlTemplateCompiler().compile(template(malformed)))
+                .isInstanceOf(PrintCompilationException.class)
+                .hasMessageMatching("\\[PRINT_009] 打印模板编译失败：contract：第 [1-9][0-9]* 行，"
+                        + "第 [1-9][0-9]* 列：XML 解析失败")
+                .hasMessageNotContaining("/document")
+                .hasCauseInstanceOf(XMLStreamException.class);
     }
 
     /** 包装指定 page 为完整文档。 */

@@ -27,6 +27,7 @@ import java.util.function.Predicate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 /**
  * XML 条件表达式扩展的编译和绑定契约测试。
@@ -132,10 +133,10 @@ class XmlExpressionExtensionTest {
     /** 验证提供方求值异常不会回显业务值和底层消息。 */
     @Test
     void shouldSanitizeExpressionEvaluationFailure() {
+        IllegalStateException cause = new IllegalStateException("secret-business:private-value");
         PrintConditionExpression expression = expression("demo", context -> plan(
                 "value", evaluation -> {
-                    throw new IllegalStateException(
-                            "secret-business:" + evaluation.data().root().path("value").asText());
+                    throw cause;
                 }));
         CompiledXmlTemplate template = compile(compiler(expression), """
                 <page><page-body><if expression-language="demo" test="rule"><then>
@@ -143,13 +144,17 @@ class XmlExpressionExtensionTest {
                 </then></if></page-body></page>
                 """);
 
-        assertThatThrownBy(() -> new XmlTemplateBinder().bind(template, PrintContext.of(
-                1, JsonNodeFactory.instance.objectNode().put("value", "private-value"))))
+        Throwable thrown = catchThrowable(() -> new XmlTemplateBinder().bind(
+                template, PrintContext.of(
+                        1, JsonNodeFactory.instance.objectNode().put("value", "private-value"))));
+
+        assertThat(thrown)
                 .isInstanceOf(PrintValidationException.class)
+                .hasMessageContaining("contract：/document/page[1]/page-body/if，")
                 .hasMessageContaining("表达式求值失败")
                 .hasMessageNotContaining("private-value")
-                .hasMessageNotContaining("secret-business")
-                .hasCauseInstanceOf(IllegalStateException.class);
+                .hasMessageNotContaining("secret-business");
+        assertThat(thrown.getCause()).isSameAs(cause);
     }
 
     /** 验证同一表达式编译快照能够并发绑定且上下文不会串扰。 */

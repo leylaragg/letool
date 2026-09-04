@@ -11,6 +11,7 @@ import io.github.leylaragg.letool.print.document.PageSize;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -69,6 +70,50 @@ class XmlPageSequenceBindingTest {
                 </document>
                 """))
                 .isInstanceOf(PrintCompilationException.class);
+    }
+
+    /** 统一边距使用规范毫米语法，四边独立值仍由通用长度解析器处理。 */
+    @Test
+    void shouldDistinguishCanonicalUniformMarginFromFlexibleSideMargins() {
+        for (String margin : List.of("01mm", "1.0000mm", "1e1mm")) {
+            assertThatThrownBy(() -> bind("""
+                    <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
+                        <page margin="%s"><page-body/></page>
+                    </document>
+                    """.formatted(margin)))
+                    .isInstanceOf(PrintCompilationException.class)
+                    .hasMessageContaining("页面边距必须使用非负 mm 单位");
+        }
+
+        DocumentModel document = bind("""
+                <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
+                    <page margin-top="01mm" margin-right="1.0000mm"
+                          margin-bottom="1e1mm" margin-left="2mm"><page-body/></page>
+                </document>
+                """);
+
+        assertThat(document.pageSequences().get(0).pageLayout().margins())
+                .isEqualTo(new Margins(1_000, 1_000, 10_000, 2_000));
+    }
+
+    /** A4 纵向统一边距允许最接近半页宽的微米值，但不能等于半页宽。 */
+    @Test
+    void shouldEnforceExactA4UniformMarginBoundary() {
+        DocumentModel document = bind("""
+                <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
+                    <page size="A4" orientation="portrait" margin="104.999mm"><page-body/></page>
+                </document>
+                """);
+
+        assertThat(document.pageSequences().get(0).pageLayout().margins())
+                .isEqualTo(new Margins(104_999, 104_999, 104_999, 104_999));
+        assertThatThrownBy(() -> bind("""
+                <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
+                    <page size="A4" orientation="portrait" margin="105mm"><page-body/></page>
+                </document>
+                """))
+                .isInstanceOf(PrintCompilationException.class)
+                .hasMessageContaining("页面边距之和必须小于页面边长");
     }
 
     /** 组装只改变 page 属性的最小文档。 */

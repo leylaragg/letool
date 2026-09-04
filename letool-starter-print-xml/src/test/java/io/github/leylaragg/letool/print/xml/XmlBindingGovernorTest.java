@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -209,17 +210,22 @@ class XmlBindingGovernorTest {
                 .hasMessageContaining("contract");
     }
 
-    /** 验证单循环数组元素超过上限时通过真实绑定入口失败。 */
+    /** 验证单循环数组元素在真实绑定入口允许恰好上限并拒绝下一个元素。 */
     @Test
     void shouldLimitSingleLoopItems() {
         ObjectNode root = JsonNodeFactory.instance.objectNode();
-        for (int index = 0; index <= XmlDsl.MAX_LOOP_ITEMS; index++) {
+        for (int index = 0; index < XmlDsl.MAX_LOOP_ITEMS; index++) {
             root.withArray("items").add(index);
         }
         CompiledXmlTemplate template = compile("""
-                <page><page-body><for-each items="items" var="item"><paragraph><field path="$item"/></paragraph></for-each></page-body></page>
+                <page><page-body><for-each items="items" var="item"><page-break/></for-each></page-body></page>
                 """);
 
+        assertThat(XmlTestDocuments.body(new XmlTemplateBinder().bind(
+                template, PrintContext.of(1, root))))
+                .hasSize(XmlDsl.MAX_LOOP_ITEMS);
+
+        root.withArray("items").add(XmlDsl.MAX_LOOP_ITEMS);
         assertThatThrownBy(() -> new XmlTemplateBinder().bind(template, PrintContext.of(1, root)))
                 .isInstanceOf(PrintValidationException.class)
                 .hasMessageContaining("循环元素")

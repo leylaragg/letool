@@ -1,6 +1,5 @@
 package io.github.leylaragg.letool.print.api;
 
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
@@ -67,21 +66,4 @@ public final class PrintResult {
         return metadata;
     }
 
-    /**
-     * 在结束摘要计算前复制元数据，避免非法参数让输出停在无法重试的状态。
-     *
-     * @param metadata 渲染器返回的元数据
-     * @return 不可修改的元数据副本
-     */
-    static Map<String, String> copyMetadata(Map<String, String> metadata) {
-        Objects.requireNonNull(metadata, "metadata 不能为空");
-        Map<String, String> copy = new LinkedHashMap<>();
-        metadata.forEach((key, value) -> {
-            if (key == null || key.isBlank() || value == null) {
-                throw new IllegalArgumentException("metadata 不允许空键或空值");
-            }
-            copy.put(key, value);
-        });
-        return Map.copyOf(copy);
-    }
 }

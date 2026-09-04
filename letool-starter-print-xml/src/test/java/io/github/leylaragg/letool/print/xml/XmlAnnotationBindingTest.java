@@ -91,6 +91,14 @@ class XmlAnnotationBindingTest {
                     .isInstanceOf(PrintCompilationException.class)
                     .hasMessageContaining("annotation");
         }
+        for (String width : new String[]{"01mm", "1.0000mm", "1e1mm"}) {
+            assertThatThrownBy(() -> compile(page("""
+                    <paragraph id="summary">正文</paragraph>
+                    <annotation type="free-text" target="summary" width="%s" height="1mm">正文</annotation>
+                    """.formatted(width))))
+                    .isInstanceOf(PrintCompilationException.class)
+                    .hasMessageContaining("annotation.width 必须使用正 mm 单位");
+        }
     }
 
     /** 验证不存在的目标和字段都安全失败，错误不会回显业务值。 */

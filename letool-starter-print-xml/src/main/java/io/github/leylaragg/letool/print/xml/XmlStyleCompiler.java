@@ -252,15 +252,11 @@ final class XmlStyleCompiler {
 
     /** 创建安全编译异常。 */
     private static PrintCompilationException invalid(String templateCode, CompiledXmlNode node, String detail) {
-        return invalid(templateCode, node, detail, null);
+        return XmlDiagnosticExceptions.path(templateCode, node, detail);
     }
 
     /** 保留核心校验原因链，但不把原异常消息暴露给模板使用者。 */
     private static PrintCompilationException invalid(String templateCode, CompiledXmlNode node, String detail, Throwable cause) {
-        String message = templateCode + "：" + node.tagPath() + "，第 " + node.line()
-                + " 行，第 " + node.column() + " 列：" + detail;
-        return cause == null
-                ? PrintCompilationException.invalid(message)
-                : PrintCompilationException.invalid(message, cause);
+        return XmlDiagnosticExceptions.path(templateCode, node, detail, cause);
     }
 }

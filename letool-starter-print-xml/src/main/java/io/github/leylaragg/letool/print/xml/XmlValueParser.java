@@ -113,7 +113,6 @@ final class XmlValueParser {
     /** 生成带安全模板位置的编译异常。 */
     private static PrintCompilationException invalid(
             String templateCode, CompiledXmlNode node, String detail) {
-        return PrintCompilationException.invalid(templateCode + "：" + node.tagPath()
-                + "，第 " + node.line() + " 行，第 " + node.column() + " 列：" + detail);
+        return XmlDiagnosticExceptions.path(templateCode, node, detail);
     }
 }

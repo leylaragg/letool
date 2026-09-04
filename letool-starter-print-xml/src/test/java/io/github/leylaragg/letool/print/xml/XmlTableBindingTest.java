@@ -57,6 +57,29 @@ class XmlTableBindingTest {
         assertThat(firstName.children()).containsExactly(new TextNode("纸张"));
     }
 
+    /** 单项循环只生成一行，并保留该行的动态单元格内容。 */
+    @Test
+    void shouldBindSingleLoopItemAsOneTableRow() {
+        CompiledXmlTemplate template = compile("""
+                <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
+                    <page><page-body><table><body>
+                        <for-each items="items" var="item"><row><cell>
+                            <paragraph><field path="$item"/></paragraph>
+                        </cell></row></for-each>
+                    </body></table></page-body></page>
+                </document>
+                """);
+        ObjectNode root = JsonNodeFactory.instance.objectNode();
+        root.putArray("items").add("唯一项");
+
+        DocumentModel document = new XmlTemplateBinder().bind(template, PrintContext.of(1, root));
+        TableNode table = (TableNode) XmlTestDocuments.body(document).get(0);
+        ParagraphNode content = (ParagraphNode) table.rows().get(0).cells().get(0).content().get(0);
+
+        assertThat(table.rows()).hasSize(1);
+        assertThat(content.children()).containsExactly(new TextNode("唯一项"));
+    }
+
     /** 验证无表头且动态行为空时会剪枝整个表格。 */
     @Test
     void shouldPruneTableWhenNoRowsAreGenerated() {

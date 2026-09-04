@@ -87,6 +87,20 @@ class PdfPaginationPlannerTest {
                 .cause().hasMessageContaining("未收敛");
     }
 
+    /** 默认规划器沿用五轮分页上限。 */
+    @Test
+    void shouldUseFivePassesByDefault() {
+        PdfPaginationPlanner planner = PdfPaginationPlanner.defaults();
+        PdfDocumentPlan document = documentPlan(PageNumbering.counted());
+
+        for (int pages = 1; pages <= 4; pages++) {
+            assertThat(planner.next(document, List.of(pages)).stable()).isFalse();
+        }
+        assertThatThrownBy(() -> planner.next(document, List.of(5)))
+                .isInstanceOf(PrintRenderingException.class)
+                .hasCauseInstanceOf(IllegalStateException.class);
+    }
+
     /** 页数向量必须与页面序列一一对应且全部为正数。 */
     @Test
     void shouldRejectInvalidPhysicalPageCounts() {

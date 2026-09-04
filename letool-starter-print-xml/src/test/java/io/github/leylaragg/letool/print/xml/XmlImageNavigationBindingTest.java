@@ -90,6 +90,13 @@ class XmlImageNavigationBindingTest {
                 </image>
                 """)))
                 .isInstanceOf(PrintCompilationException.class);
+        for (String width : List.of("01mm", "1.0000mm", "1e1mm")) {
+            assertThatThrownBy(() -> compile(page("""
+                    <image resource-id="logo" alt="标识" width="%s" height="1mm"/>
+                    """.formatted(width))))
+                    .isInstanceOf(PrintCompilationException.class)
+                    .hasMessageContaining("image.width 必须使用正 mm 单位");
+        }
     }
 
     /** 验证动态图片资源必须存在且是非空字符串，错误不回显业务值。 */

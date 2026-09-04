@@ -139,7 +139,7 @@ public final class OpenHtmlPdfRenderer implements PdfRenderer {
         PdfTableOfContentsComposer contentsComposer = new PdfTableOfContentsComposer();
         List<PdfTocEntry> entries = hasTableOfContents(document)
                 ? contentsComposer.collect(document.document(), document.renderIds()) : List.of();
-        PdfPaginationPlanner paginationPlanner = new PdfPaginationPlanner(5);
+        PdfPaginationPlanner paginationPlanner = PdfPaginationPlanner.defaults();
         PdfPaginationPlan pagination = paginationPlanner.initial(document);
         List<PdfUnitResult> previousResults = List.of();
 

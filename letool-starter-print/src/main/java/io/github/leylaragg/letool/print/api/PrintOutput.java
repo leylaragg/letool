@@ -117,7 +117,7 @@ public final class PrintOutput extends OutputStream {
     public PrintResult complete(OutputFormat outputFormat, Map<String, String> metadata) {
         requireWritable();
         Objects.requireNonNull(outputFormat, "outputFormat 不能为空");
-        Map<String, String> safeMetadata = PrintResult.copyMetadata(metadata);
+        Map<String, String> safeMetadata = PrintMetadata.copyOf(metadata);
         if (size == 0) {
             throw new IllegalStateException("打印输出不能为空");
         }

@@ -163,4 +163,24 @@ class PrintValueObjectTest {
         assertThatThrownBy(() -> artifact.metadata().put("pages", "3"))
                 .isInstanceOf(UnsupportedOperationException.class);
     }
+
+    /** 验证内存产物拒绝空元数据集合引用以及空键值，并保留稳定异常文本。 */
+    @Test
+    void shouldRejectInvalidArtifactMetadata() {
+        byte[] content = "pdf".getBytes(StandardCharsets.UTF_8);
+
+        assertThatThrownBy(() -> PrintArtifact.of(OutputFormat.PDF, content, null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("metadata 不能为空");
+        Map<String, String> nullKeyMetadata = new LinkedHashMap<>();
+        nullKeyMetadata.put(null, "invalid");
+        assertThatThrownBy(() -> PrintArtifact.of(OutputFormat.PDF, content, nullKeyMetadata))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("metadata 不允许空键或空值");
+        Map<String, String> nullValueMetadata = new LinkedHashMap<>();
+        nullValueMetadata.put("pages", null);
+        assertThatThrownBy(() -> PrintArtifact.of(OutputFormat.PDF, content, nullValueMetadata))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("metadata 不允许空键或空值");
+    }
 }

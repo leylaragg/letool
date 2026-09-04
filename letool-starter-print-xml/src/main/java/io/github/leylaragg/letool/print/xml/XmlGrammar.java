@@ -355,17 +355,17 @@ final class XmlGrammar {
     /** 创建只带安全模板代码和行列位置的语法异常。 */
     private PrintCompilationException located(
             String templateCode, XMLStreamReader reader, String detail) {
-        return PrintCompilationException.invalid(
-                templateCode + "：第 " + Math.max(reader.getLocation().getLineNumber(), 1)
-                        + " 行，第 " + Math.max(reader.getLocation().getColumnNumber(), 1)
-                        + " 列：" + detail);
+        return XmlDiagnosticExceptions.source(
+                templateCode,
+                Math.max(reader.getLocation().getLineNumber(), 1),
+                Math.max(reader.getLocation().getColumnNumber(), 1),
+                detail);
     }
 
     /** 创建只带安全模板代码和节点位置的语法异常。 */
     private PrintCompilationException located(
             String templateCode, ParsedXmlNode node, String detail) {
-        return PrintCompilationException.invalid(
-                templateCode + "：第 " + node.line() + " 行，第 " + node.column()
-                        + " 列：" + detail);
+        return XmlDiagnosticExceptions.source(
+                templateCode, node.line(), node.column(), detail);
     }
 }

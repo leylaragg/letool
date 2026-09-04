@@ -478,81 +478,33 @@ public final class XmlTemplateCompiler {
             String parentPath,
             Set<String> variables,
             BindingDomain domain) {
-        if (domain == BindingDomain.TABLE_ROWS
-                && !Set.of("row", "if", "for-each", "then", "else")
-                .contains(node.name())) {
-            throw nodeLocated(templateCode, node, "表格动态结构只能产生 row");
-        }
-        if (domain == BindingDomain.BLOCKS && "row".equals(node.name())) {
-            throw nodeLocated(templateCode, node, "row 只能出现在表格 header 或 body 中");
-        }
+        validateBindingDomain(templateCode, node, domain);
         if ("include".equals(node.name())) {
-            if (node.includedFragment() == null) {
-                throw nodeLocated(templateCode, node, "include 必须通过模板集合编译器解析");
-            }
-            String tagPath = parentPath + "/include";
-            List<CompiledIncludeArgument> arguments = compileIncludeArguments(
-                    templateCode, node, tagPath, variables);
-            CompiledXmlNode include = new CompiledXmlNode(
-                    node.name(), node.attributes(), List.of(), "", node.line(), node.column(),
-                    tagPath, null, null, null, null, null, null,
-                    node.includedFragment());
-            return include.withIncludeArguments(arguments);
+            return compileIncludeNode(templateCode, node, parentPath, variables);
         }
-        String tagPath = "#text".equals(node.name()) ? parentPath : parentPath + "/" + node.name();
+
+        String tagPath = "#text".equals(node.name())
+                ? parentPath : parentPath + "/" + node.name();
         CompiledDataPath dataPath = null;
         CompiledCondition condition = null;
         String variableName = null;
         PrintFormatPlan formatPlan = null;
         PrintExpressionPlan expressionPlan = null;
-        CompiledTagPlan tagPlan = null;
         Set<String> childVariables = variables;
+
         if ("for-each".equals(node.name())) {
-            variableName = node.attributes().get("var");
-            if (variableName == null || !LOOP_VARIABLE.matcher(variableName).matches()) {
-                throw nodeLocated(templateCode, node, "循环变量名不合法");
-            }
-            if (variables.contains(variableName)) {
-                throw nodeLocated(templateCode, node, "循环变量不能与外层变量重名");
-            }
+            variableName = requireLoopVariable(templateCode, node, variables);
             dataPath = CompiledDataPath.compile(
                     node.attributes().get("items"), variables, templateCode,
                     tagPath, node.line(), node.column());
-            LinkedHashSet<String> nested = new LinkedHashSet<>(variables);
-            nested.add(variableName);
-            childVariables = Collections.unmodifiableSet(nested);
+            childVariables = extendVariables(variables, variableName);
         }
-        PrintTagHandler customTag = customTag(node.name());
-        if (customTag != null) {
-            if (domain == BindingDomain.TABLE_ROWS) {
-                throw nodeLocated(templateCode, node, "表格动态结构只能产生 row");
-            }
-            try {
-                PrintTagPlan plan = customTag.compile(new TagCompileContext(
-                        node.name(), node.attributes(), tagPath + "，第 " + node.line()
-                                + " 行，第 " + node.column() + " 列"));
-                if (plan == null) {
-                    throw new IllegalStateException("null plan");
-                }
-                TemplateInspectionContribution contribution = plan.inspectionContribution();
-                if (contribution == null || contribution.nodeTypes().isEmpty()) {
-                    throw new IllegalStateException("missing inspection contribution");
-                }
-                validateInspectionPaths(
-                        contribution, variables, templateCode, node, tagPath);
-                tagPlan = new CompiledTagPlan(
-                        customTag.placement(), customTag.contentModel(), plan,
-                        contribution, variables.isEmpty());
-            } catch (RuntimeException exception) {
-                throw nodeLocated(templateCode, node, "自定义标签编译失败", exception);
-            }
-        }
-        List<CompiledXmlNode> children = new ArrayList<>(node.children().size());
-        BindingDomain childDomain = childBindingDomain(node.name(), domain);
-        for (CompiledXmlNode child : node.children()) {
-            children.add(compileDynamicTree(
-                    templateCode, child, tagPath, childVariables, childDomain));
-        }
+
+        CompiledTagPlan tagPlan = compileCustomTagPlan(
+                templateCode, node, tagPath, variables, domain);
+        List<CompiledXmlNode> children = compileDynamicChildren(
+                templateCode, node, tagPath, childVariables, domain);
+
         if ("field".equals(node.name())) {
             dataPath = CompiledDataPath.compile(
                     node.attributes().get("path"), variables, templateCode,
@@ -576,14 +528,164 @@ public final class XmlTemplateCompiler {
             }
         }
         if ("for-each".equals(node.name())) {
-            if (children.isEmpty()) {
-                throw nodeLocated(templateCode, node, "for-each 至少包含一个块节点");
-            }
-            rejectLoopIds(templateCode, node, children);
+            validateLoopChildren(templateCode, node, children);
         }
         return new CompiledXmlNode(
                 node.name(), node.attributes(), children, node.text(), node.line(), node.column(),
                 tagPath, dataPath, condition, variableName, formatPlan, expressionPlan, tagPlan);
+    }
+
+    /**
+     * 校验节点是否允许出现在当前绑定结果域。
+     *
+     * @param templateCode 当前模板代码
+     * @param node 待校验节点
+     * @param domain 当前块级或表格行级结果域
+     */
+    private void validateBindingDomain(
+            String templateCode, CompiledXmlNode node, BindingDomain domain) {
+        if (domain == BindingDomain.TABLE_ROWS
+                && !Set.of("row", "if", "for-each", "then", "else").contains(node.name())) {
+            throw nodeLocated(templateCode, node, "表格动态结构只能产生 row");
+        }
+        if (domain == BindingDomain.BLOCKS && "row".equals(node.name())) {
+            throw nodeLocated(templateCode, node, "row 只能出现在表格 header 或 body 中");
+        }
+    }
+
+    /**
+     * 编译已经由模板集合解析的 include 节点。
+     *
+     * @param templateCode 当前模板代码
+     * @param node include 节点
+     * @param parentPath 父标签路径
+     * @param variables 当前可见循环变量
+     * @return 带有目标片段和有序参数的编译节点
+     */
+    private CompiledXmlNode compileIncludeNode(
+            String templateCode, CompiledXmlNode node,
+            String parentPath, Set<String> variables) {
+        if (node.includedFragment() == null) {
+            throw nodeLocated(templateCode, node, "include 必须通过模板集合编译器解析");
+        }
+        String tagPath = parentPath + "/include";
+        List<CompiledIncludeArgument> arguments = compileIncludeArguments(
+                templateCode, node, tagPath, variables);
+        CompiledXmlNode include = new CompiledXmlNode(
+                node.name(), node.attributes(), List.of(), "", node.line(), node.column(),
+                tagPath, null, null, null, null, null, null,
+                node.includedFragment());
+        return include.withIncludeArguments(arguments);
+    }
+
+    /**
+     * 校验循环变量格式及与外层变量的唯一性。
+     *
+     * @param templateCode 当前模板代码
+     * @param node 循环节点
+     * @param variables 当前可见循环变量
+     * @return 已校验的当前循环变量名
+     */
+    private String requireLoopVariable(
+            String templateCode, CompiledXmlNode node, Set<String> variables) {
+        String variableName = node.attributes().get("var");
+        if (variableName == null || !LOOP_VARIABLE.matcher(variableName).matches()) {
+            throw nodeLocated(templateCode, node, "循环变量名不合法");
+        }
+        if (variables.contains(variableName)) {
+            throw nodeLocated(templateCode, node, "循环变量不能与外层变量重名");
+        }
+        return variableName;
+    }
+
+    /**
+     * 为循环子树建立新的不可变变量集合。
+     *
+     * @param variables 外层可见变量
+     * @param variableName 当前循环变量名
+     * @return 包含当前变量的不可变集合
+     */
+    private Set<String> extendVariables(Set<String> variables, String variableName) {
+        LinkedHashSet<String> nested = new LinkedHashSet<>(variables);
+        nested.add(variableName);
+        return Collections.unmodifiableSet(nested);
+    }
+
+    /**
+     * 编译显式注册的可信自定义标签。
+     *
+     * @param templateCode 当前模板代码
+     * @param node 待编译节点
+     * @param tagPath 当前标签路径
+     * @param variables 当前可见循环变量
+     * @param domain 当前绑定结果域
+     * @return 自定义标签计划；基础标签返回 {@code null}
+     */
+    private CompiledTagPlan compileCustomTagPlan(
+            String templateCode, CompiledXmlNode node, String tagPath,
+            Set<String> variables, BindingDomain domain) {
+        PrintTagHandler customTag = customTag(node.name());
+        if (customTag == null) {
+            return null;
+        }
+        if (domain == BindingDomain.TABLE_ROWS) {
+            throw nodeLocated(templateCode, node, "表格动态结构只能产生 row");
+        }
+        try {
+            PrintTagPlan plan = customTag.compile(new TagCompileContext(
+                    node.name(), node.attributes(), tagPath + "，第 " + node.line()
+                            + " 行，第 " + node.column() + " 列"));
+            if (plan == null) {
+                throw new IllegalStateException("null plan");
+            }
+            TemplateInspectionContribution contribution = plan.inspectionContribution();
+            if (contribution == null || contribution.nodeTypes().isEmpty()) {
+                throw new IllegalStateException("missing inspection contribution");
+            }
+            validateInspectionPaths(contribution, variables, templateCode, node, tagPath);
+            return new CompiledTagPlan(
+                    customTag.placement(), customTag.contentModel(), plan,
+                    contribution, variables.isEmpty());
+        } catch (RuntimeException exception) {
+            throw nodeLocated(templateCode, node, "自定义标签编译失败", exception);
+        }
+    }
+
+    /**
+     * 按原顺序递归编译当前节点的直接子节点。
+     *
+     * @param templateCode 当前模板代码
+     * @param node 当前父节点
+     * @param tagPath 当前标签路径
+     * @param childVariables 子树可见循环变量
+     * @param domain 当前绑定结果域
+     * @return 保持源码顺序的编译子节点
+     */
+    private List<CompiledXmlNode> compileDynamicChildren(
+            String templateCode, CompiledXmlNode node, String tagPath,
+            Set<String> childVariables, BindingDomain domain) {
+        List<CompiledXmlNode> children = new ArrayList<>(node.children().size());
+        BindingDomain childDomain = childBindingDomain(node.name(), domain);
+        for (CompiledXmlNode child : node.children()) {
+            children.add(compileDynamicTree(
+                    templateCode, child, tagPath, childVariables, childDomain));
+        }
+        return children;
+    }
+
+    /**
+     * 校验循环必须生成内容且后代不能声明静态 ID。
+     *
+     * @param templateCode 当前模板代码
+     * @param node 循环节点
+     * @param children 已完成动态编译的子节点
+     */
+    private void validateLoopChildren(
+            String templateCode, CompiledXmlNode node, List<CompiledXmlNode> children) {
+        if (children.isEmpty()) {
+            throw nodeLocated(templateCode, node, "for-each 至少包含一个块节点");
+        }
+        rejectLoopIds(templateCode, node, children);
     }
 
     /** 将显式条件表达式编译为不持有 XML 对象的计划。 */
@@ -766,8 +868,8 @@ public final class XmlTemplateCompiler {
             String templateCode,
             CompiledXmlNode node,
             String detail) {
-        return PrintCompilationException.invalid(
-                templateCode + "：第 " + node.line() + " 行，第 " + node.column() + " 列：" + detail);
+        return XmlDiagnosticExceptions.source(
+                templateCode, node.line(), node.column(), detail);
     }
 
     /** 编译 include 的调用方路径，并与目标片段参数逐项对齐。 */
@@ -800,18 +902,15 @@ public final class XmlTemplateCompiler {
     /** 创建带原因链但不暴露第三方消息的节点编译异常。 */
     private PrintCompilationException nodeLocated(
             String templateCode, CompiledXmlNode node, String detail, Throwable cause) {
-        return PrintCompilationException.invalid(
-                templateCode + "：第 " + node.line() + " 行，第 " + node.column()
-                        + " 列：" + detail,
-                cause);
+        return XmlDiagnosticExceptions.source(
+                templateCode, node.line(), node.column(), detail, cause);
     }
 
     /** 为解析树节点创建不包含模板正文的定位异常。 */
     private PrintCompilationException nodeLocated(
             String templateCode, ParsedXmlNode node, String detail) {
-        return PrintCompilationException.invalid(
-                templateCode + "：第 " + node.line() + " 行，第 " + node.column()
-                        + " 列：" + detail);
+        return XmlDiagnosticExceptions.source(
+                templateCode, node.line(), node.column(), detail);
     }
 
     /** 动态结构在当前位置允许生成的节点类型。 */

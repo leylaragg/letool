@@ -16,11 +16,23 @@ import java.util.Objects;
  */
 final class PdfPaginationPlanner {
 
+    /** 所有 PDF 渲染调用共享的默认最大分页轮次。 */
+    private static final int DEFAULT_MAX_PASSES = 5;
+
     /** 当前请求允许执行的最大分页轮次。 */
     private final int maxPasses;
 
     /** 上一轮不可变分页输入。 */
     private PdfPaginationPlan previous;
+
+    /**
+     * 创建使用统一默认分页轮次的规划器。
+     *
+     * @return 默认允许五轮分页的规划器
+     */
+    static PdfPaginationPlanner defaults() {
+        return new PdfPaginationPlanner(DEFAULT_MAX_PASSES);
+    }
 
     /**
      * 创建当前渲染请求独享的分页规划器。

@@ -106,22 +106,11 @@ public final class XmlTemplateBinder {
                         fragment.blocks(), scope.fragment(parameters),
                         fragment.templateCode(), governor));
             } else if ("if".equals(node.name())) {
-                governor.enterDynamic();
-                try {
-                    governor.addDynamicOperations(1);
-                    blocks.addAll(bindBlocks(
-                            conditionBranch(node, matchesCondition(node, scope, templateCode)),
-                            scope, templateCode, governor));
-                } finally {
-                    governor.exitDynamic();
-                }
+                blocks.addAll(bindCondition(
+                        node, scope, templateCode, governor, this::bindBlocks));
             } else if ("for-each".equals(node.name())) {
-                governor.enterDynamic();
-                try {
-                    blocks.addAll(bindLoop(node, scope, templateCode, governor));
-                } finally {
-                    governor.exitDynamic();
-                }
+                blocks.addAll(bindLoop(
+                        node, scope, templateCode, governor, this::bindBlocks));
             } else {
                 blocks.addAll(bindBlock(node, scope, templateCode, governor));
             }
@@ -148,37 +137,6 @@ public final class XmlTemplateBinder {
             parameters.put(argument.name(), resolved.value());
         }
         return Collections.unmodifiableMap(new LinkedHashMap<>(parameters));
-    }
-
-    /** 按数组顺序展开一个块级循环。 */
-    private List<BlockNode> bindLoop(
-            CompiledXmlNode node, BindingScope scope, String templateCode,
-            BindingGovernor governor) {
-        BindingScope.ResolvedValue resolved = scope.resolve(node.dataPath());
-        if (resolved.isInvalid()) {
-            throw bindingError(templateCode, node,
-                    "循环数据路径无法继续遍历：" + node.dataPath().displayPath());
-        }
-        if (!resolved.isPresent()) {
-            throw bindingError(templateCode, node,
-                    "循环数据路径不存在：" + node.dataPath().displayPath());
-        }
-        JsonNode value = resolved.value();
-        if (value.isNull()) {
-            return List.of();
-        }
-        if (!value.isArray()) {
-            throw bindingError(templateCode, node,
-                    "循环数据路径必须指向数组：" + node.dataPath().displayPath());
-        }
-        governor.checkLoopItems(value.size());
-        governor.addDynamicOperations(value.size());
-        List<BlockNode> blocks = new ArrayList<>();
-        for (JsonNode item : value) {
-            blocks.addAll(bindBlocks(
-                    node.children(), scope.child(node.variableName(), item), templateCode, governor));
-        }
-        return List.copyOf(blocks);
     }
 
     /** 绑定一个静态块级标签。 */
@@ -348,27 +306,88 @@ public final class XmlTemplateBinder {
             if ("row".equals(node.name())) {
                 rows.add(bindTableRow(node, scope, templateCode, governor));
             } else if ("if".equals(node.name())) {
-                governor.enterDynamic();
-                try {
-                    governor.addDynamicOperations(1);
-                    rows.addAll(bindTableRows(
-                            conditionBranch(node, matchesCondition(node, scope, templateCode)),
-                            scope, templateCode, governor));
-                } finally {
-                    governor.exitDynamic();
-                }
+                rows.addAll(bindCondition(
+                        node, scope, templateCode, governor, this::bindTableRows));
             } else if ("for-each".equals(node.name())) {
-                governor.enterDynamic();
-                try {
-                    rows.addAll(bindTableLoop(node, scope, templateCode, governor));
-                } finally {
-                    governor.exitDynamic();
-                }
+                rows.addAll(bindLoop(
+                        node, scope, templateCode, governor, this::bindTableRows));
             } else {
                 throw bindingError(templateCode, node, "表格行结果域只能包含 row");
             }
         }
         return List.copyOf(rows);
+    }
+
+    /**
+     * 在统一动态深度和预算范围内绑定条件分支。
+     *
+     * @param node 已编译条件节点
+     * @param scope 当前只读绑定作用域
+     * @param templateCode 当前模板代码
+     * @param governor 当前绑定预算治理器
+     * @param binder 当前结果域的递归绑定函数
+     * @param <T> 块节点或表格行结果类型
+     * @return 条件选中分支生成的不可变结果
+     */
+    private <T> List<T> bindCondition(
+            CompiledXmlNode node, BindingScope scope, String templateCode,
+            BindingGovernor governor, NodeListBinder<T> binder) {
+        governor.enterDynamic();
+        try {
+            governor.addDynamicOperations(1);
+            return binder.bind(
+                    conditionBranch(node, matchesCondition(node, scope, templateCode)),
+                    scope, templateCode, governor);
+        } finally {
+            governor.exitDynamic();
+        }
+    }
+
+    /**
+     * 在统一路径、数组和预算约束下展开循环。
+     *
+     * @param node 已编译循环节点
+     * @param scope 当前只读绑定作用域
+     * @param templateCode 当前模板代码
+     * @param governor 当前绑定预算治理器
+     * @param binder 当前结果域的递归绑定函数
+     * @param <T> 块节点或表格行结果类型
+     * @return 按数组顺序生成的不可变结果
+     */
+    private <T> List<T> bindLoop(
+            CompiledXmlNode node, BindingScope scope, String templateCode,
+            BindingGovernor governor, NodeListBinder<T> binder) {
+        governor.enterDynamic();
+        try {
+            BindingScope.ResolvedValue resolved = scope.resolve(node.dataPath());
+            if (resolved.isInvalid()) {
+                throw bindingError(templateCode, node,
+                        "循环数据路径无法继续遍历：" + node.dataPath().displayPath());
+            }
+            if (!resolved.isPresent()) {
+                throw bindingError(templateCode, node,
+                        "循环数据路径不存在：" + node.dataPath().displayPath());
+            }
+            JsonNode value = resolved.value();
+            if (value.isNull()) {
+                return List.of();
+            }
+            if (!value.isArray()) {
+                throw bindingError(templateCode, node,
+                        "循环数据路径必须指向数组：" + node.dataPath().displayPath());
+            }
+            governor.checkLoopItems(value.size());
+            governor.addDynamicOperations(value.size());
+            List<T> results = new ArrayList<>();
+            for (JsonNode item : value) {
+                results.addAll(binder.bind(
+                        node.children(), scope.child(node.variableName(), item),
+                        templateCode, governor));
+            }
+            return List.copyOf(results);
+        } finally {
+            governor.exitDynamic();
+        }
     }
 
     /** 求值结构化条件或显式注册的扩展条件表达式。 */
@@ -384,38 +403,6 @@ public final class XmlTemplateBinder {
         } catch (RuntimeException exception) {
             throw bindingError(templateCode, node, "表达式求值失败", exception);
         }
-    }
-
-    /** 按数组顺序展开表格行循环。 */
-    private List<TableRow> bindTableLoop(
-            CompiledXmlNode node, BindingScope scope, String templateCode,
-            BindingGovernor governor) {
-        BindingScope.ResolvedValue resolved = scope.resolve(node.dataPath());
-        if (resolved.isInvalid()) {
-            throw bindingError(templateCode, node,
-                    "循环数据路径无法继续遍历：" + node.dataPath().displayPath());
-        }
-        if (!resolved.isPresent()) {
-            throw bindingError(templateCode, node,
-                    "循环数据路径不存在：" + node.dataPath().displayPath());
-        }
-        JsonNode value = resolved.value();
-        if (value.isNull()) {
-            return List.of();
-        }
-        if (!value.isArray()) {
-            throw bindingError(templateCode, node,
-                    "循环数据路径必须指向数组：" + node.dataPath().displayPath());
-        }
-        governor.checkLoopItems(value.size());
-        governor.addDynamicOperations(value.size());
-        List<TableRow> rows = new ArrayList<>();
-        for (JsonNode item : value) {
-            rows.addAll(bindTableRows(
-                    node.children(), scope.child(node.variableName(), item),
-                    templateCode, governor));
-        }
-        return List.copyOf(rows);
     }
 
     /** 绑定一个静态行及其单元格块内容。 */
@@ -605,18 +592,13 @@ public final class XmlTemplateBinder {
     /** 创建不包含业务值的安全绑定异常。 */
     private PrintValidationException bindingError(
             String templateCode, CompiledXmlNode node, String detail) {
-        return PrintValidationException.invalidDocument(
-                templateCode + "：" + node.tagPath() + "，第 " + node.line()
-                        + " 行，第 " + node.column() + " 列：" + detail);
+        return XmlDiagnosticExceptions.binding(templateCode, node, detail);
     }
 
     /** 创建保留原因链但不公开实现消息的安全绑定异常。 */
     private PrintValidationException bindingError(
             String templateCode, CompiledXmlNode node, String detail, Throwable cause) {
-        return PrintValidationException.invalidDocument(
-                templateCode + "：" + node.tagPath() + "，第 " + node.line()
-                        + " 行，第 " + node.column() + " 列：" + detail,
-                cause);
+        return XmlDiagnosticExceptions.binding(templateCode, node, detail, cause);
     }
 
     /** 解析严格正整数属性。 */
@@ -634,15 +616,11 @@ public final class XmlTemplateBinder {
 
     /** 解析最多三位小数的毫米尺寸并转换为整数微米。 */
     private int millimeters(String value) {
-        String normalized = value.toLowerCase(Locale.ROOT);
-        if (!normalized.matches("(?:0|[1-9][0-9]{0,3})(?:\\.[0-9]{1,3})?mm")) {
+        if (!StrictXmlMillimeterValue.isUnsigned(value)) {
             throw PrintValidationException.invalidDocument("页面边距必须使用非负 mm 单位");
         }
-        String number = normalized.substring(0, normalized.length() - 2);
         try {
-            return new java.math.BigDecimal(number)
-                    .movePointRight(3)
-                    .intValueExact();
+            return StrictXmlMillimeterValue.toMicrometers(value);
         } catch (ArithmeticException exception) {
             throw PrintValidationException.invalidDocument("页面边距超出支持范围");
         }
@@ -669,16 +647,37 @@ public final class XmlTemplateBinder {
 
     /** 解析编译阶段已经验证的带方向毫米值。 */
     private int annotationMillimeters(String value, String name) {
-        String normalized = value.toLowerCase(Locale.ROOT);
-        if (!normalized.matches("[+-]?(?:0|[1-9][0-9]{0,3})(?:\\.[0-9]{1,3})?mm")) {
+        if (!StrictXmlMillimeterValue.isSigned(value)) {
             throw PrintValidationException.invalidDocument(name + " 必须使用 mm 单位");
         }
         try {
-            return new java.math.BigDecimal(normalized.substring(0, normalized.length() - 2))
-                    .movePointRight(3)
-                    .intValueExact();
+            return StrictXmlMillimeterValue.toMicrometers(value);
         } catch (ArithmeticException exception) {
             throw PrintValidationException.invalidDocument(name + " 超出支持范围");
         }
+    }
+
+    /**
+     * 统一表示块节点和表格行的递归绑定入口。
+     *
+     * @param <T> 当前结果域的节点类型
+     */
+    @FunctionalInterface
+    private interface NodeListBinder<T> {
+
+        /**
+         * 绑定当前结果域中的节点列表。
+         *
+         * @param nodes 待绑定的已编译节点
+         * @param scope 当前只读绑定作用域
+         * @param templateCode 当前模板代码
+         * @param governor 当前绑定预算治理器
+         * @return 不可变绑定结果
+         */
+        List<T> bind(
+                List<CompiledXmlNode> nodes,
+                BindingScope scope,
+                String templateCode,
+                BindingGovernor governor);
     }
 }

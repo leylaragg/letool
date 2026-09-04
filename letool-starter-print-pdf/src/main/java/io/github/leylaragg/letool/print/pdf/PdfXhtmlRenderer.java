@@ -81,7 +81,7 @@ final class PdfXhtmlRenderer {
         }
         PdfDocumentPlan plan = PdfDocumentPlan.create(document);
         PdfSequencePlan sequence = plan.sequences().get(0);
-        PdfPaginationPlan pagination = new PdfPaginationPlanner(5).initial(plan);
+        PdfPaginationPlan pagination = PdfPaginationPlanner.defaults().initial(plan);
         return render(plan, sequence, document.pageSequences().get(0).body(),
                 pagination, plan.renderIds(), false);
     }

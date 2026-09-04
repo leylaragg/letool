@@ -38,6 +38,7 @@ class XmlDataPathTest {
                     "<page><page-body><paragraph><field path=\"" + path + "\"/></paragraph></page-body></page>"))
                     .isInstanceOf(PrintCompilationException.class)
                     .hasMessageContaining("contract")
+                    .hasMessageContaining("contract：/document/page[1]/page-body/paragraph/field，")
                     .hasMessageContaining("行")
                     .hasMessageContaining("列")
                     .hasMessageNotContaining("java.lang.Runtime");

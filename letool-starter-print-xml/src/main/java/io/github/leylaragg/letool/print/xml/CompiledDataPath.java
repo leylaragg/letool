@@ -104,7 +104,6 @@ final class CompiledDataPath {
     /** 创建包含安全模板位置的编译异常。 */
     private static PrintCompilationException invalid(
             String templateCode, String tagPath, int line, int column, String detail) {
-        return PrintCompilationException.invalid(templateCode + "：" + tagPath
-                + "，第 " + line + " 行，第 " + column + " 列：" + detail);
+        return XmlDiagnosticExceptions.path(templateCode, tagPath, line, column, detail);
     }
 }

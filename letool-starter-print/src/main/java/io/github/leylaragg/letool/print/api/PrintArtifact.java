@@ -3,7 +3,6 @@ package io.github.leylaragg.letool.print.api;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
@@ -33,7 +32,7 @@ public final class PrintArtifact {
         this.outputFormat = outputFormat;
         this.content = Arrays.copyOf(content, content.length);
         this.sha256 = sha256(content);
-        this.metadata = copyMetadata(metadata);
+        this.metadata = PrintMetadata.copyOf(metadata);
     }
 
     /**
@@ -101,19 +100,6 @@ public final class PrintArtifact {
     /** @return 不可修改的安全元数据 */
     public Map<String, String> metadata() {
         return metadata;
-    }
-
-    /** 复制并校验安全元数据。 */
-    private static Map<String, String> copyMetadata(Map<String, String> metadata) {
-        Objects.requireNonNull(metadata, "metadata 不能为空");
-        Map<String, String> copy = new LinkedHashMap<>();
-        metadata.forEach((key, value) -> {
-            if (key == null || key.isBlank() || value == null) {
-                throw new IllegalArgumentException("metadata 不允许空键或空值");
-            }
-            copy.put(key, value);
-        });
-        return Map.copyOf(copy);
     }
 
     /** 计算内容摘要。 */

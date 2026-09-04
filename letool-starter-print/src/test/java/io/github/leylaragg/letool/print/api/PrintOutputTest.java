@@ -90,9 +90,23 @@ class PrintOutputTest {
     void shouldProtectAndValidateResultMetadata() {
         PrintOutput output = new PrintOutput(new ByteArrayOutputStream(), 10);
         output.write(1);
+
+        assertThatThrownBy(() -> output.complete(OutputFormat.PDF, null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("metadata 不能为空");
         assertThatThrownBy(() -> output.complete(OutputFormat.PDF, Map.of("", "invalid")))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("metadata");
+                .hasMessage("metadata 不允许空键或空值");
+        Map<String, String> nullKeyMetadata = new LinkedHashMap<>();
+        nullKeyMetadata.put(null, "invalid");
+        assertThatThrownBy(() -> output.complete(OutputFormat.PDF, nullKeyMetadata))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("metadata 不允许空键或空值");
+        Map<String, String> nullValueMetadata = new LinkedHashMap<>();
+        nullValueMetadata.put("pageCount", null);
+        assertThatThrownBy(() -> output.complete(OutputFormat.PDF, nullValueMetadata))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("metadata 不允许空键或空值");
 
         Map<String, String> metadata = new LinkedHashMap<>();
         metadata.put("pageCount", "1");
