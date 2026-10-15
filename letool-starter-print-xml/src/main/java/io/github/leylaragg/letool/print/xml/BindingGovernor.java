@@ -21,11 +21,17 @@ final class BindingGovernor {
     /** 当前动态控制结构深度。 */
     private int dynamicDepth;
 
+    /** include 的闭合作用域也不能抹去外层循环的 ID 限制。 */
+    private int loopDepth;
+
     /** 已执行的累计动态操作数。 */
     private long dynamicOperations;
 
     /** 本次绑定是否实际执行过可信自定义标签。 */
     private boolean customTagUsed;
+
+    /** 最近使用的动态导航路径，只保存静态源码位置。 */
+    private DynamicAttributeUsage dynamicAttributeUsage;
 
     /** 创建单次绑定计数器。 */
     BindingGovernor(String templateCode) {
@@ -93,6 +99,22 @@ final class BindingGovernor {
         return customTagUsed;
     }
 
+    /** 记录最近使用的动态导航属性源码位置，供文档整体验证失败时定位。 */
+    void markDynamicAttributeUsed(String templateCode, CompiledXmlNode node,
+        String name, CompiledDataPath path) {
+        dynamicAttributeUsage = new DynamicAttributeUsage(templateCode, node, name, path);
+    }
+
+    /** @return 最近使用的动态导航属性；尚未使用时为 null */
+    DynamicAttributeUsage dynamicAttributeUsage() {
+        return dynamicAttributeUsage;
+    }
+
+    /** 动态 ID、目标和父级的错误定位不保存业务值。 */
+    record DynamicAttributeUsage(String templateCode, CompiledXmlNode node,
+        String name, CompiledDataPath path) {
+    }
+
     /** 进入一个动态控制结构。 */
     void enterDynamic() {
         if (dynamicDepth >= XmlDsl.MAX_DYNAMIC_DEPTH) {
@@ -104,6 +126,21 @@ final class BindingGovernor {
     /** 离开一个动态控制结构。 */
     void exitDynamic() {
         dynamicDepth--;
+    }
+
+    /** 进入循环；include 的独立变量作用域不改变此计数。 */
+    void enterLoop() {
+        loopDepth++;
+    }
+
+    /** 离开循环，必须在绑定流程的 finally 中与进入操作配对。 */
+    void exitLoop() {
+        loopDepth--;
+    }
+
+    /** @return 是否仍在任一外层循环内，用于限制扩展节点的静态 ID */
+    boolean inLoop() {
+        return loopDepth > 0;
     }
 
     /** 使用 long 安全累加并在修改状态前验证上限。 */

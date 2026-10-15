@@ -77,6 +77,9 @@ final class XmlStyleCompiler {
                         DocumentLength.Unit.POINT, templateCode, node, "font-size")));
         optional(node, "font-weight", value -> style.fontWeight(XmlValueParser.enumValue(
                 FontWeight.class, value, templateCode, node, "font-weight")));
+        optional(node, "font-style", value -> style.fontPosture(XmlValueParser.enumValue(
+            io.github.leylaragg.letool.print.document.style.FontPosture.class, value, templateCode, node,
+            "font-style")));
         optional(node, "color", value -> style.color(
                 XmlValueParser.color(value, templateCode, node, "color")));
         optional(node, "line-height", value -> style.lineHeight(
@@ -93,7 +96,7 @@ final class XmlStyleCompiler {
         optional(node, "alignment", value -> style.alignment(XmlValueParser.enumValue(
                 TextAlignment.class, value, templateCode, node, "alignment")));
         optional(node, "first-line-indent", value -> style.firstLineIndent(
-                millimeters(value, templateCode, node, "first-line-indent")));
+            indentMillimeters(value, templateCode, node)));
         optional(node, "left-indent", value -> style.leftIndent(
                 millimeters(value, templateCode, node, "left-indent")));
         optional(node, "right-indent", value -> style.rightIndent(
@@ -108,6 +111,8 @@ final class XmlStyleCompiler {
                 TextWrapMode.class, value, templateCode, node, "wrap")));
         optional(node, "keep-together", value -> style.keepTogether(
                 XmlValueParser.bool(value, templateCode, node, "keep-together")));
+        optional(node, "keep-with-next", value -> style.keepWithNext(
+            XmlValueParser.bool(value, templateCode, node, "keep-with-next")));
         return style.build();
     }
 
@@ -193,7 +198,8 @@ final class XmlStyleCompiler {
         String[] parts = value.split(",", -1);
         List<DocumentLength> widths = new ArrayList<>(parts.length);
         for (String part : parts) {
-            widths.add(XmlValueParser.length(part.trim(), templateCode, node, "column-widths"));
+            widths.add("auto".equals(part.trim()) ? DocumentLength.autoColumn() : XmlValueParser.length(part.trim(),
+                templateCode, node, "column-widths"));
         }
         return List.copyOf(widths);
     }
@@ -234,8 +240,17 @@ final class XmlStyleCompiler {
         }
     }
 
+    /** 首行缩进独立解析为有符号毫米值，负值仅用于悬挂缩进。 */
+    private static DocumentLength indentMillimeters(String value, String templateCode, CompiledXmlNode node) {
+        if (!value.endsWith("mm")) {
+            throw invalid(templateCode, node, "first-line-indent 必须使用 mm");
+        }
+        return DocumentLength.indentMillimeters(Double.parseDouble(value.substring(0, value.length() - 2)));
+    }
+
     /** 解析并要求毫米单位。 */
-    private static DocumentLength millimeters(String value, String templateCode, CompiledXmlNode node, String property) {
+    private static DocumentLength millimeters(String value, String templateCode, CompiledXmlNode node,
+        String property) {
         return requireUnit(XmlValueParser.length(value, templateCode, node, property),
                 DocumentLength.Unit.MILLIMETER, templateCode, node, property);
     }
@@ -256,7 +271,8 @@ final class XmlStyleCompiler {
     }
 
     /** 保留核心校验原因链，但不把原异常消息暴露给模板使用者。 */
-    private static PrintCompilationException invalid(String templateCode, CompiledXmlNode node, String detail, Throwable cause) {
+    private static PrintCompilationException invalid(String templateCode, CompiledXmlNode node, String detail,
+        Throwable cause) {
         return XmlDiagnosticExceptions.path(templateCode, node, detail, cause);
     }
 }

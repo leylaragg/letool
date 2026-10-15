@@ -41,6 +41,8 @@ public final class ParagraphStyle {
 
     /** 是否优先保持整段同页。 */
     private final boolean keepTogether;
+    /** 是否优先与下一个块保持同页。 */
+    private final boolean keepWithNext;
 
     /** 从 Builder 创建段落样式。 */
     private ParagraphStyle(Builder builder) {
@@ -54,6 +56,12 @@ public final class ParagraphStyle {
         this.whitespaceMode = Objects.requireNonNull(builder.whitespaceMode, "whitespaceMode 不能为空");
         this.textWrapMode = Objects.requireNonNull(builder.textWrapMode, "textWrapMode 不能为空");
         this.keepTogether = builder.keepTogether;
+        this.keepWithNext = builder.keepWithNext;
+    }
+
+    /** @return 是否优先与下一个块保持同页 */
+    public boolean keepWithNext() {
+        return keepWithNext;
     }
 
     /** @return 新的段落样式 Builder */
@@ -125,7 +133,7 @@ public final class ParagraphStyle {
         if (!(other instanceof ParagraphStyle that)) {
             return false;
         }
-        return keepTogether == that.keepTogether
+        return keepTogether == that.keepTogether && keepWithNext == that.keepWithNext
                 && textStyleName.equals(that.textStyleName)
                 && alignment == that.alignment
                 && firstLineIndent.equals(that.firstLineIndent)
@@ -141,7 +149,7 @@ public final class ParagraphStyle {
     @Override
     public int hashCode() {
         return Objects.hash(textStyleName, alignment, firstLineIndent, leftIndent, rightIndent,
-                spacingBefore, spacingAfter, whitespaceMode, textWrapMode, keepTogether);
+            spacingBefore, spacingAfter, whitespaceMode, textWrapMode, keepTogether, keepWithNext);
     }
 
     /** 段落间距统一使用毫米，避免输出端解释相对尺寸。 */
@@ -187,6 +195,8 @@ public final class ParagraphStyle {
 
         /** 默认允许段落自然分页。 */
         private boolean keepTogether;
+        /** 默认不约束相邻块的分页。 */
+        private boolean keepWithNext;
 
         /**
          * 设置段落采用的默认文本样式。
@@ -295,6 +305,17 @@ public final class ParagraphStyle {
          */
         public Builder keepTogether(boolean keepTogether) {
             this.keepTogether = keepTogether;
+            return this;
+        }
+
+        /**
+         * 设置与下一个块的分页关联。
+         *
+         * @param value 是否优先与下一个块保持同页
+         * @return 当前构建器
+         */
+        public Builder keepWithNext(boolean value) {
+            keepWithNext = value;
             return this;
         }
 

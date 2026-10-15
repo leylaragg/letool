@@ -58,6 +58,9 @@ final class CompiledXmlNode {
     /** include 调用方已经编译的显式参数。 */
     private final List<CompiledIncludeArgument> includeArguments;
 
+    /** 内置导航属性各自的受控路径。 */
+    private final Map<String, CompiledDataPath> attributePaths;
+
     /** 保存最基础的 XML 节点信息。 */
     CompiledXmlNode(String name, Map<String, String> attributes,
                     List<CompiledXmlNode> children, String text, int line, int column) {
@@ -144,6 +147,18 @@ final class CompiledXmlNode {
                     PrintExpressionPlan expressionPlan, CompiledTagPlan tagPlan,
                     CompiledXmlFragment includedFragment,
                     List<CompiledIncludeArgument> includeArguments) {
+        this(name, attributes, children, text, line, column, tagPath, dataPath, condition,
+            variableName, formatPlan, expressionPlan, tagPlan, includedFragment,
+            includeArguments, Map.of());
+    }
+
+    private CompiledXmlNode(String name, Map<String, String> attributes,
+        List<CompiledXmlNode> children, String text, int line, int column,
+        String tagPath, CompiledDataPath dataPath, CompiledCondition condition,
+        String variableName, PrintFormatPlan formatPlan,
+        PrintExpressionPlan expressionPlan, CompiledTagPlan tagPlan,
+        CompiledXmlFragment includedFragment, List<CompiledIncludeArgument> includeArguments,
+        Map<String, CompiledDataPath> attributePaths) {
         this.name = name;
         this.attributes = Map.copyOf(attributes);
         this.children = List.copyOf(children);
@@ -159,6 +174,7 @@ final class CompiledXmlNode {
         this.tagPlan = tagPlan;
         this.includedFragment = includedFragment;
         this.includeArguments = List.copyOf(includeArguments);
+        this.attributePaths = java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(attributePaths));
     }
 
     /** @return DSL 标签名 */
@@ -236,6 +252,23 @@ final class CompiledXmlNode {
         return includeArguments;
     }
 
+    /** @return 按声明顺序保存的动态导航属性路径，不可修改 */
+    Map<String, CompiledDataPath> attributePaths() {
+        return attributePaths;
+    }
+
+    /**
+     * 复制节点并冻结各导航属性的数据路径，其余编译信息保持不变。
+     *
+     * @param paths 以静态属性名为键的已编译路径
+     * @return 携带动态属性路径的新节点
+     */
+    CompiledXmlNode withAttributePaths(Map<String, CompiledDataPath> paths) {
+        return new CompiledXmlNode(name, attributes, children, text, line, column,
+            tagPath, dataPath, condition, variableName, formatPlan,
+            expressionPlan, tagPlan, includedFragment, includeArguments, paths);
+    }
+
     /**
      * 保留当前节点信息，只替换解析后的子节点和片段引用。
      *
@@ -247,13 +280,13 @@ final class CompiledXmlNode {
                                             CompiledXmlFragment fragment) {
         return new CompiledXmlNode(name, attributes, resolvedChildren, text, line, column,
                 tagPath, dataPath, condition, variableName, formatPlan,
-                expressionPlan, tagPlan, fragment, includeArguments);
+            expressionPlan, tagPlan, fragment, includeArguments, attributePaths);
     }
 
     /** 为已经解析目标片段的 include 保存调用方参数。 */
     CompiledXmlNode withIncludeArguments(List<CompiledIncludeArgument> arguments) {
         return new CompiledXmlNode(name, attributes, children, text, line, column,
                 tagPath, dataPath, condition, variableName, formatPlan,
-                expressionPlan, tagPlan, includedFragment, arguments);
+            expressionPlan, tagPlan, includedFragment, arguments, attributePaths);
     }
 }

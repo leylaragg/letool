@@ -10,7 +10,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * 冻结宿主提供的 PDF 字体面，并按字体族和字重提供确定查找。
+ * 冻结宿主提供的 PDF 字体面，并按字体族、字重和姿态提供确定查找。
  *
  * @author leyland
  */
@@ -19,7 +19,7 @@ public final class PdfFontCatalog {
     /** 按宿主注册顺序保存的字体面。 */
     private final List<PdfFont> fonts;
 
-    /** 用字体族和字重定位唯一字体面。 */
+    /** 用字体族、字重和姿态定位唯一字体面。 */
     private final Map<FontFaceKey, PdfFont> faces;
 
     /** 唯一回退字体族，没有配置时为空。 */
@@ -47,7 +47,7 @@ public final class PdfFontCatalog {
         Map<FontFaceKey, PdfFont> faces = new LinkedHashMap<>();
         String fallbackFamily = null;
         for (PdfFont font : snapshot) {
-            FontFaceKey key = new FontFaceKey(font.familyName(), font.weight());
+            FontFaceKey key = new FontFaceKey(font.familyName(), font.weight(), font.posture());
             if (faces.putIfAbsent(key, font) != null) {
                 throw PrintValidationException.invalidDocument("PDF 字体面重复");
             }
@@ -70,9 +70,24 @@ public final class PdfFontCatalog {
      * @return 完全匹配的字体面
      */
     public PdfFont requireFace(String familyName, FontWeight weight) {
+        return requireFace(familyName, weight, io.github.leylaragg.letool.print.document.style.FontPosture.NORMAL);
+    }
+
+    /**
+     * 按真实字体身份精确查找，不以其他字重或姿态代替。
+     *
+     * @param familyName 字体族名称
+     * @param weight 需要的字重
+     * @param posture 需要的字体姿态
+     * @return 完全匹配的字体面
+     * @throws NullPointerException 字体族名称或字重为 null
+     * @throws PrintValidationException 对应的字体面不存在
+     */
+    public PdfFont requireFace(String familyName, FontWeight weight,
+        io.github.leylaragg.letool.print.document.style.FontPosture posture) {
         Objects.requireNonNull(familyName, "familyName 不能为空");
         Objects.requireNonNull(weight, "weight 不能为空");
-        PdfFont font = faces.get(new FontFaceKey(familyName.trim(), weight));
+        PdfFont font = faces.get(new FontFaceKey(familyName.trim(), weight, posture));
         if (font == null) {
             throw PrintValidationException.invalidDocument("PDF 字体面不存在");
         }
@@ -90,7 +105,8 @@ public final class PdfFontCatalog {
         if (fallbackFamily == null) {
             return Optional.empty();
         }
-        return Optional.ofNullable(faces.get(new FontFaceKey(fallbackFamily, weight)));
+        return Optional.ofNullable(faces.get(new FontFaceKey(fallbackFamily, weight,
+            io.github.leylaragg.letool.print.document.style.FontPosture.NORMAL)));
     }
 
     /** @return 保持宿主注册顺序的字体面快照 */
@@ -106,11 +122,15 @@ public final class PdfFontCatalog {
 
         /** 字体面字重。 */
         private final FontWeight weight;
+        /** 字体文件的真实姿态。 */
+        private final io.github.leylaragg.letool.print.document.style.FontPosture posture;
 
         /** 保存一组已经规范化的字体面身份。 */
-        private FontFaceKey(String familyName, FontWeight weight) {
+        private FontFaceKey(String familyName, FontWeight weight,
+            io.github.leylaragg.letool.print.document.style.FontPosture posture) {
             this.familyName = familyName;
             this.weight = weight;
+            this.posture = posture;
         }
 
         @Override
@@ -121,12 +141,12 @@ public final class PdfFontCatalog {
             if (!(candidate instanceof FontFaceKey other)) {
                 return false;
             }
-            return familyName.equals(other.familyName) && weight == other.weight;
+            return familyName.equals(other.familyName) && weight == other.weight && posture == other.posture;
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(familyName, weight);
+            return Objects.hash(familyName, weight, posture);
         }
     }
 }

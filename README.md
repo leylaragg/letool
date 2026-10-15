@@ -11,9 +11,21 @@
 
 | 依赖 | 版本 |
 |------|------|
-| JDK | 17+（推荐 21） |
+| JDK | 17（源码及 API 基线） |
 | Spring Boot | 3.5.x |
 | Maven | 3.9+ |
+
+## 开发构建与版本
+
+所有发布模块统一使用根 `pom.xml` 的 `revision`，升级时只修改该属性，也可通过 `-Drevision=版本号` 覆盖。模块间依赖使用 `${project.version}`；普通 `install` 会生成已解析父版本的 POM。
+
+请使用 JDK 17 验证。编译器同时设置 `release=17`，即使用更高版本 JDK 构建也不能调用 Java 17 以后的 API。
+
+```powershell
+mvn -pl letool-starter-print-spring-boot,letool-starter-print-expression-spel -am clean install
+# 独立消费者不继承本仓库的父 POM，显式指定刚安装的版本。
+mvn -f verification/print-consumer/pom.xml "-Dletool.version=3.1.0-SNAPSHOT" clean test
+```
 
 ## 工程化文档
 

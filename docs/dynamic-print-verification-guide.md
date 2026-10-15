@@ -105,13 +105,13 @@ mvn --% -pl letool-starter-print-spring-boot -am -DskipTests install
 随后单独构建消费者：
 
 ```powershell
-mvn --% -f verification/print-consumer/pom.xml clean test
-mvn --% -f verification/print-consumer/pom.xml -P spel clean test
+mvn --% -f verification/print-consumer/pom.xml -Dletool.version=3.1.0-SNAPSHOT clean test
+mvn --% -f verification/print-consumer/pom.xml -Dletool.version=3.1.0-SNAPSHOT -P spel clean test
 ```
 
 第一条命令应证明默认 Starter 可以启动、发布并切换模板版本、流式生成 PDF，并在没有 SpEL 模块时明确拒绝 SpEL。第二条命令显式加入 SpEL 依赖和配置开关，再证明相同模板能够输出。两次日志中的 Reactor 都应只有 `print-consumer`。
 
-消费者的完整说明见[独立消费者 README](../verification/print-consumer/README.md)。如果要临时测试另一个本地版本，可用 `-Dletool.version=版本号` 覆盖 POM 属性。
+消费者不内置 Letool 版本号，每次使用 `-Dletool.version=版本号` 明确指定已安装或已发布的版本；上面的版本号仅为当前开发示例。
 
 ### 4.4 全仓回归
 
@@ -132,13 +132,12 @@ mvn --% clean verify
 
 ### 5.2 独立消费者
 
-1. 先在根项目执行本地 `install`。
-2. 右键 `verification/print-consumer/pom.xml`，选择 **Add as Maven Project**。
-3. 运行 `PrintConsumerApplication` 只检查应用能够自动配置。
-4. 运行 `PrintConsumerTest` 才会真正发布模板、生成 PDF 并用 PDFBox 重新读取。
-5. 在消费者 Maven 项目的 Profiles 中勾选 `spel`，重新运行测试，检查选装能力。
+1. 先在根项目执行本地 `install`，确认本次实际版本。
+2. 建立 Maven Run Configuration，工作目录选择仓库根目录。
+3. 参数填写 `-f verification/print-consumer/pom.xml -Dletool.version=实际版本 clean test`，让独立消费者解析已安装的制品。
+4. 复制该配置并增加 `-P spel`，验证选装表达式能力。
 
-独立消费者可以在 IDEA 中运行，但它仍不是根 Reactor 的启动测试模块。把它独立导入是为了模拟真正的外部项目，而不是遗漏了聚合配置。
+消费者不内置 `letool.version`，因此不要省略参数直接导入后运行 JUnit。以上 Maven 配置会执行 `PrintConsumerTest`，检查模板发布、PDF 生成及 PDFBox 重读；只启动 `PrintConsumerApplication` 不能完成这些验收。
 
 ## 6. 结果在哪里看
 

@@ -33,9 +33,17 @@ final class PdfDocumentAssembler {
 
     /** 批注需要与正文渲染使用同一份字体目录。 */
     private final PdfAnnotationWriter annotationWriter;
+    private final PdfFontCatalog fontCatalog;
+    private final PdfPostProcessor postProcessor;
 
     /** 创建使用指定字体目录的文档组装器。 */
     PdfDocumentAssembler(PdfFontCatalog fontCatalog) {
+        this(fontCatalog, null);
+    }
+
+    PdfDocumentAssembler(PdfFontCatalog fontCatalog, PdfPostProcessor postProcessor) {
+        this.fontCatalog = fontCatalog;
+        this.postProcessor = postProcessor;
         this.annotationWriter = new PdfAnnotationWriter(
                 Objects.requireNonNull(fontCatalog, "fontCatalog 不能为空"));
     }
@@ -71,10 +79,35 @@ final class PdfDocumentAssembler {
                 annotationWriter.writeMerged(
                         target, annotationWriter.collect(document.document()), targets);
                 applyMetadata(target, document.metadata(), options);
+                if (document.document().options().fullFontEmbedding()) {
+                    new PdfFullFontWriter(fontCatalog).write(target);
+                }
+                for (org.apache.pdfbox.pdmodel.PDPage page : target.getPages()) {
+                    page.setRotation(0);
+                }
                 try (OutputStream temporary = workspace.openOutput(
                         finalFile, options.maxOutputBytes())) {
                     target.save(temporary);
                 }
+            }
+            if (document.document().options().webOptimized()) {
+                if (postProcessor == null) {
+                    throw new IOException("文档要求的末尾 PDF 处理器未注册");
+                }
+                Path processed = workspace.allocate();
+                long allowance = Math.min(options.maxOutputBytes(), workspace.remainingBytes());
+                if (allowance <= 0) {
+                    throw new PdfRenderWorkspace.CapacityExceededException();
+                }
+                try (OutputStream bounded = workspace.openOutput(processed, allowance)) {
+                    postProcessor.process(finalFile, processed, bounded, allowance);
+                }
+                if (!Files.isRegularFile(processed) || Files.size(processed) > options.maxOutputBytes()) {
+                    throw new
+                    IOException("末尾 PDF 处理结果超出输出限制");
+                }
+                workspace.discard(finalFile);
+                finalFile = processed;
             }
             validate(finalFile, pageCount, options, cache);
         }

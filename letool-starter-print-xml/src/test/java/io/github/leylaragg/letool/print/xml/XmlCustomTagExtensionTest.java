@@ -78,7 +78,8 @@ class XmlCustomTagExtensionTest {
                                 .map(TextNode::text)
                                 .reduce("", String::concat)));
         CompiledXmlTemplate template = compile(compiler(badge), """
-                <page><page-body><paragraph><badge prefix="[">名称：<field path="name"/></badge></paragraph></page-body></page>
+                <page><page-body><paragraph><badge prefix="[">名称：<field
+                    path="name"/></badge></paragraph></page-body></page>
                 """);
 
         DocumentModel model = new XmlTemplateBinder().bind(template, PrintContext.of(
@@ -178,7 +179,57 @@ class XmlCustomTagExtensionTest {
                 .hasMessageNotContaining("dynamic");
     }
 
-    /** 验证未知属性、非法位置、link 和表格行域不能被扩展绕过。 */
+    /** include 的闭合作用域不能消除页面循环的 ID 治理。 */
+    @Test
+    void shouldGovernCustomIdsInsidePageLoopsAndClosedIncludes() {
+        PrintTagHandler generatedId = handler("generated-id", TagPlacement.BLOCK, TagContentModel.EMPTY,
+                Set.of(), ParagraphNode.class, compile -> binding -> new ParagraphNode("custom-id", List.of()));
+        XmlTemplateCompiler compiler = compiler(generatedId);
+        CompiledXmlTemplate direct = compile(compiler, """
+                <page items="items" var="item"><page-body><generated-id/></page-body></page>
+                """);
+        com.fasterxml.jackson.databind.node.ObjectNode data = JsonNodeFactory.instance.objectNode();
+        data.putArray("items").addObject();
+        io.github.leylaragg.letool.print.context.PrintContext context = PrintContext.of(1, data);
+        assertThatThrownBy(() -> new XmlTemplateBinder().bind(direct, context))
+                .isInstanceOf(PrintValidationException.class).hasMessageContaining("循环后代");
+
+        java.util.List<io.github.leylaragg.letool.print.template.TemplateDefinition> definitions = List.of(
+                new io.github.leylaragg.letool.print.template.TemplateDefinition(
+                        io.github.leylaragg.letool.print.template.TemplateType.DOCUMENT,
+                        new PrintTemplate("main", TemplateFormat.LETOOL_XML, 1, 1, 1, ("""
+                                <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
+                                    <page items="items" var="item"><page-body><include
+                                        template="closed"/></page-body></page>
+                                </document>
+                                """).getBytes(StandardCharsets.UTF_8))),
+                new io.github.leylaragg.letool.print.template.TemplateDefinition(
+                        io.github.leylaragg.letool.print.template.TemplateType.FRAGMENT,
+                        new PrintTemplate("closed", TemplateFormat.LETOOL_XML, 1, 1, 1, ("""
+                                <fragment xmlns="https://leyland.github.io/letool/print/v1"><generated-id/></fragment>
+                                """).getBytes(StandardCharsets.UTF_8))));
+        io.github.leylaragg.letool.print.template.TemplateSet set = new io.github.leylaragg.letool.print.template
+            .TemplateSetPublisher(
+                new io.github.leylaragg.letool.print.template.InMemoryTemplateRepository(), List.of())
+                .publish(1, definitions);
+        CompiledXmlTemplate included = new XmlTemplateSetCompiler(compiler).compile(set).require("main");
+        assertThatThrownBy(() -> new XmlTemplateBinder().bind(included, context))
+                .isInstanceOf(PrintValidationException.class).hasMessageContaining("循环后代");
+
+        PrintTagHandler content = handler("content", TagPlacement.BLOCK, TagContentModel.EMPTY,
+                Set.of(), ParagraphNode.class, compile -> binding -> new ParagraphNode("",
+                    List.of(new TextNode("Content"))));
+        CompiledXmlTemplate controlled = compile(compiler(content), """
+                <page items="items" var="item"><page-body>
+                    <section id-path="$item.id"><content/></section>
+                </page-body></page>
+                """);
+        com.fasterxml.jackson.databind.node.ObjectNode values = JsonNodeFactory.instance.objectNode();
+        values.putArray("items").addObject().put("id", "controlled");
+        assertThat(XmlTestDocuments.body(new XmlTemplateBinder().bind(controlled, PrintContext.of(1, values))))
+                .singleElement().satisfies(node -> assertThat(node.id()).isEqualTo("controlled"));
+    }
+
     @Test
     void shouldRejectUnsafeTagStructure() {
         PrintTagHandler block = handler(

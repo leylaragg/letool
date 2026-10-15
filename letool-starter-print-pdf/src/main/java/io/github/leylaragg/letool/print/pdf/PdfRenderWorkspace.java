@@ -112,6 +112,12 @@ final class PdfRenderWorkspace implements AutoCloseable {
         return output;
     }
 
+    /** 当前未被活动文件或缓存占用的额度。 */
+    long remainingBytes() {
+        requireOpen();
+        return maxBytes - activeBytes;
+    }
+
     /**
      * 为最终组装创建受工作区总量约束的 PDFBox 文件缓存。
      *
@@ -341,7 +347,7 @@ final class PdfRenderWorkspace implements AutoCloseable {
         private static final long serialVersionUID = 1L;
 
         /** 创建不携带临时路径或业务内容的容量异常。 */
-        private CapacityExceededException() {
+        CapacityExceededException() {
             super("PDF 临时文件活动容量超过配置上限");
         }
     }

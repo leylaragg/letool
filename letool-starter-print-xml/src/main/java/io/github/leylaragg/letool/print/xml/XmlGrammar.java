@@ -21,16 +21,18 @@ final class XmlGrammar {
     /** 每个内置标签允许出现的属性。 */
     private static final Map<String, Set<String>> ALLOWED_ATTRIBUTES = Map.ofEntries(
             Map.entry("document", Set.of(
-                    "context-version", "outputs", "title", "author", "language")),
+        "context-version", "outputs", "title", "author", "language",
+        "destination-mode", "initial-target", "show-bookmarks", "default-font-family",
+        "glyph-fallback-family", "full-font-embedding", "web-optimized")),
             Map.entry("fragment", Set.of("parameters")),
             Map.entry("include", Set.of("template")),
             Map.entry("with", Set.of("name", "path")),
             Map.entry("styles", Set.of()),
             Map.entry("text-style", Set.of("name", "font-family", "font-size", "font-weight",
-                    "color", "line-height", "decorations")),
+        "color", "line-height", "decorations", "font-style")),
             Map.entry("paragraph-style", Set.of("name", "text-style", "alignment",
                     "first-line-indent", "left-indent", "right-indent", "spacing-before",
-                    "spacing-after", "whitespace", "wrap", "keep-together")),
+        "spacing-after", "whitespace", "wrap", "keep-together", "keep-with-next")),
             Map.entry("table-style", Set.of("name", "width", "layout", "column-widths",
                     "repeat-header", "page-break")),
             Map.entry("cell-style", Set.of(
@@ -38,23 +40,25 @@ final class XmlGrammar {
             Map.entry("border", Set.of("side", "line", "width", "color")),
             Map.entry("page", Set.of("size", "orientation", "margin", "margin-top",
                     "margin-right", "margin-bottom", "margin-left", "numbering",
-                    "start-page-number")),
-            Map.entry("page-header", Set.of()),
+        "start-page-number", "items", "var", "header-gap", "body-alignment", "max-pages")),
+        Map.entry("page-header", Set.of("placement", "offset")),
             Map.entry("page-body", Set.of()),
-            Map.entry("page-footer", Set.of()),
-            Map.entry("section", Set.of("id")),
-            Map.entry("heading", Set.of("id", "level", "style")),
-            Map.entry("paragraph", Set.of("id", "style")),
+        Map.entry("page-footer", Set.of("placement", "offset", "anchor")),
+        Map.entry("section", Set.of("id", "id-path")),
+        Map.entry("heading", Set.of("id", "id-path", "level", "style")),
+        Map.entry("paragraph", Set.of("id", "id-path", "style")),
+        Map.entry("body-caption", Set.of("style", "offset")),
             Map.entry("annotation", Set.of("type", "target", "placement", "width", "height",
                     "offset-x", "offset-y", "author")),
-            Map.entry("table", Set.of("id", "style")),
+        Map.entry("table", Set.of("id", "id-path", "style")),
             Map.entry("header", Set.of()),
             Map.entry("body", Set.of()),
-            Map.entry("row", Set.of()),
-            Map.entry("cell", Set.of("row-span", "col-span", "style")),
-            Map.entry("image", Set.of("id", "resource-id", "resource-path", "alt", "width", "height")),
-            Map.entry("bookmark", Set.of("id", "label")),
-            Map.entry("link", Set.of("target")),
+        Map.entry("row", Set.of("min-height", "keep-with-next")),
+        Map.entry("cell", Set.of("row-span", "col-span", "style", "repeat-on-split")),
+        Map.entry("image", Set.of("id", "id-path", "resource-id", "resource-path", "alt", "width", "height")),
+        Map.entry("bookmark", Set.of("id", "id-path", "label", "label-path", "target", "target-path",
+        "parent", "parent-path", "collapsed")),
+        Map.entry("link", Set.of("target", "target-path")),
             Map.entry("text", Set.of("style")),
             Map.entry("field", Set.of("path", "formatter", "style")),
             Map.entry("format-option", Set.of("name", "value")),
@@ -67,21 +71,25 @@ final class XmlGrammar {
             Map.entry("page-number", Set.of("style")),
             Map.entry("page-count", Set.of("style")),
             Map.entry("page-break", Set.of()),
-            Map.entry("table-of-contents", Set.of("title", "min-level", "max-level")));
+        Map.entry("table-of-contents", Set.of("id", "title", "min-level", "max-level", "bookmark-root", "style",
+        "title-baseline", "first-entry-baseline", "continuation-baseline", "group-height", "entry-height",
+        "level-indent", "page-inset", "leader-start", "leader-end", "leader-offset", "leader-width",
+        "leader-dash", "leader-gap", "group-rule-offset", "group-rule-width", "group-rule-color",
+        "entry-text-style", "empty-message")));
 
     /** 普通块级容器可以直接承载的标签。 */
     private static final Set<String> BLOCK_CHILDREN = Set.of(
-            "section", "heading", "paragraph", "annotation", "table", "image",
+        "section", "heading", "paragraph", "body-caption", "annotation", "table", "image",
             "page-break", "if", "for-each", "include");
 
     /** 页面区域额外允许声明目录。 */
     private static final Set<String> PAGE_CHILDREN = Set.of(
-            "section", "heading", "paragraph", "annotation", "table", "image",
+        "section", "heading", "paragraph", "body-caption", "annotation", "table", "image",
             "page-break", "if", "for-each", "include", "table-of-contents");
 
     /** 动态块还可以在表格结果域中承载行。 */
     private static final Set<String> DYNAMIC_BLOCK_CHILDREN = Set.of(
-            "section", "heading", "paragraph", "annotation", "table", "image",
+        "section", "heading", "paragraph", "body-caption", "annotation", "table", "image",
             "page-break", "row", "if", "for-each", "include");
 
     /** include 和块级扩展允许出现的位置。 */
@@ -109,6 +117,7 @@ final class XmlGrammar {
                     "line-break", "page-number", "page-count")),
             Map.entry("paragraph", Set.of("text", "field", "bookmark", "link",
                     "line-break", "page-number", "page-count")),
+        Map.entry("body-caption", Set.of("text", "field", "line-break")),
             Map.entry("annotation", Set.of("text", "field")),
             Map.entry("table", Set.of("header", "body")),
             Map.entry("header", Set.of("row", "if", "for-each")),
@@ -135,7 +144,7 @@ final class XmlGrammar {
 
     /** 可以直接保存文本内容的标签。 */
     private static final Set<String> TEXT_CONTAINERS =
-            Set.of("heading", "paragraph", "annotation", "text", "link");
+    Set.of("heading", "paragraph", "body-caption", "annotation", "text", "link");
 
     /** 编译器当前启用的可信标签扩展。 */
     private final PrintTagRegistry tagRegistry;

@@ -201,4 +201,20 @@ class PdfXhtmlRendererTest {
                 rowSpan,
                 colSpan);
     }
+    @Test
+    void shouldKeepNamedFacesOutOfImplicitDefaultFontFamilies() {
+        PdfFontCatalog catalog = PdfFontCatalog.of(List.of(
+                new PdfFont("Droid Sans Fallback", FontWeight.NORMAL, () -> new ByteArrayInputStream(new byte[0]),
+                    true),
+                PdfFont.named("Times New Roman", FontWeight.NORMAL,
+                        io.github.leylaragg.letool.print.document.style.FontPosture.NORMAL,
+                        () -> new ByteArrayInputStream(new byte[0]))));
+        DocumentModel document = DocumentModel.singleSequence(DocumentMetadata.empty(), new PageLayout(PageSize.A4,
+            PageOrientation.PORTRAIT, new Margins(0, 0, 0, 0)),
+                List.of(new ParagraphNode("", List.of(new TextNode("Existing report")))));
+        assertThat(new PdfXhtmlRenderer(catalog).render(document))
+                .contains("font-family: 'Droid Sans Fallback', sans-serif;")
+                .doesNotContain("font-family: 'Times New Roman'");
+        assertThat(catalog.requireFace("Times New Roman", FontWeight.NORMAL).namedOnly()).isTrue();
+    }
 }

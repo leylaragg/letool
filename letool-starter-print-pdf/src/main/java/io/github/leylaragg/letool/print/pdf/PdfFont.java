@@ -25,12 +25,16 @@ public final class PdfFont {
 
     /** 当前字体文件对应的字重。 */
     private final FontWeight weight;
+    /** 当前字体文件的真实姿态，不依赖渲染器合成斜体。 */
+    private final io.github.leylaragg.letool.print.document.style.FontPosture posture;
 
     /** 每次渲染打开字体流的供应器。 */
     private final Supplier<InputStream> streamSupplier;
 
     /** 当前字体族是否承担默认回退。 */
     private final boolean fallbackFamily;
+    /** 是否只允许显式按字体族名称引用。 */
+    private final boolean namedOnly;
 
     /**
      * 创建字体定义。
@@ -45,10 +49,57 @@ public final class PdfFont {
             FontWeight weight,
             Supplier<InputStream> streamSupplier,
             boolean fallbackFamily) {
+        this(familyName, weight, io.github.leylaragg.letool.print.document.style.FontPosture.NORMAL, streamSupplier,
+            fallbackFamily);
+    }
+
+    /**
+     * 创建带真实字体姿态的字体定义。
+     *
+     * @param familyName 字体族名称
+     * @param weight 字体文件对应的字重
+     * @param posture 字体文件对应的姿态
+     * @param streamSupplier 每次调用返回新字体流的供应器，消费方负责关闭
+     * @param fallbackFamily 是否把当前字体族作为默认回退族
+     * @throws NullPointerException 字重、姿态或供应器为 null
+     * @throws IllegalArgumentException 字体族名称不合法
+     */
+    public PdfFont(String familyName, FontWeight weight,
+        io.github.leylaragg.letool.print.document.style.FontPosture posture,
+        Supplier<InputStream> streamSupplier, boolean fallbackFamily) {
+        this(familyName, weight, posture, streamSupplier, fallbackFamily, false);
+    }
+
+    private PdfFont(String familyName, FontWeight weight,
+        io.github.leylaragg.letool.print.document.style.FontPosture posture,
+        Supplier<InputStream> streamSupplier, boolean fallbackFamily, boolean namedOnly) {
+        this.namedOnly = namedOnly;
+        this.posture = Objects.requireNonNull(posture, "posture 不能为空");
         this.familyName = normalizeFamilyName(familyName);
         this.weight = Objects.requireNonNull(weight, "weight 不能为空");
         this.streamSupplier = Objects.requireNonNull(streamSupplier, "streamSupplier 不能为空");
         this.fallbackFamily = fallbackFamily;
+    }
+
+    /**
+     * 注册仅由模板明确引用的字体面，不改变现有默认字体顺序。
+     *
+     * @param familyName 字体族名称
+     * @param weight 字体文件对应的字重
+     * @param posture 字体文件对应的姿态
+     * @param supplier 每次调用返回新字体流的供应器，消费方负责关闭
+     * @return 仅显式引用的不可变字体定义
+     * @throws NullPointerException 字重、姿态或供应器为 null
+     * @throws IllegalArgumentException 字体族名称不合法
+     */
+    public static PdfFont named(String familyName, FontWeight weight,
+        io.github.leylaragg.letool.print.document.style.FontPosture posture, Supplier<InputStream> supplier) {
+        return new PdfFont(familyName, weight, posture, supplier, false, true);
+    }
+
+    /** @return 是否只允许显式按字体族名称引用 */
+    public boolean namedOnly() {
+        return namedOnly;
     }
 
     /** @return 规范化后的字体族名称 */
@@ -59,6 +110,11 @@ public final class PdfFont {
     /** @return 当前字体面的字重 */
     public FontWeight weight() {
         return weight;
+    }
+
+    /** @return 当前字体文件的真实姿态 */
+    public io.github.leylaragg.letool.print.document.style.FontPosture posture() {
+        return posture;
     }
 
     /** @return 当前字体族是否承担默认回退 */

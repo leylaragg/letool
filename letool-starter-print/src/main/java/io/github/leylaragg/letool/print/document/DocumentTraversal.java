@@ -107,7 +107,13 @@ public final class DocumentTraversal {
 
     /** 将节点的直接子节点按反向顺序入栈，以保持自然文档顺序。 */
     private static void pushChildren(Deque<NodeFrame> stack, DocumentNode node, int depth) {
-        if (node instanceof SectionNode section) {
+        if (node instanceof io.github.leylaragg.letool.print.document.node.ContentsEntryNode entry) {
+            pushReverse(stack, List.of(entry.link()), depth);
+        } else if (node instanceof io.github.leylaragg.letool.print.document.node.BodyCaptionNode caption) {
+            pushReverse(stack, caption.children(), depth);
+        } else if (node instanceof io.github.leylaragg.letool.print.document.node.InlineGroupNode group) {
+            pushReverse(stack, group.children(), depth);
+        } else if (node instanceof SectionNode section) {
             pushReverse(stack, section.children(), depth);
         } else if (node instanceof HeadingNode heading) {
             pushReverse(stack, heading.children(), depth);

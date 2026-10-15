@@ -92,6 +92,12 @@ final class XmlInspectionCollector {
         }
         Scope root = Scope.root();
         for (CompiledPagePlan page : document.pages()) {
+            Scope scope = root;
+            if (page.source().dataPath() != null) {
+                inspection.feature(DocumentFeature.MULTIPLE_PAGE_SEQUENCES);
+                path(page.source().dataPath(), TemplatePathUsageKind.LOOP, page.source(), templateCode, root);
+                scope = root.loop(page.source().variableName());
+            }
             if (!page.header().isEmpty()) {
                 inspection.feature(DocumentFeature.PAGE_HEADER);
             }
@@ -102,9 +108,9 @@ final class XmlInspectionCollector {
                     || page.pageNumbering().restartAt().isPresent()) {
                 inspection.feature(DocumentFeature.LOGICAL_PAGE_NUMBERING);
             }
-            visit(page.header(), templateCode, root);
-            visit(page.body(), templateCode, root);
-            visit(page.footer(), templateCode, root);
+            visit(page.header(), templateCode, scope);
+            visit(page.body(), templateCode, scope);
+            visit(page.footer(), templateCode, scope);
         }
         return inspection.build();
     }
@@ -120,6 +126,8 @@ final class XmlInspectionCollector {
     private void visit(CompiledXmlNode node, String currentTemplate, Scope scope) {
         addBuiltInNodeType(node);
         addStyleFeature(node);
+        node.attributePaths().values().forEach(attributePath -> path(attributePath,
+            TemplatePathUsageKind.NODE_ATTRIBUTE, node, currentTemplate, scope));
         if ("field".equals(node.name())) {
             path(node.dataPath(), TemplatePathUsageKind.FIELD, node, currentTemplate, scope);
             String formatter = node.attributes().get("formatter");

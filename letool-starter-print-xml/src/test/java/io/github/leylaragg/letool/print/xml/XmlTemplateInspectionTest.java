@@ -40,6 +40,48 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class XmlTemplateInspectionTest {
 
+    @Test
+    void shouldInspectDynamicNavigationAcrossPageAndFragmentScopes() {
+        CompiledXmlTemplate template = compile(
+                definition(TemplateType.DOCUMENT, "main", """
+                        <document xmlns="https://leyland.github.io/letool/print/v1" context-version="1">
+                            <page items="occurrences" var="occurrence"><page-body>
+                                <include template="entry"><with name="value" path="$occurrence"/></include>
+                            </page-body></page>
+                        </document>
+                        """),
+                definition(TemplateType.FRAGMENT, "entry", """
+                        <fragment xmlns="https://leyland.github.io/letool/print/v1" parameters="value">
+                            <paragraph id-path="$value.id">
+                                <bookmark id-path="$value.bookmark" label-path="unknown.caption"
+                                    target-path="$value.id"/>
+                            </paragraph>
+                        </fragment>
+                        """));
+        assertThat(template.inspection().pathUsages()).extracting(usage -> usage.dataPath())
+                .containsExactly("occurrences", "$occurrence", "$value.id", "$value.bookmark",
+                        "unknown.caption", "$value.id");
+        assertThat(template.inspection().pathUsages()).filteredOn(usage -> usage.dataPath().equals("$occurrence"))
+                .singleElement().satisfies(usage -> {
+                    assertThat(usage.visibleVariables()).containsExactly("occurrence");
+                    assertThat(usage.fragmentParameters()).isEmpty();
+                });
+        assertThat(template.inspection().pathUsages()).filteredOn(usage -> usage.dataPath().startsWith("$value"))
+                .allSatisfy(usage -> {
+                    assertThat(usage.visibleVariables()).isEmpty();
+                    assertThat(usage.fragmentParameters()).containsExactly("value");
+                    assertThat(usage.location().templateCode()).isEqualTo("entry");
+                });
+        assertThatThrownBy(() -> compile(
+                definition(TemplateType.DOCUMENT, "main", new String(document("<include template=\"entry\"/>"),
+                    StandardCharsets.UTF_8)),
+                definition(TemplateType.FRAGMENT, "entry", """
+                        <fragment xmlns="https://leyland.github.io/letool/print/v1">
+                            <paragraph id-path="$occurrence.id">Invalid capture</paragraph>
+                        </fragment>
+                        """))).isInstanceOf(PrintCompilationException.class).hasMessageContaining("未声明变量");
+    }
+
     /** inspection 应保守收集全部分支、循环、片段和页面静态语义。 */
     @Test
     void shouldInspectEveryPossibleTemplatePathAndFeature() {

@@ -17,7 +17,7 @@ import java.util.Objects;
 final class PdfDocumentPlan {
 
     /** 单份 PDF 允许建立的排版单元总量。 */
-    static final int MAX_RENDER_UNITS = 1_000;
+    static final int MAX_RENDER_UNITS = 20_000;
 
     /** 建立计划时使用的不可变文档模型。 */
     private final DocumentModel document;
@@ -53,7 +53,7 @@ final class PdfDocumentPlan {
             unitCount = Math.addExact(unitCount, sequence.units().size());
             if (unitCount > MAX_RENDER_UNITS) {
                 throw PrintValidationException.invalidDocument(
-                        "PDF 排版单元不能超过 1,000 个");
+                    "PDF 排版单元不能超过 20,000 个");
             }
             sequences.add(sequence);
         }

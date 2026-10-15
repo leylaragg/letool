@@ -3,11 +3,14 @@ package io.github.leylaragg.letool.print.xml;
 import io.github.leylaragg.letool.print.api.PrintTemplate;
 import io.github.leylaragg.letool.print.api.TemplateFormat;
 import io.github.leylaragg.letool.print.document.DocumentMetadata;
+import io.github.leylaragg.letool.print.document.DocumentOptions;
+import io.github.leylaragg.letool.print.document.DocumentNavigationOptions;
 import io.github.leylaragg.letool.print.document.Margins;
 import io.github.leylaragg.letool.print.document.PageLayout;
 import io.github.leylaragg.letool.print.document.PageNumbering;
 import io.github.leylaragg.letool.print.document.PageOrientation;
 import io.github.leylaragg.letool.print.document.PageSize;
+import io.github.leylaragg.letool.print.document.style.DocumentLength;
 import io.github.leylaragg.letool.print.document.style.StyleSheet;
 import io.github.leylaragg.letool.print.template.TemplateDefinition;
 import io.github.leylaragg.letool.print.template.TemplateType;
@@ -291,7 +294,23 @@ public final class XmlTemplateCompiler {
                             document.attributes().get("author"),
                             document.attributes().get("language")),
                     styleSheet,
-                    pages);
+                    pages,
+                    DocumentOptions.builder()
+                            .defaultFontFamily(document.attributes().get("default-font-family"))
+                            .glyphFallbackFamily(document.attributes().get("glyph-fallback-family"))
+                            .fullFontEmbedding(XmlValueParser.bool(document.attributes()
+                                    .getOrDefault("full-font-embedding", "false"), templateCode, document,
+                                    "full-font-embedding"))
+                            .webOptimized(XmlValueParser.bool(document.attributes().getOrDefault("web-optimized",
+                                    "false"), templateCode, document, "web-optimized"))
+                            .navigation(DocumentNavigationOptions.builder()
+                                    .destinationMode("page-top".equals(document.attributes().get("destination-mode"))
+                                            ? DocumentNavigationOptions.DestinationMode.PAGE_TOP
+                                            : DocumentNavigationOptions.DestinationMode.CONTENT)
+                                    .initialTarget(document.attributes().get("initial-target"))
+                                    .showBookmarks(Boolean.parseBoolean(document.attributes().get("show-bookmarks")))
+                                    .build())
+                            .build());
         } catch (RuntimeException exception) {
             throw nodeLocated(templateCode, document, "文档静态配置无效", exception);
         }
@@ -301,12 +320,26 @@ public final class XmlTemplateCompiler {
     private CompiledPagePlan compilePage(
             String templateCode, CompiledXmlNode page, int pageIndex, StyleSheet styleSheet) {
         String pagePath = "/document/page[" + (pageIndex + 1) + "]";
+        Set<String> variables = Set.of();
+        String variableName = null;
+        CompiledDataPath items = null;
+        // 动态页面先建立循环变量作用域，再编译页眉、正文与页脚。
+        if (page.attributes().containsKey("items")) {
+            variableName = requireLoopVariable(templateCode, page, variables);
+            items = CompiledDataPath.compile(page.attributes().get("items"), variables,
+                    templateCode, pagePath, page.line(), page.column());
+            variables = extendVariables(variables, variableName);
+        }
         List<CompiledXmlNode> header = List.of();
         List<CompiledXmlNode> body = List.of();
         List<CompiledXmlNode> footer = List.of();
         for (CompiledXmlNode region : page.children()) {
             List<CompiledXmlNode> compiled = compileRegion(
-                    templateCode, region, pagePath + "/" + region.name());
+                    templateCode, region, pagePath + "/" + region.name(), variables);
+            // 每轮页面都使用独立目标 ID，防止静态 ID 在重复页面中冲突。
+            if (items != null) {
+                rejectLoopIds(templateCode, page, compiled);
+            }
             if ("page-header".equals(region.name())) {
                 header = compiled;
             } else if ("page-body".equals(region.name())) {
@@ -327,16 +360,18 @@ public final class XmlTemplateCompiler {
                     "excluded 页面序列不能包含 page-number");
         }
         return new CompiledPagePlan(
-                pageLayout(templateCode, page), numbering, header, body, footer);
+                pageLayout(templateCode, page), numbering, header, body, footer,
+                new CompiledXmlNode("page", page.attributes(), List.of(), "", page.line(), page.column(),
+                        pagePath, items, null, variableName));
     }
 
     /** 编译一个页面区域中的块级节点。 */
     private List<CompiledXmlNode> compileRegion(
-            String templateCode, CompiledXmlNode region, String parentPath) {
+            String templateCode, CompiledXmlNode region, String parentPath, Set<String> variables) {
         List<CompiledXmlNode> compiled = new ArrayList<>(region.children().size());
         for (CompiledXmlNode child : region.children()) {
             compiled.add(compileDynamicTree(
-                    templateCode, child, parentPath, Set.of(), BindingDomain.BLOCKS));
+                    templateCode, child, parentPath, variables, BindingDomain.BLOCKS));
         }
         return List.copyOf(compiled);
     }
@@ -384,12 +419,46 @@ public final class XmlTemplateCompiler {
                         templateCode, page, "margin");
                 margins = new Margins(margin, margin, margin, margin);
             }
-            return new PageLayout(size, orientation, margins);
+            double headerTop = -1;
+            double footerBaseline = -1;
+            for (CompiledXmlNode region : page.children()) {
+                if ("page-header".equals(region.name()) && region.attributes().containsKey("placement")) {
+                    if (!"page-top".equals(region.attributes().get("placement"))) {
+                        throw nodeLocated(templateCode, region, "页眉位置无效");
+                    }
+                    headerTop = regionPoints(templateCode, region, "offset", "0pt");
+                } else if ("page-footer".equals(region.name()) && region.attributes().containsKey("placement")) {
+                    if (!"page-bottom".equals(region.attributes().get("placement"))
+                            || !"first-baseline".equals(region.attributes().get("anchor"))) {
+                        throw nodeLocated(templateCode, region, "页脚位置无效");
+                    }
+                    footerBaseline = regionPoints(templateCode, region, "offset", "0pt");
+                }
+            }
+            String alignment = attributes.getOrDefault("body-alignment", "top");
+            if (!Set.of("top", "middle").contains(alignment)) {
+                throw nodeLocated(templateCode, page, "正文对齐无效");
+            }
+            int maxPages = Integer.parseInt(attributes.getOrDefault("max-pages", "0"));
+            return new PageLayout(size, orientation, margins, headerTop,
+                    regionPoints(templateCode, page, "header-gap", "0pt"), footerBaseline, "middle".equals(alignment),
+                    maxPages);
         } catch (PrintCompilationException exception) {
             throw exception;
         } catch (RuntimeException exception) {
             throw nodeLocated(templateCode, page, "页面布局无效", exception);
         }
+    }
+
+    /** 解析原生页眉、页脚定位参数，仅接受非负 pt，避免与页面微米坐标混用。 */
+    private double regionPoints(String templateCode, CompiledXmlNode node, String attribute, String fallback) {
+        DocumentLength length = XmlValueParser.length(
+                node.attributes().getOrDefault(attribute, fallback), templateCode, node, attribute);
+        if (length.unit() != DocumentLength.Unit.POINT || length.value() < 0) {
+            throw nodeLocated(templateCode, node, attribute + " 必须是非负 pt");
+        }
+
+        return length.value();
     }
 
     /** 把页面页码属性转换为核心规则。 */
@@ -437,7 +506,7 @@ public final class XmlTemplateCompiler {
             try {
                 switch (node.name()) {
                     case "paragraph", "heading" -> styleSheet.resolveParagraph(style);
-                    case "text", "field", "page-number", "page-count" ->
+                    case "text", "field", "page-number", "page-count", "body-caption" ->
                             styleSheet.resolveText(style);
                     case "table" -> styleSheet.resolveTable(style);
                     case "cell" -> styleSheet.resolveCell(style);
@@ -530,9 +599,20 @@ public final class XmlTemplateCompiler {
         if ("for-each".equals(node.name())) {
             validateLoopChildren(templateCode, node, children);
         }
+        Map<String, CompiledDataPath> attributePaths = new LinkedHashMap<>();
+        if (tagPlan == null) {
+            for (String name : List.of("id", "label", "target", "parent")) {
+                String path = node.attributes().get(name + "-path");
+                if (path != null) {
+                    attributePaths.put(name, CompiledDataPath.compile(path, variables,
+                        templateCode, tagPath, node.line(), node.column()));
+                }
+            }
+        }
         return new CompiledXmlNode(
                 node.name(), node.attributes(), children, node.text(), node.line(), node.column(),
-                tagPath, dataPath, condition, variableName, formatPlan, expressionPlan, tagPlan);
+            tagPath, dataPath, condition, variableName, formatPlan, expressionPlan, tagPlan)
+            .withAttributePaths(attributePaths);
     }
 
     /**
@@ -857,9 +937,12 @@ public final class XmlTemplateCompiler {
             String templateCode, CompiledXmlNode loop, List<CompiledXmlNode> children) {
         for (CompiledXmlNode child : children) {
             if (child.attributes().containsKey("id")) {
-                throw nodeLocated(templateCode, loop, "for-each 后代不能声明静态 ID");
+                throw nodeLocated(templateCode, loop, loop.name() + " 后代不能声明静态 ID");
             }
             rejectLoopIds(templateCode, loop, child.children());
+            if (child.includedFragment() != null) {
+                rejectLoopIds(templateCode, loop, child.includedFragment().blocks());
+            }
         }
     }
 

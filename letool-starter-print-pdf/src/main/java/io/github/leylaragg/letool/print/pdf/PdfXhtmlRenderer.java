@@ -62,7 +62,9 @@ final class PdfXhtmlRenderer {
         this.fontCatalog = fontCatalog;
         Map<String, Boolean> families = new LinkedHashMap<>();
         for (PdfFont font : fontCatalog.fonts()) {
-            families.merge(font.familyName(), font.fallbackFamily(), Boolean::logicalOr);
+            if (!font.namedOnly()) {
+                families.merge(font.familyName(), font.fallbackFamily(), Boolean::logicalOr);
+            }
         }
         this.fontFamilies = families.entrySet().stream()
                 .sorted(Comparator.comparing(Map.Entry<String, Boolean>::getValue))
@@ -109,7 +111,8 @@ final class PdfXhtmlRenderer {
         Objects.requireNonNull(blocks, "blocks 不能为空");
         Objects.requireNonNull(pagination, "pagination 不能为空");
         Objects.requireNonNull(ids, "ids 不能为空");
-        PdfStyleCatalog styles = PdfStyleCatalog.compile(document.styleSheet(), fontCatalog);
+        PdfStyleCatalog styles = PdfStyleCatalog.compile(document.styleSheet(), fontCatalog,
+            document.document().options());
         PdfPaginationPlan.SequencePagination sequencePagination =
                 pagination.sequence(sequence.sourceIndex());
         PageValues pageValues = new PageValues(
@@ -145,17 +148,24 @@ final class PdfXhtmlRenderer {
             writeBookmarks(output, document);
         }
         output.append("<style>");
-        writeStyle(output, pageLayout, !header.isEmpty(), !footer.isEmpty());
+        writeStyle(output, pageLayout, !header.isEmpty(), !footer.isEmpty(), document.options());
         output.append(styles.css());
+        for (BlockNode block : blocks) {
+            if (block instanceof
+                io.github.leylaragg.letool.print.document.node.ContentsTitleNode title) {
+                output.append('#').append(title.id()).append("{margin-bottom:0;}");
+            }
+        }
         output.append("</style></head><body>");
         writeRegion(output, header, HEADER_REGION_ID, "lt-page-header",
                 ids, styles, pageValues, centralNavigation);
         writeRegion(output, footer, FOOTER_REGION_ID, "lt-page-footer",
                 ids, styles, pageValues, centralNavigation);
+        output.append("<div id=\"letool-body-region\">");
         for (BlockNode block : blocks) {
             writeBlock(output, block, ids, styles, pageValues, centralNavigation);
         }
-        output.append("</body></html>");
+        output.append("</div></body></html>");
     }
 
     /** 页面、字体和分页规则都由框架生成，不接受模板侧 CSS。 */
@@ -163,7 +173,7 @@ final class PdfXhtmlRenderer {
             StringBuilder output,
             PageLayout layout,
             boolean hasHeader,
-            boolean hasFooter) {
+        boolean hasFooter, io.github.leylaragg.letool.print.document.DocumentOptions options) {
         int width = layout.orientation() == PageOrientation.PORTRAIT
                 ? layout.pageSize().widthMicrometers()
                 : layout.pageSize().heightMicrometers();
@@ -178,19 +188,28 @@ final class PdfXhtmlRenderer {
                 .append(millimeters(margins.bottomMicrometers())).append("mm ")
                 .append(millimeters(margins.leftMicrometers())).append("mm; }")
                 .append("body { margin: 0; font-family: ");
-        writeFontFamilies(output);
+        writeFontFamilies(output, options);
         output.append("; }table { width: 100%; border-collapse: collapse; -fs-table-paginate: paginate; }")
                 .append("thead { display: table-header-group; }")
                 .append("tr { page-break-inside: avoid; }")
                 .append(".page-break { page-break-after: always; }")
                 .append(".lt-page-number:before{content:counter(page);}");
         if (hasHeader) {
-            output.append("@page{@top-center{content:element(lt-page-header);}}")
-                    .append(".lt-page-header{position:running(lt-page-header);}");
+            output.append("@page{@top-center{content:element(lt-page-header);");
+            if (layout.headerTopPoints() >= 0)
+            {
+                output.append("vertical-align:top;padding-top:").append(layout.headerTopPoints()).append("pt;");
+            }
+            output.append("}}.lt-page-header{position:running(lt-page-header);width:")
+                .append(millimeters(width - margins.leftMicrometers() - margins.rightMicrometers())).append("mm;}");
         }
         if (hasFooter) {
-            output.append("@page{@bottom-center{content:element(lt-page-footer);}}")
-                    .append(".lt-page-footer{position:running(lt-page-footer);}");
+            output.append("@page{@bottom-center{content:element(lt-page-footer);");
+            if (layout.footerBaselinePoints() >= 0) {
+                output.append("vertical-align:top;padding-top:0pt;");
+            }
+            output.append("}}.lt-page-footer{position:running(lt-page-footer);width:")
+                .append(millimeters(width - margins.leftMicrometers() - margins.rightMicrometers())).append("mm;}");
         }
     }
 
@@ -227,19 +246,22 @@ final class PdfXhtmlRenderer {
         output.append("<bookmarks>");
         for (BookmarkNode bookmark : bookmarks) {
             output.append("<bookmark name=\"").append(escapeAttribute(bookmark.label()))
-                    .append("\" href=\"#").append(escapeAttribute(bookmark.id()))
+                .append("\" href=\"#").append(escapeAttribute(bookmark.effectiveTargetId()))
                     .append("\"></bookmark>");
         }
         output.append("</bookmarks>");
     }
 
     /** 按主字体、普通补充字体、最终回退字体的顺序写入 CSS。 */
-    private void writeFontFamilies(StringBuilder output) {
-        for (int index = 0; index < fontFamilies.size(); index++) {
+    private void writeFontFamilies(StringBuilder output, io.github.leylaragg.letool.print.document.DocumentOptions
+        options) {
+        List<String> selectedFamilies = options.defaultFontFamily().isEmpty() ? fontFamilies
+            : List.of(options.defaultFontFamily());
+        for (int index = 0; index < selectedFamilies.size(); index++) {
             if (index > 0) {
                 output.append(", ");
             }
-            output.append('\'').append(fontFamilies.get(index)).append('\'');
+            output.append('\'').append(selectedFamilies.get(index)).append('\'');
         }
         if (!fontFamilies.isEmpty()) {
             output.append(", ");
@@ -279,11 +301,18 @@ final class PdfXhtmlRenderer {
             paragraph.children().forEach(child -> writeInline(
                     output, child, ids, styles, pageValues, centralNavigation));
             output.append("</p>");
+        } else if (block instanceof io.github.leylaragg.letool.print.document.node.ContentsTitleNode title) {
+            writeBlock(output, new ParagraphNode(title.id(), title.styleName(), List.of(new TextNode(title.title(),
+                ""))),
+                ids, styles, pageValues, centralNavigation);
+        } else if (block instanceof io.github.leylaragg.letool.print.document.node.ContentsEntryNode entry) {
+            writeContentsEntry(output, entry, ids, styles, pageValues, centralNavigation);
         } else if (block instanceof TableNode table) {
             writeTable(output, table, ids, styles, pageValues, centralNavigation);
         } else if (block == PageBreakNode.INSTANCE) {
             output.append("<div class=\"page-break\"></div>");
-        } else if (block instanceof AnnotationNode) {
+        } else if (block instanceof AnnotationNode || block instanceof
+            io.github.leylaragg.letool.print.document.node.BodyCaptionNode) {
             // 批注正文只进入 PDF 对象，不在页面正文中重复显示。
             return;
         } else if (block instanceof TableOfContentsNode) {
@@ -291,6 +320,29 @@ final class PdfXhtmlRenderer {
         } else {
             throw unsupported(block);
         }
+    }
+
+    private void writeContentsEntry(StringBuilder output,
+        io.github.leylaragg.letool.print.document.node.ContentsEntryNode entry, PdfRenderIds ids,
+        PdfStyleCatalog styles, PageValues pageValues, boolean centralNavigation) {
+        io.github.leylaragg.letool.print.document.node.TableOfContentsLayout layout = entry.layout();
+        String sourceId = ids.sourceId(entry.link());
+        output.append("<div id=\"").append(sourceId)
+            .append("\" data-toc-entry=\"true\" style=\"position:relative;page-break-" +
+            "inside:avoid;min-height:")
+            .append(entry.level() == 1 ? layout.groupHeight() : layout.entryHeight()).append("pt;");
+        if (entry.keepWithNext()) {
+            output.append("page-break-after:avoid;");
+        }
+        output.append("\"><p id=\"").append(sourceId).append("-label\" style=\"margin:0 36pt 0 ")
+            .append((entry.level() - 1) * layout.levelIndent()).append("pt;word-wrap:break-word;\"><span");
+        writeClass(output, styles.textClass(layout.textStyleName()));
+        output.append('>');
+        entry.link().label().forEach(child -> writeInline(output, child, ids, styles, pageValues, centralNavigation));
+        output.append("</span></p><p id=\"").append(sourceId).append("-page\" style=\"position:absolute;right:")
+            .append(layout.pageInset()).append("pt;margin:0;\"><span");
+        writeClass(output, styles.textClass(layout.textStyleName()));
+        output.append('>').append(escapeText(entry.pageNumber())).append("</span></p></div>");
     }
 
     /** 表头与表体分区保持模型语义，表头可由排版器跨页重复。 */
@@ -331,7 +383,15 @@ final class PdfXhtmlRenderer {
             PageValues pageValues,
             boolean centralNavigation) {
         for (TableRow row : rows) {
-            output.append("<tr>");
+            output.append("<tr");
+            if (row.minimumHeightPoints() > 0 || row.keepWithNext()) {
+                output.append(" style=\"height:").append(row.minimumHeightPoints()).append("pt;");
+                if (row.keepWithNext()) {
+                    output.append("page-break-after:avoid;");
+                }
+                output.append('"');
+            }
+            output.append('>');
             for (TableCell cell : row.cells()) {
                 writeCell(output, cell, header, ids, styles, pageValues, centralNavigation);
             }
@@ -351,6 +411,9 @@ final class PdfXhtmlRenderer {
         String tag = header ? "th" : "td";
         output.append('<').append(tag);
         writeClass(output, styles.cellClass(cell.styleName()));
+        if (cell.repeatOnSplit()) {
+            output.append(" data-repeat-on-split=\"true\"");
+        }
         if (cell.rowSpan() > 1) {
             output.append(" rowspan=\"").append(cell.rowSpan()).append('\"');
         }
@@ -371,7 +434,28 @@ final class PdfXhtmlRenderer {
             PdfStyleCatalog styles,
             PageValues pageValues,
             boolean centralNavigation) {
-        if (inline instanceof TextNode text) {
+        if (inline instanceof io.github.leylaragg.letool.print.document.node.InlineGroupNode group) {
+            if (group.widthPoints() > 0)
+            {
+                output.append("<span style=\"display:inline-block;text-align:center;white-space" +
+                    ":nowrap;width:").append(group.widthPoints()).append("pt;\">");
+            }
+            output.append(group.underline() ? "<span data-native-underline=\"true\">" : "<span>");
+            group.children().forEach(child -> writeInline(output, child, ids, styles, pageValues, centralNavigation));
+            output.append("</span>");
+            if (group.widthPoints() > 0) {
+                output.append("</span>");
+            }
+        } else if (inline instanceof io.github.leylaragg.letool.print.document.node.ShapeNode shape) {
+            output.append("<object type=\"letool-shape\" data-kind=\"").append(shape.kind())
+                .append("\" data-stroke=\"").append(shape.strokePoints()).append("\" data-selected=\"")
+                .append(shape.selected())
+                .append("\" data-cells=\"").append(shape.cells()).append("\" data-mark=\"").append(shape
+                    .markPoints()).append("\" style=\"display:inline-block;width:")
+                .append(shape.widthPoints()).append("pt;height:").append(shape.heightPoints()).append(shape
+                .kind() == io.github.leylaragg.letool.print.document.node.ShapeNode.Kind.U_CELLS ?
+                "pt;vertical-align:-2pt;\"/>" : "pt;vertical-align:middle;\"/>");
+        } else if (inline instanceof TextNode text) {
             String className = styles.textClass(text.styleName());
             if (className.isEmpty()) {
                 output.append(escapeText(text.text()));
@@ -382,9 +466,11 @@ final class PdfXhtmlRenderer {
         } else if (inline == LineBreakNode.INSTANCE) {
             output.append("<br/>");
         } else if (inline instanceof BookmarkNode bookmark) {
-            output.append("<span id=\"").append(escapeAttribute(bookmark.id()))
+            if (bookmark.targetId().isEmpty()) {
+                output.append("<span id=\"").append(escapeAttribute(bookmark.id()))
                     .append("\" class=\"bookmark\">").append(escapeText(bookmark.label()))
                     .append("</span>");
+            }
         } else if (inline instanceof InternalLinkNode link) {
             if (centralNavigation) {
                 output.append("<span id=\"").append(escapeAttribute(ids.sourceId(link)))
@@ -393,7 +479,7 @@ final class PdfXhtmlRenderer {
                         output, label, ids, styles, pageValues, true));
                 output.append("</span>");
             } else {
-                output.append("<a href=\"#").append(escapeAttribute(link.targetId())).append("\">");
+                output.append("<a href=\"#").append(escapeAttribute(ids.targetId(link.targetId()))).append("\">");
                 link.label().forEach(label -> writeInline(
                         output, label, ids, styles, pageValues, false));
                 output.append("</a>");

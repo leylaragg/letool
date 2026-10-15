@@ -1,4 +1,6 @@
 HELP.md
+# Maven 生成的消费 POM
+.flattened-pom.xml
 target/
 /*/target/
 !.mvn/wrapper/maven-wrapper.jar

@@ -28,10 +28,14 @@ final class PdfCssValues {
     /** @return 文档长度对应的 CSS 长度 */
     static String length(DocumentLength length) {
         Objects.requireNonNull(length, "length 不能为空");
+        if (length.unit() == DocumentLength.Unit.AUTO) {
+            return "auto";
+        }
         String unit = switch (length.unit()) {
             case MILLIMETER -> "mm";
             case POINT -> "pt";
             case PERCENT -> "%";
+            case AUTO -> "";
         };
         return decimal(length.value()) + unit;
     }

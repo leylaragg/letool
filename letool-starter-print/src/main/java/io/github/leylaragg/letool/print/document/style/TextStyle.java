@@ -24,6 +24,9 @@ public final class TextStyle {
     /** 字重。 */
     private final FontWeight fontWeight;
 
+    /** 字体文件的真实姿态。 */
+    private final FontPosture fontPosture;
+
     /** 文字颜色。 */
     private final DocumentColor color;
 
@@ -40,6 +43,7 @@ public final class TextStyle {
         fontSize.requireUnit("字号", DocumentLength.Unit.POINT);
         fontSize.requirePositive("字号");
         this.fontWeight = Objects.requireNonNull(builder.fontWeight, "fontWeight 不能为空");
+        this.fontPosture = Objects.requireNonNull(builder.fontPosture, "fontPosture 不能为空");
         this.color = Objects.requireNonNull(builder.color, "color 不能为空");
         if (!Double.isFinite(builder.lineHeight)
                 || builder.lineHeight < 0.5 || builder.lineHeight > 10) {
@@ -74,6 +78,11 @@ public final class TextStyle {
         return fontWeight;
     }
 
+    /** @return 字体文件的真实姿态 */
+    public FontPosture fontPosture() {
+        return fontPosture;
+    }
+
     /** @return 文字颜色 */
     public DocumentColor color() {
         return color;
@@ -101,7 +110,7 @@ public final class TextStyle {
         return Double.compare(lineHeight, that.lineHeight) == 0
                 && fontFamily.equals(that.fontFamily)
                 && fontSize.equals(that.fontSize)
-                && fontWeight == that.fontWeight
+            && fontWeight == that.fontWeight && fontPosture == that.fontPosture
                 && color.equals(that.color)
                 && decorations.equals(that.decorations);
     }
@@ -109,7 +118,7 @@ public final class TextStyle {
     /** @return 与文本样式值一致的哈希码 */
     @Override
     public int hashCode() {
-        return Objects.hash(fontFamily, fontSize, fontWeight, color, lineHeight, decorations);
+        return Objects.hash(fontFamily, fontSize, fontWeight, fontPosture, color, lineHeight, decorations);
     }
 
     /** 规范化可选字体族，并拒绝控制字符。 */
@@ -139,6 +148,20 @@ public final class TextStyle {
 
         /** 默认常规字重。 */
         private FontWeight fontWeight = FontWeight.NORMAL;
+
+        /** 默认使用正体字体文件。 */
+        private FontPosture fontPosture = FontPosture.NORMAL;
+
+        /**
+         * 设置需要匹配的真实字体姿态。
+         *
+         * @param value 非空字体姿态，构建时校验
+         * @return 当前构建器
+         */
+        public Builder fontPosture(FontPosture value) {
+            fontPosture = value;
+            return this;
+        }
 
         /** 默认黑色。 */
         private DocumentColor color = DocumentColor.BLACK;

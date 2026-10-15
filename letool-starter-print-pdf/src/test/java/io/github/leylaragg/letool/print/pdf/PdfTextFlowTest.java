@@ -62,8 +62,8 @@ class PdfTextFlowTest {
         String xhtml = renderer().render(document);
 
         assertThat(xhtml)
-                .contains("white-space:nowrap;overflow-wrap:normal;page-break-inside:auto")
-                .contains("white-space:pre-line;overflow-wrap:break-word;page-break-inside:avoid")
+                .contains("white-space:nowrap;word-wrap:normal;page-break-after:auto;page-break-inside:auto")
+                .contains("white-space:pre-line;word-wrap:break-word;page-break-after:auto;page-break-inside:avoid")
                 .contains("<p class=\"lt-paragraph-");
     }
 

@@ -1,6 +1,7 @@
 package io.github.leylaragg.letool.print.xml;
 
 import io.github.leylaragg.letool.print.document.DocumentMetadata;
+import io.github.leylaragg.letool.print.document.DocumentOptions;
 import io.github.leylaragg.letool.print.document.style.StyleSheet;
 
 import java.util.List;
@@ -22,12 +23,17 @@ final class CompiledDocumentPlan {
     /** 保持 XML 声明顺序的页面序列计划。 */
     private final List<CompiledPagePlan> pages;
 
+    /** 编译时冻结的文档字体和导航选项。 */
+    private final DocumentOptions options;
+
     /** 保存文档的静态编译结果。 */
     CompiledDocumentPlan(
-            DocumentMetadata metadata, StyleSheet styleSheet, List<CompiledPagePlan> pages) {
+        DocumentMetadata metadata, StyleSheet styleSheet, List<CompiledPagePlan> pages,
+        DocumentOptions options) {
         this.metadata = Objects.requireNonNull(metadata, "metadata 不能为空");
         this.styleSheet = Objects.requireNonNull(styleSheet, "styleSheet 不能为空");
         this.pages = List.copyOf(pages);
+        this.options = Objects.requireNonNull(options, "options 不能为空");
         if (this.pages.isEmpty()) {
             throw new IllegalArgumentException("pages 不能为空");
         }
@@ -46,5 +52,10 @@ final class CompiledDocumentPlan {
     /** @return 有序页面序列计划 */
     List<CompiledPagePlan> pages() {
         return pages;
+    }
+
+    /** @return 可并发绑定的不可变文档选项 */
+    DocumentOptions options() {
+        return options;
     }
 }

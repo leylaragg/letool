@@ -109,8 +109,13 @@ public final class TableStyle {
         }
         DocumentLength.Unit unit = null;
         double total = 0;
+        boolean hasAuto = false;
         for (DocumentLength columnWidth : columnWidths) {
             Objects.requireNonNull(columnWidth, "columnWidths 不允许 null");
+            if (columnWidth.unit() == DocumentLength.Unit.AUTO) {
+                hasAuto = true;
+                continue;
+            }
             columnWidth.requireUnit("表格列宽", DocumentLength.Unit.MILLIMETER, DocumentLength.Unit.PERCENT);
             columnWidth.requirePositive("表格列宽");
             if (unit != null && unit != columnWidth.unit()) {
@@ -119,7 +124,8 @@ public final class TableStyle {
             unit = columnWidth.unit();
             total += columnWidth.value();
         }
-        if (unit == DocumentLength.Unit.PERCENT && Math.abs(total - 100) > PERCENT_TOLERANCE) {
+        if (unit == DocumentLength.Unit.PERCENT && (!hasAuto && Math.abs(total - 100) > PERCENT_TOLERANCE || hasAuto
+            && total >= 100)) {
             throw PrintValidationException.invalidDocument("百分比列宽合计必须为 100");
         }
     }

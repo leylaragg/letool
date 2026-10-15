@@ -3,6 +3,7 @@ package io.github.leylaragg.letool.print.pdf;
 import io.github.leylaragg.letool.print.document.DocumentModel;
 import io.github.leylaragg.letool.print.document.DocumentTraversal;
 import io.github.leylaragg.letool.print.document.node.BlockNode;
+import io.github.leylaragg.letool.print.document.node.BookmarkNode;
 import io.github.leylaragg.letool.print.document.node.DocumentNode;
 import io.github.leylaragg.letool.print.document.node.HeadingNode;
 import io.github.leylaragg.letool.print.document.node.InternalLinkNode;
@@ -28,6 +29,8 @@ final class PdfRenderIds {
     private final Map<HeadingNode, String> headingIds;
     private final Map<InternalLinkNode, String> linkIds;
     private final Set<String> targetIds;
+    private final Set<String> usedIds;
+    private final Map<String, String> navigationTargets;
 
     /**
      * 按文档遍历顺序分配自动 ID。
@@ -55,7 +58,7 @@ final class PdfRenderIds {
         for (DocumentNode node : nodes) {
             if (!node.id().isEmpty()) {
                 state.usedIds.add(node.id());
-                state.targetIds.add(node.id());
+                state.addTarget(node);
             }
         }
         for (DocumentNode node : nodes) {
@@ -78,7 +81,7 @@ final class PdfRenderIds {
         for (DocumentNode node : nodes) {
             if (!node.id().isEmpty()) {
                 state.usedIds.add(node.id());
-                state.targetIds.add(node.id());
+                state.addTarget(node);
             }
         }
         for (DocumentNode node : nodes) {
@@ -98,6 +101,8 @@ final class PdfRenderIds {
         this.headingIds = Collections.unmodifiableMap(new IdentityHashMap<>(state.headingIds));
         this.linkIds = Collections.unmodifiableMap(new IdentityHashMap<>(state.linkIds));
         this.targetIds = Set.copyOf(state.targetIds);
+        this.usedIds = Set.copyOf(state.usedIds);
+        this.navigationTargets = Map.copyOf(state.navigationTargets);
     }
 
     /** 返回标题的显式或自动布局目标 ID。 */
@@ -118,6 +123,19 @@ final class PdfRenderIds {
         return id;
     }
 
+    /** 元数据书签 ID 不作为正文位置，统一解析到其实际目标。 */
+    String targetId(String logicalId) {
+        String current = logicalId;
+        Set<String> visited = new LinkedHashSet<>();
+        while (navigationTargets.containsKey(current)) {
+            if (!visited.add(current)) {
+                throw new IllegalArgumentException("书签目标引用形成环");
+            }
+            current = navigationTargets.get(current);
+        }
+        return current;
+    }
+
     /** @return 文档中需要提取位置的全部目标 ID */
     Set<String> targetIds() {
         return targetIds;
@@ -134,6 +152,7 @@ final class PdfRenderIds {
         private final Set<String> targetIds = new LinkedHashSet<>();
         private final Map<HeadingNode, String> headingIds = new IdentityHashMap<>();
         private final Map<InternalLinkNode, String> linkIds = new IdentityHashMap<>();
+        private final Map<String, String> navigationTargets = new java.util.LinkedHashMap<>();
         private int nextHeading = 1;
         private int nextLink = 1;
 
@@ -143,11 +162,19 @@ final class PdfRenderIds {
 
         /** 从文档级快照继续分配目录生成节点，原映射按身份保留。 */
         private ListState(PdfRenderIds base) {
-            usedIds.addAll(base.targetIds);
-            usedIds.addAll(base.linkIds.values());
+            usedIds.addAll(base.usedIds);
             targetIds.addAll(base.targetIds);
             headingIds.putAll(base.headingIds);
             linkIds.putAll(base.linkIds);
+            navigationTargets.putAll(base.navigationTargets);
+        }
+
+        private void addTarget(DocumentNode node) {
+            if (node instanceof BookmarkNode bookmark && !bookmark.targetId().isEmpty()) {
+                navigationTargets.put(bookmark.id(), bookmark.targetId());
+            } else {
+                targetIds.add(node.id());
+            }
         }
 
         /** 逐个跳过用户 ID 和此前自动 ID，保持结果稳定。 */

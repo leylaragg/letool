@@ -119,11 +119,11 @@ class PdfDocumentPlanTest {
     @Test
     void shouldEnforceDocumentRenderUnitLimit() {
         assertThat(PdfDocumentPlan.create(document(List.of(
-                sequence(blocksForUnits(1_000), PageNumbering.counted())))).unitCount())
-                .isEqualTo(1_000);
+                sequence(blocksForUnits(20_000), PageNumbering.counted())))).unitCount())
+                .isEqualTo(20_000);
         assertThatThrownBy(() -> PdfDocumentPlan.create(document(List.of(
-                sequence(blocksForUnits(1_001), PageNumbering.counted())))))
-                .hasMessageContaining("1,000");
+                sequence(blocksForUnits(20_001), PageNumbering.counted())))))
+                .hasMessageContaining("20,000");
     }
 
     /** 用根分页构造指定数量的非空正文单元。 */

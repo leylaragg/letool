@@ -1,27 +1,25 @@
 package io.github.leylaragg.letool.print.pdf;
 
-import io.github.leylaragg.letool.print.document.node.HeadingNode;
-
 /**
  * 目录排版使用的标题和稳定目标。
  *
  * @author leyland
  */
 final class PdfTocEntry {
-    private final HeadingNode heading;
+    private final int level;
     private final String title;
     private final String targetId;
 
-    /** 保存目录行需要的标题节点、文字和布局目标。 */
-    PdfTocEntry(HeadingNode heading, String title, String targetId) {
-        this.heading = heading;
+    /** 保存目录行需要的层级、文字和实际布局目标。 */
+    PdfTocEntry(int level, String title, String targetId) {
+        this.level = level;
         this.title = title;
         this.targetId = targetId;
     }
 
-    /** @return 用于查询最终页码的标题节点 */
-    HeadingNode heading() {
-        return heading;
+    /** @return 目录层级 */
+    int level() {
+        return level;
     }
 
     /** @return 目录中展示的标题文字 */

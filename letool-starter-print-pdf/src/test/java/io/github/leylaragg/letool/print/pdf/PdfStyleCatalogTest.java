@@ -82,7 +82,7 @@ class PdfStyleCatalogTest {
                 .contains("text-align:justify")
                 .contains("text-indent:6.5mm")
                 .contains("white-space:pre-wrap")
-                .contains("overflow-wrap:break-word")
+                .contains("word-wrap:break-word")
                 .contains("table-layout:fixed")
                 .contains("width:100%")
                 .contains("page-break-inside:avoid")

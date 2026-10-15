@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.github.leylaragg</groupId>
         <artifactId>letool</artifactId>
-        <version>3.0.2</version>
+        <version>${revision}</version>
     </parent>
 
     <artifactId>letool-starter-print-pdf</artifactId>
@@ -23,6 +23,14 @@
         <dependency>
             <groupId>io.github.openhtmltopdf</groupId>
             <artifactId>openhtmltopdf-pdfbox</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>xmpbox</artifactId>
         </dependency>
 
         <dependency>

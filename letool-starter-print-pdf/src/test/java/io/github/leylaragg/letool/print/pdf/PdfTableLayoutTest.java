@@ -61,7 +61,7 @@ class PdfTableLayoutTest {
                 .contains("<thead><tr><th class=\"lt-cell-0\" colspan=\"2\">")
                 .contains("</thead><tbody>")
                 .contains(".lt-table-0>thead{display:table-header-group;}")
-                .contains(".lt-table-0 tr{page-break-inside:avoid;}");
+                .contains(".lt-table-0>tbody>tr{page-break-inside:avoid;}");
     }
 
     /** 跨页策略只按 KEEP_TABLE、KEEP_ROWS、AUTO 的顺序降级。 */

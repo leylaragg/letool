@@ -28,15 +28,19 @@ final class CompiledPagePlan {
     /** 页脚块计划。 */
     private final List<CompiledXmlNode> footer;
 
+    /** 页面声明的源码位置及可选列表循环计划。 */
+    private final CompiledXmlNode source;
+
     /** 保存一个可并发绑定的页面序列计划。 */
     CompiledPagePlan(PageLayout pageLayout, PageNumbering pageNumbering,
             List<CompiledXmlNode> header, List<CompiledXmlNode> body,
-            List<CompiledXmlNode> footer) {
+        List<CompiledXmlNode> footer, CompiledXmlNode source) {
         this.pageLayout = Objects.requireNonNull(pageLayout, "pageLayout 不能为空");
         this.pageNumbering = Objects.requireNonNull(pageNumbering, "pageNumbering 不能为空");
         this.header = List.copyOf(header);
         this.body = List.copyOf(body);
         this.footer = List.copyOf(footer);
+        this.source = Objects.requireNonNull(source, "source 不能为空");
     }
 
     /** @return 页面物理布局 */
@@ -62,5 +66,10 @@ final class CompiledPagePlan {
     /** @return 页脚块计划 */
     List<CompiledXmlNode> footer() {
         return footer;
+    }
+
+    /** @return 页面声明节点，携带循环数据路径和诊断位置 */
+    CompiledXmlNode source() {
+        return source;
     }
 }

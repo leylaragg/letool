@@ -21,7 +21,7 @@ import java.util.Objects;
 final class PdfSequencePlan {
 
     /** 单个序列也不能独占超过文档级单元上限。 */
-    private static final int MAX_RENDER_UNITS = 1_000;
+    private static final int MAX_RENDER_UNITS = PdfDocumentPlan.MAX_RENDER_UNITS;
 
     /** 当前序列在原文档中的零基位置。 */
     private final int sourceIndex;
@@ -130,7 +130,7 @@ final class PdfSequencePlan {
     /** 在修改列表前检查单元上限。 */
     private static void addUnit(List<PdfSequenceUnit> units, PdfSequenceUnit unit) {
         if (units.size() >= MAX_RENDER_UNITS) {
-            throw PrintValidationException.invalidDocument("PDF 排版单元不能超过 1,000 个");
+            throw PrintValidationException.invalidDocument("PDF 排版单元不能超过 20,000 个");
         }
         units.add(unit);
     }

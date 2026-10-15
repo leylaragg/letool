@@ -204,6 +204,11 @@ final class XmlSourceParser {
             if (version == null || !version.matches("[1-9][0-9]*")) {
                 throw located(templateCode, reader, "context-version 必须为正整数");
             }
+            if (!Set.of("content", "page-top").contains(attributes.getOrDefault("destination-mode", "content"))) {
+                throw located(templateCode, reader, "destination-mode 必须为 content 或 page-top");
+            }
+            validateBoolean(templateCode, reader, attributes, "show-bookmarks");
+            validateOptionalId(templateCode, reader, attributes, "initial-target");
         }
         if (Set.of("text-style", "paragraph-style", "table-style", "cell-style").contains(element)) {
             String name = attributes.get("name");
@@ -226,6 +231,9 @@ final class XmlSourceParser {
         }
         if ("page".equals(element)) {
             validatePageAttributes(templateCode, reader, attributes);
+            if (attributes.containsKey("items") != attributes.containsKey("var")) {
+                throw located(templateCode, reader, "page.items 和 var 必须成对声明");
+            }
         }
         if ("heading".equals(element)) {
             String level = attributes.getOrDefault("level", "1");
@@ -244,6 +252,7 @@ final class XmlSourceParser {
             }
         }
         if ("table-of-contents".equals(element)) {
+            validateOptionalId(templateCode, reader, attributes, "bookmark-root");
             int minLevel = tableOfContentsLevel(
                     templateCode, reader, attributes.getOrDefault("min-level", "1"), "min-level");
             int maxLevel = tableOfContentsLevel(
@@ -260,16 +269,20 @@ final class XmlSourceParser {
         if ("image".equals(element)) {
             validateImage(templateCode, reader, attributes);
         }
-        if ("bookmark".equals(element)
-                && (!attributes.containsKey("id") || attributes.get("label") == null
-                || attributes.get("label").isBlank())) {
-            throw located(templateCode, reader, "bookmark.id 和非空 label 必填");
+        if (Set.of("section", "heading", "paragraph", "table", "image", "bookmark").contains(element)) {
+            validateAttributeChoice(templateCode, reader, attributes, "id", "bookmark".equals(element));
+        }
+        if ("bookmark".equals(element)) {
+            validateAttributeChoice(templateCode, reader, attributes, "label", true);
+            validateAttributeChoice(templateCode, reader, attributes, "target", false);
+            validateAttributeChoice(templateCode, reader, attributes, "parent", false);
+            validateOptionalId(templateCode, reader, attributes, "target");
+            validateOptionalId(templateCode, reader, attributes, "parent");
+            validateBoolean(templateCode, reader, attributes, "collapsed");
         }
         if ("link".equals(element)) {
-            String target = attributes.get("target");
-            if (target == null || !NODE_ID.matcher(target).matches()) {
-                throw located(templateCode, reader, "link.target 不合法");
-            }
+            validateAttributeChoice(templateCode, reader, attributes, "target", true);
+            validateOptionalId(templateCode, reader, attributes, "target");
         }
         if ("annotation".equals(element)) {
             validateAnnotation(templateCode, reader, attributes);
@@ -282,6 +295,35 @@ final class XmlSourceParser {
             if (!attributes.containsKey("value") || attributes.get("value").isEmpty()) {
                 throw located(templateCode, reader, "format-option.value 不能为空");
             }
+        }
+    }
+
+    /** 静态值和受控路径二选一，不开放插值语法。 */
+    private void validateAttributeChoice(String templateCode, XMLStreamReader reader,
+        Map<String, String> attributes, String name, boolean required) {
+        boolean value = attributes.containsKey(name);
+        boolean path = attributes.containsKey(name + "-path");
+        if ((value && path) || (required && !value && !path)) {
+            throw located(templateCode, reader, name + " 和 " + name + "-path 必须二选一");
+        }
+        if ((value && attributes.get(name).isBlank()) || (path && attributes.get(name + "-path").isBlank())) {
+            throw located(templateCode, reader, name + " 不能为空白");
+        }
+    }
+
+    /** 只校验已声明的静态 ID，动态路径值在绑定阶段交给公共节点校验。 */
+    private void validateOptionalId(String templateCode, XMLStreamReader reader,
+        Map<String, String> attributes, String name) {
+        if (attributes.containsKey(name) && !NODE_ID.matcher(attributes.get(name)).matches()) {
+            throw located(templateCode, reader, name + " 不合法");
+        }
+    }
+
+    /** 布尔属性只接受明确的 true/false，避免非法字面量被静默解释为 false。 */
+    private void validateBoolean(String templateCode, XMLStreamReader reader,
+        Map<String, String> attributes, String name) {
+        if (attributes.containsKey(name) && !Set.of("true", "false").contains(attributes.get(name))) {
+            throw located(templateCode, reader, name + " 必须为 true 或 false");
         }
     }
 

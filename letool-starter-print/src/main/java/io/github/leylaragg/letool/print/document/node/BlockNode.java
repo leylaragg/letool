@@ -7,5 +7,5 @@ package io.github.leylaragg.letool.print.document.node;
  */
 public sealed interface BlockNode extends DocumentNode
         permits SectionNode, HeadingNode, ParagraphNode, TableNode, ImageNode, PageBreakNode,
-        AnnotationNode, TableOfContentsNode {
+AnnotationNode, TableOfContentsNode, BodyCaptionNode, ContentsEntryNode, ContentsTitleNode {
 }

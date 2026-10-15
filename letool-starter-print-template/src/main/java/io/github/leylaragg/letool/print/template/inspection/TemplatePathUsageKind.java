@@ -19,5 +19,7 @@ public enum TemplatePathUsageKind {
     /** 受限表达式读取数据。 */
     EXPRESSION,
     /** 自定义标签读取数据。 */
-    CUSTOM_TAG
+    CUSTOM_TAG,
+    /** 内置节点的受控 ID、标签和导航引用属性。 */
+    NODE_ATTRIBUTE
 }

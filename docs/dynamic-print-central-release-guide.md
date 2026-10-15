@@ -207,14 +207,16 @@ git status --short --branch
 
 ### 5.2 确认版本号
 
-Letool 使用全仓统一版本。根 `pom.xml` 的项目版本和内部依赖版本必须保持一致：
+Letool 使用全仓统一版本。只维护根 `pom.xml` 的 `revision`，也可用 `-Drevision=待发布版本` 覆盖：
 
 ```xml
-<version>3.0.2</version>
-<letool.version>3.0.2</letool.version>
+<version>${revision}</version>
+<properties>
+    <revision>3.1.0-SNAPSHOT</revision>
+</properties>
 ```
 
-全部子模块继承同版本根 POM，打印和规则引擎不再声明独立项目版本。发布新版本时需要统一调整全仓版本，不能覆盖已经公开的坐标。
+全部子模块继承同版本根 POM，打印和规则引擎不再声明独立项目版本。子模块 parent 使用 `${revision}`，内部依赖使用 `${project.version}`；发布时只调整这一处属性，并选择尚未公开且不带 `-SNAPSHOT` 的版本。
 
 可以先访问对应 POM 判断版本是否已经公开。下面以 `3.0.2` 为例：
 
@@ -235,7 +237,7 @@ EDC 使用本地版本联调时，应从仓库根目录安装完整打印依赖�
 mvn -pl letool-starter-print-spring-boot -am clean install
 ```
 
-这里的 `-am` 只用于本地安装，它会同时安装同为 `3.0.2` 的根 POM、异常模块和打印模块。安装后再从独立消费者检查依赖树，不能只根据 Reactor 构建成功判断本地接入版本。
+这里的 `-am` 只用于本地安装，它会同时安装同一 `revision` 的根 POM、异常模块和打印模块。普通安装使用 `resolveCiFriendliesOnly` 解析父版本并保留继承；`release` Profile 沿用 `oss` 生成无需父 POM 的消费制品。安装后用 `-Dletool.version=实际版本` 从独立消费者检查依赖树，不能只根据 Reactor 构建成功判断本地接入版本。
 
 ### 5.4 确认发布范围
 
@@ -245,7 +247,7 @@ mvn -pl letool-starter-print-spring-boot -am clean install
 $printModules = 'letool-exception-core,letool-starter-exception,letool-starter-print,letool-starter-print-pdf,letool-starter-print-template,letool-starter-print-xml,letool-starter-print-expression-spel,letool-starter-print-spring-boot'
 ```
 
-8 个模块全部交给同一个 Reactor 后，Maven 会按依赖顺序构建异常基础设施和打印框架，生成的公开 POM会把内部依赖统一固化为 `3.0.2`。
+8 个模块全部交给同一个 Reactor 后，Maven 会按依赖顺序构建异常基础设施和打印框架，生成的公开 POM 会把内部依赖统一固化为本次 `revision`。
 
 ### 5.5 确认敏感信息没有进入仓库
 
@@ -529,7 +531,7 @@ Central Maven 插件负责打包和上传，但不会替项目自动补齐源码
 
 ```text
 [ ] 1. 确认 main 工作区内容就是准备发布的代码
-[ ] 2. 统一修改根项目、letool.version 和全部子模块的父 POM版本
+[ ] 2. 只更新根 revision 或通过 -Drevision 指定同一个未发布版本
 [ ] 3. 确认新版本未在 Maven Central 和 Portal 使用
 [ ] 4. 确认 settings.xml 中 central Token 可用
 [ ] 5. 确认主密钥 8A40...AF61 的私钥和公钥可用

@@ -46,17 +46,22 @@ public final class OpenHtmlPdfRenderer implements PdfRenderer {
     /** 当前纵向链路已经实现的通用节点和页面语义。 */
     private static final OutputCapability CAPABILITY = new OutputCapability(Set.of(
             SectionNode.class,
+        io.github.leylaragg.letool.print.document.node.BodyCaptionNode.class,
             HeadingNode.class,
             ParagraphNode.class,
             TableNode.class,
             PageBreakNode.class,
             TextNode.class,
+        io.github.leylaragg.letool.print.document.node.InlineGroupNode.class,
+        io.github.leylaragg.letool.print.document.node.ShapeNode.class,
             LineBreakNode.class,
             PageNumberNode.class,
             PageCountNode.class,
             BookmarkNode.class,
             InternalLinkNode.class,
             AnnotationNode.class,
+        io.github.leylaragg.letool.print.document.node.ContentsTitleNode.class,
+        io.github.leylaragg.letool.print.document.node.ContentsEntryNode.class,
             TableOfContentsNode.class), EnumSet.allOf(DocumentFeature.class));
 
     /** 已完成唯一性校验的宿主字体目录。 */
@@ -64,6 +69,8 @@ public final class OpenHtmlPdfRenderer implements PdfRenderer {
 
     /** 宿主配置的可信临时根目录。 */
     private final Path temporaryRoot;
+    /** 可选宿主最终处理器，只在文档请求网络阅读优化时使用。 */
+    private final PdfPostProcessor postProcessor;
 
     /**
      * 创建 PDF 渲染器。
@@ -81,6 +88,19 @@ public final class OpenHtmlPdfRenderer implements PdfRenderer {
      * @param temporaryRoot 可信且可写的 PDF 临时根目录
      */
     public OpenHtmlPdfRenderer(PdfFontCatalog fontCatalog, Path temporaryRoot) {
+        this(fontCatalog, temporaryRoot, null);
+    }
+
+    /**
+     * 创建支持受限最终后处理的 PDF 渲染器。
+     *
+     * @param fontCatalog 宿主字体目录
+     * @param temporaryRoot 宿主允许 SDK 创建并清理临时工作区的根目录
+     * @param postProcessor 可选最终处理器；null 表示未配置网络阅读优化
+     * @throws NullPointerException 字体目录或临时根目录为 null
+     */
+    public OpenHtmlPdfRenderer(PdfFontCatalog fontCatalog, Path temporaryRoot, PdfPostProcessor postProcessor) {
+        this.postProcessor = postProcessor;
         this.fontCatalog = Objects.requireNonNull(fontCatalog, "fontCatalog 不能为空");
         this.temporaryRoot = Objects.requireNonNull(temporaryRoot, "临时根目录不能为空")
                 .toAbsolutePath().normalize();
@@ -111,13 +131,19 @@ public final class OpenHtmlPdfRenderer implements PdfRenderer {
         Objects.requireNonNull(document, "document 不能为空");
         Objects.requireNonNull(options, "options 不能为空");
         Objects.requireNonNull(output, "output 不能为空");
+        if (document.pageSequences().size() > options.maxPages()) {
+            throw PrintRenderingException.pageLimitExceeded(options.maxPages());
+        }
         CAPABILITY.requireSupports(document);
+        PdfDocumentPlan plan = PdfDocumentPlan.create(document);
+        if (plan.unitCount() > options.maxPages()) {
+            throw PrintRenderingException.pageLimitExceeded(options.maxPages());
+        }
 
         try (PdfRenderWorkspace workspace = PdfRenderWorkspace.open(
                 temporaryRoot, options.maxTemporaryBytes())) {
-            PdfDocumentPlan plan = PdfDocumentPlan.create(document);
             // 样式错误在打开排版器前暴露，避免部分序列已经生成后才失败。
-            PdfStyleCatalog.compile(plan.styleSheet(), fontCatalog);
+            PdfStyleCatalog.compile(plan.styleSheet(), fontCatalog, document.options());
             return renderPlanned(plan, options, workspace, output);
         } catch (BaseException exception) {
             throw exception;
@@ -150,7 +176,7 @@ public final class OpenHtmlPdfRenderer implements PdfRenderer {
             PdfPaginationPlan measured = paginationPlanner.advance(
                     document, pagination, pass.physicalPages(), pass.targetPages());
             if (measured.stable()) {
-                return new PdfDocumentAssembler(fontCatalog).assemble(
+                return new PdfDocumentAssembler(fontCatalog, postProcessor).assemble(
                         document, pass.results(), pass.sourceTargets(),
                         options, workspace, output);
             }
@@ -170,6 +196,7 @@ public final class OpenHtmlPdfRenderer implements PdfRenderer {
         PdfUnitRenderer unitRenderer = new PdfUnitRenderer(fontCatalog);
         List<PdfUnitResult> results = new ArrayList<>(document.sequences().size());
         Map<String, String> sourceTargets = new LinkedHashMap<>();
+        int physicalPages = 0;
         for (PdfSequencePlan sequence : document.sequences()) {
             List<BlockNode> blocks = sequenceBlocks(
                     sequence, entries, pagination.targetPhysicalPages(), contentsComposer);
@@ -177,8 +204,12 @@ public final class OpenHtmlPdfRenderer implements PdfRenderer {
             PdfUnitResult result = unitRenderer.render(
                     document, sequence, blocks, pagination, ids, options, workspace);
             results.add(result);
+            physicalPages = Math.addExact(physicalPages, result.pageCount());
+            if (physicalPages > options.maxPages()) {
+                throw PrintRenderingException.pageLimitExceeded(options.maxPages());
+            }
             ids.linkIds().forEach((link, sourceId) ->
-                    sourceTargets.put(sourceId, link.targetId()));
+                sourceTargets.put(sourceId, ids.targetId(link.targetId())));
         }
         return measuredPass(results, sourceTargets);
     }

@@ -21,6 +21,8 @@ import io.github.leylaragg.letool.print.document.style.TableStyle;
 import io.github.leylaragg.letool.print.exception.PrintValidationException;
 
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -35,7 +37,10 @@ import java.util.Set;
 public final class DocumentModel {
 
     /** 单份文档允许的页面序列数量。 */
-    private static final int MAX_PAGE_SEQUENCES = 256;
+    private static final int MAX_PAGE_SEQUENCES = 20_000;
+
+    /** 文档级字体和导航选项。 */
+    private final DocumentOptions options;
 
     /** 可选文档元数据。 */
     private final DocumentMetadata metadata;
@@ -59,8 +64,24 @@ public final class DocumentModel {
             DocumentMetadata metadata,
             StyleSheet styleSheet,
             List<PageSequence> pageSequences) {
+        this(metadata, styleSheet, pageSequences, DocumentOptions.defaults());
+    }
+
+    /**
+     * 创建带显式文档选项的模型快照。
+     *
+     * @param metadata 文档元数据
+     * @param styleSheet 文档命名样式表
+     * @param pageSequences 页面序列，构建时复制为不可变列表
+     * @param options 文档级字体和导航选项
+     * @throws NullPointerException 任一参数或节点为 null
+     * @throws PrintValidationException 页面序列为空、超限或文档树违反公共模型约束
+     */
+    public DocumentModel(DocumentMetadata metadata, StyleSheet styleSheet,
+        List<PageSequence> pageSequences, DocumentOptions options) {
         this.metadata = Objects.requireNonNull(metadata, "metadata 不能为空");
         this.styleSheet = Objects.requireNonNull(styleSheet, "styleSheet 不能为空");
+        this.options = Objects.requireNonNull(options, "options 不能为空");
         this.pageSequences = List.copyOf(pageSequences);
         if (this.pageSequences.isEmpty() || this.pageSequences.size() > MAX_PAGE_SEQUENCES) {
             throw PrintValidationException.invalidDocument(
@@ -98,6 +119,11 @@ public final class DocumentModel {
         return pageSequences;
     }
 
+    /** @return 不可变文档选项 */
+    public DocumentOptions options() {
+        return options;
+    }
+
     /** 创建快照时完成所有跨节点验证，后续调用链只消费有效模型。 */
     private void validateDocument() {
         List<DocumentNode> nodes = DocumentTraversal.depthFirst(this);
@@ -106,6 +132,7 @@ public final class DocumentModel {
         validateStyles(nodes);
         Set<String> ids = new HashSet<>();
         Set<String> targets = new HashSet<>();
+        Map<String, BookmarkNode> bookmarks = new LinkedHashMap<>();
         for (DocumentNode node : nodes) {
             if (!node.id().isEmpty() && !ids.add(node.id())) {
                 throw PrintValidationException.invalidDocument("节点 ID 重复：" + node.id());
@@ -114,14 +141,66 @@ public final class DocumentModel {
                 targets.add(link.targetId());
             } else if (node instanceof AnnotationNode annotation) {
                 targets.add(annotation.targetId());
+            } else if (node instanceof BookmarkNode bookmark) {
+                bookmarks.put(bookmark.id(), bookmark);
+                if (!bookmark.targetId().isEmpty()) {
+                    targets.add(bookmark.targetId());
+                }
             }
         }
-        for (String target : targets) {
-            if (!ids.contains(target)) {
-                throw PrintValidationException.invalidDocument("文档引用目标不存在：" + target);
-            }
+        if (!options.navigation().initialTarget().isEmpty()) {
+            targets.add(options.navigation().initialTarget());
         }
+        validateTargets(ids, targets, bookmarks);
+        validateBookmarkParents(bookmarks);
         validateTableOfContents(nodes);
+    }
+
+    /** 元数据书签可以转指目标，但最终必须落在实际内容节点上。 */
+    private void validateTargets(Set<String> ids, Set<String> targets, Map<String, BookmarkNode> bookmarks) {
+        // 缓存已经追溯到实际内容的目标，避免多个书签重复展开同一引用链。
+        Map<String, String> resolved = new java.util.HashMap<>();
+        for (String target : targets) {
+            Set<String> path = new HashSet<>();
+            String current = target;
+            while (!resolved.containsKey(current)) {
+                if (!ids.contains(current)) {
+                    throw PrintValidationException.invalidDocument("文档引用目标不存在：" + current);
+                }
+                BookmarkNode bookmark = bookmarks.get(current);
+                if (bookmark == null || bookmark.targetId().isEmpty()) {
+                    break;
+                }
+                if (!path.add(current)) {
+                    throw PrintValidationException.invalidDocument("书签目标引用形成环");
+                }
+                current = bookmark.targetId();
+            }
+            String actual = resolved.getOrDefault(current, current);
+            resolved.put(current, actual);
+            path.forEach(id -> resolved.put(id, actual));
+        }
+    }
+
+    /** 父书签可以后声明，但必须存在且不能形成环。 */
+    private void validateBookmarkParents(Map<String, BookmarkNode> bookmarks) {
+        // 每条父链独立检测回环，已完成的父链可供后续书签复用。
+        Set<String> completed = new HashSet<>();
+        for (BookmarkNode bookmark : bookmarks.values()) {
+            Set<String> path = new HashSet<>();
+            BookmarkNode current = bookmark;
+            while (current != null && !completed.contains(current.id())) {
+                if (!path.add(current.id())) {
+                    throw PrintValidationException.invalidDocument("书签父级引用形成环");
+                }
+                String parent = current.parentId();
+                if (!parent.isEmpty() && !bookmarks.containsKey(parent)) {
+                    throw PrintValidationException.invalidDocument("书签父级不存在：" + parent);
+                }
+                current = bookmarks.get(parent);
+            }
+            completed.addAll(path);
+        }
     }
 
     /** 页眉页脚只接受可安全重复的内容，并且不能产生重复导航目标。 */
@@ -216,6 +295,14 @@ public final class DocumentModel {
         if (rootContents != 1) {
             throw PrintValidationException.invalidDocument("目录只能位于文档根节点");
         }
+        if (!tableOfContents.bookmarkRoot().isEmpty()) {
+            boolean rootExists = nodes.stream().anyMatch(node -> node instanceof BookmarkNode
+                && node.id().equals(tableOfContents.bookmarkRoot()));
+            if (!rootExists) {
+                throw PrintValidationException.invalidDocument("目录书签根不存在");
+            }
+            return;
+        }
         boolean afterContents = false;
         boolean foundHeading = false;
         for (DocumentNode node : nodes) {
@@ -249,7 +336,7 @@ public final class DocumentModel {
     private void appendVisibleText(StringBuilder text, InlineNode inline) {
         if (inline instanceof TextNode value) {
             text.append(value.text());
-        } else if (inline instanceof BookmarkNode bookmark) {
+        } else if (inline instanceof BookmarkNode bookmark && bookmark.targetId().isEmpty()) {
             text.append(bookmark.label());
         } else if (inline instanceof InternalLinkNode link) {
             link.label().forEach(child -> appendVisibleText(text, child));

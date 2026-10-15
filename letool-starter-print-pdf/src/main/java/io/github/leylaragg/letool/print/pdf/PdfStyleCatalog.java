@@ -64,7 +64,13 @@ final class PdfStyleCatalog {
      * @return 可并发复用的样式目录
      */
     static PdfStyleCatalog compile(StyleSheet styleSheet, PdfFontCatalog fontCatalog) {
-        return new PdfStyleCatalog(new Compiler(styleSheet, fontCatalog).compile());
+        return new PdfStyleCatalog(new Compiler(styleSheet, fontCatalog,
+            io.github.leylaragg.letool.print.document.DocumentOptions.defaults()).compile());
+    }
+
+    static PdfStyleCatalog compile(StyleSheet styleSheet, PdfFontCatalog fontCatalog,
+        io.github.leylaragg.letool.print.document.DocumentOptions options) {
+        return new PdfStyleCatalog(new Compiler(styleSheet, fontCatalog, options).compile());
     }
 
     /** @return 指定文本样式的安全类名 */
@@ -121,6 +127,7 @@ final class PdfStyleCatalog {
 
         /** 用于核对字体族和字重的目录。 */
         private final PdfFontCatalog fonts;
+        private final io.github.leylaragg.letool.print.document.DocumentOptions options;
 
         /** 各类型安全类名。 */
         private final Map<String, String> textClasses = new LinkedHashMap<>();
@@ -135,7 +142,9 @@ final class PdfStyleCatalog {
         private final StringBuilder css = new StringBuilder(4_096);
 
         /** 保存本次编译依赖。 */
-        private Compiler(StyleSheet styles, PdfFontCatalog fonts) {
+        private Compiler(StyleSheet styles, PdfFontCatalog fonts,
+            io.github.leylaragg.letool.print.document.DocumentOptions options) {
+            this.options = options;
             this.styles = Objects.requireNonNull(styles, "styles 不能为空");
             this.fonts = Objects.requireNonNull(fonts, "fonts 不能为空");
         }
@@ -195,9 +204,12 @@ final class PdfStyleCatalog {
                     css.append('.').append(className)
                             .append(">thead{display:table-header-group;}");
                 }
+                if (style.pageBreakPolicy() == TablePageBreakPolicy.AUTO) {
+                    css.append('.').append(className).append(">tbody>tr{page-break-inside:auto;}");
+                }
                 if (style.pageBreakPolicy() == TablePageBreakPolicy.KEEP_ROWS) {
                     css.append('.').append(className)
-                            .append(" tr{page-break-inside:avoid;}");
+                        .append(">tbody>tr{page-break-inside:avoid;}");
                 }
             }
         }
@@ -225,10 +237,12 @@ final class PdfStyleCatalog {
 
         /** 写入一组完整文本属性，并先验证对应字体面。 */
         private void appendText(StringBuilder output, TextStyle style) {
-            String family = resolveFontFamily(style.fontFamily(), style.fontWeight());
+            String family = resolveFontFamily(style.fontFamily(), style.fontWeight(), style.fontPosture());
             appendProperty(output, "font-family", family);
             appendProperty(output, "font-size", PdfCssValues.length(style.fontSize()));
             appendProperty(output, "font-weight", PdfCssValues.fontWeight(style.fontWeight()));
+            appendProperty(output, "font-style", style.fontPosture() ==
+                io.github.leylaragg.letool.print.document.style.FontPosture.ITALIC ? "italic" : "normal");
             appendProperty(output, "color", PdfCssValues.color(style.color()));
             appendProperty(output, "line-height", PdfCssValues.decimal(style.lineHeight()));
             List<TextDecoration> decorations = new ArrayList<>(style.decorations());
@@ -241,9 +255,13 @@ final class PdfStyleCatalog {
         }
 
         /** 显式字体族必须完全匹配；空字体族使用唯一回退族。 */
-        private String resolveFontFamily(String family, FontWeight weight) {
+        private String resolveFontFamily(String family, FontWeight weight,
+            io.github.leylaragg.letool.print.document.style.FontPosture posture) {
+            if (family.isEmpty() && !options.defaultFontFamily().isEmpty()) {
+                family = options.defaultFontFamily();
+            }
             if (!family.isEmpty()) {
-                return quote(fonts.requireFace(family, weight).familyName());
+                return quote(fonts.requireFace(family, weight, posture).familyName());
             }
             if (fonts.fonts().isEmpty()) {
                 return "sans-serif";
@@ -270,9 +288,10 @@ final class PdfStyleCatalog {
                 whiteSpace = "nowrap";
             }
             appendProperty(output, "white-space", whiteSpace);
-            appendProperty(output, "overflow-wrap",
+            appendProperty(output, "word-wrap",
                     style.textWrapMode() == TextWrapMode.BREAK_LONG_WORDS
                             ? "break-word" : "normal");
+            appendProperty(output, "page-break-after", style.keepWithNext() ? "avoid" : "auto");
             appendProperty(output, "page-break-inside",
                     style.keepTogether() ? "avoid" : "auto");
         }
