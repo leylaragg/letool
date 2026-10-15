@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -30,6 +32,22 @@ class PdfFontResourceValidatorTest {
         assertThatCode(() -> new PdfFontResourceValidator(catalog).validate("中文"))
                 .doesNotThrowAnyException();
         assertThat(stream.closed).isTrue();
+    }
+
+    /** TTC 与渲染时一样读取首个字体面；同一字体源只打开一次并及时关闭。 */
+    @Test
+    void shouldParseTrueTypeCollectionAndCloseSource() throws IOException {
+        byte[] collection = testFontCollection();
+        List<TrackingInputStream> streams = new ArrayList<>();
+        PdfFont font = new PdfFont("Collection Font", FontWeight.NORMAL, () -> {
+            TrackingInputStream stream = new TrackingInputStream(new ByteArrayInputStream(collection));
+            streams.add(stream);
+            return stream;
+        }, true);
+
+        assertThatCode(() -> new PdfFontResourceValidator(PdfFontCatalog.of(List.of(font))).validate("中文"))
+                .doesNotThrowAnyException();
+        assertThat(streams).hasSize(1).allMatch(stream -> stream.closed);
     }
 
     /** 损坏字体和缺失字符都使用安全资源异常，不回显供应器或探测内容。 */
@@ -85,6 +103,27 @@ class PdfFontResourceValidatorTest {
         assertThatThrownBy(() -> validator.validate("A".repeat(4_097)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("探测文本");
+    }
+
+    /** 使用现有开源测试字体构造单面 TTC，避免测试依赖宿主安装的商业字体。 */
+    private byte[] testFontCollection() throws IOException {
+        byte[] font;
+        try (InputStream input = openTestFont()) {
+            font = input.readAllBytes();
+        }
+
+        // TTC 头包含签名、版本、字体面数量和首面偏移，共四个四字节字段。
+        int faceOffset = 4 * Integer.BYTES;
+        ByteBuffer collection = ByteBuffer.allocate(faceOffset + font.length);
+        collection.putInt(0x74746366).putInt(0x00010000).putInt(1).putInt(faceOffset).put(font);
+
+        // TTC 表记录的偏移相对整个文件；将原独立 TTF 的所有表偏移移过集合头。
+        int tableCount = Short.toUnsignedInt(collection.getShort(faceOffset + 4));
+        for (int index = 0; index < tableCount; index++) {
+            int offsetField = faceOffset + 12 + index * 16 + 8;
+            collection.putInt(offsetField, collection.getInt(offsetField) + faceOffset);
+        }
+        return collection.array();
     }
 
     /** 从测试资源打开一份可解析的真实字体。 */

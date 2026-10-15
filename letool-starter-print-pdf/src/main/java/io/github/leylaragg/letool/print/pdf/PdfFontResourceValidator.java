@@ -7,6 +7,7 @@ import org.apache.fontbox.ttf.TTFParser;
 import org.apache.fontbox.ttf.TrueTypeFont;
 import org.apache.pdfbox.io.RandomAccessReadBuffer;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -91,10 +92,18 @@ public final class PdfFontResourceValidator {
         }
     }
 
-    /** 先按 TrueType 解析，失败后再用 OpenType 解析同一字体资源。 */
+    /** 复用渲染时的字体读取规则，将 TTC 首面转换后再按 TrueType 或 OpenType 解析。 */
     private ParsedFont parse(PdfFont font) {
+        byte[] source;
+        try {
+            // 校验与渲染必须读取同一个字体面，也沿用源文件容量限制和输入流关闭规则。
+            source = PdfFontSource.read(font);
+        } catch (IOException | RuntimeException exception) {
+            throw PrintResourceException.unavailable("pdf-font", exception);
+        }
+
         IOException trueTypeFailure;
-        try (InputStream input = font.openStream()) {
+        try (InputStream input = new ByteArrayInputStream(source)) {
             TrueTypeFont parsed = new TTFParser().parseEmbedded(input);
             return new ParsedFont(parsed, parsed.getUnicodeCmapLookup());
         } catch (IOException exception) {
@@ -103,8 +112,7 @@ public final class PdfFontResourceValidator {
             throw PrintResourceException.unavailable("pdf-font", exception);
         }
 
-        try (InputStream input = font.openStream();
-                RandomAccessReadBuffer data = new RandomAccessReadBuffer(input)) {
+        try (RandomAccessReadBuffer data = new RandomAccessReadBuffer(source)) {
             TrueTypeFont parsed = new OTFParser().parse(data);
             return new ParsedFont(parsed, parsed.getUnicodeCmapLookup());
         } catch (IOException exception) {
