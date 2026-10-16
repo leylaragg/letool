@@ -9,6 +9,11 @@ import io.github.leylaragg.letool.print.exception.PrintRenderingException;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.multipdf.PDFMergerUtility;
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotation;
+import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationFreeText;
+import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationText;
+import io.github.leylaragg.letool.print.exception.PrintValidationException;
 import org.apache.pdfbox.pdmodel.PDDocumentInformation;
 
 import java.io.IOException;
@@ -78,6 +83,7 @@ final class PdfDocumentAssembler {
                         target, document.document(), results, Map.copyOf(sourceTargets));
                 annotationWriter.writeMerged(
                         target, annotationWriter.collect(document.document()), targets);
+                requireAnnotationBudget(target);
                 applyMetadata(target, document.metadata(), options);
                 if (document.document().options().fullFontEmbedding()) {
                     new PdfFullFontWriter(fontCatalog).write(target);
@@ -118,6 +124,21 @@ final class PdfDocumentAssembler {
         metadata.put("pageCount", Integer.toString(pageCount));
         metadata.put("contentLength", Long.toString(Files.size(finalFile)));
         return output.complete(OutputFormat.PDF, metadata);
+    }
+
+    /** 限额按最终物理批注计数，包含表头、页眉和续页复制，导航链接不占用批注额度。 */
+    private static void requireAnnotationBudget(PDDocument pdf) throws IOException {
+        int count = 0;
+        for (PDPage page : pdf.getPages()) {
+            for (PDAnnotation annotation : page.getAnnotations()) {
+                if (annotation instanceof PDAnnotationFreeText || annotation instanceof PDAnnotationText) {
+                    if (++count > PdfAnnotationWriter.MAX_ANNOTATIONS) {
+                        throw PrintValidationException.invalidDocument("PDF 批注数量超过 "
+                                + PdfAnnotationWriter.MAX_ANNOTATIONS);
+                    }
+                }
+            }
+        }
     }
 
     /** 每个页面序列都必须恰好提供一个最终排版结果。 */

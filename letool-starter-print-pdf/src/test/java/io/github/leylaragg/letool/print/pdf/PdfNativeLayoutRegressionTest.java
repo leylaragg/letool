@@ -63,6 +63,18 @@ class PdfNativeLayoutRegressionTest {
         }
     }
 
+    /** 已测量的行变成独立段落后，不应再次携带原始 br 造成双倍行高。 */
+    @Test
+    void shouldNotRepeatExplicitBreakInsideMeasuredParagraphLines() throws Exception {
+        StringBuilder content = new StringBuilder("<p>");
+        for (int index = 0; index < 60; index++) {
+            content.append("line-").append(index).append("<br/>");
+        }
+        content.append("</p>");
+        String xhtml = table("").replace("<table><tbody></tbody></table>", content.toString());
+        assertThat(fragment(xhtml)).doesNotContain("<br");
+    }
+
     @Test
     void shouldLeaveShortRowsUntouchedAndRejectAnIndivisibleOversizedBlock() throws Exception {
         String shortRow = table("<tr><td>short</td></tr>");

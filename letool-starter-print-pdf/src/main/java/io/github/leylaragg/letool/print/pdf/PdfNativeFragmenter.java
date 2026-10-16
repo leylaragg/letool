@@ -2,8 +2,10 @@ package io.github.leylaragg.letool.print.pdf;
 
 import com.openhtmltopdf.layout.LayoutContext;
 import com.openhtmltopdf.newtable.TableRowBox;
+import com.openhtmltopdf.newtable.TableSectionBox;
 import com.openhtmltopdf.pdfboxout.PdfBoxRenderer;
 import com.openhtmltopdf.render.Box;
+import com.openhtmltopdf.render.BlockBox;
 import com.openhtmltopdf.render.InlineLayoutBox;
 import com.openhtmltopdf.render.InlineText;
 import com.openhtmltopdf.render.LineBox;
@@ -23,6 +25,8 @@ import java.io.IOException;
 import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Map;
 
@@ -51,15 +55,16 @@ final class PdfNativeFragmenter {
      *
      * @param element 可克隆到新行的段落或完整内层表格行
      * @param height 原生测得的高度，单位为 pt
+     * @param containers 从内容单元格到本块的容器路径，用于逐片段重建结构
      */
-    private record Atom(Element element, double height) {
+    private record Atom(Element element, double height, List<Element> containers) {
     }
 
     private PdfNativeFragmenter() {
     }
 
     /**
-     * 拆分标记为重复左侧内容的双列表格行。
+     * 按唯一内容侧拆分表格行，完整复制其余声明重复的单元格。
      *
      * @param renderer 已完成原生布局的渲染器
      * @param original 本次布局使用的 XHTML
@@ -90,6 +95,12 @@ final class PdfNativeFragmenter {
     /** 检查不可折行的向量控件是否超出最近一层单元格的内容宽度。 */
     private static void validateShapeWidths(Map<Element, Box> boxes) {
         for (Map.Entry<Element, Box> entry : boxes.entrySet()) {
+            if ("true".equals(entry.getKey().getAttribute("data-keep-together"))) {
+                Box parent = entry.getValue().getContainingBlock();
+                if (entry.getValue().getWidth() > parent.getContentWidth() + LAYOUT_TOLERANCE_DOTS) {
+                    throw PrintValidationException.invalidDocument("完整行内组合超过父容器可用宽度");
+                }
+            }
             if (!"letool-shape".equals(entry.getKey().getAttribute("type"))) {
                 continue;
             }
@@ -112,30 +123,38 @@ final class PdfNativeFragmenter {
             LayoutContext context, float dots) throws IOException {
         Element element = row.getElement();
         List<Element> cells = children(element);
-        if (cells.size() != 2 || !"true".equals(cells.get(0).getAttribute("data-repeat-on-split"))
-                || "true".equals(element.getAttribute("data-native-fragmented"))) {
+        int contentIndex = contentCellIndex(cells);
+        if (contentIndex < 0 || "true".equals(element.getAttribute("data-native-fragmented"))) {
             return false;
         }
         PageBox page = renderer.getRootBox().getLayer().getPage(context, row.getAbsY());
-        double padding = Math.max(verticalPadding(boxes.get(cells.get(0)), context, dots),
-                verticalPadding(boxes.get(cells.get(1)), context, dots)) + COLLAPSED_BORDER_ALLOWANCE;
+        double padding = 0;
+        for (Element cell : cells) {
+            padding = Math.max(padding, verticalPadding(boxes.get(cell), context, dots));
+        }
+        padding += COLLAPSED_BORDER_ALLOWANCE;
         double capacity = contentCapacity(element, page, boxes, context, dots, padding);
         if (row.getHeight() / dots <= capacity + padding + HEIGHT_TOLERANCE) {
             return false;
         }
         double labelHeight = 0;
-        for (Element child : children(cells.get(0))) {
-            labelHeight += height(boxes.get(child), dots);
+        for (int index = 0; index < cells.size(); index++) {
+            if (index != contentIndex) {
+                double repeatedHeight = 0;
+                for (Element child : children(cells.get(index))) {
+                    repeatedHeight += height(boxes.get(child), dots);
+                }
+                labelHeight = Math.max(labelHeight, repeatedHeight);
+            }
         }
         if (capacity <= 0 || labelHeight > capacity + HEIGHT_TOLERANCE) {
             throw new IOException("重复侧完整内容没有合法整页位置");
         }
-        // 保留重复侧完整内容；右侧只在完整文字行或完整内层表格行之间分段。
-        Element content = children(cells.get(1)).get(0);
-        while ("section".equals(content.getTagName()) && children(content).size() == 1) {
-            content = children(content).get(0);
+        // 保留重复侧完整内容；内容侧只在完整文字行或完整内层表格行之间分段。
+        List<Atom> atoms = new ArrayList<>();
+        for (Element content : children(cells.get(contentIndex))) {
+            collectAtoms(content, List.of(), boxes, dots, context, atoms);
         }
-        List<Atom> atoms = atoms(content, boxes, dots, context);
         if (atoms.isEmpty()) {
             throw new IOException("超页行没有可分割的完整内容");
         }
@@ -145,24 +164,41 @@ final class PdfNativeFragmenter {
         if (firstCapacity < Math.max(labelHeight, atoms.get(0).height())) {
             firstCapacity = capacity;
         }
-        replaceRow(element, content, chunks(atoms, firstCapacity, capacity));
+        replaceRow(element, contentIndex, chunks(atoms, firstCapacity, capacity));
         return true;
+    }
+
+    /** 至少一个重复侧和唯一可分段侧组成受支持的行，不改变普通表格的分页语义。 */
+    private static int contentCellIndex(List<Element> cells) {
+        if (cells.size() < 2) {
+            return -1;
+        }
+        int contentIndex = -1;
+        for (int index = 0; index < cells.size(); index++) {
+            if (!"true".equals(cells.get(index).getAttribute("data-repeat-on-split"))) {
+                if (contentIndex >= 0) {
+                    return -1;
+                }
+                contentIndex = index;
+            }
+        }
+        return contentIndex;
     }
 
     /** 扣除续页表头和外层单元格留白，避免分段后的行被再次挤出页面。 */
     private static double contentCapacity(Element row, PageBox page, Map<Element, Box> boxes,
             LayoutContext context, float dots, double padding) {
-        double capacity = page.getContentHeight(context) / dots;
-        Element table = (Element) row.getParentNode().getParentNode();
-        for (Element child : children(table)) {
-            if ("thead".equals(child.getTagName())) {
-                capacity -= height(boxes.get(child), dots);
-            }
-        }
-        capacity -= padding;
+        double capacity = page.getContentHeight(context) / dots - padding;
         for (Node ancestor = row.getParentNode(); ancestor instanceof Element container;
                 ancestor = ancestor.getParentNode()) {
-            if ("td".equals(container.getTagName()) || "th".equals(container.getTagName())) {
+            if ("table".equals(container.getTagName())) {
+                for (Element section : children(container)) {
+                    Box sectionBox = boxes.get(section);
+                    if (sectionBox instanceof TableSectionBox header && header.isHeader()) {
+                        capacity -= height(header, dots);
+                    }
+                }
+            } else if ("td".equals(container.getTagName()) || "th".equals(container.getTagName())) {
                 capacity -= verticalPadding(boxes.get(container), context, dots);
             }
         }
@@ -195,38 +231,54 @@ final class PdfNativeFragmenter {
         return chunks;
     }
 
-    /** 克隆原行的完整重复侧，并以每个片段的实际内容替换右侧。 */
-    private static void replaceRow(Element row, Element content, List<List<Atom>> chunks) {
+    /** 克隆原行的完整重复侧，并以每个片段的实际内容替换唯一内容侧。 */
+    private static void replaceRow(Element row, int contentIndex, List<List<Atom>> chunks) {
         Node parent = row.getParentNode();
+        Set<String> retainedIds = new HashSet<>();
         for (int index = 0; index < chunks.size(); index++) {
             Element replacement = (Element) row.cloneNode(true);
             replacement.setAttribute("data-native-fragmented", "true");
-            // 链接目标保留在首片段；续页只复制内容，不能产生重复目标 ID。
+            // 后续片段从新页开始；每个逻辑 ID 稍后仅在首次实际出现的位置保留。
             if (index > 0) {
-                removeIds(replacement);
                 replacement.setAttribute("style", replacement.getAttribute("style") + ";page-break-before:always;");
             }
             List<Element> replacementCells = children(replacement);
-            replacementCells.get(0).removeAttribute("data-repeat-on-split");
-            Element right = replacementCells.get(1);
-            clearChildren(right);
-            if ("table".equals(content.getTagName())) {
-                Element copy = (Element) content.cloneNode(true);
-                Element body = children(copy).stream()
-                        .filter(child -> "tbody".equals(child.getTagName())).findFirst().orElseThrow();
-                clearChildren(body);
-                for (Atom atom : chunks.get(index)) {
-                    body.appendChild(atom.element().cloneNode(true));
-                }
-                right.appendChild(copy);
-            } else {
-                for (Atom atom : chunks.get(index)) {
-                    right.appendChild(atom.element().cloneNode(true));
-                }
+            for (Element cell : replacementCells) {
+                cell.removeAttribute("data-repeat-on-split");
             }
+            Element contentCell = replacementCells.get(contentIndex);
+            clearChildren(contentCell);
+            Map<Element, Element> containers = new IdentityHashMap<>();
+            for (Atom atom : chunks.get(index)) {
+                appendAtom(contentCell, atom, containers);
+            }
+            retainFirstIds(replacement, retainedIds);
             parent.insertBefore(replacement, row);
         }
         parent.removeChild(row);
+    }
+
+    /** 按来源容器身份重建片段，混合段落和不同内表不会相互覆盖或串位。 */
+    private static void appendAtom(Element cell, Atom atom, Map<Element, Element> containers) {
+        Element target = cell;
+        for (Element source : atom.containers()) {
+            Element container = containers.get(source);
+            if (container == null) {
+                container = (Element) source.cloneNode(false);
+                // 内表的列定义和表头属于每个完整片段；tbody 由后续原子按顺序填充。
+                if ("table".equals(source.getTagName())) {
+                    for (Element child : children(source)) {
+                        if (!"tbody".equals(child.getTagName())) {
+                            container.appendChild(child.cloneNode(true));
+                        }
+                    }
+                }
+                target.appendChild(container);
+                containers.put(source, container);
+            }
+            target = container;
+        }
+        target.appendChild(atom.element().cloneNode(true));
     }
 
     /** 原地移除子节点；保留容器自身的样式、边框和属性。 */
@@ -237,7 +289,7 @@ final class PdfNativeFragmenter {
     }
 
     /** 将已修改的 DOM 转回 XHTML，供下一轮原生布局使用。 */
-    private static String serialize(Document document) throws IOException {
+    static String serialize(Document document) throws IOException {
         try {
             Transformer transformer = TransformerFactory.newInstance().newTransformer();
             transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
@@ -250,73 +302,115 @@ final class PdfNativeFragmenter {
         }
     }
 
-    /** 内层表格以完整行为分段单位，普通段落以原生文字行为分段单位。 */
-    private static List<Atom> atoms(Element content, Map<Element, Box> boxes, float dots,
-            LayoutContext context) throws IOException {
-        List<Atom> atoms = new ArrayList<>();
-        if ("table".equals(content.getTagName())) {
+    /** 按全部块的原顺序收集原子，容器只记录结构，不丢弃后续兄弟块。 */
+    private static void collectAtoms(Element content, List<Element> containers, Map<Element, Box> boxes,
+            float dots, LayoutContext context, List<Atom> atoms) {
+        if ("section".equals(content.getTagName()) && !children(content).isEmpty()) {
+            List<Element> nested = containerPath(containers, content);
+            for (Element child : children(content)) {
+                collectAtoms(child, nested, boxes, dots, context, atoms);
+            }
+        } else if ("table".equals(content.getTagName())) {
+            int previousSize = atoms.size();
+            List<Element> tablePath = containerPath(containers, content);
             for (Element body : children(content)) {
                 if ("tbody".equals(body.getTagName())) {
+                    List<Element> rowPath = containerPath(tablePath, body);
                     for (Element row : children(body)) {
-                        atoms.add(new Atom(row, height(boxes.get(row), dots)));
+                        atoms.add(new Atom(row, height(boxes.get(row), dots), rowPath));
                     }
                 }
             }
+            if (atoms.size() == previousSize) {
+                // 只有表头的合法内表没有可拆正文行，仍作为完整块保留。
+                atoms.add(new Atom(content, height(boxes.get(content), dots), containers));
+            }
         } else if ("p".equals(content.getTagName())) {
-            collectParagraphAtoms(content, boxes.get(content), dots, context, atoms);
+            collectParagraphAtoms(content, boxes.get(content), dots, context, containers, atoms);
         } else {
-            throw new IOException("重复行只允许按完整文本行或完整内层表格行分段");
+            // 无内部拆分规则的块整体入队，超出整页容量时由 chunks 明确拒绝。
+            atoms.add(new Atom(content, height(boxes.get(content), dots), containers));
         }
-        return atoms;
     }
 
-    /** 保留文字原顺序、空行高度和下划线标记，不重新按字符数估算换行。 */
+    /** 冻结每个原子所属的容器路径，后续遍历不修改已生成原子的结构。 */
+    private static List<Element> containerPath(List<Element> parents, Element container) {
+        List<Element> result = new ArrayList<>(parents);
+        result.add(container);
+        return List.copyOf(result);
+    }
+
+    /** 原生行保留文本样式和替换对象，不能把含控件的行降为纯文本。 */
     private static void collectParagraphAtoms(Element content, Box box, float dots, LayoutContext context,
-            List<Atom> atoms) {
+            List<Element> containers, List<Atom> atoms) {
         List<LineBox> lines = new ArrayList<>();
         lines(box, lines);
-        boolean underlined = false;
-        for (int index = 0; index < content.getElementsByTagName("span").getLength(); index++) {
-            Element span = (Element) content.getElementsByTagName("span").item(index);
-            if ("true".equals(span.getAttribute("data-native-underline"))) {
-                underlined = true;
-            }
+        if (lines.isEmpty()) {
+            atoms.add(new Atom(content, height(box, dots), containers));
+            return;
         }
-        for (LineBox line : lines) {
+        for (int index = 0; index < lines.size(); index++) {
+            LineBox line = lines.get(index);
             Element paragraph = (Element) content.cloneNode(false);
-            paragraph.removeAttribute("id");
-            String text = text(line);
-            if (text.isEmpty()) {
-                paragraph.setAttribute("style", "height:" + box.getStyle().getLineHeight(context) / dots + "pt;");
-            } else {
-                Element span = content.getOwnerDocument().createElement("span");
-                if (underlined) {
-                    span.setAttribute("data-native-underline", "true");
-                }
-                span.setTextContent(text);
-                paragraph.appendChild(span);
+            String style = content.getAttribute("style");
+            if (index > 0) {
+                paragraph.removeAttribute("id");
+                style += ";margin-top:0;text-indent:0;";
             }
-            atoms.add(new Atom(paragraph, box.getStyle().getLineHeight(context) / dots));
+            if (index < lines.size() - 1) {
+                style += ";margin-bottom:0;";
+            }
+            double lineHeight = Math.max(line.getHeight(), box.getStyle().getLineHeight(context)) / dots;
+            boolean populated = appendLineContent(line, paragraph, content, content);
+            if (!populated) {
+                style += ";height:" + lineHeight + "pt;";
+            }
+            paragraph.setAttribute("style", style);
+            double margin = index == 0 ? box.getMargin(context).top() / dots : 0;
+            if (index == lines.size() - 1) {
+                margin += box.getMargin(context).bottom() / dots;
+            }
+            atoms.add(new Atom(paragraph, lineHeight + margin, containers));
         }
     }
 
-    /** 按布局树顺序提取当前行的实际文字，包含嵌套行内盒子。 */
-    private static String text(Box box) {
-        StringBuilder result = new StringBuilder();
+    /** 按实际行盒克隆行内层级；FreeText、方框等替换对象沿用原属性和完整尺寸。 */
+    private static boolean appendLineContent(Box box, Element target, Element paragraph, Element parentSource) {
+        Element source = box.getElement();
+        // 行盒已代表一次断行，原始 br 不能再次增加片段的可见行数。
+        if (source != null && "br".equals(source.getTagName())) {
+            return false;
+        }
+        if (box instanceof BlockBox block && block.getReplacedElement() != null) {
+            target.appendChild(source.cloneNode(true));
+            return true;
+        }
+        Element destination = target;
+        Element currentSource = parentSource;
+        if (source != null && source != paragraph && source != parentSource) {
+            destination = (Element) source.cloneNode(false);
+            target.appendChild(destination);
+            currentSource = source;
+        }
+        boolean populated = false;
         if (box instanceof InlineLayoutBox inline) {
             for (Object child : inline.getInlineChildren()) {
-                if (child instanceof InlineText value) {
-                    result.append(value.getSubstring());
+                if (child instanceof InlineText text) {
+                    String visible = text.getSubstring().replace("\r", "").replace("\n", "");
+                    if (!visible.isEmpty()) {
+                        destination.appendChild(paragraph.getOwnerDocument().createTextNode(visible));
+                        populated = true;
+                    }
                 } else if (child instanceof Box nested) {
-                    result.append(text(nested));
+                    populated |= appendLineContent(nested, destination, paragraph, currentSource);
                 }
             }
         } else {
             for (Box child : box.getChildren()) {
-                result.append(text(child));
+                populated |= appendLineContent(child, destination, paragraph, currentSource);
             }
         }
-        return result.toString();
+        return populated;
     }
 
     /** 收集原生文字行；找到行后不再向其内部重复遍历。 */
@@ -356,11 +450,14 @@ final class PdfNativeFragmenter {
         return result;
     }
 
-    /** 续页副本移除原目标 ID，确保链接仍指向首个实际出现位置。 */
-    private static void removeIds(Element element) {
-        element.removeAttribute("id");
+    /** 每个逻辑目标仅保留在首次实际出现处，后面的独立块不会因位于续页而丢失目标。 */
+    private static void retainFirstIds(Element element, Set<String> retainedIds) {
+        String id = element.getAttribute("id");
+        if (!id.isEmpty() && !retainedIds.add(id)) {
+            element.removeAttribute("id");
+        }
         for (Element child : children(element)) {
-            removeIds(child);
+            retainFirstIds(child, retainedIds);
         }
     }
 

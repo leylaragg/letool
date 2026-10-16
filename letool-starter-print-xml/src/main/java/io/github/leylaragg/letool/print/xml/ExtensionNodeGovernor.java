@@ -2,9 +2,11 @@ package io.github.leylaragg.letool.print.xml;
 
 import io.github.leylaragg.letool.print.document.node.BookmarkNode;
 import io.github.leylaragg.letool.print.document.node.AnnotationNode;
+import io.github.leylaragg.letool.print.document.node.FreeTextNode;
 import io.github.leylaragg.letool.print.document.node.DocumentNode;
 import io.github.leylaragg.letool.print.document.node.HeadingNode;
 import io.github.leylaragg.letool.print.document.node.ImageNode;
+import io.github.leylaragg.letool.print.document.node.InlineGroupNode;
 import io.github.leylaragg.letool.print.document.node.InternalLinkNode;
 import io.github.leylaragg.letool.print.document.node.ParagraphNode;
 import io.github.leylaragg.letool.print.document.node.SectionNode;
@@ -63,6 +65,8 @@ final class ExtensionNodeGovernor {
             Deque<Object> pending, DocumentNode node, BindingGovernor governor) {
         if (node instanceof TextNode text) {
             governor.addText(text.text().length());
+        } else if (node instanceof FreeTextNode freeText) {
+            governor.addText(freeText.content().length());
         } else if (node instanceof AnnotationNode annotation) {
             governor.addText(annotation.content().length());
         } else if (node instanceof BookmarkNode bookmark) {
@@ -75,6 +79,8 @@ final class ExtensionNodeGovernor {
             pushReverse(pending, heading.children());
         } else if (node instanceof ParagraphNode paragraph) {
             pushReverse(pending, paragraph.children());
+        } else if (node instanceof InlineGroupNode group) {
+            pushReverse(pending, group.children());
         } else if (node instanceof InternalLinkNode link) {
             pushReverse(pending, link.label());
         } else if (node instanceof TableNode table) {

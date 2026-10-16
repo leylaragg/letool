@@ -2,6 +2,7 @@ package io.github.leylaragg.letool.print.document;
 
 import io.github.leylaragg.letool.print.document.node.BlockNode;
 import io.github.leylaragg.letool.print.document.node.AnnotationNode;
+import io.github.leylaragg.letool.print.document.node.FreeTextNode;
 import io.github.leylaragg.letool.print.document.node.BookmarkNode;
 import io.github.leylaragg.letool.print.document.node.DocumentNode;
 import io.github.leylaragg.letool.print.document.node.HeadingNode;
@@ -242,7 +243,10 @@ public final class DocumentModel {
     /** 解析所有节点样式，并补充需要结合节点结构判断的表格约束。 */
     private void validateStyles(List<DocumentNode> nodes) {
         for (DocumentNode node : nodes) {
-            if (node instanceof TextNode text) {
+            if (node instanceof FreeTextNode freeText) {
+                styleSheet.resolveText(freeText.textStyleName());
+                styleSheet.resolveCell(freeText.boxStyleName());
+            } else if (node instanceof TextNode text) {
                 styleSheet.resolveText(text.styleName());
             } else if (node instanceof PageNumberNode pageNumber) {
                 styleSheet.resolveText(pageNumber.styleName());

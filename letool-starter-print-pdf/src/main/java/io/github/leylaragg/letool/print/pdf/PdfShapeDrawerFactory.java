@@ -10,6 +10,7 @@ import java.awt.BasicStroke;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Path2D;
 import java.awt.geom.Rectangle2D;
+import java.util.Map;
 
 /**
  * 只绘制通用节点已经校验的几何参数。
@@ -26,7 +27,8 @@ final class PdfShapeDrawerFactory implements FSObjectDrawerFactory {
      */
     @Override
     public boolean isReplacedObject(Element element) {
-        return "letool-shape".equals(element.getAttribute("type"));
+        return "letool-shape".equals(element.getAttribute("type"))
+                || "letool-free-text".equals(element.getAttribute("type"));
     }
 
     /**
@@ -37,6 +39,14 @@ final class PdfShapeDrawerFactory implements FSObjectDrawerFactory {
      */
     @Override
     public FSObjectDrawer createDrawer(Element element) {
+        if ("letool-free-text".equals(element.getAttribute("type"))) {
+            // 对象链接由排版器记录实际绘制变换，页眉和续页副本各保留一个物理位置。
+            return (source, x, y, width, height, device, context, dotsPerPixel) ->
+                    "true".equals(source.getAttribute("data-ready"))
+                            ? Map.of(new Rectangle2D.Double(0, 0, width, height),
+                                    PdfFreeTextWriter.MARKER_PREFIX + source.getAttribute("data-free-text-key"))
+                            : null;
+        }
         return (source, x, y, width, height, device, context, dotsPerPixel) -> {
             // 节点尺寸以 pt 声明，绘制设备使用 dots；布局传入的外框已经完成换算。
             double dots = ((PdfBoxOutputDevice) device).getDotsPerPoint();

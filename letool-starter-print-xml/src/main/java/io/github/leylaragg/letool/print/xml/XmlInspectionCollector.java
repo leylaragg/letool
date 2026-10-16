@@ -1,6 +1,7 @@
 package io.github.leylaragg.letool.print.xml;
 
 import io.github.leylaragg.letool.print.document.node.AnnotationNode;
+import io.github.leylaragg.letool.print.document.node.FreeTextNode;
 import io.github.leylaragg.letool.print.document.node.BookmarkNode;
 import io.github.leylaragg.letool.print.document.node.DocumentNode;
 import io.github.leylaragg.letool.print.document.node.HeadingNode;
@@ -218,6 +219,7 @@ final class XmlInspectionCollector {
             case "heading" -> HeadingNode.class;
             case "paragraph" -> ParagraphNode.class;
             case "annotation" -> AnnotationNode.class;
+            case "free-text" -> FreeTextNode.class;
             case "table" -> TableNode.class;
             case "image" -> ImageNode.class;
             case "page-break" -> PageBreakNode.class;

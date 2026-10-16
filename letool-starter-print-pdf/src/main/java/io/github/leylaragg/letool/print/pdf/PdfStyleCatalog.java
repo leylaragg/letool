@@ -1,5 +1,6 @@
 package io.github.leylaragg.letool.print.pdf;
 
+import io.github.leylaragg.letool.print.document.DocumentOptions;
 import io.github.leylaragg.letool.print.document.style.BoxSpacing;
 import io.github.leylaragg.letool.print.document.style.CellBorder;
 import io.github.leylaragg.letool.print.document.style.CellStyle;
@@ -27,6 +28,9 @@ import java.util.Objects;
  * @author leyland
  */
 final class PdfStyleCatalog {
+
+    /** 流式文本框空样式必须完整采用节点默认值，不能继承父段落字体。 */
+    static final String DEFAULT_FREE_TEXT_CLASS = "lt-free-text-default";
 
     /** 文本样式名到安全类名的映射。 */
     private final Map<String, String> textClasses;
@@ -71,6 +75,18 @@ final class PdfStyleCatalog {
     static PdfStyleCatalog compile(StyleSheet styleSheet, PdfFontCatalog fontCatalog,
         io.github.leylaragg.letool.print.document.DocumentOptions options) {
         return new PdfStyleCatalog(new Compiler(styleSheet, fontCatalog, options).compile());
+    }
+
+    /** 仅文档实际使用默认文本框时生成其默认类，避免改变其他文档的字体约束。 */
+    static PdfStyleCatalog compile(StyleSheet styleSheet, PdfFontCatalog fontCatalog,
+            DocumentOptions options, boolean defaultFreeText) {
+        Compiler compiler = new Compiler(styleSheet, fontCatalog, options).compile();
+        if (defaultFreeText) {
+            compiler.css.append('.').append(DEFAULT_FREE_TEXT_CLASS).append('{');
+            compiler.appendText(compiler.css, TextStyle.defaults());
+            compiler.css.append('}');
+        }
+        return new PdfStyleCatalog(compiler);
     }
 
     /** @return 指定文本样式的安全类名 */

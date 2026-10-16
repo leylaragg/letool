@@ -7,6 +7,8 @@ import io.github.leylaragg.letool.print.document.PageRegion;
 import io.github.leylaragg.letool.print.document.PageSequence;
 import io.github.leylaragg.letool.print.document.node.BlockNode;
 import io.github.leylaragg.letool.print.document.node.AnnotationNode;
+import io.github.leylaragg.letool.print.document.node.FreeTextNode;
+import io.github.leylaragg.letool.print.document.style.DocumentColor;
 import io.github.leylaragg.letool.print.document.node.AnnotationPlacement;
 import io.github.leylaragg.letool.print.document.node.AnnotationType;
 import io.github.leylaragg.letool.print.document.node.BookmarkNode;
@@ -202,6 +204,7 @@ public final class XmlTemplateBinder {
                 node.attributes().get("style"), bindInline(node.children(), scope, templateCode, governor),
                 pointLength(node, templateCode, "offset"));
             case "annotation" -> bindAnnotation(node, scope, templateCode, governor);
+            case "free-text" -> bindFreeText(node, scope, templateCode, governor);
             case "page-break" -> PageBreakNode.INSTANCE;
             case "table-of-contents" -> new TableOfContentsNode(
                 node.attributes().get("id"), node.attributes().get("title"),
@@ -252,6 +255,22 @@ public final class XmlTemplateBinder {
             throw PrintValidationException.invalidDocument("测量展示长度必须使用 pt：" + name);
         }
         return length.value();
+    }
+
+    /** 自由文本框沿用文本绑定和命名样式，动态填充仅接受受控 RGB 值。 */
+    private FreeTextNode bindFreeText(CompiledXmlNode node, BindingScope scope, String templateCode,
+            BindingGovernor governor) {
+        String background = boundAttribute(node, "background", scope, templateCode, governor);
+        DocumentColor color = background.isEmpty() ? null
+                : XmlValueParser.color(background, templateCode, node, "free-text.background");
+        return new FreeTextNode(boundAttribute(node, "id", scope, templateCode, governor),
+                node.attributes().getOrDefault("text-style", ""),
+                node.attributes().getOrDefault("box-style", ""),
+                node.attributes().getOrDefault("author", ""),
+                bindAnnotationContent(node.children(), scope, templateCode, governor),
+                XmlValueParser.enumValue(FreeTextNode.WidthMode.class,
+                        node.attributes().getOrDefault("width", "fill"), templateCode, node, "free-text.width"),
+                color);
     }
 
     /** 将受控属性和纯文本内容绑定为不含 PDF 类型的批注节点。 */
@@ -516,6 +535,8 @@ public final class XmlTemplateBinder {
                 inline.add(new TextNode(
                         text, node.attributes().getOrDefault("style", "")));
                 governor.addText(text.length());
+            } else if ("free-text".equals(node.name())) {
+                inline.add(bindFreeText(node, scope, templateCode, governor));
             } else if ("line-break".equals(node.name())) {
                 inline.add(LineBreakNode.INSTANCE);
             } else if ("page-number".equals(node.name())) {

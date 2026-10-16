@@ -13,6 +13,7 @@ import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImage;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.awt.geom.Point2D;
 import java.awt.geom.Rectangle2D;
 import java.util.ArrayList;
@@ -50,6 +51,17 @@ class PdfSmallShapeTest {
             assertThat(underline.getMinY()).isCloseTo(circle.getCenterY(), offset(0.06));
             assertThat(underline.getWidth()).isCloseTo(10, offset(0.06));
         }
+    }
+
+    /** 读取最终正文向量路径，供分段回归确认行内控件仍被实际绘制。 */
+    static List<Rectangle2D> paintedPaths(PDDocument pdf) throws IOException {
+        List<Rectangle2D> paths = new ArrayList<>();
+        for (PDPage page : pdf.getPages()) {
+            Bounds engine = new Bounds(page);
+            engine.processPage(page);
+            paths.addAll(engine.paths);
+        }
+        return paths;
     }
 
     private static final class Bounds extends PDFGraphicsStreamEngine {

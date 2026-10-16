@@ -28,6 +28,7 @@ import java.io.OutputStream;
 import java.nio.file.Path;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 用独立 OpenHTMLToPDF 实例排版并保存一个正文或目录视图。
@@ -97,15 +98,24 @@ final class PdfUnitRenderer {
         PdfNativeMarks.Marks marks;
         List<PdfNativeContents.Rule> contentsRules;
         int pageCount;
+        PdfFreeTextLayout.Prepared freeText = new PdfFreeTextLayout.Prepared(xhtml, Map.of());
         try (OutputStream output = workspace.openOutput(file, options.maxOutputBytes())) {
             // 测量阶段只执行布局，以实际区域高度修正显式页眉、页脚和正文居中位置。
             String adjusted = xhtml;
-            if (pageLayout.headerTopPoints() >= 0 || pageLayout.footerBaselinePoints() >= 0
-                    || pageLayout.centeredBody()) {
+            if (xhtml.contains("data-free-text-key=")) {
                 try (PdfBoxRenderer measure = builder(xhtml, OutputStream.nullOutputStream(),
                         initialPageNumber, documentOptions).buildPdfRenderer()) {
                     measure.layout();
-                    adjusted = PdfNativeLayout.adjust(measure, xhtml, pageLayout);
+                    freeText = PdfFreeTextLayout.prepare(measure, xhtml, styles, documentOptions, fontCatalog);
+                    adjusted = freeText.xhtml();
+                }
+            }
+            if (pageLayout.headerTopPoints() >= 0 || pageLayout.footerBaselinePoints() >= 0
+                    || pageLayout.centeredBody()) {
+                try (PdfBoxRenderer measure = builder(adjusted, OutputStream.nullOutputStream(),
+                        initialPageNumber, documentOptions).buildPdfRenderer()) {
+                    measure.layout();
+                    adjusted = PdfNativeLayout.adjust(measure, adjusted, pageLayout);
                 }
             }
 
@@ -149,12 +159,14 @@ final class PdfUnitRenderer {
         List<BodyCaptionNode> captions = DocumentTraversal.depthFirstBlocks(blocks).stream()
                 .filter(BodyCaptionNode.class::isInstance)
                 .map(BodyCaptionNode.class::cast).toList();
-        if (!marks.underlines().isEmpty() || !captions.isEmpty() || !contentsRules.isEmpty()) {
+        if (!marks.underlines().isEmpty() || !captions.isEmpty() || !contentsRules.isEmpty()
+                || !freeText.boxes().isEmpty()) {
             Path painted = workspace.allocate();
             try (PDDocument pdf = Loader.loadPDF(file.toFile());
                     OutputStream target = workspace.openOutput(painted, options.maxOutputBytes())) {
                 PdfNativeDrawing.write(pdf, marks, captions, styles, documentOptions, pageLayout, fontCatalog);
                 PdfNativeContents.write(pdf, contentsRules);
+                PdfFreeTextWriter.write(pdf, freeText.boxes());
                 pdf.save(target);
             }
             // 追加绘制并保存成功后再释放基础文件，失败路径由工作区统一清理。

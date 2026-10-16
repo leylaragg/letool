@@ -61,6 +61,13 @@ class PrintTagRegistryTest {
                 .hasMessageContaining("属性");
     }
 
+    /** 新内置文本框标签不能被宿主处理器覆盖。 */
+    @Test
+    void shouldReserveFreeTextTag() {
+        assertThatThrownBy(() -> new PrintTagRegistry(List.of(handler("free-text", Set.of()))))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("内置");
+    }
+
     /** 验证未知标签不会被静默忽略。 */
     @Test
     void shouldRejectMissingTag() {

@@ -48,6 +48,8 @@ final class XmlGrammar {
         Map.entry("heading", Set.of("id", "id-path", "level", "style")),
         Map.entry("paragraph", Set.of("id", "id-path", "style")),
         Map.entry("body-caption", Set.of("style", "offset")),
+            Map.entry("free-text", Set.of("id", "id-path", "text-style", "box-style", "author",
+                    "width", "background", "background-path")),
             Map.entry("annotation", Set.of("type", "target", "placement", "width", "height",
                     "offset-x", "offset-y", "author")),
         Map.entry("table", Set.of("id", "id-path", "style")),
@@ -79,17 +81,17 @@ final class XmlGrammar {
 
     /** 普通块级容器可以直接承载的标签。 */
     private static final Set<String> BLOCK_CHILDREN = Set.of(
-        "section", "heading", "paragraph", "body-caption", "annotation", "table", "image",
+        "section", "heading", "paragraph", "body-caption", "annotation", "free-text", "table", "image",
             "page-break", "if", "for-each", "include");
 
     /** 页面区域额外允许声明目录。 */
     private static final Set<String> PAGE_CHILDREN = Set.of(
-        "section", "heading", "paragraph", "body-caption", "annotation", "table", "image",
+        "section", "heading", "paragraph", "body-caption", "annotation", "free-text", "table", "image",
             "page-break", "if", "for-each", "include", "table-of-contents");
 
     /** 动态块还可以在表格结果域中承载行。 */
     private static final Set<String> DYNAMIC_BLOCK_CHILDREN = Set.of(
-        "section", "heading", "paragraph", "body-caption", "annotation", "table", "image",
+        "section", "heading", "paragraph", "body-caption", "annotation", "free-text", "table", "image",
             "page-break", "row", "if", "for-each", "include");
 
     /** include 和块级扩展允许出现的位置。 */
@@ -113,12 +115,13 @@ final class XmlGrammar {
             Map.entry("page-body", PAGE_CHILDREN),
             Map.entry("page-footer", PAGE_CHILDREN),
             Map.entry("section", BLOCK_CHILDREN),
-            Map.entry("heading", Set.of("text", "field", "bookmark", "link",
+            Map.entry("heading", Set.of("text", "field", "free-text", "bookmark", "link",
                     "line-break", "page-number", "page-count")),
-            Map.entry("paragraph", Set.of("text", "field", "bookmark", "link",
+            Map.entry("paragraph", Set.of("text", "field", "free-text", "bookmark", "link",
                     "line-break", "page-number", "page-count")),
         Map.entry("body-caption", Set.of("text", "field", "line-break")),
             Map.entry("annotation", Set.of("text", "field")),
+            Map.entry("free-text", Set.of("text", "field")),
             Map.entry("table", Set.of("header", "body")),
             Map.entry("header", Set.of("row", "if", "for-each")),
             Map.entry("body", Set.of("row", "if", "for-each")),
@@ -144,7 +147,7 @@ final class XmlGrammar {
 
     /** 可以直接保存文本内容的标签。 */
     private static final Set<String> TEXT_CONTAINERS =
-    Set.of("heading", "paragraph", "body-caption", "annotation", "text", "link");
+    Set.of("heading", "paragraph", "body-caption", "annotation", "free-text", "text", "link");
 
     /** 编译器当前启用的可信标签扩展。 */
     private final PrintTagRegistry tagRegistry;
@@ -223,8 +226,8 @@ final class XmlGrammar {
         if ("link".equals(name) && node.children().isEmpty()) {
             throw located(templateCode, node, "link 标签不能为空");
         }
-        if ("annotation".equals(name) && lacksVisibleContent(node)) {
-            throw located(templateCode, node, "annotation 内容不能为空");
+        if (("annotation".equals(name) || "free-text".equals(name)) && lacksVisibleContent(node)) {
+            throw located(templateCode, node, name + " 内容不能为空");
         }
         if ("heading".equals(name) && lacksHeadingContent(node)) {
             throw located(templateCode, node, "heading 内容不能为空");
@@ -271,7 +274,7 @@ final class XmlGrammar {
     /** 判断一个子标签能否产生行内节点。 */
     private boolean isInlineChild(String name, PrintTagHandler handler) {
         return handler == null
-                ? Set.of("text", "field", "bookmark", "link",
+                ? Set.of("text", "field", "free-text", "bookmark", "link",
                         "line-break", "page-number", "page-count").contains(name)
                 : handler.placement() == TagPlacement.INLINE;
     }

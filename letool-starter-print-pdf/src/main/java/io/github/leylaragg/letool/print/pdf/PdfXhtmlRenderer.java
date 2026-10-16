@@ -9,6 +9,9 @@ import io.github.leylaragg.letool.print.document.PageOrientation;
 import io.github.leylaragg.letool.print.document.PageRegion;
 import io.github.leylaragg.letool.print.document.node.BlockNode;
 import io.github.leylaragg.letool.print.document.node.AnnotationNode;
+import io.github.leylaragg.letool.print.document.node.FreeTextNode;
+import io.github.leylaragg.letool.print.document.node.DocumentNode;
+import io.github.leylaragg.letool.print.document.style.DocumentColor;
 import io.github.leylaragg.letool.print.document.node.BookmarkNode;
 import io.github.leylaragg.letool.print.document.node.HeadingNode;
 import io.github.leylaragg.letool.print.document.node.InlineNode;
@@ -112,7 +115,7 @@ final class PdfXhtmlRenderer {
         Objects.requireNonNull(pagination, "pagination 不能为空");
         Objects.requireNonNull(ids, "ids 不能为空");
         PdfStyleCatalog styles = PdfStyleCatalog.compile(document.styleSheet(), fontCatalog,
-            document.document().options());
+                document.document().options(), usesDefaultFreeText(document.document()));
         PdfPaginationPlan.SequencePagination sequencePagination =
                 pagination.sequence(sequence.sourceIndex());
         PageValues pageValues = new PageValues(
@@ -122,6 +125,16 @@ final class PdfXhtmlRenderer {
                 sequence.header(), sequence.footer(), blocks, ids, styles,
                 pageValues, centralNavigation);
         return output.toString();
+    }
+
+    /** 文字框空样式遵循节点默认值，普通文本节点仍保留原有父级继承语义。 */
+    private static boolean usesDefaultFreeText(DocumentModel document) {
+        for (DocumentNode node : DocumentTraversal.depthFirst(document)) {
+            if (node instanceof FreeTextNode freeText && freeText.textStyleName().isEmpty()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 写入一份页面布局明确的 XHTML 文档。 */
@@ -311,6 +324,8 @@ final class PdfXhtmlRenderer {
             writeTable(output, table, ids, styles, pageValues, centralNavigation);
         } else if (block == PageBreakNode.INSTANCE) {
             output.append("<div class=\"page-break\"></div>");
+        } else if (block instanceof FreeTextNode freeText) {
+            writeFreeText(output, freeText, styles, false);
         } else if (block instanceof AnnotationNode || block instanceof
             io.github.leylaragg.letool.print.document.node.BodyCaptionNode) {
             // 批注正文只进入 PDF 对象，不在页面正文中重复显示。
@@ -435,15 +450,19 @@ final class PdfXhtmlRenderer {
             PageValues pageValues,
             boolean centralNavigation) {
         if (inline instanceof io.github.leylaragg.letool.print.document.node.InlineGroupNode group) {
-            if (group.widthPoints() > 0)
-            {
-                output.append("<span style=\"display:inline-block;text-align:center;white-space" +
-                    ":nowrap;width:").append(group.widthPoints()).append("pt;\">");
+            if (group.widthPoints() > 0 || group.keepTogether()) {
+                output.append("<span data-keep-together=\"").append(group.keepTogether())
+                        .append("\" data-auto-group=\"").append(group.widthPoints() == 0)
+                        .append("\" style=\"display:inline-block;white-space:nowrap;");
+                if (group.widthPoints() > 0) {
+                    output.append("text-align:center;width:").append(group.widthPoints()).append("pt;");
+                }
+                output.append("\">");
             }
             output.append(group.underline() ? "<span data-native-underline=\"true\">" : "<span>");
             group.children().forEach(child -> writeInline(output, child, ids, styles, pageValues, centralNavigation));
             output.append("</span>");
-            if (group.widthPoints() > 0) {
+            if (group.widthPoints() > 0 || group.keepTogether()) {
                 output.append("</span>");
             }
         } else if (inline instanceof io.github.leylaragg.letool.print.document.node.ShapeNode shape) {
@@ -455,6 +474,8 @@ final class PdfXhtmlRenderer {
                 .append(shape.widthPoints()).append("pt;height:").append(shape.heightPoints()).append(shape
                 .kind() == io.github.leylaragg.letool.print.document.node.ShapeNode.Kind.U_CELLS ?
                 "pt;vertical-align:-2pt;\"/>" : "pt;vertical-align:middle;\"/>");
+        } else if (inline instanceof FreeTextNode freeText) {
+            writeFreeText(output, freeText, styles, true);
         } else if (inline instanceof TextNode text) {
             String className = styles.textClass(text.styleName());
             if (className.isEmpty()) {
@@ -495,6 +516,30 @@ final class PdfXhtmlRenderer {
         } else {
             throw unsupported(inline);
         }
+    }
+
+    /** 先交给原生布局测量父容器宽度，正文随后由完整外观承载。 */
+    private void writeFreeText(StringBuilder output, FreeTextNode node, PdfStyleCatalog styles, boolean inline) {
+        String key = "box-" + output.length();
+        output.append("<object type=\"letool-free-text\"");
+        writeId(output, node.id());
+        writeClass(output, node.textStyleName().isEmpty()
+                ? PdfStyleCatalog.DEFAULT_FREE_TEXT_CLASS : styles.textClass(node.textStyleName()));
+        output.append(" data-free-text-key=\"").append(key)
+                .append("\" data-text-style=\"").append(escapeAttribute(node.textStyleName()))
+                .append("\" data-box-style=\"").append(escapeAttribute(node.boxStyleName()))
+                .append("\" data-author=\"").append(escapeAttribute(node.author()))
+                .append("\" data-width-mode=\"").append(node.widthMode())
+                .append("\" data-inline=\"").append(inline).append('"');
+        DocumentColor background = node.background();
+        if (background != null) {
+            output.append(" data-background=\"").append(background.red()).append(',')
+                    .append(background.green()).append(',').append(background.blue()).append('"');
+        }
+        output.append(" style=\"display:").append(inline ? "inline-block" : "block")
+                .append(";width:").append(inline ? "1pt" : "100%")
+                .append(";height:1pt;page-break-inside:avoid;vertical-align:middle;\">")
+                .append(escapeText(node.content())).append("</object>");
     }
 
     /** 写入页码占位或已经规划好的逻辑总页数。 */

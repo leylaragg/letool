@@ -269,7 +269,7 @@ final class XmlSourceParser {
         if ("image".equals(element)) {
             validateImage(templateCode, reader, attributes);
         }
-        if (Set.of("section", "heading", "paragraph", "table", "image", "bookmark").contains(element)) {
+        if (Set.of("section", "heading", "paragraph", "free-text", "table", "image", "bookmark").contains(element)) {
             validateAttributeChoice(templateCode, reader, attributes, "id", "bookmark".equals(element));
         }
         if ("bookmark".equals(element)) {
@@ -283,6 +283,12 @@ final class XmlSourceParser {
         if ("link".equals(element)) {
             validateAttributeChoice(templateCode, reader, attributes, "target", true);
             validateOptionalId(templateCode, reader, attributes, "target");
+        }
+        if ("free-text".equals(element)) {
+            validateAttributeChoice(templateCode, reader, attributes, "background", false);
+            if (!Set.of("fill", "fit-content").contains(attributes.getOrDefault("width", "fill"))) {
+                throw located(templateCode, reader, "free-text.width 不受支持");
+            }
         }
         if ("annotation".equals(element)) {
             validateAnnotation(templateCode, reader, attributes);

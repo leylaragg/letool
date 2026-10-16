@@ -9,6 +9,8 @@ import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDType0Font;
 import org.apache.pdfbox.pdmodel.graphics.PDXObject;
 import org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject;
+import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotation;
+import org.apache.pdfbox.pdmodel.interactive.annotation.PDAppearanceStream;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -57,6 +59,13 @@ final class PdfFullFontWriter {
         Set<COSDictionary> visited = Collections.newSetFromMap(new IdentityHashMap<>());
         for (PDPage page : document.getPages()) {
             expand(document, page.getResources(), sources, complete, visited);
+            // FreeText 的可见文字属于批注外观资源，也必须满足文档的完整字体契约。
+            for (PDAnnotation annotation : page.getAnnotations()) {
+                PDAppearanceStream appearance = annotation.getNormalAppearanceStream();
+                if (appearance != null) {
+                    expand(document, appearance.getResources(), sources, complete, visited);
+                }
+            }
         }
     }
 

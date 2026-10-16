@@ -7,6 +7,7 @@ import io.github.leylaragg.letool.print.api.PrintResult;
 import io.github.leylaragg.letool.print.api.RenderOptions;
 import io.github.leylaragg.letool.print.document.DocumentModel;
 import io.github.leylaragg.letool.print.document.node.AnnotationNode;
+import io.github.leylaragg.letool.print.document.node.FreeTextNode;
 import io.github.leylaragg.letool.print.document.node.BlockNode;
 import io.github.leylaragg.letool.print.document.node.BookmarkNode;
 import io.github.leylaragg.letool.print.document.node.HeadingNode;
@@ -60,6 +61,7 @@ public final class OpenHtmlPdfRenderer implements PdfRenderer {
             BookmarkNode.class,
             InternalLinkNode.class,
             AnnotationNode.class,
+            FreeTextNode.class,
         io.github.leylaragg.letool.print.document.node.ContentsTitleNode.class,
         io.github.leylaragg.letool.print.document.node.ContentsEntryNode.class,
             TableOfContentsNode.class), EnumSet.allOf(DocumentFeature.class));

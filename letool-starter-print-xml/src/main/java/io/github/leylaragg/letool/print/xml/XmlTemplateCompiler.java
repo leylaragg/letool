@@ -510,6 +510,10 @@ public final class XmlTemplateCompiler {
                             styleSheet.resolveText(style);
                     case "table" -> styleSheet.resolveTable(style);
                     case "cell" -> styleSheet.resolveCell(style);
+                    case "free-text" -> {
+                        styleSheet.resolveText(node.attributes().get("text-style"));
+                        styleSheet.resolveCell(node.attributes().get("box-style"));
+                    }
                     default -> {
                         // 其他节点没有可引用的命名样式。
                     }
@@ -601,7 +605,7 @@ public final class XmlTemplateCompiler {
         }
         Map<String, CompiledDataPath> attributePaths = new LinkedHashMap<>();
         if (tagPlan == null) {
-            for (String name : List.of("id", "label", "target", "parent")) {
+            for (String name : List.of("id", "label", "target", "parent", "background")) {
                 String path = node.attributes().get(name + "-path");
                 if (path != null) {
                     attributePaths.put(name, CompiledDataPath.compile(path, variables,
