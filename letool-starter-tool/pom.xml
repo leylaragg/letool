@@ -10,6 +10,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>letool-starter-tool</artifactId>
+    <version>3.1.1</version>
     <name>letool-starter-tool</name>
     <description>letool 基石模块 —— 提供 JSON、HTTP、集合、字符串、日期、ID 生成等通用工具类</description>
     <packaging>jar</packaging>

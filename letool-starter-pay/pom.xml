@@ -10,6 +10,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>letool-starter-pay</artifactId>
+    <version>3.1.1</version>
     <name>letool-starter-pay</name>
     <description>Letool 支付公共契约、统一路由、回调模型与显式 Mock Provider</description>
     <packaging>jar</packaging>

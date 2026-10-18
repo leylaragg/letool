@@ -8,7 +8,7 @@
 <dependency>
     <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-print</artifactId>
-    <version>${letool.version}</version>
+    <version>${letool.print.version}</version>
 </dependency>
 ```
 

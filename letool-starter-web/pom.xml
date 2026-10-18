@@ -10,6 +10,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>letool-starter-web</artifactId>
+    <version>3.1.1</version>
     <name>letool-starter-web</name>
     <description>letool Web 增强模块 —— 统一响应、异常协议、API 版本路由和受限请求体重复读取</description>
     <packaging>jar</packaging>

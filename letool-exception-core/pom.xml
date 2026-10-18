@@ -11,6 +11,7 @@
     </parent>
 
     <artifactId>letool-exception-core</artifactId>
+    <version>3.1.1</version>
     <name>letool-exception-core</name>
     <description>Letool 不依赖 Spring 的异常、错误码与消息格式化基础契约</description>
     <packaging>jar</packaging>

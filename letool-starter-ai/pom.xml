@@ -10,6 +10,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>letool-starter-ai</artifactId>
+    <version>3.1.1</version>
     <name>letool-starter-ai</name>
     <description>letool Provider 中立的 Spring AI 便利封装模块</description>
     <packaging>jar</packaging>

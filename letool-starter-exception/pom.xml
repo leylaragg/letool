@@ -11,6 +11,7 @@
     </parent>
 
     <artifactId>letool-starter-exception</artifactId>
+    <version>3.1.1</version>
     <name>letool-starter-exception</name>
     <description>letool 统一异常、错误码与国际化消息解析</description>
     <packaging>jar</packaging>

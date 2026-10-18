@@ -10,6 +10,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>letool-starter-distributed-lock</artifactId>
+    <version>3.1.1</version>
     <name>letool-starter-distributed-lock</name>
     <description>letool 分布式锁与幂等性契约 —— 后端无关句柄、函数式模板、注解切面与幂等存储 SPI</description>
     <packaging>jar</packaging>

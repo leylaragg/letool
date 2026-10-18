@@ -10,6 +10,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>letool-starter-redis</artifactId>
+    <version>3.1.1</version>
     <name>letool-starter-redis</name>
     <description>letool Redis 基础设施 —— RedisTemplate 门面、Redisson 分布式锁、幂等存储与缓存回源保护</description>
     <packaging>jar</packaging>

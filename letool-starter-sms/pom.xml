@@ -10,6 +10,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>letool-starter-sms</artifactId>
+    <version>3.1.1</version>
     <name>letool-starter-sms</name>
     <description>Letool 短信公共契约、便捷门面、Mock Provider 与可替换限流模块</description>
     <packaging>jar</packaging>

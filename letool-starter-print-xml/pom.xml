@@ -11,6 +11,7 @@
     </parent>
 
     <artifactId>letool-starter-print-xml</artifactId>
+    <version>3.1.2-SNAPSHOT</version>
     <name>letool-starter-print-xml</name>
     <description>Letool 动态打印安全 XML DSL 编译与文档模型绑定</description>
     <packaging>jar</packaging>

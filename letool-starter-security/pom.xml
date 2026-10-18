@@ -10,6 +10,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>letool-starter-security</artifactId>
+    <version>3.1.1</version>
     <name>letool-starter-security</name>
     <description>letool 安全认证模块 —— 基于 Spring Security Resource Server 的 JWT 认证与权限控制</description>
     <packaging>jar</packaging>

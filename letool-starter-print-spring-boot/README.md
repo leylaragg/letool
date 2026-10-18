@@ -10,7 +10,7 @@ Starter 只编排通用打印能力，不负责业务查询、数据权限、模
 <dependency>
     <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-print-spring-boot</artifactId>
-    <version>${letool.version}</version>
+    <version>${letool.print.version}</version>
 </dependency>
 ```
 
@@ -20,7 +20,7 @@ Starter 只编排通用打印能力，不负责业务查询、数据权限、模
 <dependency>
     <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-print-expression-spel</artifactId>
-    <version>${letool.version}</version>
+    <version>${letool.print.version}</version>
 </dependency>
 ```
 

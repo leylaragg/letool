@@ -10,6 +10,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>letool-starter-cipher-suite</artifactId>
+    <version>3.1.1</version>
     <name>letool-starter-cipher-suite</name>
     <description>letool 加密套件 —— 基于 JCA/JCE 与 Bouncy Castle 的安全易用密码工具</description>
     <packaging>jar</packaging>

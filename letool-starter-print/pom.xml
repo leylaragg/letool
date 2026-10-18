@@ -11,6 +11,7 @@
     </parent>
 
     <artifactId>letool-starter-print</artifactId>
+    <version>3.1.2-SNAPSHOT</version>
     <name>letool-starter-print</name>
     <description>Letool 动态打印核心契约、只读上下文与通用文档模型</description>
     <packaging>jar</packaging>

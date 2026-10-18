@@ -10,6 +10,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>letool-starter-oss</artifactId>
+    <version>3.1.1</version>
     <name>letool-starter-oss</name>
     <description>Letool 对象存储公共模块，提供统一契约、便捷模板和可扩展 Provider SPI</description>
     <packaging>jar</packaging>

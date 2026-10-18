@@ -4,7 +4,9 @@
 
 | Item | Supported Version | Notes |
 |---|---|---|
-| letool | `2.0.0-beta.1` | Beta line; API and dependency scopes may still change. |
+| Base SDK modules | `3.1.1` | Published baseline; independent from printing upgrades. |
+| Printing modules | `3.1.2-SNAPSHOT` | Six aligned printing components; currently a local development line. |
+| Build parent / BOM | `3.1.2-SNAPSHOT` | Parent version does not determine module artifact versions. |
 | Java | `17+` | Java 17 is the build baseline; Java 21 is recommended for virtual-thread scenarios. |
 | Maven | `3.9+` | CI should use Maven Wrapper when possible. |
 | Spring Boot | `3.5.x` | Parent POM currently manages `3.5.16`. |
@@ -18,8 +20,7 @@
 
 | letool Line | Java Baseline | Spring Boot Baseline | Status |
 |---|---|---|---|
-| `2.0.x` | 17 | 3.5.x | Planned stable line. |
-| `2.0.0-beta.x` | 17 | 3.5.x | Active hardening; production readiness varies by module. |
+| Base `3.1.1` + printing `3.1.2-SNAPSHOT` | 17 | 3.5.x | Current development combination; validate the consumer dependency tree before release. |
 
 ## Module Notes
 

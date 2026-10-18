@@ -11,6 +11,7 @@
     </parent>
 
     <artifactId>letool-starter-mq-rabbit</artifactId>
+    <version>3.1.1</version>
     <name>letool-starter-mq-rabbit</name>
     <description>Letool RabbitMQ Spring Cloud Stream Binder 便利模块</description>
 

@@ -11,6 +11,7 @@
     </parent>
 
     <artifactId>letool-starter-sms-aliyun</artifactId>
+    <version>3.1.1</version>
     <name>letool-starter-sms-aliyun</name>
     <description>Letool 阿里云短信官方 SDK 适配模块</description>
 

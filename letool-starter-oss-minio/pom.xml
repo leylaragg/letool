@@ -11,6 +11,7 @@
     </parent>
 
     <artifactId>letool-starter-oss-minio</artifactId>
+    <version>3.1.1</version>
     <name>letool-starter-oss-minio</name>
     <description>Letool MinIO 对象存储官方 SDK 适配模块</description>
 

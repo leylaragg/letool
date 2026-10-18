@@ -11,6 +11,7 @@
     </parent>
 
     <artifactId>letool-starter-mq-rocketmq</artifactId>
+    <version>3.1.1</version>
     <name>letool-starter-mq-rocketmq</name>
     <description>Letool RocketMQ Spring Cloud Stream Binder 便利模块</description>
 

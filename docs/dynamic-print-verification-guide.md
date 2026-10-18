@@ -99,19 +99,20 @@ mvn --% -P print-capacity -pl letool-starter-print-spring-boot -am -Dtest=PrintC
 先把当前打印闭包安装到 Maven 本地仓库。这里的 `install` 不会访问 Central 发布接口：
 
 ```powershell
-mvn --% -pl letool-starter-print-spring-boot -am -DskipTests install
+$printModules = 'letool-starter-print,letool-starter-print-pdf,letool-starter-print-template,letool-starter-print-xml,letool-starter-print-expression-spel,letool-starter-print-spring-boot'
+mvn -pl ".,$printModules" install -DskipTests
 ```
 
 随后单独构建消费者：
 
 ```powershell
-mvn --% -f verification/print-consumer/pom.xml -Dletool.version=3.1.0-SNAPSHOT clean test
-mvn --% -f verification/print-consumer/pom.xml -Dletool.version=3.1.0-SNAPSHOT -P spel clean test
+mvn --% -f verification/print-consumer/pom.xml -Dletool.print.version=3.1.2-SNAPSHOT clean test
+mvn --% -f verification/print-consumer/pom.xml -Dletool.print.version=3.1.2-SNAPSHOT -P spel clean test
 ```
 
 第一条命令应证明默认 Starter 可以启动、发布并切换模板版本、流式生成 PDF，并在没有 SpEL 模块时明确拒绝 SpEL。第二条命令显式加入 SpEL 依赖和配置开关，再证明相同模板能够输出。两次日志中的 Reactor 都应只有 `print-consumer`。
 
-消费者不内置 Letool 版本号，每次使用 `-Dletool.version=版本号` 明确指定已安装或已发布的版本；上面的版本号仅为当前开发示例。
+消费者不内置 Letool 版本号，每次使用 `-Dletool.print.version=版本号` 明确指定已安装或已发布的版本；上面的版本号仅为当前开发示例。
 
 ### 4.4 全仓回归
 
@@ -134,10 +135,10 @@ mvn --% clean verify
 
 1. 先在根项目执行本地 `install`，确认本次实际版本。
 2. 建立 Maven Run Configuration，工作目录选择仓库根目录。
-3. 参数填写 `-f verification/print-consumer/pom.xml -Dletool.version=实际版本 clean test`，让独立消费者解析已安装的制品。
+3. 参数填写 `-f verification/print-consumer/pom.xml -Dletool.print.version=实际版本 clean test`，让独立消费者解析已安装的制品。
 4. 复制该配置并增加 `-P spel`，验证选装表达式能力。
 
-消费者不内置 `letool.version`，因此不要省略参数直接导入后运行 JUnit。以上 Maven 配置会执行 `PrintConsumerTest`，检查模板发布、PDF 生成及 PDFBox 重读；只启动 `PrintConsumerApplication` 不能完成这些验收。
+消费者不内置 `letool.print.version`，因此不要省略参数直接导入后运行 JUnit。以上 Maven 配置会执行 `PrintConsumerTest`，检查模板发布、PDF 生成及 PDFBox 重读；只启动 `PrintConsumerApplication` 不能完成这些验收。
 
 ## 6. 结果在哪里看
 
@@ -157,7 +158,7 @@ flowchart TD
     B -->|编译| C[检查公开 API、依赖版本和模块边界]
     B -->|JUnit 断言| D[只重跑失败测试并定位契约]
     B -->|应用启动| E[检查自动配置条件、重复 Bean 和属性]
-    B -->|消费者解析| F[重新 install 并核对 letool.version]
+    B -->|消费者解析| F[重新 install 并核对 letool.print.version]
     B -->|PDF| G[检查模板能力、字体、页数和字节上限]
     B -->|临时目录| H[检查权限、配额与受限执行环境]
     C --> I[修复后由小到大重跑]

@@ -11,6 +11,7 @@
     </parent>
 
     <artifactId>letool-starter-net</artifactId>
+    <version>3.1.1</version>
     <name>letool-starter-net</name>
     <description>基于 Netty 的生产级 TCP 客户端与自定义报文协议封装</description>
     <packaging>jar</packaging>

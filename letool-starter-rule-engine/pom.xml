@@ -11,6 +11,7 @@
     </parent>
 
     <artifactId>letool-starter-rule-engine</artifactId>
+    <version>3.1.1</version>
     <name>letool-starter-rule-engine</name>
     <description>Letool 通用规则引擎 Spring Boot 自动配置</description>
     <packaging>jar</packaging>

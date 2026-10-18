@@ -15,7 +15,7 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>17</maven.compiler.release>
-        <!-- 验收版本由 -Dletool.version 显式传入，避免升级时维护第二份版本号。 -->
+        <!-- 验收版本由 -Dletool.print.version 显式传入，避免升级时维护第二份版本号。 -->
         <spring.boot.version>3.5.16</spring.boot.version>
         <pdfbox.version>3.0.8</pdfbox.version>
         <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
@@ -27,7 +27,7 @@
         <dependency>
             <groupId>io.github.leylaragg</groupId>
             <artifactId>letool-starter-print-spring-boot</artifactId>
-            <version>${letool.version}</version>
+            <version>${letool.print.version}</version>
         </dependency>
 
         <dependency>
@@ -66,7 +66,7 @@
                 <dependency>
                     <groupId>io.github.leylaragg</groupId>
                     <artifactId>letool-starter-print-expression-spel</artifactId>
-                    <version>${letool.version}</version>
+                    <version>${letool.print.version}</version>
                 </dependency>
             </dependencies>
             <build>

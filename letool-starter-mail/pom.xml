@@ -10,6 +10,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>letool-starter-mail</artifactId>
+    <version>3.1.1</version>
     <name>letool-starter-mail</name>
     <description>letool 邮件模块 —— Jakarta Mail 轻量封装、多账户、附件、同步与异步发送</description>
     <packaging>jar</packaging>

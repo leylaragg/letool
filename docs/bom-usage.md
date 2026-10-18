@@ -10,13 +10,15 @@ letool currently publishes the root POM artifact as the dependency management en
         <dependency>
             <groupId>io.github.leylaragg</groupId>
             <artifactId>letool</artifactId>
-            <version>2.0.0-beta.1</version>
+            <version>3.1.2-SNAPSHOT</version>
             <type>pom</type>
             <scope>import</scope>
         </dependency>
     </dependencies>
 </dependencyManagement>
 ```
+
+The example imports the current local development BOM; install the root POM first. For Central consumers, use a BOM version that has actually been published. This BOM selects base modules `3.1.1` and printing modules `3.1.2-SNAPSHOT`; its own version does not force all JARs to share a version.
 
 After importing the POM, application projects can omit individual letool starter versions:
 
@@ -35,7 +37,7 @@ After importing the POM, application projects can omit individual letool starter
 
 ## Spring Boot Alignment
 
-letool `2.0.0-beta.1` is aligned with Spring Boot `3.5.x`. In application projects, prefer importing the Spring Boot BOM first through the normal Spring Boot parent or dependency management, then import letool for letool module versions. External libraries already managed by Boot, including Netty, reuse the Boot BOM version instead of declaring a second version property.
+The current Letool baseline is aligned with Spring Boot `3.5.x`. In application projects, prefer importing the Spring Boot BOM first through the normal Spring Boot parent or dependency management, then import letool for letool module versions. External libraries already managed by Boot, including Netty, reuse the Boot BOM version instead of declaring a second version property.
 
 ## Starter 选择边界
 
@@ -44,6 +46,6 @@ letool `2.0.0-beta.1` is aligned with Spring Boot `3.5.x`. In application projec
 - Mock 必须显式启用，只用于开发和自动化测试，不能作为外部服务生产能力。
 - 外部 SDK/Binder 的账号、网络、费用、确认和可靠性语义仍需在目标环境验证。
 
-## Future Dedicated BOM
+## Independent Module Upgrades
 
-A dedicated `letool-bom` artifact is recommended before the stable 2.0.0 release. Until then, use the root `io.github.leylaragg:letool:pom` import shown above.
+Use the root `io.github.leylaragg:letool:pom` as the version catalog. Publish a new catalog version when its selected versions change; this does not require republishing unchanged JARs. Applications that manage starters explicitly, such as EDC, can use separate `letool.version` and `letool.print.version` properties instead of importing the catalog.

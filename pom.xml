@@ -113,8 +113,12 @@
         <maven.compiler.release>${java.version}</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-        <!-- 全部发布模块共用此版本；CI 可通过 -Drevision 覆盖。 -->
+        <!-- 构建父 POM 的版本；各发布模块显式声明自己的版本，不随父版本联动。 -->
         <revision>3.1.2-SNAPSHOT</revision>
+
+        <!-- 未变更模块继续使用已发布基线；打印依赖按功能组独立升级。 -->
+        <letool.version>3.1.1</letool.version>
+        <letool.print.version>3.1.2-SNAPSHOT</letool.print.version>
 
         <!-- 框架版本 -->
         <spring.boot.version>3.5.16</spring.boot.version>
@@ -235,232 +239,232 @@
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-exception-core</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-sensitive</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-exception</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-tool</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-redis</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-log</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-cache</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-cipher-suite</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-web</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-security</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-thread</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-swagger</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-file</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-print</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.print.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-print-pdf</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.print.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-print-template</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.print.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-print-xml</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.print.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-print-expression-spel</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.print.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-print-spring-boot</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.print.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-excel</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-mail</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-distributed-lock</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-rule-liteflow</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-rule-engine-core</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-rule-engine</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-net</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-pay</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-pay-alipay</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-pay-wechat</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-mq</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-mq-rabbit</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-mq-kafka</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-mq-rocketmq</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-ratelimiter</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-oss</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-oss-minio</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-oss-aliyun</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-oss-tencent-cos</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-sms</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-sms-aliyun</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-sms-tencent</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-ai</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-data-structure</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-websocket</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-job</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.leylaragg</groupId>
                 <artifactId>letool-starter-monitor</artifactId>
-                <version>${project.version}</version>
+                <version>${letool.version}</version>
             </dependency>
 
             <!-- 核心工具库 -->

@@ -10,6 +10,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>letool-starter-mq</artifactId>
+    <version>3.1.1</version>
     <name>letool-starter-mq</name>
     <description>letool 消息队列核心模块 —— 基于 Spring Cloud Stream 的统一发送门面与 Provider 扩展点</description>
     <packaging>jar</packaging>

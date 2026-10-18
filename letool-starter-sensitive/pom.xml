@@ -10,6 +10,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>letool-starter-sensitive</artifactId>
+    <version>3.1.1</version>
     <name>letool-starter-sensitive</name>
     <description>letool 数据脱敏工具 —— 内置常用策略、字段注解和可扩展的 Jackson 自动脱敏</description>
     <packaging>jar</packaging>

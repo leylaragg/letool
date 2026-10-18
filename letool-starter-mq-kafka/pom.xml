@@ -11,6 +11,7 @@
     </parent>
 
     <artifactId>letool-starter-mq-kafka</artifactId>
+    <version>3.1.1</version>
     <name>letool-starter-mq-kafka</name>
     <description>Letool Kafka Spring Cloud Stream Binder 便利模块</description>
 

@@ -10,6 +10,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>letool-starter-job</artifactId>
+    <version>3.1.1</version>
     <name>letool-starter-job</name>
     <description>基于 Spring Boot Quartz 的任务调度便捷封装</description>
     <packaging>jar</packaging>

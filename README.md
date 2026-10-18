@@ -17,14 +17,17 @@
 
 ## 开发构建与版本
 
-所有发布模块统一使用根 `pom.xml` 的 `revision`，升级时只修改该属性，也可通过 `-Drevision=版本号` 覆盖。模块间依赖使用 `${project.version}`；普通 `install` 会生成已解析父版本的 POM。
+每个发布模块在自己的 POM 中声明版本。当前基础模块为 `3.1.1`，六个 `letool-starter-print*` 模块为 `3.1.2-SNAPSHOT`；根 `revision` 只管理构建父 POM。根依赖管理使用 `letool.version` 和 `letool.print.version` 分别选择基础、打印版本，不再绑定 `${project.version}`。
+
+升级时同步待发布模块的自身版本及根依赖管理条目；打印六模块保持同一版本，其他模块可独立升级。普通 `install` 保留已解析的父 POM，`release` 生成不依赖父 POM 的消费 POM；打印发布只选择六个打印模块，复用已发布的基础依赖。
 
 请使用 JDK 17 验证。编译器同时设置 `release=17`，即使用更高版本 JDK 构建也不能调用 Java 17 以后的 API。
 
 ```powershell
-mvn -pl letool-starter-print-spring-boot,letool-starter-print-expression-spel -am clean install
+$printModules = 'letool-starter-print,letool-starter-print-pdf,letool-starter-print-template,letool-starter-print-xml,letool-starter-print-expression-spel,letool-starter-print-spring-boot'
+mvn -pl ".,$printModules" install
 # 独立消费者不继承本仓库的父 POM，显式指定刚安装的版本。
-mvn -f verification/print-consumer/pom.xml "-Dletool.version=3.1.0-SNAPSHOT" clean test
+mvn -f verification/print-consumer/pom.xml "-Dletool.print.version=3.1.2-SNAPSHOT" clean test
 ```
 
 ## 工程化文档

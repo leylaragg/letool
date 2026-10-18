@@ -10,6 +10,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>letool-starter-monitor</artifactId>
+    <version>3.1.1</version>
     <name>letool-starter-monitor</name>
     <description>letool 监控模块 —— Actuator/Micrometer 指标门面、Webhook 告警与用户清理任务调度</description>
     <packaging>jar</packaging>

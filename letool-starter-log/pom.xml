@@ -10,6 +10,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>letool-starter-log</artifactId>
+    <version>3.1.1</version>
     <name>letool-starter-log</name>
     <description>letool 日志封装模块 —— 链路追踪、Web 请求日志、方法日志、审计日志和动态日志级别</description>
     <packaging>jar</packaging>
