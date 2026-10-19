@@ -31,7 +31,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 根据原生排版结果拆分超页表格行，并在每个片段重建完整的重复侧。
+ * 根据原生排版结果校正字段行的分页，超页行在每个片段重建完整的重复侧。
  *
  * @author leyland
  * @date 2026/10/14
@@ -64,11 +64,11 @@ final class PdfNativeFragmenter {
     }
 
     /**
-     * 按唯一内容侧拆分表格行，完整复制其余声明重复的单元格。
+     * 每轮校正首个需要移页或分段的表格行，保留其余声明重复的单元格。
      *
      * @param renderer 已完成原生布局的渲染器
      * @param original 本次布局使用的 XHTML
-     * @return 分段后的 XHTML；无需分段时返回原文
+     * @return 校正后的 XHTML；布局稳定时返回原文
      * @throws IOException 完整内容没有合法位置，或分段视图无法序列化
      */
     static String fragment(PdfBoxRenderer renderer, String original) throws IOException {
@@ -80,16 +80,13 @@ final class PdfNativeFragmenter {
 
         LayoutContext context = renderer.getSharedContext().newLayoutContextInstance();
         float dots = renderer.getDotsPerPoint();
-        boolean changed = false;
         for (TableRowBox row : rows) {
             if (fragmentRow(renderer, row, boxes, context, dots)) {
-                changed = true;
+                // 前面的行一旦移页或分段，后续坐标便已失效，必须重新布局后再继续判断。
+                return serialize(renderer.getRootBox().getElement().getOwnerDocument());
             }
         }
-        if (!changed) {
-            return original;
-        }
-        return serialize(renderer.getRootBox().getElement().getOwnerDocument());
+        return original;
     }
 
     /** 检查不可折行的向量控件是否超出最近一层单元格的内容宽度。 */
@@ -118,7 +115,7 @@ final class PdfNativeFragmenter {
         }
     }
 
-    /** 仅在完整行超过整页容量时分段；普通可容纳行仍交给原生分页。 */
+    /** 可整页容纳的行保持完整；只有超出整页容量时才进入合法分段。 */
     private static boolean fragmentRow(PdfBoxRenderer renderer, TableRowBox row, Map<Element, Box> boxes,
             LayoutContext context, float dots) throws IOException {
         Element element = row.getElement();
@@ -135,7 +132,7 @@ final class PdfNativeFragmenter {
         padding += COLLAPSED_BORDER_ALLOWANCE;
         double capacity = contentCapacity(element, page, boxes, context, dots, padding);
         if (row.getHeight() / dots <= capacity + padding + HEIGHT_TOLERANCE) {
-            return false;
+            return moveWholeRowIfSplit(row, element, page);
         }
         double labelHeight = 0;
         for (int index = 0; index < cells.size(); index++) {
@@ -166,6 +163,39 @@ final class PdfNativeFragmenter {
         }
         replaceRow(element, contentIndex, chunks(atoms, firstCapacity, capacity));
         return true;
+    }
+
+    /**
+     * 祖先表格重排时，原生引擎可能跳过内层的 keep-rows；按实际页边界补足整行移页。
+     *
+     * <p>同一行只补一次强制换页。下一轮仍跨页说明完整位置无法满足，必须明确失败，
+     * 不能无限重试或让标签、批注与正文分离。</p>
+     */
+    private static boolean moveWholeRowIfSplit(TableRowBox row, Element element, PageBox page)
+            throws IOException {
+        if (row.getAbsY() + row.getHeight() <= page.getBottom() + LAYOUT_TOLERANCE_DOTS) {
+            return false;
+        }
+        if ("true".equals(element.getAttribute("data-native-moved"))) {
+            throw new IOException("完整表格行移页后仍没有合法位置");
+        }
+        element.setAttribute("data-native-moved", "true");
+        Element target = pageBreakTarget(element);
+        target.setAttribute("style", target.getAttribute("style") + ";page-break-before:always;");
+        return true;
+    }
+
+    /** 首个正文行移页时带上所属表头，避免前页只留下一个没有数据的记录标题。 */
+    private static Element pageBreakTarget(Element row) {
+        if (row.getParentNode() instanceof Element section && "tbody".equals(section.getTagName())
+                && children(section).get(0) == row && section.getParentNode() instanceof Element table) {
+            for (Element sibling : children(table)) {
+                if ("thead".equals(sibling.getTagName()) && !children(sibling).isEmpty()) {
+                    return table;
+                }
+            }
+        }
+        return row;
     }
 
     /** 至少一个重复侧和唯一可分段侧组成受支持的行，不改变普通表格的分页语义。 */

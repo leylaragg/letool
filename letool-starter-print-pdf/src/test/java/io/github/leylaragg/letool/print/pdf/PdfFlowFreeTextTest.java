@@ -1,5 +1,10 @@
 package io.github.leylaragg.letool.print.pdf;
 
+import com.openhtmltopdf.util.Diagnostic;
+import com.openhtmltopdf.util.JDKXRLogger;
+import com.openhtmltopdf.util.XRLog;
+import com.openhtmltopdf.util.XRLogger;
+
 import io.github.leylaragg.letool.print.api.RenderOptions;
 import io.github.leylaragg.letool.print.document.DocumentMetadata;
 import io.github.leylaragg.letool.print.document.DocumentModel;
@@ -35,6 +40,7 @@ import io.github.leylaragg.letool.print.document.style.FontWeight;
 import io.github.leylaragg.letool.print.document.style.ParagraphStyle;
 import io.github.leylaragg.letool.print.document.style.StyleSheet;
 import io.github.leylaragg.letool.print.document.style.TableLayoutMode;
+import io.github.leylaragg.letool.print.document.style.TablePageBreakPolicy;
 import io.github.leylaragg.letool.print.document.style.TableStyle;
 import io.github.leylaragg.letool.print.document.style.TextAlignment;
 import io.github.leylaragg.letool.print.document.style.TextStyle;
@@ -52,12 +58,17 @@ import org.apache.pdfbox.pdmodel.interactive.documentnavigation.destination.PDPa
 import org.assertj.core.data.Offset;
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAppearanceStream;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.pdfbox.rendering.PDFRenderer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
+import java.awt.image.BufferedImage;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.logging.Level;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -86,6 +97,71 @@ class PdfFlowFreeTextTest {
         }
     }
 
+    /** 重复表头里的装饰表格随表头整体移动，不应查询正文分页边界。 */
+    @Test
+    void shouldRenderNestedHeaderTablesWithoutPaginationWarnings() throws Exception {
+        TableNode title = new TableNode("", "frame", 0,
+                List.of(new TableRow(List.of(cell(note("", "嵌套表头批注"), false)))));
+        List<TableRow> rows = new ArrayList<>();
+        rows.add(new TableRow(List.of(new TableCell(List.of(title), 1, 3)), 35, true));
+        for (int index = 0; index < 40; index++) {
+            rows.add(new TableRow(List.of(cell(paragraph("", "标签"), false),
+                    cell(paragraph("", "内容行" + index), false), cell(paragraph("", "填写区"), false))));
+        }
+        try (LayoutLogCapture logs = new LayoutLogCapture();
+                PDDocument pdf = render(document(List.of(new TableNode("", "three", 1, rows))))) {
+            assertThat(pdf.getNumberOfPages()).isGreaterThan(1);
+            for (PDPage page : pdf.getPages()) {
+                assertThat(page.getAnnotations()).extracting(PDAnnotation::getContents).contains("嵌套表头批注");
+            }
+            assertThat(logs.warnings).isEmpty();
+        }
+    }
+
+    /** 页眉页脚中的表格每页保留文字和单元格底色，不能只把分页警告变为不可见。 */
+    @Test
+    void shouldPaintRunningTableBackgroundsOnEveryPageWithoutWarnings() throws Exception {
+        TableNode header = new TableNode("", "frame", 0, List.of(new TableRow(List.of(
+                new TableCell("box", List.of(paragraph("", "页眉表格")), 1, 1)))));
+        TableNode footer = new TableNode("", "frame", 0, List.of(new TableRow(List.of(
+                new TableCell("box", List.of(paragraph("", "页脚表格")), 1, 1)))));
+        List<BlockNode> body = new ArrayList<>();
+        for (int index = 0; index < 40; index++) {
+            body.add(paragraph("", "正文行" + index));
+        }
+        PageSequence sequence = new PageSequence(smallPage(), new PageRegion(List.of(header)),
+                new PageRegion(List.of(footer)), PageNumbering.counted(), body);
+        DocumentModel model = new DocumentModel(DocumentMetadata.empty(), styles(), List.of(sequence));
+        try (LayoutLogCapture logs = new LayoutLogCapture(); PDDocument pdf = render(model)) {
+            assertThat(pdf.getNumberOfPages()).isGreaterThan(1);
+            PDFRenderer renderer = new PDFRenderer(pdf);
+            PDFTextStripper text = new PDFTextStripper();
+            for (int page = 0; page < pdf.getNumberOfPages(); page++) {
+                text.setStartPage(page + 1);
+                text.setEndPage(page + 1);
+                assertThat(text.getText(pdf)).contains("页眉表格", "页脚表格");
+                BufferedImage image = renderer.renderImageWithDPI(page, 72);
+                assertThat(backgroundPixels(image, 0, 43)).as("page %s header", page + 1).isGreaterThan(500);
+                assertThat(backgroundPixels(image, image.getHeight() - 29, image.getHeight()))
+                        .as("page %s footer", page + 1).isGreaterThan(500);
+            }
+            assertThat(logs.warnings).isEmpty();
+        }
+    }
+
+    /** 在真实页边距内检查已声明底色，排除正文或批注外观对断言的干扰。 */
+    private static int backgroundPixels(BufferedImage image, int startY, int endY) {
+        int count = 0;
+        for (int y = startY; y < endY; y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                if ((image.getRGB(x, y) & 0xffffff) == 0xe0f0ff) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
     @Test
     void shouldRepeatTableHeaderAndBothMarkedCellsOnEveryContinuation() throws Exception {
         List<TableRow> content = new ArrayList<>();
@@ -108,6 +184,65 @@ class PdfFlowFreeTextTest {
                 }
             }
             assertThat(new PDFTextStripper().getText(pdf)).contains("item-39", "重复标签");
+        }
+    }
+
+    /** 外层容器重排不能让可整页容纳的内层字段跨页，正文与对应批注必须保持同页。 */
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void shouldKeepShortRowsWholeAfterAncestorTableIsMoved(boolean withHeader) throws Exception {
+        List<BlockNode> records = new ArrayList<>();
+        for (int record = 1; record <= 3; record++) {
+            List<TableRow> options = new ArrayList<>();
+            for (int item = 1; item <= 7; item++) {
+                options.add(new TableRow(List.of(cell(paragraph("", "R" + record + "I" + item), false))));
+            }
+            TableRow field = new TableRow(List.of(cell(paragraph("", "标签" + record), true),
+                    cell(new TableNode("", "frame", 0, options), false),
+                    cell(note("", "批注" + "一二三".charAt(record - 1)), true)));
+            TableRow header = new TableRow(List.of(new TableCell(
+                    List.of(paragraph("", "记录" + record)), 1, 3)), 30, true);
+            records.add(new TableNode("", "kept-three", withHeader ? 1 : 0,
+                    withHeader ? List.of(header, field) : List.of(field)));
+        }
+        TableNode prefix = new TableNode("", "frame", 0, List.of(
+                new TableRow(List.of(cell(paragraph("", "前置内容"), false)), 130, false)));
+        TableNode frame = new TableNode("", "frame", 0, List.of(
+                new TableRow(List.of(new TableCell(records, 1, 1)))));
+        PageLayout pageLayout = new PageLayout(new PageSize(106_000, 88_000), PageOrientation.PORTRAIT,
+                new Margins(7_000, 7_000, 7_000, 7_000));
+        DocumentModel model = new DocumentModel(DocumentMetadata.empty(), styles(),
+                List.of(PageSequence.body(pageLayout, List.of(prefix, frame))));
+        try (PDDocument pdf = render(model)) {
+            PDFTextStripper text = new PDFTextStripper();
+            List<String> pages = new ArrayList<>();
+            for (int page = 0; page < pdf.getNumberOfPages(); page++) {
+                text.setStartPage(page + 1);
+                text.setEndPage(page + 1);
+                pages.add(text.getText(pdf));
+            }
+            for (int record = 1; record <= 3; record++) {
+                String token = "R" + record + "I";
+                List<Integer> occurrences = new ArrayList<>();
+                for (int page = 0; page < pages.size(); page++) {
+                    if (pages.get(page).contains(token)) {
+                        occurrences.add(page);
+                    }
+                }
+                assertThat(occurrences).as("record %s must fit one complete page", record).hasSize(1);
+                int page = occurrences.get(0);
+                if (withHeader) {
+                    assertThat(pages.get(page)).contains("记录" + record);
+                    assertThat(String.join("", pages)).as("record header must move with its first field")
+                            .containsOnlyOnce("记录" + record);
+                }
+                assertThat(pages.get(page)).contains("标签" + record);
+                assertThat(pdf.getPage(page).getAnnotations()).extracting(PDAnnotation::getContents)
+                        .contains("批注" + "一二三".charAt(record - 1));
+                for (int item = 1; item <= 7; item++) {
+                    assertThat(String.join("", pages)).containsOnlyOnce(token + item);
+                }
+            }
         }
     }
 
@@ -426,6 +561,10 @@ class PdfFlowFreeTextTest {
                                 DocumentColor.rgb(50, 70, 100))).build())
                 .table("frame", TableStyle.builder().layoutMode(TableLayoutMode.FIXED)
                         .columnWidths(List.of(DocumentLength.percent(100))).build())
+                .table("kept-three", TableStyle.builder().layoutMode(TableLayoutMode.FIXED)
+                        .pageBreakPolicy(TablePageBreakPolicy.KEEP_ROWS)
+                        .columnWidths(List.of(DocumentLength.percent(29.25), DocumentLength.percent(35.75),
+                                DocumentLength.percent(35))).build())
                 .table("three", TableStyle.builder().layoutMode(TableLayoutMode.FIXED)
                         .columnWidths(List.of(DocumentLength.percent(29.25), DocumentLength.percent(35.75),
                                 DocumentLength.percent(35))).build())
@@ -452,6 +591,51 @@ class PdfFlowFreeTextTest {
             page.setContents(new PDStream(appearance.getCOSObject()));
             document.addPage(page);
             return new PDFTextStripper().getText(document);
+        }
+    }
+
+    /** 仅观察并原样转发日志；不改级别或过滤，结束后恢复原实现。 */
+    private static final class LayoutLogCapture implements XRLogger, AutoCloseable {
+        private final XRLogger delegate;
+        private final List<String> warnings = new ArrayList<>();
+
+        private LayoutLogCapture() {
+            XRLogger current = XRLog.getLoggerImpl();
+            delegate = current == null ? new JDKXRLogger() : current;
+            XRLog.setLoggerImpl(this);
+        }
+
+        @Override
+        public void log(String where, Level level, String message) {
+            record(where, level, message);
+            delegate.log(where, level, message);
+        }
+
+        @Override
+        public void log(String where, Level level, String message, Throwable throwable) {
+            record(where, level, message);
+            delegate.log(where, level, message, throwable);
+        }
+
+        private void record(String where, Level level, String message) {
+            if (XRLog.LAYOUT.equals(where) && level.intValue() >= Level.WARNING.intValue()) {
+                warnings.add(message);
+            }
+        }
+
+        @Override
+        public void setLevel(String logger, Level level) {
+            delegate.setLevel(logger, level);
+        }
+
+        @Override
+        public boolean isLogLevelEnabled(Diagnostic diagnostic) {
+            return delegate.isLogLevelEnabled(diagnostic);
+        }
+
+        @Override
+        public void close() {
+            XRLog.setLoggerImpl(delegate);
         }
     }
 }

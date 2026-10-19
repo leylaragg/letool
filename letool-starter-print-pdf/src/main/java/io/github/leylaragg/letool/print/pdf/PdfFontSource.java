@@ -1,12 +1,9 @@
 package io.github.leylaragg.letool.print.pdf;
 
 import org.apache.fontbox.ttf.TTFParser;
-import org.apache.fontbox.ttf.TTFTable;
-import org.apache.fontbox.ttf.TrueTypeCollection;
 import org.apache.fontbox.ttf.TrueTypeFont;
 import org.apache.pdfbox.io.RandomAccessReadBuffer;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -55,18 +52,7 @@ final class PdfFontSource {
         }
         // TTC 不直接交给下游嵌入；先抽出首面，保留原始字形编号。
         if (raw.length >= 4 && raw[0] == 't' && raw[1] == 't' && raw[2] == 'c' && raw[3] == 'f') {
-            byte[][] first = new byte[1][];
-            try (TrueTypeCollection collection = new TrueTypeCollection(new ByteArrayInputStream(raw))) {
-                collection.processAllFonts(face -> {
-                    if (first[0] == null) {
-                        first[0] = sfnt(face);
-                    }
-                });
-            }
-            if (first[0] == null) {
-                throw new IOException("字体集合为空");
-            }
-            return first[0];
+            return sfnt(raw);
         }
         return raw;
     }
@@ -84,18 +70,48 @@ final class PdfFontSource {
         }
     }
 
-    /** 重建 TTC 字体面的独立表目录；不做字形子集化，避免改变已有 GID。 */
-    private static byte[] sfnt(TrueTypeFont font) throws IOException {
+    /** 直接读取 TTC 首面的原始表目录；不解析未使用的字体面，也不改动字形或变体映射。 */
+    private static byte[] sfnt(byte[] collection) throws IOException {
+        requireRange(collection, 0, 16);
+        ByteBuffer source = ByteBuffer.wrap(collection).order(ByteOrder.BIG_ENDIAN);
+        int version = source.getInt(4);
+        long faceCount = Integer.toUnsignedLong(source.getInt(8));
+        if ((version != 0x00010000 && version != 0x00020000) || faceCount == 0 || faceCount > 1024) {
+            throw new IOException("字体集合头不合法");
+        }
+        long collectionHeaderBytes = 12 + faceCount * Integer.BYTES + (version == 0x00020000 ? 12 : 0);
+        requireRange(collection, 0, collectionHeaderBytes);
+        long firstOffset = Integer.toUnsignedLong(source.getInt(12));
+        if (firstOffset < collectionHeaderBytes) {
+            throw new IOException("字体集合首面偏移不合法");
+        }
+        requireRange(collection, firstOffset, SFNT_HEADER_BYTES);
+        int faceOffset = (int) firstOffset;
+        int sfntVersion = source.getInt(faceOffset);
+        int tableCount = Short.toUnsignedInt(source.getShort(faceOffset + 4));
+        requireRange(collection, firstOffset + SFNT_HEADER_BYTES, (long) tableCount * TABLE_RECORD_BYTES);
+
         // 表记录按标签排序；重建文件后原数字签名失效，因此不复制 DSIG。
         Map<String, byte[]> tables = new TreeMap<>();
-        for (TTFTable table : font.getTables()) {
-            if (!"DSIG".equals(table.getTag())) {
-                tables.put(table.getTag(), font.getTableBytes(table));
+        long tableBytes = 0;
+        for (int index = 0; index < tableCount; index++) {
+            int record = faceOffset + SFNT_HEADER_BYTES + index * TABLE_RECORD_BYTES;
+            String tag = new String(collection, record, 4, StandardCharsets.US_ASCII);
+            if ("DSIG".equals(tag)) {
+                continue;
             }
+            long offset = Integer.toUnsignedLong(source.getInt(record + 8));
+            long length = Integer.toUnsignedLong(source.getInt(record + 12));
+            requireRange(collection, offset, length);
+            tableBytes += (length + TABLE_ALIGNMENT_BYTES - 1) & -TABLE_ALIGNMENT_BYTES;
+            if (tableBytes > MAX_SOURCE_BYTES || tables.containsKey(tag)) {
+                throw new IOException("字体表目录不合法或超过容量限制");
+            }
+            tables.put(tag, Arrays.copyOfRange(collection, (int) offset, (int) (offset + length)));
         }
         byte[] head = tables.get("head");
-        if (head == null) {
-            throw new IOException("字体缺少 head 表");
+        if (head == null || head.length < CHECKSUM_ADJUSTMENT_OFFSET + Integer.BYTES) {
+            throw new IOException("字体缺少有效 head 表");
         }
 
         // 计算字体总校验值前，head 中的修正字段必须清零。
@@ -110,7 +126,7 @@ final class PdfFontSource {
         }
         ByteBuffer result = ByteBuffer.allocate(size).order(ByteOrder.BIG_ENDIAN);
         int search = TABLE_RECORD_BYTES * Integer.highestOneBit(count);
-        result.putInt(0x10000).putShort((short) count).putShort((short) search)
+        result.putInt(sfntVersion).putShort((short) count).putShort((short) search)
             .putShort((short) Integer.numberOfTrailingZeros(search / TABLE_RECORD_BYTES))
             .putShort((short) (TABLE_RECORD_BYTES * count - search));
         int headOffset = 0;
@@ -128,6 +144,13 @@ final class PdfFontSource {
         // 最后写入全文件校验修正值，不改变各表中的字形编号。
         result.putInt(headOffset + CHECKSUM_ADJUSTMENT_OFFSET, (int) (FONT_CHECKSUM - checksum(result.array())));
         return result.array();
+    }
+
+    /** 先校验无符号偏移和长度，再复制真实字节，避免越界时补零掩盖字体损坏。 */
+    private static void requireRange(byte[] data, long offset, long length) throws IOException {
+        if (offset < 0 || length < 0 || offset > data.length || length > data.length - offset) {
+            throw new IOException("字体表数据越界或不完整");
+        }
     }
 
     /** 按大端无符号四字节累加，末尾不足四字节时补零。 */

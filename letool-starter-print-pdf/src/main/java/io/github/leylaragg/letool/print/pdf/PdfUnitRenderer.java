@@ -128,11 +128,19 @@ final class PdfUnitRenderer {
                 }
             }
 
-            // 完成区域和目录定位修正后，再根据实测行盒生成跨页表格片段。
-            try (PdfBoxRenderer measure = builder(adjusted, OutputStream.nullOutputStream(),
-                    initialPageNumber, documentOptions).buildPdfRenderer()) {
-                measure.layout();
-                adjusted = PdfNativeFragmenter.fragment(measure, adjusted);
+            // 每次移页都会改变后续行的可用空间，逐轮使用新坐标，直到所有字段行稳定。
+            // 分段行与已移页行都有标记，同一行不会无限重复校正。
+            while (true) {
+                try (PdfBoxRenderer measure = builder(adjusted, OutputStream.nullOutputStream(),
+                        initialPageNumber, documentOptions).buildPdfRenderer()) {
+                    measure.layout();
+                    requirePageLimit(measure.getRootBox().getLayer().getPages().size(), pageLayout, options);
+                    String corrected = PdfNativeFragmenter.fragment(measure, adjusted);
+                    if (corrected.equals(adjusted)) {
+                        break;
+                    }
+                    adjusted = corrected;
+                }
             }
 
             // 最终布局同时产生导航快照和绘制坐标，所有标记与实际写出的页面保持一致。
@@ -140,10 +148,7 @@ final class PdfUnitRenderer {
             try (PdfBoxRenderer renderer = builder.buildPdfRenderer()) {
                 renderer.layout();
                 pageCount = renderer.getRootBox().getLayer().getPages().size();
-                if (pageCount > options.maxPages()
-                        || pageLayout.maxPages() > 0 && pageCount > pageLayout.maxPages()) {
-                    throw PrintRenderingException.pageLimitExceeded(options.maxPages());
-                }
+                requirePageLimit(pageCount, pageLayout, options);
                 snapshot = snapshotter.snapshot(renderer, ids);
                 marks = PdfNativeMarks.collect(renderer);
                 contentsRules = PdfNativeContents.collect(renderer, blocks, ids, styles);
@@ -174,6 +179,13 @@ final class PdfUnitRenderer {
             file = painted;
         }
         return new PdfUnitResult(file, pageCount, snapshot);
+    }
+
+    /** 每轮测量和最终输出使用同一页数上限，超限时停止继续排版。 */
+    private static void requirePageLimit(int pageCount, PageLayout layout, RenderOptions options) {
+        if (pageCount > options.maxPages() || layout.maxPages() > 0 && pageCount > layout.maxPages()) {
+            throw PrintRenderingException.pageLimitExceeded(options.maxPages());
+        }
     }
 
     /**

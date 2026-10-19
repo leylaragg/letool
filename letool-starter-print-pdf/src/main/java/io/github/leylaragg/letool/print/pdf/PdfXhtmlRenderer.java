@@ -176,7 +176,7 @@ final class PdfXhtmlRenderer {
                 ids, styles, pageValues, centralNavigation);
         output.append("<div id=\"letool-body-region\">");
         for (BlockNode block : blocks) {
-            writeBlock(output, block, ids, styles, pageValues, centralNavigation);
+            writeBlock(output, block, ids, styles, pageValues, centralNavigation, false);
         }
         output.append("</div></body></html>");
     }
@@ -207,6 +207,10 @@ final class PdfXhtmlRenderer {
                 .append("tr { page-break-inside: avoid; }")
                 .append(".page-break { page-break-after: always; }")
                 .append(".lt-page-number:before{content:counter(page);}");
+        // 重复区域的表格整体参与所在行布局；外壳去掉行内基线留白，正文表格仍按页分段。
+        output.append(".lt-repeated-table{line-height:0;}")
+                .append(".lt-repeated-table>table{display:inline-table;vertical-align:top;")
+                .append("line-height:normal;-fs-table-paginate:auto;}");
         if (hasHeader) {
             output.append("@page{@top-center{content:element(lt-page-header);");
             if (layout.headerTopPoints() >= 0)
@@ -242,7 +246,7 @@ final class PdfXhtmlRenderer {
         output.append("<div id=\"").append(id).append("\" class=\"")
                 .append(className).append("\">");
         for (BlockNode block : region.blocks()) {
-            writeBlock(output, block, ids, styles, pageValues, centralNavigation);
+            writeBlock(output, block, ids, styles, pageValues, centralNavigation, true);
         }
         output.append("</div>");
     }
@@ -289,13 +293,14 @@ final class PdfXhtmlRenderer {
             PdfRenderIds ids,
             PdfStyleCatalog styles,
             PageValues pageValues,
-            boolean centralNavigation) {
+            boolean centralNavigation,
+            boolean repeatedRegion) {
         if (block instanceof SectionNode section) {
             output.append("<section");
             writeId(output, section.id());
             output.append('>');
             section.children().forEach(child -> writeBlock(
-                    output, child, ids, styles, pageValues, centralNavigation));
+                    output, child, ids, styles, pageValues, centralNavigation, repeatedRegion));
             output.append("</section>");
         } else if (block instanceof HeadingNode heading) {
             String tag = "h" + heading.level();
@@ -317,11 +322,11 @@ final class PdfXhtmlRenderer {
         } else if (block instanceof io.github.leylaragg.letool.print.document.node.ContentsTitleNode title) {
             writeBlock(output, new ParagraphNode(title.id(), title.styleName(), List.of(new TextNode(title.title(),
                 ""))),
-                ids, styles, pageValues, centralNavigation);
+                ids, styles, pageValues, centralNavigation, repeatedRegion);
         } else if (block instanceof io.github.leylaragg.letool.print.document.node.ContentsEntryNode entry) {
             writeContentsEntry(output, entry, ids, styles, pageValues, centralNavigation);
         } else if (block instanceof TableNode table) {
-            writeTable(output, table, ids, styles, pageValues, centralNavigation);
+            writeTable(output, table, ids, styles, pageValues, centralNavigation, repeatedRegion);
         } else if (block == PageBreakNode.INSTANCE) {
             output.append("<div class=\"page-break\"></div>");
         } else if (block instanceof FreeTextNode freeText) {
@@ -360,14 +365,21 @@ final class PdfXhtmlRenderer {
         output.append('>').append(escapeText(entry.pageNumber())).append("</span></p></div>");
     }
 
-    /** 表头与表体分区保持模型语义，表头可由排版器跨页重复。 */
+    /**
+     * 保留表头与表体分区；已处于页眉、页脚或表头中的内表随重复区域整体移动。
+     * 外壳只消除行内表格的基线留白，内表恢复正常行高，命名文本样式继续生效。
+     */
     private void writeTable(
             StringBuilder output,
             TableNode table,
             PdfRenderIds ids,
             PdfStyleCatalog styles,
             PageValues pageValues,
-            boolean centralNavigation) {
+            boolean centralNavigation,
+            boolean repeatedRegion) {
+        if (repeatedRegion) {
+            output.append("<div class=\"lt-repeated-table\">");
+        }
         output.append("<table");
         writeId(output, table.id());
         writeClass(output, styles.tableClass(table.styleName()));
@@ -376,16 +388,19 @@ final class PdfXhtmlRenderer {
         if (table.headerRowCount() > 0) {
             output.append("<thead>");
             writeRows(output, table.rows().subList(0, table.headerRowCount()), true,
-                    ids, styles, pageValues, centralNavigation);
+                    ids, styles, pageValues, centralNavigation, true);
             output.append("</thead>");
         }
         if (table.headerRowCount() < table.rows().size()) {
             output.append("<tbody>");
             writeRows(output, table.rows().subList(table.headerRowCount(), table.rows().size()), false,
-                    ids, styles, pageValues, centralNavigation);
+                    ids, styles, pageValues, centralNavigation, repeatedRegion);
             output.append("</tbody>");
         }
         output.append("</table>");
+        if (repeatedRegion) {
+            output.append("</div>");
+        }
     }
 
     /** 写入一个连续表格分区中的行。 */
@@ -396,7 +411,8 @@ final class PdfXhtmlRenderer {
             PdfRenderIds ids,
             PdfStyleCatalog styles,
             PageValues pageValues,
-            boolean centralNavigation) {
+            boolean centralNavigation,
+            boolean repeatedRegion) {
         for (TableRow row : rows) {
             output.append("<tr");
             if (row.minimumHeightPoints() > 0 || row.keepWithNext()) {
@@ -408,7 +424,7 @@ final class PdfXhtmlRenderer {
             }
             output.append('>');
             for (TableCell cell : row.cells()) {
-                writeCell(output, cell, header, ids, styles, pageValues, centralNavigation);
+                writeCell(output, cell, header, ids, styles, pageValues, centralNavigation, repeatedRegion);
             }
             output.append("</tr>");
         }
@@ -422,7 +438,8 @@ final class PdfXhtmlRenderer {
             PdfRenderIds ids,
             PdfStyleCatalog styles,
             PageValues pageValues,
-            boolean centralNavigation) {
+            boolean centralNavigation,
+            boolean repeatedRegion) {
         String tag = header ? "th" : "td";
         output.append('<').append(tag);
         writeClass(output, styles.cellClass(cell.styleName()));
@@ -437,7 +454,7 @@ final class PdfXhtmlRenderer {
         }
         output.append('>');
         cell.content().forEach(block -> writeBlock(
-                output, block, ids, styles, pageValues, centralNavigation));
+                output, block, ids, styles, pageValues, centralNavigation, repeatedRegion));
         output.append("</").append(tag).append('>');
     }
 
