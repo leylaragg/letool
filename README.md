@@ -17,7 +17,7 @@
 
 ## 开发构建与版本
 
-每个发布模块在自己的 POM 中声明版本。当前基础模块为 `3.1.1`，六个 `letool-starter-print*` 模块为 `3.1.2-SNAPSHOT`；根 `revision` 只管理构建父 POM。根依赖管理使用 `letool.version` 和 `letool.print.version` 分别选择基础、打印版本，不再绑定 `${project.version}`。
+每个发布模块在自己的 POM 中声明版本。当前基础模块为 `3.1.1`，六个 `letool-starter-print*` 模块为 `3.1.3`；根 `revision` 只管理构建父 POM。根依赖管理使用 `letool.version` 和 `letool.print.version` 分别选择基础、打印版本，不再绑定 `${project.version}`。
 
 升级时同步待发布模块的自身版本及根依赖管理条目；打印六模块保持同一版本，其他模块可独立升级。普通 `install` 保留已解析的父 POM，`release` 生成不依赖父 POM 的消费 POM；打印发布只选择六个打印模块，复用已发布的基础依赖。
 
@@ -27,7 +27,7 @@
 $printModules = 'letool-starter-print,letool-starter-print-pdf,letool-starter-print-template,letool-starter-print-xml,letool-starter-print-expression-spel,letool-starter-print-spring-boot'
 mvn -pl ".,$printModules" install
 # 独立消费者不继承本仓库的父 POM，显式指定刚安装的版本。
-mvn -f verification/print-consumer/pom.xml "-Dletool.print.version=3.1.2-SNAPSHOT" clean test
+mvn -f verification/print-consumer/pom.xml "-Dletool.print.version=3.1.3" clean test
 ```
 
 ## 工程化文档

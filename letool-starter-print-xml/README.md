@@ -338,6 +338,14 @@ inspection 不包含 XML 正文、表达式正文、比较值、业务数据或�
 
 `XmlPrintPipeline` 会在业务绑定前用 inspection 对照目标渲染器能力，因此静态可知的不支持节点或文档特性不会触碰 `PrintContext`。绑定后还会用同一份能力快照检查真实 `DocumentModel`，覆盖自定义标签等动态结果。
 
+## 包结构与兼容边界
+
+- `io.github.leylaragg.letool.print.xml` 保留编译、绑定、集合编译、缓存、检查结果和打印管线的原有公开入口。
+- `internal.engine` 保存源码解析、编译计划、集合引用解析和动态绑定实现。`XmlCompilationEngine` 与 `CompiledTemplatePlan` 只用于原公开入口之间的内部委托；共享的节点、作用域和容量治理器继续保持包级访问。
+- `format`、`expression`、`tag` 和 `extension` 保留现有格式化、表达式、自定义标签与只读数据视图 SPI。
+
+`internal` 是内部实现约定，不是 Java 访问隔离机制。宿主继续依赖原有公开 API，无需导入内部包；内部实现不承诺独立兼容性。编译与绑定仍共用同一份不可变计划，业务校验和容量规则没有另建实现。
+
 ## 安全边界
 
 - 只接受固定 DSL 命名空间和严格 UTF-8。

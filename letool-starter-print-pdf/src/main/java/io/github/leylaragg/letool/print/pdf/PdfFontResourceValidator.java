@@ -1,5 +1,7 @@
 package io.github.leylaragg.letool.print.pdf;
 
+import io.github.leylaragg.letool.print.pdf.internal.font.PdfFontSource;
+
 import io.github.leylaragg.letool.print.exception.PrintResourceException;
 import org.apache.fontbox.ttf.CmapLookup;
 import org.apache.fontbox.ttf.OTFParser;

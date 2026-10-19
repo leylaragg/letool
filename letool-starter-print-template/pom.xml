@@ -11,7 +11,7 @@
     </parent>
 
     <artifactId>letool-starter-print-template</artifactId>
-    <version>3.1.2-SNAPSHOT</version>
+    <version>3.1.3</version>
     <name>letool-starter-print-template</name>
     <description>Letool 动态打印模板集合、版本仓库与发布编排</description>
     <packaging>jar</packaging>

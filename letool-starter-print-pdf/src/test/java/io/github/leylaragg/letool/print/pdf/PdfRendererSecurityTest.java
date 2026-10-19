@@ -1,5 +1,9 @@
 package io.github.leylaragg.letool.print.pdf;
 
+import io.github.leylaragg.letool.print.pdf.internal.annotation.PdfAnnotations;
+import io.github.leylaragg.letool.print.pdf.internal.resource.PdfRenderWorkspace;
+import io.github.leylaragg.letool.print.pdf.testsupport.RenderedPdf;
+
 import io.github.leylaragg.letool.print.api.PrintOutput;
 import io.github.leylaragg.letool.print.api.RenderOptions;
 import io.github.leylaragg.letool.print.document.DocumentMetadata;
@@ -152,7 +156,7 @@ class PdfRendererSecurityTest {
     void shouldRejectTooManyAnnotationsBeforeLayout() {
         List<BlockNode> blocks = new ArrayList<>();
         blocks.add(new ParagraphNode("summary", List.of(new TextNode("正文"))));
-        for (int index = 0; index <= PdfAnnotationWriter.MAX_ANNOTATIONS; index++) {
+        for (int index = 0; index <= PdfAnnotations.MAX_ANNOTATIONS; index++) {
             blocks.add(annotation(
                     AnnotationType.TEXT_NOTE, 6_000, 6_000,
                     0, 0, "secret-annotation-content"));

@@ -113,3 +113,21 @@ PDF 会先写入本次请求独占的受控工作区，重新打开检查结构�
 - 不提供模板侧 HTML、CSS、脚本或任意 URI 扩展入口。
 
 测试目录中的 `DroidSansFallback.ttf` 仅用于验证中文字体嵌入，不会进入模块主产物；其 Apache-2.0 NOTICE 与字体文件一同保留。
+
+
+## 内部包与兼容边界
+
+对外继续使用 `io.github.leylaragg.letool.print.pdf` 下的 `PdfRenderer`、`OpenHtmlPdfRenderer`、`PdfFont`、`PdfFontCatalog`、`PdfFontResourceValidator` 和 `PdfPostProcessor`。这些类型的完整名称和调用方式不随内部包整理变化。
+
+| 内部包 | 职责 |
+| --- | --- |
+| `internal.render` | 文档计划、XHTML与样式、单元渲染和最终组装；由渲染引擎统一编排 |
+| `internal.font` | 读取实际字体面并完成最终字体嵌入 |
+| `internal.layout` | 原生区域测量、完整行移页与分段、位置快照及追加绘制 |
+| `internal.annotation` | 传统批注、流式FreeText测量和完整外观；中间字形数据留在包内 |
+| `internal.navigation` | 逻辑目标ID、目录、书签与最终链接位置 |
+| `internal.resource` | 临时文件、PDFBox缓存、容量限制与单元文件生命周期 |
+
+`internal` 仅表示SDK内部协作边界，不是Java访问控制关键字。部分入口和不可变快照因跨包调用需要声明为public，它们不属于受支持的公共API，宿主不应直接依赖。内部节点和具体算法继续保持包级或private，避免为分包把所有实现类型公开。
+
+公开入口测试保留原包，直接测试内部实现的用例跟随对应包；跨包测试使用同一份`testsupport.RenderedPdf`，不复制渲染辅助实现。

@@ -7,7 +7,7 @@
 ```text
 groupId: io.github.leylaragg
 artifactId: letool-starter-print-spring-boot
-version: 打印模块自身版本，当前开发线为 3.1.2-SNAPSHOT
+version: 打印模块自身版本，当前源码版本为 3.1.3
 ```
 
 > Maven Central 中已经公开的版本不能覆盖、替换或删除。每次正式发布前都要确认版本号没有使用过，并在 Portal 中完成最后一次人工检查。
@@ -38,7 +38,7 @@ flowchart TD
 
 ## 2. 当前打印框架会发布哪些模块
 
-Letool 按模块声明版本，当前基础模块保持 `3.1.1`，六个打印模块使用 `3.1.2-SNAPSHOT`。正式发布时把六个打印模块及根 `letool.print.version` 一起改为尚未公开的正式版本。本次只上传下面 6 个 Maven 组件：
+Letool 按模块声明版本，当前基础模块保持 `3.1.1`，六个打印模块使用 `3.1.3`。当前源码已统一为 `3.1.3`；后续升级时同步六个打印模块及根 `letool.print.version`，发布前确认版本尚未公开。本次只上传下面 6 个 Maven 组件：
 
 ```text
 letool-starter-print
@@ -209,22 +209,22 @@ git status --short --branch
 
 ```xml
 <properties>
-    <revision>3.1.2-SNAPSHOT</revision>
+    <revision>3.1.3</revision>
     <letool.version>3.1.1</letool.version>
-    <letool.print.version>3.1.2-SNAPSHOT</letool.print.version>
+    <letool.print.version>3.1.3</letool.print.version>
 </properties>
 ```
 
-46 个发布模块都有显式项目版本：40 个基础模块为 `3.1.1`，6 个打印模块为 `3.1.2-SNAPSHOT`。子模块的 parent 仍引用 `${revision}`，它只决定构建配置；内部依赖从根 dependencyManagement 读取对应模块版本。
+46 个发布模块都有显式项目版本：40 个基础模块为 `3.1.1`，6 个打印模块为 `3.1.3`。子模块的 parent 仍引用 `${revision}`，它只决定构建配置；内部依赖从根 dependencyManagement 读取对应模块版本。
 
-准备正式打印发布时，修改六个打印 POM 的项目 `<version>` 和根 `letool.print.version`，例如统一改为 `3.1.2`。不要只传 `-Drevision`：这不会替代打印模块的源码版本更新。基础模块和根 `letool.version` 保持 `3.1.1`。如需单独升级 Redis 等模块，则修改该模块自身版本及其依赖管理项，其他组件继续保留原版本。
+当前六个打印 POM 的项目 `<version>` 和根 `letool.print.version` 已统一为 `3.1.3`；后续升级时需要一起修改。不要只传 `-Drevision`：这不会替代打印模块的源码版本更新。基础模块和根 `letool.version` 保持 `3.1.1`。如需单独升级 Redis 等模块，则修改该模块自身版本及其依赖管理项，其他组件继续保留原版本。
 
 发布父 POM/BOM 时单独选择未公开的父版本；仅发布扁平化打印制品时，不要求把构建父 POM 上传 Central。
 
-可以先访问对应 POM 判断版本是否已经公开。下面以待发布的 `3.1.2` 为例：
+可以先访问对应 POM 判断版本是否已经公开。下面以待发布的 `3.1.3` 为例：
 
 ```powershell
-$releaseVersion = '3.1.2'
+$releaseVersion = '3.1.3'
 $pomUrl = "https://repo1.maven.org/maven2/io/github/leylaragg/letool-starter-print-spring-boot/$releaseVersion/letool-starter-print-spring-boot-$releaseVersion.pom"
 curl.exe -I $pomUrl
 ```
@@ -303,7 +303,7 @@ mvn -P release -pl $printModules "-Dgpg.keyname=8A40F93C7A6B1705E8F9C4CCB9D2FD1A
 可以抽查一个签名：
 
 ```powershell
-gpg --verify letool-starter-print-spring-boot\target\letool-starter-print-spring-boot-3.1.2.jar.asc letool-starter-print-spring-boot\target\letool-starter-print-spring-boot-3.1.2.jar
+gpg --verify letool-starter-print-spring-boot\target\letool-starter-print-spring-boot-3.1.3.jar.asc letool-starter-print-spring-boot\target\letool-starter-print-spring-boot-3.1.3.jar
 ```
 
 看到 `Good signature` 才表示签名验证成功。命令中的版本号要换成当次发布版本。
@@ -417,10 +417,10 @@ IDEA Maven 工具窗口中的 Profiles 也可以勾选 `release`，但 Run Confi
 
 ### 10.1 检查 Maven Central 文件
 
-以 `3.1.2` 为例：
+以 `3.1.3` 为例：
 
 ```powershell
-$releaseVersion = '3.1.2'
+$releaseVersion = '3.1.3'
 $pomUrl = "https://repo1.maven.org/maven2/io/github/leylaragg/letool-starter-print-spring-boot/$releaseVersion/letool-starter-print-spring-boot-$releaseVersion.pom"
 curl.exe -I $pomUrl
 ```
@@ -430,7 +430,7 @@ curl.exe -I $pomUrl
 ### 10.2 使用干净的 Maven 解析验证
 
 ```powershell
-mvn -U dependency:get -Dartifact=io.github.leylaragg:letool-starter-print-spring-boot:3.1.2
+mvn -U dependency:get -Dartifact=io.github.leylaragg:letool-starter-print-spring-boot:3.1.3
 ```
 
 若要排除本地仓库缓存影响，可以在临时目录中创建一个最小 Spring Boot 消费项目，再声明：
@@ -439,7 +439,7 @@ mvn -U dependency:get -Dartifact=io.github.leylaragg:letool-starter-print-spring
 <dependency>
     <groupId>io.github.leylaragg</groupId>
     <artifactId>letool-starter-print-spring-boot</artifactId>
-    <version>3.1.2</version>
+    <version>3.1.3</version>
 </dependency>
 ```
 

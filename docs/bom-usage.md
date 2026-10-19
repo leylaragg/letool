@@ -10,7 +10,7 @@ letool currently publishes the root POM artifact as the dependency management en
         <dependency>
             <groupId>io.github.leylaragg</groupId>
             <artifactId>letool</artifactId>
-            <version>3.1.2-SNAPSHOT</version>
+            <version>3.1.3</version>
             <type>pom</type>
             <scope>import</scope>
         </dependency>
@@ -18,7 +18,7 @@ letool currently publishes the root POM artifact as the dependency management en
 </dependencyManagement>
 ```
 
-The example imports the current local development BOM; install the root POM first. For Central consumers, use a BOM version that has actually been published. This BOM selects base modules `3.1.1` and printing modules `3.1.2-SNAPSHOT`; its own version does not force all JARs to share a version.
+The example imports the BOM matching the current source version; install the root POM first. For Central consumers, use a BOM version that has actually been published. This BOM selects base modules `3.1.1` and printing modules `3.1.3`; its own version does not force all JARs to share a version.
 
 After importing the POM, application projects can omit individual letool starter versions:
 

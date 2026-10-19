@@ -1,5 +1,7 @@
 package io.github.leylaragg.letool.print.pdf;
 
+import io.github.leylaragg.letool.print.pdf.testsupport.RenderedPdf;
+
 import io.github.leylaragg.letool.print.api.OutputFormat;
 import io.github.leylaragg.letool.print.api.RenderOptions;
 import io.github.leylaragg.letool.print.document.DocumentMetadata;

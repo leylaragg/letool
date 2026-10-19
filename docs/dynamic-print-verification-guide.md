@@ -106,13 +106,13 @@ mvn -pl ".,$printModules" install -DskipTests
 随后单独构建消费者：
 
 ```powershell
-mvn --% -f verification/print-consumer/pom.xml -Dletool.print.version=3.1.2-SNAPSHOT clean test
-mvn --% -f verification/print-consumer/pom.xml -Dletool.print.version=3.1.2-SNAPSHOT -P spel clean test
+mvn --% -f verification/print-consumer/pom.xml -Dletool.print.version=3.1.3 clean test
+mvn --% -f verification/print-consumer/pom.xml -Dletool.print.version=3.1.3 -P spel clean test
 ```
 
 第一条命令应证明默认 Starter 可以启动、发布并切换模板版本、流式生成 PDF，并在没有 SpEL 模块时明确拒绝 SpEL。第二条命令显式加入 SpEL 依赖和配置开关，再证明相同模板能够输出。两次日志中的 Reactor 都应只有 `print-consumer`。
 
-消费者不内置 Letool 版本号，每次使用 `-Dletool.print.version=版本号` 明确指定已安装或已发布的版本；上面的版本号仅为当前开发示例。
+消费者不内置 Letool 版本号，每次使用 `-Dletool.print.version=版本号` 明确指定已安装或已发布的版本；上面的版本号对应当前源码，运行前需要先安装该版本，或确认仓库中已有对应制品。
 
 ### 4.4 全仓回归
 

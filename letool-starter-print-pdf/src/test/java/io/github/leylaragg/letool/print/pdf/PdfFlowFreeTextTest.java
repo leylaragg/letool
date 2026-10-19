@@ -1,5 +1,7 @@
 package io.github.leylaragg.letool.print.pdf;
 
+import io.github.leylaragg.letool.print.pdf.testsupport.RenderedPdf;
+
 import com.openhtmltopdf.util.Diagnostic;
 import com.openhtmltopdf.util.JDKXRLogger;
 import com.openhtmltopdf.util.XRLog;
