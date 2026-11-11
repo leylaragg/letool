@@ -19,6 +19,11 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
 
 ### Added
 
+- 调用方可通过 `RenderOptions` 指定本次 PDF 的文本批注额度，Spring Boot 可用 `letool.print.max-annotations` 设置默认额度。SDK 默认 1,000，0 表示禁止文本批注，原有构造器沿用默认额度。
+- `letool.print.max-output-size` 与 `max-temporary-size` 支持 `100MB`、`1GB` 等容量单位。显式设置的容量属性优先于对应的 `*-bytes`，原有字节配置继续有效。
+- `letool.print.max-font-cache-size` 和 `max-font-cache-bytes` 控制单次渲染保留的字体字节，默认 64 MiB。0 禁用字体字节缓存，超出缓存预算的字体仍按需读取。
+- `letool.print.pdf-log-level` 在启动时设置 OpenHTMLtoPDF 的日志等级，支持 JUL 命名级别和常用别名。默认沿用宿主策略，显式设置时保留宿主已有的日志处理器、父级转发和格式。
+
 - 新增 `letool-starter-redis`：集中提供 `RedisFacade`、Redisson 锁后端、Redis 幂等存储、
   锁内双检缓存回源、空值短 TTL、TTL 抖动，以及可选的真实 Redis/Testcontainers 集成门禁。
 - `letool-starter-cache` 新增 KV 有界 Pipeline 批量读写、Set 安全前缀失效、
@@ -95,6 +100,10 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
 - Local `JobScheduler` coverage for exact-hour, list, and range Cron expressions.
 
 ### Changed
+
+- 单次 PDF 渲染复用规范化字体字节和排版度量。正文、批注、原生绘制和完整字体嵌入共用字体源缓存，各 PDF 文档分别管理自己的字体对象。缓存容纳字体时，同一 TTC 字体源只需读取并提取一次。
+- 分页校正稳定后，直接使用最后一次布局采集位置并写出 PDF，省掉对相同内容的重复排版。
+- 使用同一份 12 页、48 条 FreeText 批注的样例对照 `3.1.3` 源码基线与 `3.1.4-SNAPSHOT`。在 JDK 21.0.10 下使用相同日志策略，每个版本、每种模式各预热 2 次后测量 5 次。子集嵌入的耗时中位数从 3.763 秒降至 1.119 秒（减少 70.3%），完整字体嵌入从 4.964 秒降至 2.200 秒（减少 55.7%）。字体源打开次数分别从 264 和 267 次降至 3 次，样式解析均从 72 次降至 48 次。两种模式的页数、正文、批注内容和位置一致，全部页面在 72 DPI 下逐像素对照一致。
 
 - **BREAKING** `letool-starter-distributed-lock` 改为后端无关契约模块；默认 Redisson/Redis 实现
   由 `letool-starter-redis` 提供。原 `letool.lock.backend` 与 `letool.lock.pessimistic.*` 配置已移除，
@@ -345,6 +354,9 @@ removed. Mock, stub, fallback, and placeholder limitations belong in
   were removed, while the tool and shared exception modules remain direct dependencies.
 
 ### Fixed
+
+- 排版测量成功或异常退出时，释放排版器及其 `PDDocument`，及时回收中间文档资源。
+- 修复 PDF 批注受固定 1,000 条上限约束的问题。传统批注声明、排版单元和最终合并 PDF 使用同一请求额度。最终按 Text 与 FreeText 的物理对象计数，包含跨页副本和重复页眉、表头，排除导航链接。超限错误报告计数阶段、实际数量和配置额度。
 
 - 修复 VERSIONED 批量读取把尚未创建的区域 Epoch 视为不稳定版本的问题；缺失值现在按
   初始 Epoch 0 参与前后校验，并可安全回填 L1。

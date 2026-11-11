@@ -2,6 +2,8 @@
 
 本指南面向把 Letool 动态打印接入生产环境的应用开发与运维人员。框架负责同步模板发布、版本锁定、编译缓存、PDF 输出和安全观测；模板来源、业务数据、鉴权、持久化和产物交付仍由宿主应用负责。
 
+新增的批注额度、字体缓存预算、容量别名和 PDF 日志配置属于当前 `3.1.4-SNAPSHOT` 开发版，尚未远程发布；已发布的 `3.1.3` 不支持这些新增属性。接入前先取得对应版本的 SDK 制品，六个打印模块使用同一版本。
+
 ## 生产调用链
 
 ```mermaid
@@ -23,7 +25,7 @@ sequenceDiagram
 
 ## 生产配置
 
-下面给出全部 Starter 配置及默认值。页数、字节数、缓存容量和临时目录应根据容量基线、实例内存与并发量重新评估。
+下面给出 Starter 的常用配置；除显式示例 `pdf-log-level: WARNING` 外，其余列示默认值。页数、产物容量、临时空间、批注数量和缓存容量应根据容量基线、实例内存与并发量重新评估。
 
 ```yaml
 letool:
@@ -33,12 +35,16 @@ letool:
     locale: zh-CN
     zone-id: Asia/Shanghai
     max-pages: 2500
-    max-output-bytes: 104857600
-    max-temporary-bytes: 314572800
+    max-output-size: 100MB
+    max-temporary-size: 300MB
+    max-annotations: 1000
+    max-font-cache-size: 64MB
     include-document-metadata: true
     template-set-cache-capacity: 64
     template-cache-capacity: 1024
     temporary-directory: ""
+    # 宿主显式配置示例；SDK 默认未设置。
+    pdf-log-level: WARNING
     startup:
       require-active-template: false
       validate-fonts: false
@@ -51,9 +57,17 @@ letool:
       enabled: false
 ```
 
+`pdf-log-level` 在 SDK 中默认未设置，`null`、空串或空白均保留宿主或上游已有策略。上例显式使用 `WARNING`，在 logger 层过滤 OpenHTMLtoPDF 的 `INFO`、保留 `WARNING` 和 `SEVERE`。启用 Starter 后仅在启动装配时通过 `XRLog.setLevel` 设置已注册 logger，宿主自定义 `PdfRenderer` 同样生效；不替换宿主的 `XRLogger`。首次初始化时会保留宿主已显式配置的 named JUL logger 的 handler 对象、父转发和已有 formatter；没有宿主策略的 logger 沿用 provider 自身安装的输出配置。不调整其他包，也不在渲染请求中切换等级。`letool.print.enabled=false` 时不应用。
+
+支持 JUL 标准名称 `OFF`、`SEVERE`、`WARNING`、`INFO`、`CONFIG`、`FINE`、`FINER`、`FINEST`、`ALL`，以及 `WARN → WARNING`、`ERROR → SEVERE`、`DEBUG → FINE`、`TRACE → FINEST` 别名；忽略大小写和首尾空白。数字或其他非法文本会阻止启动，错误只报告属性名。最终输出仍受宿主现有 JUL handler 阈值约束，配置 `DEBUG` 不会绕过 handler 阈值。
+
 `renderer-profile-version` 是渲染环境的显式版本。字体、样式、渲染器参数或扩展能力发生不兼容变化时提升它，旧编译结果便不会被新环境继续复用。`locale` 和 `zone-id` 是业务门面构造请求时的默认值；模板格式化器仍可在受控选项中覆盖。
 
-`max-output-bytes` 最低为 1 MiB，默认 100 MiB，用于限制单份最终产物。`max-temporary-bytes` 默认 300 MiB，用于限制单次 PDF 请求所有活动临时文件，不能小于最终产物上限且最多为 8 GiB。两项都在实际写入前检查，生产接口仍应限制并发、请求数据规模和响应传输时间。
+`max-output-size` 用于限制单份最终产物，默认等效于 `100MB`，允许 1 MiB 至 2 GiB。`max-temporary-size` 用于限制单次 PDF 请求所有活动临时文件，默认等效于 `300MB`，不能小于最终产物上限且最多为 8 GiB。两项使用 Spring `DataSize` 解析容量单位，`MB` 按 1,024 × 1,024 字节换算；实际写入前仍检查容量。旧属性 `max-output-bytes`、`max-temporary-bytes` 保持有效；对应容量别名显式设置时优先，未设置时沿用字节属性及原默认值。
+
+`max-annotations` 限制单份 PDF 最终生成的 Text 与 FreeText 物理对象总数，默认 1,000。计数包含传统批注、流式文本框，以及页眉、表头和续页复制的每个副本，导航链接不占额度。0 表示禁止文本批注，负值不合法；超限时拒绝产物，并报告计数范围、实际数量和配置额度。传统声明数或单元物理数已经超限时会提前拒绝；单元数量只表示整份文档至少达到该数，最终合并检查才报告整份物理总数。运行时使用创建组件时生成的不可变 `RenderOptions` 快照。生产接口仍应限制并发、请求数据规模和响应传输时间。
+
+`max-font-cache-size` 控制单次 PDF 请求保留的规范化字体二进制总量，默认 `64MB`，允许 0 至 8 GiB；上界沿用 SDK 既有容量能力边界，具体值应结合实例内存和并发量评估。显式配置该别名时优先于 `max-font-cache-bytes`，否则沿用字节属性及默认值。Java API 对应 `RenderOptions.maxFontCacheBytes()`，原有四参数、五参数构造器继续使用默认预算，六参数构造器最后一项可覆盖该值。0 只禁用字体二进制缓存，小型不可变字体度量和名称仍在请求内复用；负值不合法。某个字体放不下剩余预算时仍正常读取和渲染，后续需要时再读取，不会因缓存预算不足拒绝合法字体。该值只限制缓存保留的源字节，不是整个导出的堆内存上限，也不替代产物、临时空间和并发限制。
 
 ## 模板发布与版本切换
 
@@ -72,6 +86,8 @@ letool:
 ## 字体与许可证
 
 中文、自由文本框批注和特定品牌字形应配置 `PdfFont` Bean。同一字体族可按 `FontWeight` 注册多个字体面，供应器每次调用都要打开新的输入流。字体文件应来自宿主掌控的 classpath、制品目录或受控存储，不允许模板提供路径。
+
+正文排版、文本框测量与外观、图例和完整字体嵌入在同次请求内按 `PdfFont` 对象身份复用已保留的规范化字节，每个消费者使用独立流；各个 `PDDocument` 仍独立加载自己的字体对象。同次渲染的字体源内容须保持稳定，禁用二进制缓存或预算不足回退时也遵循此约束。缓存不会跨请求保留，下一次请求会重新读取宿主源；启动字体验证也独立读取，不会预热全局字体字节缓存。完整嵌入仍拒绝同一 PostScript 名称对应不同字节的源冲突。
 
 上线前确认字体许可证允许服务器端嵌入和生成文档。字体变更后提升 `renderer-profile-version`，并用代表性中文、数字、符号和批注样例回归。开启 `startup.validate-fonts` 后，Starter 会用 FontBox 真实解析每个字体；再配置 `startup.font-probe-text` 时，还会逐个 Unicode 码点检查字体回退链覆盖。严格检查失败会阻止启动，但不会回显字体路径或底层解析消息。
 

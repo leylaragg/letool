@@ -34,12 +34,16 @@ letool:
     locale: zh-CN
     zone-id: Asia/Shanghai
     max-pages: 2500
-    max-output-bytes: 104857600
-    max-temporary-bytes: 314572800
+    max-output-size: 100MB
+    max-temporary-size: 300MB
+    max-annotations: 1000
+    max-font-cache-size: 64MB
     include-document-metadata: true
     template-set-cache-capacity: 64
     template-cache-capacity: 1024
     temporary-directory: ""
+    # 宿主显式配置示例；SDK 默认未设置。
+    pdf-log-level: WARNING
     startup:
       require-active-template: false
       validate-fonts: false
@@ -52,7 +56,11 @@ letool:
       enabled: false
 ```
 
-`renderer-profile-version` 参与编译缓存键。字体、样式或渲染配置发生不兼容变化时应提升版本。`max-temporary-bytes` 限制单次 PDF 请求的活动临时文件总量，不能小于 `max-output-bytes`；`temporary-directory` 为空时沿用 PDF 模块的受控临时目录策略。
+`renderer-profile-version` 参与编译缓存键。字体、样式或渲染配置发生不兼容变化时应提升版本。`max-output-size` 和 `max-temporary-size` 支持容量单位，旧的 `max-output-bytes`、`max-temporary-bytes` 继续有效；显式设置的容量别名优先，否则沿用对应字节属性及原默认值。`max-annotations` 默认 1,000，0 表示禁止文本批注。容量边界和物理批注计数规则见[生产运维指南](../docs/dynamic-print-production-guide.md)。`temporary-directory` 为空时沿用 PDF 模块的受控临时目录策略。
+
+`max-font-cache-size` 支持容量单位，显式配置时优先于 `max-font-cache-bytes`，未配置时使用字节属性及默认 64 MiB。0 禁用本次请求的字体二进制缓存；预算不足时仍正常按需读取，不限制整个导出堆内存。字体度量继续在请求内复用，源字节不会跨请求保留。详细边界同见生产运维指南。
+
+`pdf-log-level` 默认未设置，`null` 或空白不覆盖宿主或上游的日志策略。上例显式使用 `WARNING`，在 logger 层过滤 `INFO`、保留 `WARNING/SEVERE`。等级仅在启用 Starter 的启动装配时设置，宿主自定义 `PdfRenderer` 同样生效；沿用现有 `XRLogger`，保留宿主已显式配置的 JUL logger 的 handler、父转发和已有 formatter，没有宿主策略的 logger 沿用 provider 自身初始化配置，不调整其他包。输出仍受宿主 JUL handler 阈值约束，`DEBUG` 也不会绕过 handler。支持的命名级别、别名与非法值规则见[生产运维指南](../docs/dynamic-print-production-guide.md#生产配置)。
 
 引入 SpEL 模块本身不会启用表达式；只有依赖存在且 `letool.print.spel.enabled=true` 时，XML 才接受 `expression-language="spel"`。显式开启但缺少模块会在启动阶段失败，避免不同环境悄悄使用不同模板语义。
 

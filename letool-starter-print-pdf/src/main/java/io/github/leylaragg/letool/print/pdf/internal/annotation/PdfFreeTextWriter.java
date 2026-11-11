@@ -1,8 +1,9 @@
 package io.github.leylaragg.letool.print.pdf.internal.annotation;
 
 import io.github.leylaragg.letool.print.pdf.PdfFont;
-import io.github.leylaragg.letool.print.pdf.internal.font.PdfFontSource;
+import io.github.leylaragg.letool.print.pdf.internal.font.PdfFontResources;
 
+import io.github.leylaragg.letool.print.api.RenderOptions;
 import io.github.leylaragg.letool.print.document.style.BorderLineStyle;
 import io.github.leylaragg.letool.print.document.style.CellBorder;
 import io.github.leylaragg.letool.print.document.style.CellStyle;
@@ -26,7 +27,6 @@ import org.apache.pdfbox.pdmodel.interactive.annotation.PDAppearanceDictionary;
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAppearanceStream;
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDBorderStyleDictionary;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
@@ -43,8 +43,7 @@ import java.util.Map;
  */
 final class PdfFreeTextWriter {
 
-    /** 此标记只存在于内部排版文件，交付前必须被全部替换。 */
-
+    /** 校验原生位置时允许的浮点误差。 */
     private static final float GEOMETRY_TOLERANCE = 0.1F;
     private static final float COLOR_CHANNEL_MAX = 255F;
 
@@ -53,9 +52,48 @@ final class PdfFreeTextWriter {
 
     /** 每个物理标记都创建新对象，不按 ID 或正文去重。 */
     static void write(PDDocument pdf, Map<String, PdfFreeTextLayout.MeasuredBox> boxes) throws IOException {
+        write(pdf, boxes, RenderOptions.defaults());
+    }
+
+    /**
+     * 按指定额度写入流式文本框，并为独立调用创建字体资源。
+     *
+     * @param pdf 含内部文本框占位的单元 PDF
+     * @param boxes 标记键到文本框测量结果的映射
+     * @param options 本次请求的渲染额度
+     * @throws IOException 批注读取或外观写入失败时抛出
+     * @throws PrintValidationException 超出额度或文本框位置无效时抛出
+     */
+    static void write(PDDocument pdf, Map<String, PdfFreeTextLayout.MeasuredBox> boxes,
+            RenderOptions options) throws IOException {
+        write(pdf, boxes, options, new PdfFontResources(options.maxFontCacheBytes()));
+    }
+
+    /**
+     * 校验当前单元额度后，将每个物理占位替换为 FreeText 批注。
+     *
+     * @param pdf 含内部文本框占位的单元 PDF
+     * @param boxes 标记键到文本框测量结果的映射
+     * @param options 本次请求的渲染额度
+     * @param resources 本次渲染共用的字体资源
+     * @throws IOException 批注读取或外观写入失败时抛出
+     * @throws PrintValidationException 超出额度、缺少测量快照或位置无效时抛出
+     */
+    static void write(PDDocument pdf, Map<String, PdfFreeTextLayout.MeasuredBox> boxes,
+            RenderOptions options, PdfFontResources resources) throws IOException {
+        // 先计入每个跨页副本，额度不足时在替换任一占位前停止。
+        long count = 0;
+        for (PDPage page : pdf.getPages()) {
+            for (PDAnnotation annotation : page.getAnnotations()) {
+                if (markerKey(annotation) != null) {
+                    count++;
+                }
+            }
+        }
+        PdfAnnotations.requireAnnotationBudget(pdf, count, options, PdfAnnotations.UNIT_ANNOTATION_SCOPE);
+
         Map<PdfFont, PDFont> fonts = new IdentityHashMap<>();
         Set<String> rendered = new HashSet<>();
-        int count = 0;
         for (PDPage page : pdf.getPages()) {
             List<PDAnnotation> annotations = new ArrayList<>();
             for (PDAnnotation annotation : page.getAnnotations()) {
@@ -68,13 +106,9 @@ final class PdfFreeTextWriter {
                 if (box == null) {
                     throw PrintValidationException.invalidDocument("流式文本框绘制位置缺少测量快照");
                 }
-                if (++count > PdfAnnotations.MAX_ANNOTATIONS) {
-                    throw PrintValidationException.invalidDocument("PDF 批注数量超过 "
-                            + PdfAnnotations.MAX_ANNOTATIONS);
-                }
                 rendered.add(key);
                 requireCompleteRectangle(page, annotation.getRectangle(), box);
-                annotations.add(create(pdf, annotation.getRectangle(), box, fonts));
+                annotations.add(create(pdf, annotation.getRectangle(), box, fonts, resources));
             }
             page.setAnnotations(annotations);
         }
@@ -107,10 +141,20 @@ final class PdfFreeTextWriter {
         }
     }
 
-    /** 使用测量时的同一行、字体和基线创建可打印且可编辑的外观。 */
+    /**
+     * 沿用测量时的字形片段和基线创建可打印、可编辑的文本批注。
+     *
+     * @param pdf 批注外观所属的文档
+     * @param rectangle 占位的实际页面矩形
+     * @param box 文本框的测量结果
+     * @param fonts 当前文档已加载的外观字体
+     * @param resources 本次渲染共用的字体资源
+     * @return 待加入当前页面的 FreeText 批注
+     * @throws IOException 外观字体加载或绘制失败时抛出
+     */
     private static PDAnnotationFreeText create(PDDocument pdf, PDRectangle rectangle,
-            PdfFreeTextLayout.MeasuredBox box, Map<PdfFont, PDFont> fonts) throws IOException {
-        PDFont font = font(pdf, box.font(), fonts);
+            PdfFreeTextLayout.MeasuredBox box, Map<PdfFont, PDFont> fonts, PdfFontResources resources) throws IOException {
+        PDFont font = font(pdf, box.font(), fonts, resources);
         PDAnnotationFreeText annotation = new PDAnnotationFreeText();
         annotation.setRectangle(rectangle);
         annotation.setContents(box.content());
@@ -126,9 +170,9 @@ final class PdfFreeTextWriter {
         annotation.setBorderStyle(border);
         PDAppearanceStream appearance = new PDAppearanceStream(pdf);
         appearance.setBBox(new PDRectangle(box.width(), box.height()));
-        PDResources resources = new PDResources();
-        COSName fontName = resources.add(font);
-        appearance.setResources(resources);
+        PDResources appearanceResources = new PDResources();
+        COSName fontName = appearanceResources.add(font);
+        appearance.setResources(appearanceResources);
         DocumentColor textColor = box.textStyle().color();
         float size = (float) box.textStyle().fontSize().value();
         annotation.setDefaultAppearance("/" + fontName.getName() + " " + size + " Tf "
@@ -151,7 +195,7 @@ final class PdfFreeTextWriter {
                     stream.newLine();
                 }
                 for (PdfFreeTextLayout.TextRun run : box.lines().get(index).runs()) {
-                    stream.setFont(font(pdf, run.font(), fonts), size);
+                    stream.setFont(font(pdf, run.font(), fonts, resources), size);
                     stream.showText(run.text());
                 }
             }
@@ -163,11 +207,21 @@ final class PdfFreeTextWriter {
         return annotation;
     }
 
-    /** 外观字体仅在当前 PDF 内共享，所有片段都来自原生测量所选的真实字体源。 */
-    private static PDFont font(PDDocument pdf, PdfFont source, Map<PdfFont, PDFont> fonts) throws IOException {
+    /**
+     * 取得当前文档的外观字体，首次加载时读取请求内的同一字体源。
+     *
+     * @param pdf 外观字体所属的文档
+     * @param source 测量选中的宿主字体源
+     * @param fonts 当前文档已加载的字体对象
+     * @param resources 本次渲染共用的字体资源
+     * @return 可写入当前 PDF 外观的字体对象
+     * @throws IOException 字体读取或加载失败时抛出
+     */
+    private static PDFont font(PDDocument pdf, PdfFont source,
+            Map<PdfFont, PDFont> fonts, PdfFontResources resources) throws IOException {
         PDFont font = fonts.get(source);
         if (font == null) {
-            font = PDType0Font.load(pdf, new ByteArrayInputStream(PdfFontSource.read(source)), true);
+            font = PDType0Font.load(pdf, resources.openStream(source), true);
             fonts.put(source, font);
         }
         return font;

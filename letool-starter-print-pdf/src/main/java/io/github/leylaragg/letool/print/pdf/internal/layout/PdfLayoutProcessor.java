@@ -6,6 +6,8 @@ import io.github.leylaragg.letool.print.document.PageLayout;
 import io.github.leylaragg.letool.print.document.node.BodyCaptionNode;
 import io.github.leylaragg.letool.print.document.style.StyleSheet;
 import io.github.leylaragg.letool.print.pdf.PdfFontCatalog;
+import io.github.leylaragg.letool.print.api.RenderOptions;
+import io.github.leylaragg.letool.print.pdf.internal.font.PdfFontResources;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.w3c.dom.Document;
 
@@ -58,10 +60,41 @@ public final class PdfLayoutProcessor {
         return new Drawing(PdfNativeMarks.collect(renderer));
     }
 
-    /** 在已生成页面上追加实测下划线和正文图例。 */
+    /**
+     * 使用默认字体预算追加实测下划线和正文图例。
+     *
+     * @param pdf 已排版的单元 PDF
+     * @param drawing 稳定布局采集的绘制位置
+     * @param captions 待追加的正文图例
+     * @param styles 用于绘制图例的命名样式
+     * @param options 文档默认字体设置
+     * @param layout 当前页面版式
+     * @param fonts 宿主字体目录
+     * @throws IOException 图例度量、字体加载或绘制失败时抛出
+     */
     public static void writeDrawing(PDDocument pdf, Drawing drawing, List<BodyCaptionNode> captions,
             StyleSheet styles, DocumentOptions options, PageLayout layout, PdfFontCatalog fonts) throws IOException {
-        PdfNativeDrawing.write(pdf, drawing.marks, captions, styles, options, layout, fonts);
+        writeDrawing(pdf, drawing, captions, styles, options, layout, fonts,
+                new PdfFontResources(RenderOptions.DEFAULT_MAX_FONT_CACHE_BYTES));
+    }
+
+    /**
+     * 追加实测下划线与正文图例，图例复用同一次渲染的字体源。
+     *
+     * @param pdf 已排版的单元 PDF
+     * @param drawing 稳定布局采集的绘制位置
+     * @param captions 待追加的正文图例
+     * @param styles 用于绘制图例的命名样式
+     * @param options 文档默认字体设置
+     * @param layout 当前页面版式
+     * @param fonts 宿主字体目录
+     * @param resources 本次渲染共用的字体资源
+     * @throws IOException 图例度量、字体加载或绘制失败时抛出
+     */
+    public static void writeDrawing(PDDocument pdf, Drawing drawing, List<BodyCaptionNode> captions,
+            StyleSheet styles, DocumentOptions options, PageLayout layout,
+            PdfFontCatalog fonts, PdfFontResources resources) throws IOException {
+        PdfNativeDrawing.write(pdf, drawing.marks, captions, styles, options, layout, fonts, resources);
     }
 
     /** 不透明的追加绘制输入，只允许检查是否存在下划线及交回本入口消费。 */

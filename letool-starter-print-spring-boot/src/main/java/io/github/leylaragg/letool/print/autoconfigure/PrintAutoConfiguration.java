@@ -35,6 +35,7 @@ import io.github.leylaragg.letool.print.xml.format.PrintFormatterRegistry;
 import io.github.leylaragg.letool.print.xml.format.PrintValueFormatter;
 import io.github.leylaragg.letool.print.xml.tag.PrintTagHandler;
 import io.github.leylaragg.letool.print.xml.tag.PrintTagRegistry;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -212,6 +213,17 @@ public class PrintAutoConfiguration {
     @ConditionalOnMissingBean(XmlTemplateBinder.class)
     public XmlTemplateBinder xmlTemplateBinder() {
         return new XmlTemplateBinder();
+    }
+
+    /**
+     * 注册 PDF 日志初始化器，宿主自定义渲染器时同样应用日志配置。
+     *
+     * @param properties 启动时的 PDF 日志配置
+     * @return 由 Spring 在 Bean 初始化时调用的日志初始化器
+     */
+    @Bean
+    public InitializingBean printPdfLoggingInitializer(PrintProperties properties) {
+        return new PrintPdfLoggingInitializer(properties);
     }
 
     /**

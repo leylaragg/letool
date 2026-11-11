@@ -1,6 +1,7 @@
 package io.github.leylaragg.letool.print.pdf.internal.render;
 
 import io.github.leylaragg.letool.print.pdf.PdfFontCatalog;
+import io.github.leylaragg.letool.print.pdf.internal.font.PdfFontResources;
 import io.github.leylaragg.letool.print.pdf.internal.layout.PdfLayoutSnapshot;
 import io.github.leylaragg.letool.print.pdf.PdfPostProcessor;
 import io.github.leylaragg.letool.print.pdf.internal.navigation.PdfRenderIds;
@@ -137,7 +138,9 @@ public final class PdfRenderEngine implements PdfRenderer {
                 temporaryRoot, options.maxTemporaryBytes())) {
             // 样式错误在打开排版器前暴露，避免部分序列已经生成后才失败。
             PdfStyleCatalog.compile(plan.styleSheet(), fontCatalog, document.options());
-            return renderPlanned(plan, options, workspace, output);
+            // 字体源和度量由本次请求独占，供所有分页轮次和最终组装复用。
+            PdfFontResources fonts = new PdfFontResources(options.maxFontCacheBytes());
+            return renderPlanned(plan, options, workspace, output, fonts);
         } catch (BaseException exception) {
             throw exception;
         } catch (IOException | RuntimeException exception) {
@@ -149,12 +152,23 @@ public final class PdfRenderEngine implements PdfRenderer {
         }
     }
 
-    /** 分页输入稳定后才允许文档级语义进入最终 PDF。 */
+    /**
+     * 根据实测页数和目标位置校正分页，使用稳定轮次组装最终 PDF。
+     *
+     * @param document 已完成结构校验的文档计划
+     * @param options 本次请求的渲染额度
+     * @param workspace 管理各轮 PDF 文件的临时工作区
+     * @param output 调用方提供的受控输出
+     * @param fonts 跨分页轮次及组装阶段共用的字体资源
+     * @return 通过结构检查的 PDF 渲染结果
+     * @throws IOException 排版文件读写或最终组装失败时抛出
+     */
     private PrintResult renderPlanned(
             PdfDocumentPlan document,
             RenderOptions options,
             PdfRenderWorkspace workspace,
-            PrintOutput output) throws IOException {
+            PrintOutput output,
+            PdfFontResources fonts) throws IOException {
         PdfTableOfContentsComposer contentsComposer = new PdfTableOfContentsComposer();
         List<PdfTocEntry> entries = hasTableOfContents(document)
                 ? contentsComposer.collect(document.document(), document.renderIds()) : List.of();
@@ -165,11 +179,11 @@ public final class PdfRenderEngine implements PdfRenderer {
         while (true) {
             discard(previousResults, workspace);
             RenderPass pass = renderPass(
-                    document, pagination, entries, contentsComposer, options, workspace);
+                    document, pagination, entries, contentsComposer, options, workspace, fonts);
             PdfPaginationPlan measured = paginationPlanner.advance(
                     document, pagination, pass.physicalPages(), pass.targetPages());
             if (measured.stable()) {
-                return new PdfDocumentAssembler(fontCatalog, postProcessor).assemble(
+                return new PdfDocumentAssembler(fontCatalog, postProcessor, fonts).assemble(
                         document, pass.results(), pass.sourceTargets(),
                         options, workspace, output);
             }
@@ -178,15 +192,28 @@ public final class PdfRenderEngine implements PdfRenderer {
         }
     }
 
-    /** 一轮中每个页面序列只打开一个排版器，页面版式不会相互污染。 */
+    /**
+     * 按本轮分页输入逐个排版页面序列，汇总页数与导航目标的位置。
+     *
+     * @param document 完整文档计划
+     * @param pagination 本轮使用的页数和目标页码
+     * @param entries 已收集的目录条目
+     * @param contentsComposer 按本轮目标页码生成目录内容
+     * @param options 本次请求的渲染额度
+     * @param workspace 当前请求工作区
+     * @param fonts 各序列及各测量阶段共用的字体资源
+     * @return 本轮的序列文件、实际页数和全局导航位置
+     * @throws IOException 某个页面序列渲染或写入工作区失败时抛出
+     */
     private RenderPass renderPass(
             PdfDocumentPlan document,
             PdfPaginationPlan pagination,
             List<PdfTocEntry> entries,
             PdfTableOfContentsComposer contentsComposer,
             RenderOptions options,
-            PdfRenderWorkspace workspace) throws IOException {
-        PdfUnitRenderer unitRenderer = new PdfUnitRenderer(fontCatalog);
+            PdfRenderWorkspace workspace,
+            PdfFontResources fonts) throws IOException {
+        PdfUnitRenderer unitRenderer = new PdfUnitRenderer(fontCatalog, fonts);
         List<PdfUnitResult> results = new ArrayList<>(document.sequences().size());
         Map<String, String> sourceTargets = new LinkedHashMap<>();
         int physicalPages = 0;

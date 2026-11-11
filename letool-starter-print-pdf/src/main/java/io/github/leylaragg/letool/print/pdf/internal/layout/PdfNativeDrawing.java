@@ -2,7 +2,7 @@ package io.github.leylaragg.letool.print.pdf.internal.layout;
 
 import io.github.leylaragg.letool.print.pdf.PdfFont;
 import io.github.leylaragg.letool.print.pdf.PdfFontCatalog;
-import io.github.leylaragg.letool.print.pdf.internal.font.PdfFontSource;
+import io.github.leylaragg.letool.print.pdf.internal.font.PdfFontResources;
 
 import io.github.leylaragg.letool.print.document.DocumentOptions;
 import io.github.leylaragg.letool.print.document.PageLayout;
@@ -15,7 +15,6 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.font.PDType0Font;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -52,11 +51,13 @@ final class PdfNativeDrawing {
      * @param options 文档字体默认值
      * @param layout 页面物理尺寸与边距
      * @param catalog 宿主字体目录
+     * @param resources 当前请求的字体源与预算
      * @throws IOException 图例不是单行文本、缺少字体、位置越界或 PDF 写入失败
      */
     static void write(PDDocument pdf, PdfNativeMarks.Marks marks, List<BodyCaptionNode> captions,
-        StyleSheet styles, DocumentOptions options, PageLayout layout, PdfFontCatalog catalog) throws IOException {
-        // 字体缓存只在本次 PDF 内共享，避免把文档所属字体对象带入其他渲染。
+        StyleSheet styles, DocumentOptions options, PageLayout layout,
+        PdfFontCatalog catalog, PdfFontResources resources) throws IOException {
+        // 当前 PDF 复用自己的字体对象。源字节由本次渲染的共享资源提供。
         Map<String, PDType0Font> fonts = new LinkedHashMap<>();
         for (int page = 0; page < pdf.getNumberOfPages(); page++) {
             try (PDPageContentStream content = new PDPageContentStream(pdf, pdf.getPage(page),
@@ -91,8 +92,7 @@ final class PdfNativeDrawing {
                             String key = source.familyName() + ":" + source.weight() + ":" + source.posture();
                             PDType0Font font = fonts.get(key);
                             if (font == null) {
-                                font = PDType0Font.load(
-                                    pdf, new ByteArrayInputStream(PdfFontSource.read(source)), true);
+                                font = PDType0Font.load(pdf, resources.openStream(source), true);
                                 fonts.put(key, font);
                             }
 

@@ -4,6 +4,7 @@ import io.github.leylaragg.letool.print.api.RenderOptions;
 import io.github.leylaragg.letool.print.service.PrintRuntimeSettings;
 import io.github.leylaragg.letool.print.xml.XmlTemplateCompilationCache;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.util.unit.DataSize;
 
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
@@ -13,6 +14,7 @@ import java.time.ZoneId;
 import java.util.IllformedLocaleException;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.logging.Level;
 
 /**
  * 动态打印 Starter 的 Spring Boot 外部化配置。
@@ -42,8 +44,23 @@ public class PrintProperties {
     /** 单份产物允许的最大字节数。 */
     private long maxOutputBytes = RenderOptions.DEFAULT_MAX_OUTPUT_BYTES;
 
+    /** 显式配置时优先于 maxOutputBytes，支持 100MB 等容量单位。 */
+    private DataSize maxOutputSize;
+
     /** 单次 PDF 渲染允许占用的最大临时空间。 */
     private long maxTemporaryBytes = RenderOptions.DEFAULT_MAX_TEMPORARY_BYTES;
+
+    /** 显式配置时优先于 maxTemporaryBytes，支持 300MB 等容量单位。 */
+    private DataSize maxTemporarySize;
+
+    /** 最终 PDF 文本批注数量上限，0 表示禁止文本批注。 */
+    private int maxAnnotations = RenderOptions.DEFAULT_MAX_ANNOTATIONS;
+
+    /** 单次 PDF 请求保留的字体字节预算，0 禁用二进制缓存。 */
+    private long maxFontCacheBytes = RenderOptions.DEFAULT_MAX_FONT_CACHE_BYTES;
+
+    /** 显式配置时优先于 maxFontCacheBytes，支持 64MB 等容量单位。 */
+    private DataSize maxFontCacheSize;
 
     /** 是否把安全文档元数据写入产物。 */
     private boolean includeDocumentMetadata = true;
@@ -56,6 +73,9 @@ public class PrintProperties {
 
     /** PDF 渲染使用的可信临时根目录，空值沿用模块默认目录。 */
     private String temporaryDirectory = "";
+
+    /** OpenHTMLToPDF 日志等级，未配置时保留宿主现有策略。 */
+    private String pdfLogLevel;
 
     /** 启动阶段按需执行的严格检查。 */
     private Startup startup = new Startup();
@@ -129,6 +149,16 @@ public class PrintProperties {
         this.maxOutputBytes = maxOutputBytes;
     }
 
+    /** @return 显式产物容量别名，未配置时为 null */
+    public DataSize getMaxOutputSize() {
+        return maxOutputSize;
+    }
+
+    /** @param maxOutputSize 优先于旧字节属性的产物容量 */
+    public void setMaxOutputSize(DataSize maxOutputSize) {
+        this.maxOutputSize = maxOutputSize;
+    }
+
     /** @return 单次渲染最大临时空间字节数 */
     public long getMaxTemporaryBytes() {
         return maxTemporaryBytes;
@@ -137,6 +167,46 @@ public class PrintProperties {
     /** @param maxTemporaryBytes 单次 PDF 请求的活动临时文件总上限 */
     public void setMaxTemporaryBytes(long maxTemporaryBytes) {
         this.maxTemporaryBytes = maxTemporaryBytes;
+    }
+
+    /** @return 显式临时空间容量别名，未配置时为 null */
+    public DataSize getMaxTemporarySize() {
+        return maxTemporarySize;
+    }
+
+    /** @param maxTemporarySize 优先于旧字节属性的临时空间容量 */
+    public void setMaxTemporarySize(DataSize maxTemporarySize) {
+        this.maxTemporarySize = maxTemporarySize;
+    }
+
+    /** @return 最终 PDF 文本批注数量上限 */
+    public int getMaxAnnotations() {
+        return maxAnnotations;
+    }
+
+    /** @param maxAnnotations 文本批注数量上限，0 表示禁止 */
+    public void setMaxAnnotations(int maxAnnotations) {
+        this.maxAnnotations = maxAnnotations;
+    }
+
+    /** @return 单次 PDF 请求保留的字体字节预算 */
+    public long getMaxFontCacheBytes() {
+        return maxFontCacheBytes;
+    }
+
+    /** @param maxFontCacheBytes 字体二进制缓存预算，0 禁用缓存 */
+    public void setMaxFontCacheBytes(long maxFontCacheBytes) {
+        this.maxFontCacheBytes = maxFontCacheBytes;
+    }
+
+    /** @return 显式字体缓存容量别名，未配置时为 null */
+    public DataSize getMaxFontCacheSize() {
+        return maxFontCacheSize;
+    }
+
+    /** @param maxFontCacheSize 优先于字节属性的字体二进制缓存预算 */
+    public void setMaxFontCacheSize(DataSize maxFontCacheSize) {
+        this.maxFontCacheSize = maxFontCacheSize;
     }
 
     /** @return 是否输出文档元数据 */
@@ -177,6 +247,16 @@ public class PrintProperties {
     /** @param temporaryDirectory 可信 PDF 临时根目录 */
     public void setTemporaryDirectory(String temporaryDirectory) {
         this.temporaryDirectory = temporaryDirectory;
+    }
+
+    /** @return PDF 日志命名级别，未配置时为 null */
+    public String getPdfLogLevel() {
+        return pdfLogLevel;
+    }
+
+    /** @param pdfLogLevel PDF 日志命名级别，null 或空白表示保留宿主策略 */
+    public void setPdfLogLevel(String pdfLogLevel) {
+        this.pdfLogLevel = pdfLogLevel;
     }
 
     /** @return 可继续绑定的严格启动配置 */
@@ -248,7 +328,7 @@ public class PrintProperties {
     }
 
     /**
-     * 将业务请求配置转换为不可变运行时快照。
+     * 将宿主配置转换为不可变运行时快照，供默认打印门面构造渲染请求。
      *
      * @return 可安全复用的区域、时区和渲染限制
      * @throws IllegalArgumentException 任一配置超出边界时抛出
@@ -259,11 +339,17 @@ public class PrintProperties {
         ZoneId resolvedZone = zoneId();
         RenderOptions options;
         try {
-            options = new RenderOptions(
-                    maxPages, maxOutputBytes, maxTemporaryBytes, includeDocumentMetadata);
+            // 显式容量属性优先。未设置容量属性时沿用对应的字节配置及其默认值。
+            long outputBytes = maxOutputSize == null ? maxOutputBytes : maxOutputSize.toBytes();
+            long temporaryBytes = maxTemporarySize == null ? maxTemporaryBytes : maxTemporarySize.toBytes();
+            long fontCacheBytes = maxFontCacheSize == null ? maxFontCacheBytes : maxFontCacheSize.toBytes();
+            options = new RenderOptions(maxPages, outputBytes, temporaryBytes,
+                    includeDocumentMetadata, maxAnnotations, fontCacheBytes);
         } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException(
-                    "letool.print.max-pages、max-output-bytes 或 max-temporary-bytes 配置不合法",
+                    "letool.print.max-pages、max-output-bytes/max-output-size、"
+                            + "max-temporary-bytes/max-temporary-size、max-annotations 或 "
+                            + "max-font-cache-bytes/max-font-cache-size 配置不合法",
                     exception);
         }
         return new PrintRuntimeSettings(
@@ -271,9 +357,9 @@ public class PrintProperties {
     }
 
     /**
-     * 校验创建缓存和 PDF 渲染器所需的基础配置。
+     * 校验创建缓存、PDF 渲染器和日志初始化器所需的基础配置。
      *
-     * @throws IllegalArgumentException 版本、缓存容量或目录配置不合法时抛出
+     * @throws IllegalArgumentException 版本、缓存容量、目录或日志等级配置不合法时抛出
      */
     public void validateInfrastructureSettings() {
         if (rendererProfileVersion <= 0) {
@@ -286,6 +372,33 @@ public class PrintProperties {
             throw invalid("template-cache-capacity");
         }
         temporaryRoot();
+        pdfLogLevel();
+    }
+
+    /**
+     * 解析 JUL 标准命名级别和 WARN、ERROR、DEBUG、TRACE 别名。
+     *
+     * @return 显式配置的日志等级，未配置或只含空白时返回 {@code Optional.empty()}
+     * @throws IllegalArgumentException 非空配置不是支持的命名等级时抛出
+     */
+    public Optional<Level> pdfLogLevel() {
+        if (pdfLogLevel == null || pdfLogLevel.isBlank()) {
+            return Optional.empty();
+        }
+        // 只接受明确的命名级别，避免数字或第三方扩展等级改变过滤含义。
+        Level level = switch (pdfLogLevel.strip().toUpperCase(Locale.ROOT)) {
+            case "OFF" -> Level.OFF;
+            case "SEVERE", "ERROR" -> Level.SEVERE;
+            case "WARNING", "WARN" -> Level.WARNING;
+            case "INFO" -> Level.INFO;
+            case "CONFIG" -> Level.CONFIG;
+            case "FINE", "DEBUG" -> Level.FINE;
+            case "FINER" -> Level.FINER;
+            case "FINEST", "TRACE" -> Level.FINEST;
+            case "ALL" -> Level.ALL;
+            default -> throw invalid("pdf-log-level");
+        };
+        return Optional.of(level);
     }
 
     /**

@@ -37,10 +37,37 @@
       "description": "单份打印产物允许的最大字节数。"
     },
     {
+      "name": "letool.print.max-output-size",
+      "type": "org.springframework.util.unit.DataSize",
+      "description": "单份打印产物容量，支持 100MB 等单位；显式配置时优先于 max-output-bytes，未配置时沿用旧字节属性。"
+    },
+    {
       "name": "letool.print.max-temporary-bytes",
       "type": "java.lang.Long",
       "defaultValue": 314572800,
       "description": "单次 PDF 请求活动临时文件的总字节上限，不得小于最终产物上限。"
+    },
+    {
+      "name": "letool.print.max-temporary-size",
+      "type": "org.springframework.util.unit.DataSize",
+      "description": "单次 PDF 请求的活动临时空间容量，支持 300MB 等单位；显式配置时优先于 max-temporary-bytes，未配置时沿用旧字节属性。"
+    },
+    {
+      "name": "letool.print.max-annotations",
+      "type": "java.lang.Integer",
+      "defaultValue": 1000,
+      "description": "最终 PDF 的 Text 与 FreeText 物理批注总数上限，包含跨页副本，不包含导航链接；0 表示禁止文本批注，负值不合法。"
+    },
+    {
+      "name": "letool.print.max-font-cache-bytes",
+      "type": "java.lang.Long",
+      "defaultValue": 67108864,
+      "description": "单次 PDF 请求保留的字体二进制缓存预算，范围为 0 至 8 GiB；0 禁用二进制缓存，预算不足时正常按需读取，不是整个导出堆内存上限。"
+    },
+    {
+      "name": "letool.print.max-font-cache-size",
+      "type": "org.springframework.util.unit.DataSize",
+      "description": "字体二进制缓存预算，支持 64MB 等单位；显式配置时优先于 max-font-cache-bytes，未配置时沿用字节属性，0 禁用二进制缓存。"
     },
     {
       "name": "letool.print.include-document-metadata",
@@ -65,6 +92,11 @@
       "type": "java.lang.String",
       "defaultValue": "",
       "description": "可信 PDF 临时根目录；空值使用 PDF 模块默认目录。"
+    },
+    {
+      "name": "letool.print.pdf-log-level",
+      "type": "java.lang.String",
+      "description": "OpenHTMLToPDF 日志等级；未设置或空白时保留宿主策略。支持 OFF、SEVERE、WARNING、INFO、CONFIG、FINE、FINER、FINEST、ALL，以及 WARN、ERROR、DEBUG、TRACE 别名，忽略大小写和首尾空白，不接受数字。启动时只设置已注册 logger，输出仍受宿主 handler 阈值约束。"
     },
     {
       "name": "letool.print.startup.require-active-template",

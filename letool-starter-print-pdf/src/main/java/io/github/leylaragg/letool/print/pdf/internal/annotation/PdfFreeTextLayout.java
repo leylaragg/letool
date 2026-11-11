@@ -2,7 +2,7 @@ package io.github.leylaragg.letool.print.pdf.internal.annotation;
 
 import io.github.leylaragg.letool.print.pdf.PdfFont;
 import io.github.leylaragg.letool.print.pdf.PdfFontCatalog;
-import io.github.leylaragg.letool.print.pdf.internal.font.PdfFontSource;
+import io.github.leylaragg.letool.print.pdf.internal.font.PdfFontResources;
 import io.github.leylaragg.letool.print.pdf.internal.layout.PdfLayoutProcessor;
 
 import com.openhtmltopdf.bidi.SimpleBidiReorderer;
@@ -71,14 +71,25 @@ final class PdfFreeTextLayout {
     record Prepared(String xhtml, Map<String, MeasuredBox> boxes) {
     }
 
-    /** 在每个实际父容器内测量文字；运行页眉和页脚需要显式纳入布局树。 */
+    /**
+     * 在实际父容器内测量文本框，包含运行页眉和页脚中的文本框。
+     *
+     * @param renderer 已完成测量布局的排版器
+     * @param original 测量前的 XHTML
+     * @param styles 文档命名样式
+     * @param options 文档默认字体与缺字回退配置
+     * @param catalog 宿主字体目录
+     * @param resources 本次渲染共用的字体资源
+     * @return 修正后的 XHTML 和用于写入外观的文字测量快照
+     * @throws IOException 字体读取或名称解析失败时抛出
+     */
     static Prepared prepare(PdfBoxRenderer renderer, String original, StyleSheet styles,
-            DocumentOptions options, PdfFontCatalog catalog) throws IOException {
+            DocumentOptions options, PdfFontCatalog catalog, PdfFontResources resources) throws IOException {
         Map<Element, Box> boxes = new IdentityHashMap<>();
         collect(renderer.getRootBox(), boxes);
         collect(renderer.getSharedContext().getBoxById(PdfLayoutProcessor.HEADER_REGION_ID), boxes);
         collect(renderer.getSharedContext().getBoxById(PdfLayoutProcessor.FOOTER_REGION_ID), boxes);
-        Map<String, PdfFont> sources = fontSources(catalog);
+        Map<String, PdfFont> sources = fontSources(catalog, resources);
         Map<String, MeasuredBox> measured = new LinkedHashMap<>();
         LayoutContext context = renderer.getSharedContext().newLayoutContextInstance();
         for (Map.Entry<Element, Box> entry : boxes.entrySet()) {
@@ -123,11 +134,18 @@ final class PdfFreeTextLayout {
         return parent.getContentWidth() - reserved;
     }
 
-    /** 用真实 PostScript 身份将原生字体片段映射回可重新打开的宿主字体源。 */
-    private static Map<String, PdfFont> fontSources(PdfFontCatalog catalog) throws IOException {
+    /**
+     * 用 PostScript 名称将排版字体映射回宿主字体源，同名时保留目录中的首项。
+     *
+     * @param catalog 宿主字体目录
+     * @param resources 提供已读取字节及字体名称的请求资源
+     * @return PostScript 名称到宿主字体源的映射
+     * @throws IOException 字体读取或名称解析失败时抛出
+     */
+    private static Map<String, PdfFont> fontSources(PdfFontCatalog catalog, PdfFontResources resources) throws IOException {
         Map<String, PdfFont> sources = new LinkedHashMap<>();
         for (PdfFont source : catalog.fonts()) {
-            sources.putIfAbsent(PdfFontSource.postScriptName(PdfFontSource.read(source)), source);
+            sources.putIfAbsent(resources.postScriptName(source), source);
         }
         return sources;
     }

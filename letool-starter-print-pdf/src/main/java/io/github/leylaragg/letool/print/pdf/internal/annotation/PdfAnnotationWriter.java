@@ -2,8 +2,10 @@ package io.github.leylaragg.letool.print.pdf.internal.annotation;
 
 import io.github.leylaragg.letool.print.pdf.PdfFont;
 import io.github.leylaragg.letool.print.pdf.PdfFontCatalog;
+import io.github.leylaragg.letool.print.pdf.internal.font.PdfFontResources;
 import io.github.leylaragg.letool.print.pdf.internal.navigation.PdfNavigationWriter;
 
+import io.github.leylaragg.letool.print.api.RenderOptions;
 import io.github.leylaragg.letool.print.document.DocumentModel;
 import io.github.leylaragg.letool.print.document.DocumentTraversal;
 import io.github.leylaragg.letool.print.document.node.AnnotationNode;
@@ -65,6 +67,7 @@ final class PdfAnnotationWriter {
 
     /** 宿主字体面目录。 */
     private final PdfFontCatalog fontCatalog;
+    private final PdfFontResources fonts;
 
     /**
      * 创建无共享渲染状态的批注写入器。
@@ -72,24 +75,44 @@ final class PdfAnnotationWriter {
      * @param fontCatalog PDF 渲染器已冻结的宿主字体目录
      */
     PdfAnnotationWriter(PdfFontCatalog fontCatalog) {
-        this.fontCatalog = Objects.requireNonNull(fontCatalog, "fontCatalog 不能为空");
+        this(fontCatalog, new PdfFontResources(RenderOptions.DEFAULT_MAX_FONT_CACHE_BYTES));
     }
 
     /**
-     * 从文档树提取批注并在排版前执行数量治理。
+     * 创建与正文排版共用字体源的传统批注写入器。
+     *
+     * @param fontCatalog 宿主字体目录
+     * @param fonts 本次渲染共用的字体资源
+     */
+    PdfAnnotationWriter(PdfFontCatalog fontCatalog, PdfFontResources fonts) {
+        this.fontCatalog = Objects.requireNonNull(fontCatalog, "fontCatalog 不能为空");
+        this.fonts = Objects.requireNonNull(fonts, "fonts 不能为空");
+    }
+
+    /**
+     * 从文档树提取批注，并校验默认允许的声明数量。
      *
      * @param document 已完成结构校验的文档
      * @return 保持文档顺序的批注快照
      */
     List<AnnotationNode> collect(DocumentModel document) {
+        return collect(document, RenderOptions.defaults());
+    }
+
+    /**
+     * 按文档顺序收集传统批注，在定位和写入前检查声明数。
+     *
+     * @param document 已完成结构校验的文档
+     * @param options 本次请求的渲染额度
+     * @return 保持文档顺序的传统批注列表
+     * @throws PrintValidationException 声明数量已超过本次额度时抛出
+     */
+    List<AnnotationNode> collect(DocumentModel document, RenderOptions options) {
         List<AnnotationNode> annotations = DocumentTraversal.depthFirst(document).stream()
                 .filter(AnnotationNode.class::isInstance)
                 .map(AnnotationNode.class::cast)
                 .toList();
-        if (annotations.size() > PdfAnnotations.MAX_ANNOTATIONS) {
-            throw PrintValidationException.invalidDocument(
-                    "PDF 批注数量超过 " + PdfAnnotations.MAX_ANNOTATIONS);
-        }
+        PdfAnnotations.requireAnnotationBudget(annotations.size(), options, "传统批注声明数");
         return annotations;
     }
 
@@ -105,6 +128,22 @@ final class PdfAnnotationWriter {
             PdfBoxRenderer renderer,
             PDDocument pdf,
             List<AnnotationNode> annotations) throws IOException {
+        write(renderer, pdf, annotations, RenderOptions.defaults());
+    }
+
+    /**
+     * 在解析坐标和加载外观字体前，先检查当前单元已有及待追加的文本批注总数。
+     *
+     * @param renderer 已完成页面绘制并能定位目标的排版器
+     * @param pdf 尚未保存的单元 PDF
+     * @param annotations 待追加的传统批注
+     * @param options 本次请求的渲染额度
+     * @throws IOException 批注读取或外观写入失败时抛出
+     * @throws PrintValidationException 超出额度或批注位置无效时抛出
+     */
+    void write(PdfBoxRenderer renderer, PDDocument pdf,
+            List<AnnotationNode> annotations, RenderOptions options) throws IOException {
+        PdfAnnotations.requireAnnotationBudget(pdf, annotations.size(), options, PdfAnnotations.UNIT_ANNOTATION_SCOPE);
         if (annotations.isEmpty()) {
             return;
         }
@@ -130,9 +169,27 @@ final class PdfAnnotationWriter {
             PDDocument pdf,
             List<AnnotationNode> annotations,
             java.util.Map<String, PdfNavigationWriter.GlobalPosition> targets) throws IOException {
+        writeMerged(pdf, annotations, targets, RenderOptions.defaults());
+    }
+
+    /**
+     * 在合并后的文本框基础上按全局目标位置追加传统批注。
+     *
+     * @param pdf 已完成页面合并的 PDF
+     * @param annotations 待追加的传统批注
+     * @param targets 已解析的全局目标位置
+     * @param options 本次请求的渲染额度
+     * @throws IOException 批注读取或外观写入失败时抛出
+     * @throws PrintValidationException 追加后的总数超额或批注位置无效时抛出
+     */
+    void writeMerged(PDDocument pdf, List<AnnotationNode> annotations,
+            java.util.Map<String, PdfNavigationWriter.GlobalPosition> targets, RenderOptions options) throws IOException {
+        // 没有待追加声明时不做写入前合计，既有物理批注由最终组装步骤核对。
         if (annotations.isEmpty()) {
             return;
         }
+        PdfAnnotations.requireAnnotationBudget(pdf, annotations.size(), options, "合并文档既有物理批注与待追加传统声明合计");
+
         List<ResolvedAnnotation> resolved = new ArrayList<>(annotations.size());
         for (AnnotationNode annotation : annotations) {
             PdfNavigationWriter.GlobalPosition target = targets.get(annotation.targetId());
@@ -402,7 +459,14 @@ final class PdfAnnotationWriter {
         return annotations.stream().anyMatch(annotation -> annotation.type() == AnnotationType.FREE_TEXT);
     }
 
-    /** 从最终回退字体或首个宿主字体加载可嵌入外观字体。 */
+    /**
+     * 从默认常规字体或目录首项加载当前文档的批注外观字体。
+     *
+     * @param pdf 外观字体所属的 PDF
+     * @return 使用本次请求字体源加载的可嵌入字体
+     * @throws IOException 字体读取或加载失败时抛出
+     * @throws PrintValidationException 宿主未提供批注可用的字体时抛出
+     */
     private PDFont loadAppearanceFont(PDDocument pdf) throws IOException {
         PdfFont selected = fontCatalog.defaultFace(FontWeight.NORMAL)
                 .orElseGet(() -> fontCatalog.fonts().isEmpty()
@@ -410,7 +474,7 @@ final class PdfAnnotationWriter {
         if (selected == null) {
             throw PrintValidationException.invalidDocument("自由文本框批注需要宿主字体");
         }
-        try (InputStream input = selected.openStream()) {
+        try (InputStream input = fonts.openStream(selected)) {
             return PDType0Font.load(pdf, input, true);
         }
     }

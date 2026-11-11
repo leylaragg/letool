@@ -3,7 +3,7 @@ package io.github.leylaragg.letool.print.pdf.internal.render;
 import io.github.leylaragg.letool.print.pdf.internal.annotation.PdfAnnotations;
 import io.github.leylaragg.letool.print.pdf.PdfFont;
 import io.github.leylaragg.letool.print.pdf.PdfFontCatalog;
-import io.github.leylaragg.letool.print.pdf.internal.font.PdfFontSource;
+import io.github.leylaragg.letool.print.pdf.internal.font.PdfFontResources;
 import io.github.leylaragg.letool.print.pdf.internal.layout.PdfLayoutProcessor;
 import io.github.leylaragg.letool.print.pdf.internal.layout.PdfLayoutSnapshot;
 import io.github.leylaragg.letool.print.pdf.internal.navigation.PdfNativeContents;
@@ -32,7 +32,6 @@ import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -41,24 +40,50 @@ import java.util.EnumSet;
 import java.util.List;
 
 /**
- * 用独立 OpenHTMLToPDF 实例排版并保存一个正文或目录视图。
+ * 测量、校正并输出一个正文或目录页面序列。
+ *
+ * <p>每轮排版器独立管理布局和 PDF 文档，字体源及度量由当前请求共用。</p>
  *
  * @author leyland
  */
 final class PdfUnitRenderer {
     /** 所有排版单元共用的不可变字体目录。 */
     private final PdfFontCatalog fontCatalog;
+    private final PdfFontResources fonts;
 
     /** 把文档单元转换为受控 XHTML。 */
     private final PdfXhtmlRenderer xhtmlRenderer;
 
     /** 为每个单元复用相同的宿主字体配置。 */
     PdfUnitRenderer(PdfFontCatalog fontCatalog) {
+        this(fontCatalog, new PdfFontResources(RenderOptions.DEFAULT_MAX_FONT_CACHE_BYTES));
+    }
+
+    /**
+     * 创建复用请求字体资源的页面序列排版器。
+     *
+     * @param fontCatalog 宿主字体目录
+     * @param fonts 本次渲染共用的字体资源
+     */
+    PdfUnitRenderer(PdfFontCatalog fontCatalog, PdfFontResources fonts) {
         this.fontCatalog = fontCatalog;
+        this.fonts = fonts;
         this.xhtmlRenderer = new PdfXhtmlRenderer(fontCatalog);
     }
 
-    /** 按当前分页轮次排版一个页面序列正文单元。 */
+    /**
+     * 按本轮页码和版式排版一个页面序列。
+     *
+     * @param document 已完成校验的文档计划
+     * @param sequence 当前页面序列及其版式
+     * @param blocks 本轮展开的正文或目录块
+     * @param pagination 本轮的分页输入
+     * @param ids 当前序列的目标与导航标记
+     * @param options 本次请求的渲染额度
+     * @param workspace 当前请求的临时工作区
+     * @return 当前序列的 PDF 文件、实际页数和布局位置
+     * @throws IOException 字体或单元 PDF 读写失败时抛出
+     */
     PdfUnitResult render(
             PdfDocumentPlan document,
             PdfSequencePlan sequence,
@@ -76,13 +101,15 @@ final class PdfUnitRenderer {
     }
 
     /**
-     * 测量并修正单元布局，再保存基础 PDF 和按实际坐标绘制的标记。
+     * 测量并修正单元布局，使用稳定布局保存 PDF，再按实测坐标写入原生绘制和批注。
+     *
+     * <p>每轮独立释放 PDF 文档和排版器，覆盖只测量及中途失败的路径。</p>
      *
      * @param xhtml 当前分页轮次生成的单元 XHTML
      * @param pageLayout 页面尺寸、区域定位和序列页数约束
      * @param initialPageNumber 当前序列的初始逻辑页码
      * @param ids 本次渲染的逻辑目标与原生节点映射
-     * @param options 本次渲染的容量和页数限制
+     * @param options 本次渲染的页数、批注和产物额度
      * @param workspace 管理输出文件生命周期的临时工作区
      * @param documentOptions 文档级默认字体和缺字回退配置
      * @param styles 用于目录和正文图例的命名样式
@@ -107,20 +134,23 @@ final class PdfUnitRenderer {
         int pageCount;
         PdfAnnotations.Prepared freeText = PdfAnnotations.empty(xhtml);
         try (OutputStream output = workspace.openOutput(file, options.maxOutputBytes())) {
-            // 测量阶段只执行布局，以实际区域高度修正显式页眉、页脚和正文居中位置。
             String adjusted = xhtml;
+            // 先测出文本框实际宽高，再据此修正分页用的占位。
             if (xhtml.contains("data-free-text-key=")) {
                 try (PdfBoxRenderer measure = builder(xhtml, OutputStream.nullOutputStream(),
-                        initialPageNumber, documentOptions).buildPdfRenderer()) {
+                        initialPageNumber, documentOptions).buildPdfRenderer();
+                        PDDocument pdf = measure.getPdfDocument()) {
                     measure.layout();
-                    freeText = PdfAnnotations.prepare(measure, xhtml, styles, documentOptions, fontCatalog);
+                    freeText = PdfAnnotations.prepare(measure, xhtml, styles, documentOptions, fontCatalog, fonts);
                     adjusted = freeText.xhtml();
                 }
             }
+            // 显式页眉页脚与正文居中使用修正文本框后的实际区域高度。
             if (pageLayout.headerTopPoints() >= 0 || pageLayout.footerBaselinePoints() >= 0
                     || pageLayout.centeredBody()) {
                 try (PdfBoxRenderer measure = builder(adjusted, OutputStream.nullOutputStream(),
-                        initialPageNumber, documentOptions).buildPdfRenderer()) {
+                        initialPageNumber, documentOptions).buildPdfRenderer();
+                        PDDocument pdf = measure.getPdfDocument()) {
                     measure.layout();
                     adjusted = PdfLayoutProcessor.adjust(measure, adjusted, pageLayout);
                 }
@@ -129,41 +159,38 @@ final class PdfUnitRenderer {
             // 目录使用本轮实际文字行校正标题与条目基线，不能按字号估算。
             if (blocks.stream().anyMatch(ContentsTitleNode.class::isInstance)) {
                 try (PdfBoxRenderer measure = builder(adjusted, OutputStream.nullOutputStream(),
-                        initialPageNumber, documentOptions).buildPdfRenderer()) {
+                        initialPageNumber, documentOptions).buildPdfRenderer();
+                        PDDocument pdf = measure.getPdfDocument()) {
                     measure.layout();
                     adjusted = PdfNativeContents.adjust(measure, adjusted, blocks, ids);
                 }
             }
 
-            // 每次移页都会改变后续行的可用空间，逐轮使用新坐标，直到所有字段行稳定。
-            // 分段行与已移页行都有标记，同一行不会无限重复校正。
+            // 移页改变后续行的可用空间，需要用新坐标继续校正。分段或已移页的行带有处理标记。
             while (true) {
-                try (PdfBoxRenderer measure = builder(adjusted, OutputStream.nullOutputStream(),
-                        initialPageNumber, documentOptions).buildPdfRenderer()) {
-                    measure.layout();
-                    requirePageLimit(measure.getRootBox().getLayer().getPages().size(), pageLayout, options);
-                    String corrected = PdfLayoutProcessor.fragment(measure, adjusted);
-                    if (corrected.equals(adjusted)) {
-                        break;
+                try (PdfBoxRenderer renderer = builder(adjusted, output,
+                        initialPageNumber, documentOptions).buildPdfRenderer();
+                        PDDocument pdf = renderer.getPdfDocument()) {
+                    renderer.layout();
+                    pageCount = renderer.getRootBox().getLayer().getPages().size();
+                    requirePageLimit(pageCount, pageLayout, options);
+                    String corrected = PdfLayoutProcessor.fragment(renderer, adjusted);
+                    if (!corrected.equals(adjusted)) {
+                        adjusted = corrected;
+                        continue;
                     }
-                    adjusted = corrected;
-                }
-            }
 
-            // 最终布局同时产生导航快照和绘制坐标，所有标记与实际写出的页面保持一致。
-            PdfRendererBuilder builder = builder(adjusted, output, initialPageNumber, documentOptions);
-            try (PdfBoxRenderer renderer = builder.buildPdfRenderer()) {
-                renderer.layout();
-                pageCount = renderer.getRootBox().getLayer().getPages().size();
-                requirePageLimit(pageCount, pageLayout, options);
-                snapshot = PdfLayoutProcessor.snapshot(renderer, ids.targetIds(), ids.linkIds().values());
-                marks = PdfLayoutProcessor.collectDrawing(renderer);
-                contentsRules = PdfNativeContents.collect(renderer, blocks, ids, styles);
-                // 默认页眉页脚仍检查边距容纳性；显式位置采用前面的测量修正结果。
-                if (pageLayout.headerTopPoints() < 0 && pageLayout.footerBaselinePoints() < 0) {
-                    snapshot.requireRegionsFit(pageLayout);
+                    // 只有内容无需再修正时才写出 PDF。坐标与产物来自同一次布局。
+                    snapshot = PdfLayoutProcessor.snapshot(renderer, ids.targetIds(), ids.linkIds().values());
+                    marks = PdfLayoutProcessor.collectDrawing(renderer);
+                    contentsRules = PdfNativeContents.collect(renderer, blocks, ids, styles);
+                    // 默认页眉页脚仍检查边距容纳性；显式位置采用前面的测量修正结果。
+                    if (pageLayout.headerTopPoints() < 0 && pageLayout.footerBaselinePoints() < 0) {
+                        snapshot.requireRegionsFit(pageLayout);
+                    }
+                    renderer.createPDF();
+                    break;
                 }
-                renderer.createPDF();
             }
         }
 
@@ -176,9 +203,9 @@ final class PdfUnitRenderer {
             Path painted = workspace.allocate();
             try (PDDocument pdf = Loader.loadPDF(file.toFile());
                     OutputStream target = workspace.openOutput(painted, options.maxOutputBytes())) {
-                PdfLayoutProcessor.writeDrawing(pdf, marks, captions, styles, documentOptions, pageLayout, fontCatalog);
+                PdfLayoutProcessor.writeDrawing(pdf, marks, captions, styles, documentOptions, pageLayout, fontCatalog, fonts);
                 PdfNativeContents.write(pdf, contentsRules);
-                PdfAnnotations.writeFreeText(pdf, freeText);
+                PdfAnnotations.writeFreeText(pdf, freeText, options, fonts);
                 pdf.save(target);
             }
             // 追加绘制并保存成功后再释放基础文件，失败路径由工作区统一清理。
@@ -199,7 +226,7 @@ final class PdfUnitRenderer {
      * 创建拒绝外部资源且只使用宿主字体的单元排版器。
      *
      * @param xhtml 当前测量或输出阶段使用的 XHTML
-     * @param output 输出流，由调用方负责关闭；测量阶段使用空输出流
+     * @param output 输出流，由调用方负责关闭；只有稳定布局会调用 createPDF 写入
      * @param initialPageNumber 当前序列的初始逻辑页码
      * @param documentOptions 文档字体选项，用于配置明确声明的缺字回退族
      * @return 本阶段独立使用的排版器构建器
@@ -212,6 +239,7 @@ final class PdfUnitRenderer {
                 .toStream(output)
                 .withProducer("letool")
                 .useInitialPageNumber(initialPageNumber)
+                .useCacheStore(PdfRendererBuilder.CacheStore.PDF_FONT_METRICS, fonts.metricsCache())
                 .useUriResolver((baseUri, uri) -> null)
                 .useExternalResourceAccessControl((uri, type) -> false,
                         ExternalResourceControlPriority.RUN_BEFORE_RESOLVING_URI)
@@ -223,10 +251,10 @@ final class PdfUnitRenderer {
         for (PdfFont font : fontCatalog.fonts()) {
             int weight = font.weight() == FontWeight.BOLD
                     ? 700 : 400;
-            // 每次调用独立读取并规范化字体源，产生的输入流交由本轮渲染器消费和关闭。
+            // 只复用当前请求的规范化字节；每轮仍使用独立流和文档所属字体对象。
             FSSupplier<InputStream> supplier = () -> {
                 try {
-                    return new ByteArrayInputStream(PdfFontSource.read(font));
+                    return fonts.openStream(font);
                 } catch (IOException exception) {
                     throw new IllegalStateException("字体资源无法读取", exception);
                 }

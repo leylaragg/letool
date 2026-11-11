@@ -4,6 +4,7 @@ import io.github.leylaragg.letool.print.pdf.internal.annotation.PdfAnnotations;
 import io.github.leylaragg.letool.print.pdf.internal.resource.PdfBoxStreamCache;
 import io.github.leylaragg.letool.print.pdf.PdfFontCatalog;
 import io.github.leylaragg.letool.print.pdf.internal.font.PdfFullFontWriter;
+import io.github.leylaragg.letool.print.pdf.internal.font.PdfFontResources;
 import io.github.leylaragg.letool.print.pdf.internal.navigation.PdfNavigationWriter;
 import io.github.leylaragg.letool.print.pdf.PdfPostProcessor;
 import io.github.leylaragg.letool.print.pdf.internal.resource.PdfRenderWorkspace;
@@ -18,11 +19,6 @@ import io.github.leylaragg.letool.print.exception.PrintRenderingException;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.multipdf.PDFMergerUtility;
 import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.pdmodel.PDPage;
-import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotation;
-import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationFreeText;
-import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationText;
-import io.github.leylaragg.letool.print.exception.PrintValidationException;
 import org.apache.pdfbox.pdmodel.PDDocumentInformation;
 
 import java.io.IOException;
@@ -49,17 +45,36 @@ final class PdfDocumentAssembler {
     private final PdfAnnotations annotationWriter;
     private final PdfFontCatalog fontCatalog;
     private final PdfPostProcessor postProcessor;
+    private final PdfFontResources fonts;
 
     /** 创建使用指定字体目录的文档组装器。 */
     PdfDocumentAssembler(PdfFontCatalog fontCatalog) {
         this(fontCatalog, null);
     }
 
+    /**
+     * 创建使用默认字体缓存额度的文档组装器。
+     *
+     * @param fontCatalog 宿主字体目录
+     * @param postProcessor 可选的最终 PDF 后处理器
+     */
     PdfDocumentAssembler(PdfFontCatalog fontCatalog, PdfPostProcessor postProcessor) {
+        this(fontCatalog, postProcessor, new PdfFontResources(RenderOptions.DEFAULT_MAX_FONT_CACHE_BYTES));
+    }
+
+    /**
+     * 组装阶段继续使用正文排版时的字体源，供批注和全字体嵌入使用。
+     *
+     * @param fontCatalog 宿主字体目录
+     * @param postProcessor 可选的最终 PDF 后处理器
+     * @param fonts 本次渲染共用的字体资源
+     */
+    PdfDocumentAssembler(PdfFontCatalog fontCatalog, PdfPostProcessor postProcessor, PdfFontResources fonts) {
         this.fontCatalog = fontCatalog;
         this.postProcessor = postProcessor;
+        this.fonts = Objects.requireNonNull(fonts, "fonts 不能为空");
         this.annotationWriter = new PdfAnnotations(
-                Objects.requireNonNull(fontCatalog, "fontCatalog 不能为空"));
+                Objects.requireNonNull(fontCatalog, "fontCatalog 不能为空"), fonts);
     }
 
     /**
@@ -91,11 +106,12 @@ final class PdfDocumentAssembler {
                 Map<String, PdfNavigationWriter.GlobalPosition> targets = navigationWriter.write(
                         target, document.document(), results, Map.copyOf(sourceTargets));
                 annotationWriter.writeMerged(
-                        target, document.document(), targets);
-                requireAnnotationBudget(target);
+                        target, document.document(), targets, options);
+                // 追加传统批注后按最终 PDF 计数，覆盖跨序列累积的物理副本。
+                PdfAnnotations.requireAnnotationBudget(target, options);
                 applyMetadata(target, document.metadata(), options);
                 if (document.document().options().fullFontEmbedding()) {
-                    new PdfFullFontWriter(fontCatalog).write(target);
+                    new PdfFullFontWriter(fontCatalog, fonts).write(target);
                 }
                 for (org.apache.pdfbox.pdmodel.PDPage page : target.getPages()) {
                     page.setRotation(0);
@@ -133,21 +149,6 @@ final class PdfDocumentAssembler {
         metadata.put("pageCount", Integer.toString(pageCount));
         metadata.put("contentLength", Long.toString(Files.size(finalFile)));
         return output.complete(OutputFormat.PDF, metadata);
-    }
-
-    /** 限额按最终物理批注计数，包含表头、页眉和续页复制，导航链接不占用批注额度。 */
-    private static void requireAnnotationBudget(PDDocument pdf) throws IOException {
-        int count = 0;
-        for (PDPage page : pdf.getPages()) {
-            for (PDAnnotation annotation : page.getAnnotations()) {
-                if (annotation instanceof PDAnnotationFreeText || annotation instanceof PDAnnotationText) {
-                    if (++count > PdfAnnotations.MAX_ANNOTATIONS) {
-                        throw PrintValidationException.invalidDocument("PDF 批注数量超过 "
-                                + PdfAnnotations.MAX_ANNOTATIONS);
-                    }
-                }
-            }
-        }
     }
 
     /** 每个页面序列都必须恰好提供一个最终排版结果。 */

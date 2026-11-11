@@ -2,6 +2,7 @@ package io.github.leylaragg.letool.print.pdf.internal.font;
 
 import io.github.leylaragg.letool.print.pdf.PdfFont;
 import io.github.leylaragg.letool.print.pdf.PdfFontCatalog;
+import io.github.leylaragg.letool.print.api.RenderOptions;
 
 import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSName;
@@ -33,10 +34,22 @@ import java.util.Set;
 public final class PdfFullFontWriter {
     /** 宿主注册的真实源字体，用于校验最终 PDF 的字体身份。 */
     private final PdfFontCatalog catalog;
+    private final PdfFontResources fonts;
 
     /** @param catalog 本次渲染使用的字体目录 */
     public PdfFullFontWriter(PdfFontCatalog catalog) {
+        this(catalog, new PdfFontResources(RenderOptions.DEFAULT_MAX_FONT_CACHE_BYTES));
+    }
+
+    /**
+     * 使用本次请求的字体源完成全字体嵌入。
+     *
+     * @param catalog 本次渲染使用的字体目录
+     * @param fonts 当前请求的字体源缓存
+     */
+    public PdfFullFontWriter(PdfFontCatalog catalog, PdfFontResources fonts) {
         this.catalog = catalog;
+        this.fonts = fonts;
     }
 
     /**
@@ -49,8 +62,8 @@ public final class PdfFullFontWriter {
         // 同一 PostScript 身份必须对应同一真实源文件，防止合并后错误替换字体流。
         Map<String, byte[]> sources = new LinkedHashMap<>();
         for (PdfFont font : catalog.fonts()) {
-            byte[] raw = PdfFontSource.read(font);
-            String name = PdfFontSource.postScriptName(raw);
+            byte[] raw = fonts.read(font);
+            String name = fonts.postScriptName(font, raw);
             byte[] previous = sources.putIfAbsent(name, raw);
             if (previous != null && !Arrays.equals(previous, raw)) {
                 throw new IOException("字体源身份冲突");
